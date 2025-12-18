@@ -3,6 +3,10 @@
 ## Vision
 HexStrike is a Node.js, server-driven living card game played over a hex-grid. Players submit actions built from selected cards; the server validates, resolves outcomes on the hex board, and advances the authoritative game timeline. Clients connect via WebSockets and receive partial game states (their own hand and public board info; no opponent hand/deck visibility). The experience should feel like collaboratively making a movie that can be rewound and replayed.
 
+# ExecPlans
+ 
+When writing complex features or significant refactors, use an ExecPlan (as described in .agent/PLANS.md) from design to implementation.
+
 ## Architectural principles
 - **Platform**: Node.js with TypeScript preferred for type safety; keep server code framework-light (e.g., bare ws/fastify or similar minimal HTTP + WebSocket setup).
 - **Bounded contexts**:
