@@ -3,87 +3,90 @@
   <head>
     <meta charset="utf-8" />
     <title>HexStrike Lobby</title>
-    <link rel="stylesheet" href="/theme.css" />
+    <link rel="stylesheet" href="/public/theme.css" />
   </head>
   <body>
-    <div class="ui-shell">
-      <header class="hero-header">
-        <div class="hero-header-content">
-          <div class="branding">
-            <p class="eyebrow">HexStrike / Live Lobby</p>
-            <h1>Command Your Squad</h1>
-            <p class="subtitle">Queue up, launch custom matches, and watch the event feed in a single place.</p>
-          </div>
-          <div class="hero-actions">
-            <button id="connect" class="btn btn-primary">Connect</button>
-            <div id="connectionStatus" class="status-pill">Not connected</div>
-          </div>
+    <div class="lobby-shell">
+      <header class="top-bar panel stagger-1">
+        <div class="brand">
+          <p class="eyebrow">HexStrike / Live Lobby</p>
+          <h1>Command the Hexfront</h1>
+          <p class="subtitle">Assemble your squad, lock in your tactics, and march into the next frame.</p>
+        </div>
+        <div class="top-bar-actions">
+          <div id="connectionStatus" class="status-pill">Idle</div>
+          <button id="findGame" class="btn btn-primary btn-cta">Find Game</button>
         </div>
       </header>
 
-      <div class="grid-layout">
-        <section class="panel">
-          <h2>Identity</h2>
-          <p>Set your user details before connecting to the lobby stream.</p>
-          <div class="field-row">
-            <label> User ID <input id="userId" /> </label>
-            <label> Username <input id="username" /> </label>
+      <main class="lobby-main">
+        <aside class="side-nav panel stagger-2">
+          <p class="nav-title">War Table</p>
+          <ul class="nav-list">
+            <li class="nav-item active">Home</li>
+            <li class="nav-item">Heroes</li>
+            <li class="nav-item">Quests</li>
+            <li class="nav-item">Collection</li>
+            <li class="nav-item">Leaderboard</li>
+            <li class="nav-item">Settings</li>
+          </ul>
+          <p class="nav-footer">Season 01 / Emerald Vale</p>
+        </aside>
+
+        <section class="hero-panel panel stagger-3">
+          <div class="hero-copy">
+            <p class="eyebrow">Featured Campaign</p>
+            <h2>Echoes of the Hollow Spires</h2>
+            <p class="hero-lead">
+              A chorus of arcane signals ripples across the forested frontier. Rally your allies and
+              shape the timeline before the spires awaken.
+            </p>
+            <div class="hero-tags">
+              <span class="tag">Co-op</span>
+              <span class="tag">Simultaneous Turns</span>
+              <span class="tag">Replay Ready</span>
+            </div>
           </div>
-          <small>Tip: IDs persist in local storage so you can hop back in with the same identity.</small>
+          <div class="hero-stats">
+            <div class="stat">
+              <span class="stat-label">Queue</span>
+              <span id="queueStatus" class="stat-value">Standby</span>
+            </div>
+            <div class="stat">
+              <span class="stat-label">Frames Logged</span>
+              <span class="stat-value">1,248</span>
+            </div>
+            <div class="stat">
+              <span class="stat-label">Season Rank</span>
+              <span class="stat-value">Bronze III</span>
+            </div>
+          </div>
         </section>
 
-        <section class="panel">
-          <h2>Custom Match</h2>
-          <p>Challenge a specific opponent and create a direct match invitation.</p>
-          <div class="field-row">
-            <label> Opponent ID <input id="opponentId" /> </label>
-            <label> Opponent Name <input id="opponentName" /> </label>
-          </div>
-          <div class="section-actions">
-            <button id="customMatch" class="btn">Create Custom Match</button>
-          </div>
+        <section class="info-stack">
+          <section class="panel stagger-4">
+            <h2>Lobby Snapshot</h2>
+            <p>Matchmaking presence and active rooms.</p>
+            <pre id="lobby">Awaiting signal...</pre>
+          </section>
+          <section class="panel stagger-5">
+            <h2>Event Log</h2>
+            <p>Chronological updates from the server stream.</p>
+            <pre id="log">No events yet.</pre>
+          </section>
         </section>
-
-        <section class="panel">
-          <h2>Queues</h2>
-          <p>Hop into matchmaking queues using the themed quick actions.</p>
-          <div class="pill-group">
-            <button data-queue="quickplayQueue" class="btn btn-primary">Join Quickplay</button>
-            <button data-leave="quickplayQueue" class="btn btn-ghost">Leave Quickplay</button>
-            <button data-queue="rankedQueue" class="btn btn-primary">Join Ranked</button>
-            <button data-leave="rankedQueue" class="btn btn-ghost">Leave Ranked</button>
-            <button data-queue="botQueue" class="btn btn-primary">Join Bot Queue</button>
-            <button data-leave="botQueue" class="btn btn-ghost">Leave Bot Queue</button>
-          </div>
-          <div class="divider"></div>
-          <button id="clear" class="btn">Clear All Queues</button>
-        </section>
-
-        <section class="panel">
-          <h2>Lobby Snapshot</h2>
-          <p>Live state from the matchmaking service.</p>
-          <pre id="lobby"></pre>
-        </section>
-
-        <section class="panel">
-          <h2>Event Log</h2>
-          <p>Chronological updates from the server stream.</p>
-          <pre id="log"></pre>
-        </section>
-      </div>
+      </main>
     </div>
 
     <script>
       const logEl = document.getElementById('log');
       const lobbyEl = document.getElementById('lobby');
-      const userIdInput = document.getElementById('userId');
-      const usernameInput = document.getElementById('username');
       const statusEl = document.getElementById('connectionStatus');
-      const opponentIdInput = document.getElementById('opponentId');
-      const opponentNameInput = document.getElementById('opponentName');
+      const queueStatusEl = document.getElementById('queueStatus');
+      const findGameButton = document.getElementById('findGame');
       let eventSource;
       let userId = localStorage.getItem('hexstrikeUser') || crypto.randomUUID();
-      userIdInput.value = userId;
+      let username = localStorage.getItem('hexstrikeName') || `Player-${userId.slice(0, 6)}`;
 
       function log(message, data) {
         const line = `[${new Date().toLocaleTimeString()}] ${message}`;
@@ -94,10 +97,11 @@
         lobbyEl.textContent = JSON.stringify(snapshot, null, 2);
       }
 
-      function connect() {
+      function connectStream() {
         if (eventSource) eventSource.close();
-        userId = userIdInput.value || crypto.randomUUID();
+        userId = userId || crypto.randomUUID();
         localStorage.setItem('hexstrikeUser', userId);
+        localStorage.setItem('hexstrikeName', username);
         const url = `/events?userId=${encodeURIComponent(userId)}`;
         eventSource = new EventSource(url);
         eventSource.onmessage = (event) => {
@@ -111,6 +115,7 @@
         };
         eventSource.onerror = () => {
           statusEl.textContent = 'Connection lost';
+          queueStatusEl.textContent = 'Offline';
         };
       }
 
@@ -123,44 +128,19 @@
         return res.json();
       }
 
-      document.getElementById('connect').addEventListener('click', connect);
-      document.querySelectorAll('button[data-queue]').forEach((button) => {
-        button.addEventListener('click', async () => {
-          const queue = button.getAttribute('data-queue');
-          const response = await post('/api/v1/lobby/join', {
-            userId,
-            username: usernameInput.value || userId,
-            queue,
-          });
-          renderLobby(response.lobby);
+      async function findGame() {
+        statusEl.textContent = 'Searching for a match...';
+        queueStatusEl.textContent = 'Searching';
+        connectStream();
+        const response = await post('/api/v1/lobby/join', {
+          userId,
+          username,
+          queue: 'quickplayQueue',
         });
-      });
+        renderLobby(response.lobby);
+      }
 
-      document.querySelectorAll('button[data-leave]').forEach((button) => {
-        button.addEventListener('click', async () => {
-          const queue = button.getAttribute('data-leave');
-          const response = await post('/api/v1/lobby/leave', { userId, queue });
-          renderLobby(response.lobby);
-        });
-      });
-
-      document.getElementById('clear').addEventListener('click', async () => {
-        const snapshot = await post('/api/v1/lobby/clear', {});
-        renderLobby(snapshot);
-      });
-
-      document.getElementById('customMatch').addEventListener('click', async () => {
-        const response = await post('/api/v1/match/custom', {
-          hostId: userId,
-          hostName: usernameInput.value || userId,
-          guestId: opponentIdInput.value || crypto.randomUUID(),
-          guestName: opponentNameInput.value || 'Guest',
-        });
-        log('match created', response.match);
-        log('game created', response.game);
-      });
-
-      connect();
+      findGameButton.addEventListener('click', findGame);
     </script>
   </body>
 </html>

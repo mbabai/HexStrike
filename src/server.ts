@@ -166,12 +166,15 @@ export function buildServer(port: number) {
   };
 
   const handleStatic = (res: ServerResponse, path: string) => {
-    const resolved = path === '/' ? '/public/index.html' : `/public${path}`;
+    const resolved = path === '/' ? '/public/index.html' : path.startsWith('/public/') ? path : `/public${path}`;
     readFile(process.cwd() + resolved, (err, data) => {
       if (err) {
         notFound(res);
       } else {
-        const type = resolved.endsWith('.html') ? 'text/html' : 'text/javascript';
+        let type = 'text/plain';
+        if (resolved.endsWith('.html')) type = 'text/html';
+        if (resolved.endsWith('.css')) type = 'text/css';
+        if (resolved.endsWith('.js')) type = 'text/javascript';
         res.writeHead(200, { 'Content-Type': type });
         res.end(data);
       }
