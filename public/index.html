@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>HexStrike Lobby</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2rem; }
+      section { margin-bottom: 1.5rem; }
+      button { margin: 0.25rem; }
+      pre { background: #f4f4f4; padding: 0.75rem; }
+    </style>
+  </head>
+  <body>
+    <h1>HexStrike Lobby Sandbox</h1>
+    <section>
+      <label>User ID: <input id="userId" /></label>
+      <label>Username: <input id="username" /></label>
+      <button id="connect">Connect</button>
+      <div id="connectionStatus">Not connected</div>
+    </section>
+    <section>
+      <h2>Queues</h2>
+      <div>
+        <button data-queue="quickplayQueue">Join Quickplay</button>
+        <button data-leave="quickplayQueue">Leave Quickplay</button>
+      </div>
+      <div>
+        <button data-queue="rankedQueue">Join Ranked</button>
+        <button data-leave="rankedQueue">Leave Ranked</button>
+      </div>
+      <div>
+        <button data-queue="botQueue">Join Bot Queue</button>
+        <button data-leave="botQueue">Leave Bot Queue</button>
+      </div>
+      <button id="clear">Clear All Queues</button>
+    </section>
+    <section>
+      <h2>Custom Match</h2>
+      <label>Opponent ID: <input id="opponentId" /></label>
+      <label>Opponent Name: <input id="opponentName" /></label>
+      <button id="customMatch">Create Custom Match</button>
+    </section>
+    <section>
+      <h2>Lobby Snapshot</h2>
+      <pre id="lobby"></pre>
+    </section>
+    <section>
+      <h2>Event Log</h2>
+      <pre id="log"></pre>
+    </section>
+    <script>
+      const logEl = document.getElementById('log');
+      const lobbyEl = document.getElementById('lobby');
+      const userIdInput = document.getElementById('userId');
+      const usernameInput = document.getElementById('username');
+      const statusEl = document.getElementById('connectionStatus');
+      const opponentIdInput = document.getElementById('opponentId');
+      const opponentNameInput = document.getElementById('opponentName');
+      let eventSource;
+      let userId = localStorage.getItem('hexstrikeUser') || crypto.randomUUID();
+      userIdInput.value = userId;
+
+      function log(message, data) {
+        const line = `[${new Date().toLocaleTimeString()}] ${message}`;
+        logEl.textContent = `${line}\n${data ? JSON.stringify(data, null, 2) : ''}\n\n${logEl.textContent}`;
+      }
+
+      function renderLobby(snapshot) {
+        lobbyEl.textContent = JSON.stringify(snapshot, null, 2);
+      }
+
+      function connect() {
+        if (eventSource) eventSource.close();
+        userId = userIdInput.value || crypto.randomUUID();
+        localStorage.setItem('hexstrikeUser', userId);
+        const url = `/events?userId=${encodeURIComponent(userId)}`;
+        eventSource = new EventSource(url);
+        eventSource.onmessage = (event) => {
+          const parsed = JSON.parse(event.data);
+          log(parsed.type, parsed.payload);
+          if (parsed.type === 'connected') {
+            statusEl.textContent = `Connected as ${parsed.payload.userId}`;
+            renderLobby(parsed.payload.lobby);
+          }
+          if (parsed.type === 'queueChanged') renderLobby(parsed.payload);
+        };
+        eventSource.onerror = () => {
+          statusEl.textContent = 'Connection lost';
+        };
+      }
+
+      async function post(path, payload) {
+        const res = await fetch(path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        return res.json();
+      }
+
+      document.getElementById('connect').addEventListener('click', connect);
+      document.querySelectorAll('button[data-queue]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const queue = button.getAttribute('data-queue');
+          const response = await post('/api/v1/lobby/join', {
+            userId,
+            username: usernameInput.value || userId,
+            queue,
+          });
+          renderLobby(response.lobby);
+        });
+      });
+
+      document.querySelectorAll('button[data-leave]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const queue = button.getAttribute('data-leave');
+          const response = await post('/api/v1/lobby/leave', { userId, queue });
+          renderLobby(response.lobby);
+        });
+      });
+
+      document.getElementById('clear').addEventListener('click', async () => {
+        const snapshot = await post('/api/v1/lobby/clear', {});
+        renderLobby(snapshot);
+      });
+
+      document.getElementById('customMatch').addEventListener('click', async () => {
+        const response = await post('/api/v1/match/custom', {
+          hostId: userId,
+          hostName: usernameInput.value || userId,
+          guestId: opponentIdInput.value || crypto.randomUUID(),
+          guestName: opponentNameInput.value || 'Guest',
+        });
+        log('match created', response.match);
+        log('game created', response.game);
+      });
+
+      connect();
+    </script>
+  </body>
+</html>
