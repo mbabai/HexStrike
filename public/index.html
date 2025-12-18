@@ -3,51 +3,76 @@
   <head>
     <meta charset="utf-8" />
     <title>HexStrike Lobby</title>
-    <style>
-      body { font-family: Arial, sans-serif; margin: 2rem; }
-      section { margin-bottom: 1.5rem; }
-      button { margin: 0.25rem; }
-      pre { background: #f4f4f4; padding: 0.75rem; }
-    </style>
+    <link rel="stylesheet" href="/theme.css" />
   </head>
   <body>
-    <h1>HexStrike Lobby Sandbox</h1>
-    <section>
-      <label>User ID: <input id="userId" /></label>
-      <label>Username: <input id="username" /></label>
-      <button id="connect">Connect</button>
-      <div id="connectionStatus">Not connected</div>
-    </section>
-    <section>
-      <h2>Queues</h2>
-      <div>
-        <button data-queue="quickplayQueue">Join Quickplay</button>
-        <button data-leave="quickplayQueue">Leave Quickplay</button>
+    <div class="ui-shell">
+      <header class="hero-header">
+        <div class="hero-header-content">
+          <div class="branding">
+            <p class="eyebrow">HexStrike / Live Lobby</p>
+            <h1>Command Your Squad</h1>
+            <p class="subtitle">Queue up, launch custom matches, and watch the event feed in a single place.</p>
+          </div>
+          <div class="hero-actions">
+            <button id="connect" class="btn btn-primary">Connect</button>
+            <div id="connectionStatus" class="status-pill">Not connected</div>
+          </div>
+        </div>
+      </header>
+
+      <div class="grid-layout">
+        <section class="panel">
+          <h2>Identity</h2>
+          <p>Set your user details before connecting to the lobby stream.</p>
+          <div class="field-row">
+            <label> User ID <input id="userId" /> </label>
+            <label> Username <input id="username" /> </label>
+          </div>
+          <small>Tip: IDs persist in local storage so you can hop back in with the same identity.</small>
+        </section>
+
+        <section class="panel">
+          <h2>Custom Match</h2>
+          <p>Challenge a specific opponent and create a direct match invitation.</p>
+          <div class="field-row">
+            <label> Opponent ID <input id="opponentId" /> </label>
+            <label> Opponent Name <input id="opponentName" /> </label>
+          </div>
+          <div class="section-actions">
+            <button id="customMatch" class="btn">Create Custom Match</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Queues</h2>
+          <p>Hop into matchmaking queues using the themed quick actions.</p>
+          <div class="pill-group">
+            <button data-queue="quickplayQueue" class="btn btn-primary">Join Quickplay</button>
+            <button data-leave="quickplayQueue" class="btn btn-ghost">Leave Quickplay</button>
+            <button data-queue="rankedQueue" class="btn btn-primary">Join Ranked</button>
+            <button data-leave="rankedQueue" class="btn btn-ghost">Leave Ranked</button>
+            <button data-queue="botQueue" class="btn btn-primary">Join Bot Queue</button>
+            <button data-leave="botQueue" class="btn btn-ghost">Leave Bot Queue</button>
+          </div>
+          <div class="divider"></div>
+          <button id="clear" class="btn">Clear All Queues</button>
+        </section>
+
+        <section class="panel">
+          <h2>Lobby Snapshot</h2>
+          <p>Live state from the matchmaking service.</p>
+          <pre id="lobby"></pre>
+        </section>
+
+        <section class="panel">
+          <h2>Event Log</h2>
+          <p>Chronological updates from the server stream.</p>
+          <pre id="log"></pre>
+        </section>
       </div>
-      <div>
-        <button data-queue="rankedQueue">Join Ranked</button>
-        <button data-leave="rankedQueue">Leave Ranked</button>
-      </div>
-      <div>
-        <button data-queue="botQueue">Join Bot Queue</button>
-        <button data-leave="botQueue">Leave Bot Queue</button>
-      </div>
-      <button id="clear">Clear All Queues</button>
-    </section>
-    <section>
-      <h2>Custom Match</h2>
-      <label>Opponent ID: <input id="opponentId" /></label>
-      <label>Opponent Name: <input id="opponentName" /></label>
-      <button id="customMatch">Create Custom Match</button>
-    </section>
-    <section>
-      <h2>Lobby Snapshot</h2>
-      <pre id="lobby"></pre>
-    </section>
-    <section>
-      <h2>Event Log</h2>
-      <pre id="log"></pre>
-    </section>
+    </div>
+
     <script>
       const logEl = document.getElementById('log');
       const lobbyEl = document.getElementById('lobby');

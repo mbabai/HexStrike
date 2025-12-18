@@ -8,6 +8,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 When writing complex features or significant refactors, use an ExecPlan (as described in .agent/PLANS.md) from design to implementation.
 
 ## Architectural principles
+- **Front-end UI**: For any browser-facing UI styling or layout, follow `front-end-ui.md` as the single source of truth for palette, components, and interactions. Extend that document when adding reusable primitives.
 - **Platform**: Node.js with TypeScript preferred for type safety; keep server code framework-light (e.g., bare ws/fastify or similar minimal HTTP + WebSocket setup).
 - **Bounded contexts**:
   - `matchmaking` (lobby, seat assignment, game bootstrap)

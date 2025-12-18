@@ -1,0 +1,27 @@
+# Front-End UI Guidelines
+
+This document defines the single source of truth for HexStrike's browser UI styling. Follow these rules for any HTML, CSS, or front-end UI work.
+
+## Core palette and typography
+- Use the CSS custom properties defined in `public/theme.css` for all colors, radii, shadows, and fonts. Do **not** duplicate hex values elsewhere; extend variables only when necessary.
+- Headlines use the `var(--font-heading)` stack and body text uses `var(--font-body)`.
+- Default text color is `var(--color-text)` with `var(--color-subtle)` for helper copy.
+
+## Components and layout
+- Panels: use the `.panel` class for framed sections. Keep rounded corners at `var(--radius-panel)` and border color `var(--color-panel-border)` with the subtle inner outline.
+- Buttons: start from `.btn`; apply `.btn-primary` for golden calls-to-action and `.btn-ghost` for secondary/dismissive actions. Avoid inline styles—compose classes.
+- Pills and groups: use `.pill-group` for horizontal stacks; prefer `.status-pill` for status text.
+- Grids: prefer `.grid-layout` for responsive card grids and `.field-row` for stacked form controls.
+
+## Backgrounds and mood
+- Use the base body gradient from `public/theme.css` to mirror the dark teal + gold fantasy mood. If new sections need emphasis, layer subtle radial glows (see `.hero-header::after`).
+
+## Interaction patterns
+- Inputs should use the shared focus ring from `public/theme.css`; keep outline and shadow consistent.
+- Hover/active states must be derived from the existing button transitions (translateY, glow, and border highlight).
+
+## Assets and motifs
+- Favor ornamental framing through borders, gradients, and glows rather than heavy image assets. When adding imagery, keep it color-corrected to the palette.
+
+## Documentation
+- Update this file when introducing new reusable UI primitives. Reference the specific class names, variables, and intended usage.
