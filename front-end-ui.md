@@ -6,10 +6,11 @@ This document defines the single source of truth for HexStrike's browser UI styl
 - Use the CSS custom properties defined in `public/theme.css` for all colors, radii, shadows, and fonts. Do **not** duplicate hex values elsewhere; extend variables only when necessary.
 - Headlines use the `var(--font-heading)` stack and body text uses `var(--font-body)`.
 - Default text color is `var(--color-text)` with `var(--color-subtle)` for helper copy.
+- Queueing states use the lavender palette (`--color-queue-lavender*`) so the Find Game button reads as a distinct state without diverging from the theme.
 
 ## Components and layout
 - Panels: use the `.panel` class for framed sections. Keep rounded corners at `var(--radius-panel)` and border color `var(--color-panel-border)` with the subtle inner outline.
-- Buttons: start from `.btn`; apply `.btn-primary` for golden calls-to-action and `.btn-ghost` for secondary/dismissive actions. Avoid inline styles—compose classes.
+- Buttons: start from `.btn`; apply `.btn-primary` for golden calls-to-action, `.btn-queueing` for active queue/search state, and `.btn-ghost` for secondary/dismissive actions. Avoid inline styles; compose classes.
 - Pills and groups: use `.pill-group` for horizontal stacks; prefer `.status-pill` for status text.
 - Grids: prefer `.grid-layout` for responsive card grids and `.field-row` for stacked form controls.
 

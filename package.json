@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "node --watch dist/index.js",
+    "test": "node --test test",
+    "dev": "npm run build && npm run test && node --watch dist/index.js",
     "prepare": "tsc"
   },
   "keywords": [],

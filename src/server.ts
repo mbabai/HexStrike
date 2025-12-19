@@ -67,6 +67,9 @@ export function buildServer(port: number) {
     const user = await upsertUserFromRequest(body.userId, body.username);
     const queue: QueueName = body.queue || 'quickplayQueue';
     lobby.addToQueue(user.id, queue);
+    if (queue === 'quickplayQueue') {
+      console.log(`[lobby] ${user.username} (${user.id}) joined quickplay queue`);
+    }
     return { user, lobby: lobby.serialize() };
   };
 

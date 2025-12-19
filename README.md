@@ -1,9 +1,9 @@
 # HexStrike Lobby Server
 
-HexStrike is a Node.js lobby and matchmaking skeleton with a browser UI and a server-sent events stream.
+HexStrike is a dependency-light Node.js lobby and matchmaking prototype with a browser UI, HTTP API, and Server-Sent Events (SSE) stream.
 
 ## Requirements
-- Node.js and npm
+- Node.js (18+ for `node --watch` and `node --test`) and npm
 
 ## Quick start
 1. Install dependencies:
@@ -23,22 +23,28 @@ HexStrike is a Node.js lobby and matchmaking skeleton with a browser UI and a se
 Set `PORT` to change the server port.
 
 ## Development
-Run the TypeScript compiler in watch mode, then start the server with auto-reload:
+`npm run dev` builds, runs tests, then starts the server with auto-reload. If tests fail, the server will not start.
+
+If you want TypeScript to rebuild on every change, run this in another terminal:
 ```bash
 npm run build -- --watch
-npm run dev
+```
+
+## Tests
+Run the Node.js test suite with:
+```bash
+npm run test
 ```
 
 ## Using the lobby UI
-- Click **Connect** to open the SSE stream.
-- Set **User ID** and **Username** to control your identity.
-- Join or leave queues (valid queues: `quickplayQueue`, `rankedQueue`, `botQueue`).
-- Create a custom match by entering opponent details.
-- Watch the **Lobby Snapshot** and **Event Log** panes for updates.
+- Click **Find Game** to toggle Quickplay queue search; the timer counts up while searching.
+- Clicking **Find Game** again cancels the search and leaves the queue.
+- The queue selector is a placeholder for future modes; non-Quickplay queues show an alert.
+- Sidebar links are stubs and show "Coming soon".
 
 ## API quick reference
 - `GET /events?userId=...` - SSE stream (server will assign an ID if omitted).
-- `POST /api/v1/lobby/join` - `{ userId, username, queue }`
+- `POST /api/v1/lobby/join` - `{ userId, username, queue }` (queues: `quickplayQueue`, `rankedQueue`, `botQueue`)
 - `POST /api/v1/lobby/leave` - `{ userId, queue }`
 - `POST /api/v1/lobby/clear` - `{}`
 - `POST /api/v1/match/custom` - `{ hostId, hostName, guestId, guestName }`
