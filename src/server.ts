@@ -69,6 +69,7 @@ export function buildServer(port: number) {
     return {
       connected: Array.from(sseClients.keys()),
       quickplayQueue: [...snapshot.quickplayQueue],
+      inGame: [...snapshot.inGame],
     };
   };
 

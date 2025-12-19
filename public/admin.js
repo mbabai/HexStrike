@@ -13,7 +13,7 @@ const renderEmptyState = (message) => {
   presenceRows.innerHTML = '';
   const row = document.createElement('tr');
   const cell = document.createElement('td');
-  cell.colSpan = 2;
+  cell.colSpan = 3;
   cell.className = 'empty-state';
   cell.textContent = message;
   row.appendChild(cell);
@@ -38,8 +38,13 @@ const renderRows = (rows) => {
     queueCell.className = 'queue-flag';
     queueCell.textContent = rowData.inQuickplay ? 'Q' : '';
 
+    const matchCell = document.createElement('td');
+    matchCell.className = 'queue-flag';
+    matchCell.textContent = rowData.inMatch ? 'X' : '';
+
     row.appendChild(idCell);
     row.appendChild(queueCell);
+    row.appendChild(matchCell);
     presenceRows.appendChild(row);
   });
 };
@@ -58,11 +63,17 @@ const refresh = async () => {
     const data = await fetchPresence();
     const connected = Array.isArray(data.connected) ? data.connected : [];
     const quickplayQueue = Array.isArray(data.quickplayQueue) ? data.quickplayQueue : [];
+    const inGame = Array.isArray(data.inGame) ? data.inGame : [];
     const quickplaySet = new Set(quickplayQueue);
+    const inGameSet = new Set(inGame);
     const rows = connected
       .slice()
       .sort((a, b) => a.localeCompare(b))
-      .map((userId) => ({ userId, inQuickplay: quickplaySet.has(userId) }));
+      .map((userId) => ({
+        userId,
+        inQuickplay: quickplaySet.has(userId),
+        inMatch: inGameSet.has(userId),
+      }));
 
     setCount(rows.length);
     renderRows(rows);
