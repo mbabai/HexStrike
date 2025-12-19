@@ -42,6 +42,7 @@ export interface HexCoord {
 
 export interface GameStatePublic {
   land: HexCoord[];
+  beats: Array<unknown[]>;
 }
 
 export interface GameStateSecret {

@@ -1,6 +1,8 @@
 import { GAME_CONFIG } from './game/config.js';
 import { bindControls } from './game/controls.js';
 import { createRenderer } from './game/renderer.js';
+import { createTimeIndicatorModel } from './game/timeIndicatorModel.js';
+import { createTimeIndicatorViewModel } from './game/timeIndicatorViewModel.js';
 import { applyMomentum, centerView, createPointerState, createViewState } from './game/viewState.js';
 
 export function initGame() {
@@ -10,6 +12,8 @@ export function initGame() {
 
   if (!gameArea || !canvas) return;
 
+  const timeIndicatorModel = createTimeIndicatorModel();
+  const timeIndicatorViewModel = createTimeIndicatorViewModel(timeIndicatorModel);
   const renderer = createRenderer(canvas, GAME_CONFIG);
   if (!renderer) return;
 
@@ -41,16 +45,17 @@ export function initGame() {
     gameState = event.detail;
   });
 
-  bindControls(canvas, viewState, pointerState, GAME_CONFIG);
+  bindControls(canvas, viewState, pointerState, GAME_CONFIG, timeIndicatorViewModel);
 
   const tick = (now) => {
     const dt = Math.max(0, now - lastTime);
     lastTime = now;
 
     applyMomentum(viewState, dt, GAME_CONFIG);
+    timeIndicatorViewModel.update(now);
 
     if (!gameArea.hidden) {
-      renderer.draw(viewState, gameState);
+      renderer.draw(viewState, gameState, timeIndicatorViewModel);
     }
 
     requestAnimationFrame(tick);

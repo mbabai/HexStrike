@@ -24,6 +24,7 @@ export const createInitialGameState = async (): Promise<GameState> => {
   return {
     public: {
       land: LAND_HEXES.map((tile) => ({ q: tile.q, r: tile.r })),
+      beats: [],
     },
     secret: {},
   };

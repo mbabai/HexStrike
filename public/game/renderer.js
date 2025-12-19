@@ -1,4 +1,5 @@
 import { GAME_CONFIG } from './config.js';
+import { drawTimeIndicator } from './timeIndicatorView.js';
 import { LAND_HEXES, axialToPixel, getColumnRange, getHexSize, getRowRange, getWorldBounds } from '../shared/hex.mjs';
 
 const getTheme = () => {
@@ -10,6 +11,12 @@ const getTheme = () => {
     landStroke: css.getPropertyValue('--color-hex-land-stroke').trim(),
     background: css.getPropertyValue('--color-game-surface').trim(),
     fontBody: css.getPropertyValue('--font-body').trim(),
+    panel: css.getPropertyValue('--color-panel-mid').trim(),
+    panelStrong: css.getPropertyValue('--color-panel-strong').trim(),
+    text: css.getPropertyValue('--color-text').trim(),
+    subtle: css.getPropertyValue('--color-subtle').trim(),
+    accent: css.getPropertyValue('--color-accent').trim(),
+    accentStrong: css.getPropertyValue('--color-accent-strong').trim(),
   };
 };
 
@@ -54,7 +61,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     }
   };
 
-  const draw = (viewState, gameState) => {
+  const draw = (viewState, gameState, timeIndicatorViewModel) => {
     if (!viewport.width || !viewport.height) return;
     const size = getHexSize(viewport.width, config.hexSizeFactor);
     const bounds = getWorldBounds(viewport, viewState);
@@ -84,7 +91,10 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     }
 
     const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
-    if (!land.length) return;
+    if (!land.length) {
+      drawTimeIndicator(ctx, viewport, theme, timeIndicatorViewModel);
+      return;
+    }
 
     ctx.fillStyle = theme.landFill;
     ctx.strokeStyle = theme.landStroke;
@@ -94,15 +104,18 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
       drawHex(ctx, x, y, size);
     });
 
-    if (!config.showLandCoords) return;
-    ctx.fillStyle = theme.landStroke;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = `${Math.max(10, size * 0.35)}px ${theme.fontBody}`;
-    land.forEach((tile) => {
-      const { x, y } = axialToPixel(tile.q, tile.r, size);
-      ctx.fillText(`${tile.q},${tile.r}`, x, y);
-    });
+    if (config.showLandCoords) {
+      ctx.fillStyle = theme.landStroke;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `${Math.max(10, size * 0.35)}px ${theme.fontBody}`;
+      land.forEach((tile) => {
+        const { x, y } = axialToPixel(tile.q, tile.r, size);
+        ctx.fillText(`${tile.q},${tile.r}`, x, y);
+      });
+    }
+
+    drawTimeIndicator(ctx, viewport, theme, timeIndicatorViewModel);
   };
 
   return { resize, draw, viewport };

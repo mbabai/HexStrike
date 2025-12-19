@@ -1,0 +1,61 @@
+export const createTimeIndicatorViewModel = (model) => {
+  const state = {
+    holdDirection: 0,
+    holdStart: 0,
+    lastStep: 0,
+    pointerId: null,
+    isHolding: false,
+  };
+
+  const canStep = (direction) => !(direction < 0 && model.value <= model.min);
+
+  const press = (direction, now, pointerId) => {
+    if (!canStep(direction)) return false;
+    state.holdDirection = direction;
+    state.holdStart = now;
+    state.lastStep = now;
+    state.isHolding = true;
+    state.pointerId = pointerId ?? null;
+    model.step(direction);
+    return true;
+  };
+
+  const release = (pointerId) => {
+    if (!state.isHolding) return;
+    if (pointerId != null && state.pointerId !== pointerId) return;
+    state.holdDirection = 0;
+    state.isHolding = false;
+    state.pointerId = null;
+  };
+
+  const update = (now) => {
+    if (!state.holdDirection) return;
+    const elapsed = now - state.holdStart;
+    const interval = Math.max(70, 320 - elapsed * 0.3);
+    if (now - state.lastStep >= interval) {
+      if (canStep(state.holdDirection)) {
+        model.step(state.holdDirection);
+      }
+      state.lastStep = now;
+    }
+  };
+
+  return {
+    get value() {
+      return model.value;
+    },
+    get min() {
+      return model.min;
+    },
+    get isHolding() {
+      return state.isHolding;
+    },
+    get pointerId() {
+      return state.pointerId;
+    },
+    canStep,
+    press,
+    release,
+    update,
+  };
+};

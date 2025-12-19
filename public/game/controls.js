@@ -1,9 +1,23 @@
 import { GAME_CONFIG } from './config.js';
+import { getTimeIndicatorHit, getTimeIndicatorLayout } from './timeIndicatorView.js';
 import { clamp } from './utils.js';
 
-export const bindControls = (canvas, viewState, pointerState, config = GAME_CONFIG) => {
+export const bindControls = (canvas, viewState, pointerState, config = GAME_CONFIG, timeIndicatorViewModel) => {
   const onPointerDown = (event) => {
     if (event.button !== 0) return;
+    if (timeIndicatorViewModel) {
+      const rect = canvas.getBoundingClientRect();
+      const layout = getTimeIndicatorLayout({ width: rect.width, height: rect.height });
+      const hit = getTimeIndicatorHit(layout, event.clientX - rect.left, event.clientY - rect.top);
+      if (hit) {
+        const direction = hit === 'left' ? -1 : 1;
+        const started = timeIndicatorViewModel.press(direction, performance.now(), event.pointerId);
+        if (started) {
+          canvas.setPointerCapture(event.pointerId);
+        }
+        return;
+      }
+    }
     viewState.dragging = true;
     viewState.velocity.x = 0;
     viewState.velocity.y = 0;
@@ -40,6 +54,14 @@ export const bindControls = (canvas, viewState, pointerState, config = GAME_CONF
     pointerState.id = null;
   };
 
+  const endIndicatorHold = (event) => {
+    if (!timeIndicatorViewModel?.isHolding) return;
+    timeIndicatorViewModel.release(event?.pointerId ?? null);
+    if (event && canvas.hasPointerCapture(event.pointerId)) {
+      canvas.releasePointerCapture(event.pointerId);
+    }
+  };
+
   const onWheel = (event) => {
     event.preventDefault();
     const rect = canvas.getBoundingClientRect();
@@ -58,6 +80,8 @@ export const bindControls = (canvas, viewState, pointerState, config = GAME_CONF
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerup', endDrag);
   canvas.addEventListener('pointercancel', endDrag);
+  canvas.addEventListener('pointerup', endIndicatorHold);
+  canvas.addEventListener('pointercancel', endIndicatorHold);
   canvas.addEventListener('wheel', onWheel, { passive: false });
 
   return () => {
@@ -65,6 +89,8 @@ export const bindControls = (canvas, viewState, pointerState, config = GAME_CONF
     canvas.removeEventListener('pointermove', onPointerMove);
     canvas.removeEventListener('pointerup', endDrag);
     canvas.removeEventListener('pointercancel', endDrag);
+    canvas.removeEventListener('pointerup', endIndicatorHold);
+    canvas.removeEventListener('pointercancel', endIndicatorHold);
     canvas.removeEventListener('wheel', onWheel);
   };
 };
