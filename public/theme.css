@@ -753,10 +753,16 @@ small {
   letter-spacing: 0.08em;
 }
 
-.menu-shell.menu-collapsed .menu-sidebar {
+.menu-shell.menu-collapsed .menu-sidebar,
+.menu-sidebar.is-collapsed {
+  animation: none;
   opacity: 0;
   pointer-events: none;
   transform: translateX(calc(-100% - 28px));
+}
+
+.menu-sidebar[hidden] {
+  display: none;
 }
 
 @media (max-width: 1100px) {
