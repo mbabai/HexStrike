@@ -8,6 +8,7 @@ import { MemoryDb } from './persistence/memoryDb';
 import { CHARACTER_IDS } from './game/characters';
 import { createInitialGameState } from './game/state';
 import { applyActionSetToBeats } from './game/actionSets';
+import { executeBeats } from './game/execute';
 
 interface EventPacket {
   type: string;
@@ -121,7 +122,13 @@ export function buildServer(port: number) {
 
   const ensureUserCharacter = async (user: UserDoc): Promise<UserDoc> => {
     if (user.characterId) return user;
-    return db.upsertUser({ id: user.id, username: user.username, characterId: pickRandomCharacterId() });
+    const forcedCharacter =
+      user.username === 'Anonymous1' ? 'murelious' : user.username === 'Anonymous2' ? 'monkey-queen' : null;
+    return db.upsertUser({
+      id: user.id,
+      username: user.username,
+      characterId: forcedCharacter ?? pickRandomCharacterId(),
+    });
   };
 
   const formatGameLog = (game: GameDoc, match?: MatchDoc) => {
@@ -139,7 +146,7 @@ export function buildServer(port: number) {
         const name = usernameById.get(character.userId) ?? character.userId;
         const characterLabel = character.characterName ?? character.characterId ?? 'unknown';
         const position = character.position ? `q=${character.position.q} r=${character.position.r}` : 'unknown position';
-        const facing = character.facing ? ` facing=${character.facing}` : '';
+        const facing = Number.isFinite(character.facing) ? ` facing=${character.facing}` : '';
         lines.push(`- ${name} [${characterLabel}]: ${position}${facing}`);
       });
     }
@@ -421,7 +428,9 @@ export function buildServer(port: number) {
         }
         const beats = game.state?.public?.beats ?? [];
         const updatedBeats = applyActionSetToBeats(beats, characters, userId, actions);
-        game.state.public.beats = updatedBeats;
+        const executed = executeBeats(updatedBeats, characters);
+        game.state.public.beats = executed.beats;
+        game.state.public.characters = executed.characters;
         const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
         const match = await db.findMatch(game.matchId);
         if (match) {

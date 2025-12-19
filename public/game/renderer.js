@@ -22,10 +22,14 @@ const getTheme = () => {
     queueLavender: css.getPropertyValue('--color-queue-lavender').trim(),
     damage: css.getPropertyValue('--color-damage').trim(),
     damageText: css.getPropertyValue('--color-damage-text').trim(),
+    actionAttack: css.getPropertyValue('--color-action-attack').trim(),
+    actionMove: css.getPropertyValue('--color-action-move').trim(),
+    actionJump: css.getPropertyValue('--color-action-jump').trim(),
+    actionBlock: css.getPropertyValue('--color-action-block').trim(),
   };
 };
 
-const drawHex = (ctx, x, y, size) => {
+const drawHexPath = (ctx, x, y, size) => {
   ctx.beginPath();
   for (let i = 0; i < 6; i += 1) {
     const angle = (Math.PI / 180) * (60 * i - 30);
@@ -38,6 +42,10 @@ const drawHex = (ctx, x, y, size) => {
     }
   }
   ctx.closePath();
+};
+
+const drawHex = (ctx, x, y, size) => {
+  drawHexPath(ctx, x, y, size);
   ctx.fill();
   ctx.stroke();
 };
@@ -128,6 +136,100 @@ const drawRoundedRect = (ctx, x, y, width, height, radius) => {
   ctx.closePath();
 };
 
+const drawHexEffect = (ctx, coord, size, color, alpha, scale = 1) => {
+  if (!coord) return;
+  const { x, y } = axialToPixel(coord.q, coord.r, size);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.fillStyle = color;
+  drawHexPath(ctx, x, y, size * scale);
+  ctx.fill();
+  ctx.restore();
+};
+
+const AXIAL_DIRECTIONS = [
+  { q: 1, r: 0 },
+  { q: 1, r: -1 },
+  { q: 0, r: -1 },
+  { q: -1, r: 0 },
+  { q: -1, r: 1 },
+  { q: 0, r: 1 },
+];
+
+const getHexCorners = (x, y, size) => {
+  const points = [];
+  for (let i = 0; i < 6; i += 1) {
+    const angle = (Math.PI / 180) * (60 * i - 30);
+    points.push({ x: x + size * Math.cos(angle), y: y + size * Math.sin(angle) });
+  }
+  return points;
+};
+
+const getEdgeIndexForDirection = (size, directionIndex) => {
+  const dir = AXIAL_DIRECTIONS[((directionIndex % 6) + 6) % 6] ?? AXIAL_DIRECTIONS[0];
+  const dirPixel = axialToPixel(dir.q, dir.r, size);
+  const length = Math.hypot(dirPixel.x, dirPixel.y) || 1;
+  const dirUnit = { x: dirPixel.x / length, y: dirPixel.y / length };
+  const corners = getHexCorners(0, 0, size);
+  let bestIndex = 0;
+  let bestDot = -Infinity;
+  for (let i = 0; i < 6; i += 1) {
+    const start = corners[i];
+    const end = corners[(i + 1) % 6];
+    const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+    const midLength = Math.hypot(mid.x, mid.y) || 1;
+    const midUnit = { x: mid.x / midLength, y: mid.y / midLength };
+    const dot = midUnit.x * dirUnit.x + midUnit.y * dirUnit.y;
+    if (dot > bestDot) {
+      bestDot = dot;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+};
+
+const drawBlockEdge = (ctx, coord, size, color, alpha, directionIndex) => {
+  if (!coord || directionIndex == null) return;
+  const edgeIndex = getEdgeIndexForDirection(size, directionIndex);
+  const { x, y } = axialToPixel(coord.q, coord.r, size);
+  const corners = getHexCorners(x, y, size);
+  const start = corners[edgeIndex % 6];
+  const end = corners[(edgeIndex + 1) % 6];
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(3, size * 0.2);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(start.x, start.y);
+  ctx.lineTo(end.x, end.y);
+  ctx.stroke();
+  ctx.restore();
+};
+
+const drawActionEffects = (ctx, effects, size, theme) => {
+  if (!Array.isArray(effects) || !effects.length) return;
+  effects.forEach((effect) => {
+    const alpha = typeof effect.alpha === 'number' ? effect.alpha : 0.8;
+    if (effect.type === 'attack') {
+      drawHexEffect(ctx, effect.coord, size, theme.actionAttack || theme.damage, alpha);
+    }
+    if (effect.type === 'move') {
+      drawHexEffect(ctx, effect.coord, size, theme.actionMove || theme.accent, alpha);
+    }
+    if (effect.type === 'jump') {
+      drawHexEffect(ctx, effect.coord, size, theme.actionJump || theme.queueLavender, alpha);
+    }
+    if (effect.type === 'charge') {
+      drawHexEffect(ctx, effect.coord, size, theme.actionAttack || theme.damage, alpha);
+      drawHexEffect(ctx, effect.coord, size, theme.actionMove || theme.accent, alpha, 0.45);
+    }
+    if (effect.type === 'block') {
+      drawBlockEdge(ctx, effect.coord, size, theme.actionBlock || theme.accentStrong, alpha, effect.directionIndex);
+    }
+  });
+};
+
 export const createRenderer = (canvas, config = GAME_CONFIG) => {
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
@@ -164,7 +266,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     }
   };
 
-  const draw = (viewState, gameState, timeIndicatorViewModel) => {
+  const draw = (viewState, gameState, timeIndicatorViewModel, scene) => {
     if (!viewport.width || !viewport.height) return;
     const size = getHexSize(viewport.width, config.hexSizeFactor);
     const bounds = getWorldBounds(viewport, viewState);
@@ -218,13 +320,16 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
       });
     }
 
-    const characters = gameState?.state?.public?.characters ?? [];
-    if (characters.length) {
+    const renderCharacters = scene?.characters ?? gameState?.state?.public?.characters ?? [];
+    const effects = scene?.effects ?? [];
+    drawActionEffects(ctx, effects, size, theme);
+
+    if (renderCharacters.length) {
       const metrics = getCharacterTokenMetrics(size);
       const beats = gameState?.state?.public?.beats ?? [];
       const beatIndex = beats.length ? Math.min(timeIndicatorViewModel?.value ?? 0, beats.length - 1) : -1;
       const beatLookup = beatIndex >= 0 ? beats[beatIndex] : null;
-      characters.forEach((character) => {
+      renderCharacters.forEach((character) => {
         const { x, y } = axialToPixel(character.position.q, character.position.r, size);
         const image = getCharacterArt(character.characterId);
 
@@ -234,12 +339,13 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
         const arrowPoints = getFacingArrowPoints(x, y, metrics, character.facing);
         drawFacingArrow(ctx, arrowPoints, theme.accentStrong);
 
-        if (Array.isArray(beatLookup)) {
-          const lookupKey = character.username ?? character.userId;
-          const entry = beatLookup.find((item) => item?.username === lookupKey || item?.username === character.userId);
-          const damage = typeof entry?.damage === 'number' ? entry.damage : 0;
-          drawDamageCapsule(ctx, x, y, metrics.radius, damage, theme);
-        }
+        const damage =
+          typeof character.damage === 'number'
+            ? character.damage
+            : Array.isArray(beatLookup)
+              ? beatLookup.find((item) => item?.username === character.username || item?.username === character.userId)?.damage ?? 0
+              : 0;
+        drawDamageCapsule(ctx, x, y, metrics.radius, damage, theme);
       });
     }
 

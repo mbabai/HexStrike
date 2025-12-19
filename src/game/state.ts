@@ -21,8 +21,8 @@ const loadSharedHex = () => {
 };
 
 const STARTING_CHARACTERS: Array<Omit<CharacterState, 'userId' | 'username' | 'characterId' | 'characterName'>> = [
-  { position: { q: 2, r: 0 }, facing: 'left' },
-  { position: { q: -2, r: 0 }, facing: 'right' },
+  { position: { q: 2, r: 0 }, facing: 0 },
+  { position: { q: -2, r: 0 }, facing: 180 },
 ];
 const DEFAULT_BEAT_COUNT = 1;
 const DEFAULT_ACTION = 'E';
@@ -47,6 +47,8 @@ export const createInitialGameState = async (
       priority: 0,
       damage: 0,
       location: { q: character.position.q, r: character.position.r },
+      facing: character.facing,
+      calculated: false,
     })),
   );
   return {

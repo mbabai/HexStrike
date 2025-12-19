@@ -44,7 +44,7 @@ export interface HexCoord {
 
 export type CharacterId = 'murelious' | 'monkey-queen';
 
-export type Facing = 'left' | 'right';
+export type Facing = number;
 
 export interface CharacterState {
   userId: string;
@@ -62,6 +62,8 @@ export interface BeatAction {
   priority: number;
   damage: number;
   location: HexCoord;
+  facing: Facing;
+  calculated: boolean;
 }
 
 export interface ActionSetItem {

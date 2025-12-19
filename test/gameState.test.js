@@ -13,8 +13,26 @@ test('createInitialGameState seeds starting characters', async () => {
   assert.equal(state.public.characters.length, 2);
   assert.equal(state.public.beats.length, 1);
   assert.deepEqual(state.public.beats[0], [
-    { username: 'Player A', action: 'E', rotation: '', priority: 0, damage: 0, location: { q: 2, r: 0 } },
-    { username: 'Player B', action: 'E', rotation: '', priority: 0, damage: 0, location: { q: -2, r: 0 } },
+    {
+      username: 'Player A',
+      action: 'E',
+      rotation: '',
+      priority: 0,
+      damage: 0,
+      location: { q: 2, r: 0 },
+      facing: 0,
+      calculated: false,
+    },
+    {
+      username: 'Player B',
+      action: 'E',
+      rotation: '',
+      priority: 0,
+      damage: 0,
+      location: { q: -2, r: 0 },
+      facing: 180,
+      calculated: false,
+    },
   ]);
   assert.deepEqual(state.public.characters[0], {
     userId: 'player-a',
@@ -22,7 +40,7 @@ test('createInitialGameState seeds starting characters', async () => {
     characterId: 'murelious',
     characterName: 'Murelious',
     position: { q: 2, r: 0 },
-    facing: 'left',
+    facing: 0,
   });
   assert.deepEqual(state.public.characters[1], {
     userId: 'player-b',
@@ -30,6 +48,6 @@ test('createInitialGameState seeds starting characters', async () => {
     characterId: 'monkey-queen',
     characterName: 'Monkey Queen',
     position: { q: -2, r: 0 },
-    facing: 'right',
+    facing: 180,
   });
 });

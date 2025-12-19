@@ -15,7 +15,7 @@ export const getCharacterFirstEIndex = (beats, character) => {
   if (!Array.isArray(beats) || !beats.length || !character) return 0;
   for (let i = 0; i < beats.length; i += 1) {
     const entry = getEntryForCharacter(beats[i], character);
-    if (entry && entry.action === DEFAULT_ACTION) return i;
+    if (!entry || entry.action === DEFAULT_ACTION) return i;
   }
   return Math.max(0, beats.length - 1);
 };

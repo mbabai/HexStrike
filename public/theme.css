@@ -28,6 +28,10 @@
   --color-accent-glow-strong: rgba(213, 163, 74, 0.55);
   --color-damage: #d34b42;
   --color-damage-text: #ffffff;
+  --color-action-attack: #d34b42;
+  --color-action-move: #33d06b;
+  --color-action-jump: #3da4ff;
+  --color-action-block: #f0c35a;
   --color-queue-lavender: #b9a7f2;
   --color-queue-lavender-strong: #cbb7ff;
   --color-queue-lavender-border: #a18be0;

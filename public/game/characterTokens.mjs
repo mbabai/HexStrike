@@ -23,10 +23,24 @@ export const getCharacterTokenMetrics = (size) => {
 };
 
 export const getFacingArrowPoints = (x, y, metrics, facing) => {
-  const direction = facing === 'left' ? -1 : 1;
+  const safeFacing = Number.isFinite(facing) ? facing : 0;
+  const angle = (safeFacing * Math.PI) / 180;
+  const basePoints = {
+    tip: { x: x - metrics.arrow.tip, y },
+    baseTop: { x: x - metrics.arrow.base, y: y - metrics.arrow.wing },
+    baseBottom: { x: x - metrics.arrow.base, y: y + metrics.arrow.wing },
+  };
+  const rotate = (point) => {
+    const dx = point.x - x;
+    const dy = point.y - y;
+    return {
+      x: x + dx * Math.cos(angle) - dy * Math.sin(angle),
+      y: y + dx * Math.sin(angle) + dy * Math.cos(angle),
+    };
+  };
   return {
-    tip: { x: x + direction * metrics.arrow.tip, y },
-    baseTop: { x: x + direction * metrics.arrow.base, y: y - metrics.arrow.wing },
-    baseBottom: { x: x + direction * metrics.arrow.base, y: y + metrics.arrow.wing },
+    tip: rotate(basePoints.tip),
+    baseTop: rotate(basePoints.baseTop),
+    baseBottom: rotate(basePoints.baseBottom),
   };
 };

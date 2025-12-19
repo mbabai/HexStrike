@@ -63,7 +63,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 
 ## Gotchas (current)
 - Beat entries include `damage`, `location`, and `priority` fields; tests should assert full beat payloads, not just `username`/`action`.
-- Action-set insertion is per player: replace that player's last `E`, fill empty beats in place, and avoid shifting other players' beats.
+- Action-set insertion is per player: replace that player's first open slot (missing entry or `E`), fill empty beats in place, and avoid shifting other players' beats.
 - Action-set rotations only apply to the first action entry; subsequent actions must use a blank rotation to keep timelines aligned.
 - Action buttons only enable after a rotation is selected; new buttons must be added to `public/game.js` `actionConfigs` to wire enablement + handler behavior.
 - Keep beat arrays ordered by character roster when mutating to prevent UI rows from swapping entries.

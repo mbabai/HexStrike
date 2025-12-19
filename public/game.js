@@ -7,6 +7,7 @@ import { applyMomentum, centerView, createPointerState, createViewState } from '
 import { getOrCreateUserId } from './storage.js';
 import { getTimelineMaxIndex } from './game/beatTimeline.js';
 import { buildRotationWheel } from './game/rotationWheel.js';
+import { createTimelinePlayback } from './game/timelinePlayback.js';
 
 const buildActionSet = (actions, rotation, priority) =>
   actions.map((action, index) => ({
@@ -36,6 +37,7 @@ export function initGame() {
 
   const timeIndicatorModel = createTimeIndicatorModel();
   const timeIndicatorViewModel = createTimeIndicatorViewModel(timeIndicatorModel);
+  const timelinePlayback = createTimelinePlayback();
   const renderer = createRenderer(canvas, GAME_CONFIG);
   if (!renderer) return;
 
@@ -59,7 +61,7 @@ export function initGame() {
         const name = nameMap.get(character.userId) || character.userId;
         const characterLabel = character.characterName || character.characterId || 'unknown';
         const position = character.position ? `q=${character.position.q} r=${character.position.r}` : 'unknown position';
-        const facing = character.facing ? ` facing=${character.facing}` : '';
+        const facing = Number.isFinite(character.facing) ? ` facing=${character.facing}` : '';
         lines.push(`- ${name} [${characterLabel}]: ${position}${facing}`);
       });
     }
@@ -160,7 +162,8 @@ export function initGame() {
     timeIndicatorViewModel.update(now);
 
     if (!gameArea.hidden) {
-      renderer.draw(viewState, gameState, timeIndicatorViewModel);
+      timelinePlayback.update(now, gameState, timeIndicatorViewModel.value ?? 0);
+      renderer.draw(viewState, gameState, timeIndicatorViewModel, timelinePlayback.getScene());
     }
 
     requestAnimationFrame(tick);

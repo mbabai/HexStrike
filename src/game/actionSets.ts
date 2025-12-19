@@ -5,6 +5,12 @@ const DEFAULT_ACTION = 'E';
 const cloneLocation = (location?: { q: number; r: number }) =>
   location ? { q: location.q, r: location.r } : { q: 0, r: 0 };
 
+const normalizeFacing = (facing: unknown, fallback: number) => {
+  if (typeof facing === 'number' && Number.isFinite(facing)) return facing;
+  const parsed = typeof facing === 'string' ? Number(facing) : NaN;
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
 const findEntryForUser = (beat: BeatEntry, targetUsername: string, targetUserId: string) =>
   beat.find((entry) => entry.username === targetUsername || entry.username === targetUserId);
 
@@ -15,8 +21,10 @@ const normalizeBeatEntry = (entry: BeatEntry[number], characters: CharacterState
   const damage = typeof entry.damage === 'number' ? entry.damage : 0;
   const priority = typeof entry.priority === 'number' ? entry.priority : 0;
   const location = cloneLocation(entry.location ?? character?.position);
+  const facing = normalizeFacing(entry.facing, character?.facing ?? 0);
   const rotation =
     typeof entry.rotation === 'string' || typeof entry.rotation === 'number' ? `${entry.rotation}` : '';
+  const calculated = Boolean(entry.calculated);
   return {
     ...entry,
     action: entry.action || DEFAULT_ACTION,
@@ -24,6 +32,8 @@ const normalizeBeatEntry = (entry: BeatEntry[number], characters: CharacterState
     priority,
     damage,
     location,
+    facing,
+    calculated,
   };
 };
 
@@ -47,7 +57,7 @@ const buildTargetEntry = (
   action: string,
   rotation: string,
   priority: number,
-  seed: { damage: number; location: { q: number; r: number } },
+  seed: { damage: number; location: { q: number; r: number }; facing: number },
 ) => ({
   username: target.username,
   action,
@@ -55,6 +65,8 @@ const buildTargetEntry = (
   priority,
   damage: seed.damage,
   location: cloneLocation(seed.location),
+  facing: seed.facing,
+  calculated: false,
 });
 
 export const applyActionSetToBeats = (
@@ -67,16 +79,18 @@ export const applyActionSetToBeats = (
   if (!target || !actionList.length) return beats;
 
   const updated = beats.map((beat) => beat.map((entry) => normalizeBeatEntry(entry, characters)));
-  let lastEIndex = -1;
+  let startIndex = updated.length;
   let lastTargetEntry: BeatEntry[number] | undefined;
 
-  for (let i = updated.length - 1; i >= 0; i -= 1) {
+  for (let i = 0; i < updated.length; i += 1) {
     const entry = findEntryForUser(updated[i], target.username, target.userId);
-    if (entry && !lastTargetEntry) {
-      lastTargetEntry = entry;
+    if (!entry) {
+      startIndex = i;
+      break;
     }
-    if (entry && entry.action === DEFAULT_ACTION) {
-      lastEIndex = i;
+    lastTargetEntry = entry;
+    if (entry.action === DEFAULT_ACTION) {
+      startIndex = i;
       break;
     }
   }
@@ -84,9 +98,9 @@ export const applyActionSetToBeats = (
   const seed = {
     damage: typeof lastTargetEntry?.damage === 'number' ? lastTargetEntry.damage : 0,
     location: cloneLocation(lastTargetEntry?.location ?? target.position),
+    facing: normalizeFacing(lastTargetEntry?.facing, target.facing ?? 0),
   };
 
-  const startIndex = lastEIndex >= 0 ? lastEIndex : updated.length;
   const actions = [
     ...actionList.map((item, index) => ({
       action: item.action,
@@ -113,6 +127,8 @@ export const applyActionSetToBeats = (
       entry.priority = actionItem.priority;
       entry.damage = seed.damage;
       entry.location = cloneLocation(seed.location);
+      entry.facing = seed.facing;
+      entry.calculated = false;
     } else {
       beat.push(buildTargetEntry(target, actionItem.action, actionItem.rotation, actionItem.priority, seed));
     }

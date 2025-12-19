@@ -25,12 +25,12 @@ test('facing arrow points reflect direction', async () => {
   const { getCharacterTokenMetrics, getFacingArrowPoints } = await import(moduleUrl);
   const metrics = getCharacterTokenMetrics(100);
 
-  const left = getFacingArrowPoints(0, 0, metrics, 'left');
+  const left = getFacingArrowPoints(0, 0, metrics, 0);
   assert.ok(left.tip.x < left.baseTop.x);
   assert.equal(left.baseTop.x, left.baseBottom.x);
   assert.ok(left.baseTop.x < 0);
 
-  const right = getFacingArrowPoints(0, 0, metrics, 'right');
+  const right = getFacingArrowPoints(0, 0, metrics, 180);
   assert.ok(right.tip.x > right.baseTop.x);
   assert.equal(right.baseTop.x, right.baseBottom.x);
   assert.ok(right.baseTop.x > 0);

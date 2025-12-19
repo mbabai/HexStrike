@@ -4,6 +4,7 @@ This document defines the single source of truth for HexStrike's browser UI styl
 
 ## Core palette and typography
 - Use the CSS custom properties defined in `public/theme.css` for all colors, radii, shadows, and fonts. Do **not** duplicate hex values elsewhere; extend variables only when necessary.
+- Timeline action flashes read from `--color-action-attack`, `--color-action-move`, `--color-action-jump`, and `--color-action-block`.
 - Headlines use the `var(--font-heading)` stack and body text uses `var(--font-body)`.
 - Default text color is `var(--color-text)` with `var(--color-subtle)` for helper copy.
 - Queueing states use the lavender palette (`--color-queue-lavender*`) so the Find Game button reads as a distinct state without diverging from the theme.
