@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { createLobbyStore } from './state/lobby';
 import { GameDoc, LobbySnapshot, MatchDoc, QueueName, UserDoc } from './types';
 import { MemoryDb } from './persistence/memoryDb';
+import { createInitialGameState } from './game/state';
 
 interface EventPacket {
   type: string;
@@ -97,7 +98,7 @@ export function buildServer(port: number) {
       })),
       timers: { turnSeconds: 60, incrementSeconds: 0 },
       outcome: undefined,
-      state: {},
+      state: await createInitialGameState(),
     });
   };
 
@@ -237,7 +238,7 @@ export function buildServer(port: number) {
         let type = 'text/plain';
         if (resolved.endsWith('.html')) type = 'text/html';
         if (resolved.endsWith('.css')) type = 'text/css';
-        if (resolved.endsWith('.js')) type = 'text/javascript';
+        if (resolved.endsWith('.js') || resolved.endsWith('.mjs')) type = 'text/javascript';
         res.writeHead(200, { 'Content-Type': type });
         res.end(data);
       }

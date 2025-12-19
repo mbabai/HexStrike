@@ -44,6 +44,8 @@
   --color-game-surface: var(--color-surface-1);
   --color-hex-fill: var(--color-surface-2);
   --color-hex-stroke: var(--color-link);
+  --color-hex-land-fill: #7fbf6a;
+  --color-hex-land-stroke: #0a0a0a;
   --color-surface-1-muted: rgba(15, 32, 38, 0.4);
   --color-surface-1-soft: rgba(15, 32, 38, 0.6);
   --color-surface-1-mid: rgba(15, 32, 38, 0.7);

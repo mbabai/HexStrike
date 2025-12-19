@@ -21,6 +21,7 @@ declare module 'url' {
     parseQueryString?: boolean,
     slashesDenoteHost?: boolean,
   ): { pathname?: string | null; query?: any };
+  export function pathToFileURL(path: string): URL;
 }
 
 declare module 'fs' {
@@ -36,6 +37,10 @@ declare module 'events' {
     on(event: string, listener: (...args: any[]) => void): this;
     emit(event: string, ...args: any[]): boolean;
   }
+}
+
+declare module 'path' {
+  export function join(...parts: string[]): string;
 }
 
 declare var process: {

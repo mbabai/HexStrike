@@ -35,13 +35,34 @@ export interface MatchDoc {
   updatedAt: Date;
 }
 
+export interface HexCoord {
+  q: number;
+  r: number;
+}
+
+export interface GameStatePublic {
+  land: HexCoord[];
+}
+
+export interface GameStateSecret {
+  [key: string]: unknown;
+}
+
+export interface GameState {
+  /**
+   * Public state can be shared with players and (eventually) spectators.
+   */
+  public: GameStatePublic;
+  secret: GameStateSecret;
+}
+
 export interface GameDoc {
   id: string;
   matchId: string;
   players: Array<{ userId: string; ready: boolean; turn: boolean }>;
   timers: { turnSeconds: number; incrementSeconds: number };
   outcome?: { reason: string; victorId?: string };
-  state: Record<string, unknown>;
+  state: GameState;
   createdAt: Date;
   updatedAt: Date;
 }
