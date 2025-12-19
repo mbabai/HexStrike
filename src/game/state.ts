@@ -44,6 +44,7 @@ export const createInitialGameState = async (
       username: character.username,
       action: DEFAULT_ACTION,
       rotation: '',
+      priority: 0,
       damage: 0,
       location: { q: character.position.q, r: character.position.r },
     })),

@@ -73,16 +73,18 @@ export function buildServer(port: number) {
     if (!Array.isArray(actionList)) return null;
     const normalized = actionList.map((item) => {
       if (typeof item === 'string') {
-        return { action: item.trim(), rotation: '' };
+        return { action: item.trim(), rotation: '', priority: 0 };
       }
       if (!item || typeof item !== 'object') {
-        return { action: '', rotation: '' };
+        return { action: '', rotation: '', priority: 0 };
       }
       const action = typeof item.action === 'string' ? item.action.trim() : '';
       const rotationRaw = item.rotation;
       const rotation =
         typeof rotationRaw === 'string' || typeof rotationRaw === 'number' ? `${rotationRaw}`.trim() : '';
-      return { action, rotation };
+      const priorityRaw = (item as { priority?: unknown }).priority;
+      const priority = typeof priorityRaw === 'number' && Number.isFinite(priorityRaw) ? priorityRaw : 0;
+      return { action, rotation, priority };
     });
     if (!normalized.length || normalized.some((action) => !action.action)) return null;
     return normalized;

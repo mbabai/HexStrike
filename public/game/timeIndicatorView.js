@@ -6,6 +6,8 @@ const VISIBLE_BEAT_RADIUS = 6;
 const TIMELINE_OFFSETS = Array.from({ length: VISIBLE_BEAT_RADIUS * 2 + 1 }, (_, index) => index - VISIBLE_BEAT_RADIUS);
 const actionArt = new Map();
 const characterArt = new Map();
+const priorityIcon = new Image();
+priorityIcon.src = '/public/images/priority.webp';
 
 const getActionArt = (action) => {
   const key = action || ACTION_ICON_FALLBACK;
@@ -200,6 +202,10 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState) =>
       const imageX = xPos - iconSize / 2;
       const imageY = rowCenterY - iconSize / 2;
       ctx.drawImage(image, imageX, imageY, iconSize, iconSize);
+      if (action && action !== 'E' && action !== ACTION_ICON_FALLBACK) {
+        const priorityValue = Number.isFinite(entry?.priority) ? entry.priority : 0;
+        drawPriorityBadge(ctx, imageX, imageY, iconSize, priorityValue, theme);
+      }
       const rotation = entry?.rotation;
       if (rotation !== undefined && rotation !== null && rotation !== '') {
         drawRotationBadge(ctx, imageX, imageY, iconSize, `${rotation}`, theme);
@@ -307,6 +313,26 @@ const drawRotationBadge = (ctx, x, y, size, rotation, theme) => {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(rotation, centerX, centerY + radius * 0.05);
+  ctx.restore();
+};
+
+const drawPriorityBadge = (ctx, x, y, size, priority, theme) => {
+  const radius = Math.max(6, size * 0.22);
+  const padding = Math.max(2, size * 0.05);
+  const centerX = x + size - radius - padding;
+  const centerY = y + size - radius - padding;
+  const fontSize = Math.max(9, radius * 1.05);
+
+  if (priorityIcon.complete && priorityIcon.naturalWidth > 0) {
+    ctx.drawImage(priorityIcon, centerX - radius, centerY - radius, radius * 2, radius * 2);
+  }
+
+  ctx.save();
+  ctx.fillStyle = '#000000';
+  ctx.font = `600 ${fontSize}px ${theme.fontBody}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`${priority}`, centerX, centerY + radius * 0.05);
   ctx.restore();
 };
 

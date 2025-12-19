@@ -59,6 +59,7 @@ export interface BeatAction {
   username: string;
   action: string;
   rotation: string;
+  priority: number;
   damage: number;
   location: HexCoord;
 }
@@ -66,6 +67,7 @@ export interface BeatAction {
 export interface ActionSetItem {
   action: string;
   rotation: string;
+  priority: number;
 }
 
 export type BeatEntry = BeatAction[];

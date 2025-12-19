@@ -13,6 +13,7 @@ const normalizeBeatEntry = (entry: BeatEntry[number], characters: CharacterState
     (candidate) => candidate.username === entry.username || candidate.userId === entry.username,
   );
   const damage = typeof entry.damage === 'number' ? entry.damage : 0;
+  const priority = typeof entry.priority === 'number' ? entry.priority : 0;
   const location = cloneLocation(entry.location ?? character?.position);
   const rotation =
     typeof entry.rotation === 'string' || typeof entry.rotation === 'number' ? `${entry.rotation}` : '';
@@ -20,6 +21,7 @@ const normalizeBeatEntry = (entry: BeatEntry[number], characters: CharacterState
     ...entry,
     action: entry.action || DEFAULT_ACTION,
     rotation,
+    priority,
     damage,
     location,
   };
@@ -44,11 +46,13 @@ const buildTargetEntry = (
   target: CharacterState,
   action: string,
   rotation: string,
+  priority: number,
   seed: { damage: number; location: { q: number; r: number } },
 ) => ({
   username: target.username,
   action,
   rotation,
+  priority,
   damage: seed.damage,
   location: cloneLocation(seed.location),
 });
@@ -87,8 +91,9 @@ export const applyActionSetToBeats = (
     ...actionList.map((item, index) => ({
       action: item.action,
       rotation: index === 0 ? item.rotation : '',
+      priority: item.priority,
     })),
-    { action: DEFAULT_ACTION, rotation: '' },
+    { action: DEFAULT_ACTION, rotation: '', priority: 0 },
   ];
 
   const ensureBeat = (index: number) => {
@@ -105,10 +110,11 @@ export const applyActionSetToBeats = (
     if (entry) {
       entry.action = actionItem.action;
       entry.rotation = actionItem.rotation;
+      entry.priority = actionItem.priority;
       entry.damage = seed.damage;
       entry.location = cloneLocation(seed.location);
     } else {
-      beat.push(buildTargetEntry(target, actionItem.action, actionItem.rotation, seed));
+      beat.push(buildTargetEntry(target, actionItem.action, actionItem.rotation, actionItem.priority, seed));
     }
     if (beat.length > 1) {
       sortBeatEntries(beat, characters);

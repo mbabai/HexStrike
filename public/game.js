@@ -8,10 +8,11 @@ import { getOrCreateUserId } from './storage.js';
 import { getTimelineMaxIndex } from './game/beatTimeline.js';
 import { buildRotationWheel } from './game/rotationWheel.js';
 
-const buildActionSet = (actions, rotation) =>
+const buildActionSet = (actions, rotation, priority) =>
   actions.map((action, index) => ({
     action,
     rotation: index === 0 ? rotation : '',
+    priority,
   }));
 
 export function initGame() {
@@ -128,7 +129,7 @@ export function initGame() {
     moveButton.addEventListener('click', async () => {
       try {
         if (selectedRotation === null) return;
-        await sendActionSet(buildActionSet(['W', 'm', 'W'], selectedRotation));
+        await sendActionSet(buildActionSet(['W', 'm', 'W'], selectedRotation, 30));
       } catch (err) {
         console.error('Failed to send move action set', err);
       }
@@ -139,7 +140,7 @@ export function initGame() {
     attackButton.addEventListener('click', async () => {
       try {
         if (selectedRotation === null) return;
-        await sendActionSet(buildActionSet(['W', 'a-La-Ra', 'W', 'W'], selectedRotation));
+        await sendActionSet(buildActionSet(['W', 'a-La-Ra', 'W', 'W'], selectedRotation, 90));
       } catch (err) {
         console.error('Failed to send attack action set', err);
       }
