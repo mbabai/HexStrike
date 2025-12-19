@@ -19,8 +19,17 @@ export function initGame() {
   const gameArea = document.getElementById('gameArea');
   const canvas = document.getElementById('gameCanvas');
   const menuMatch = document.querySelector('.menu-match');
-  const moveButton = document.getElementById('actionMove');
-  const attackButton = document.getElementById('actionAttack');
+  const actionConfigs = [
+    { id: 'actionMove', label: 'move', actions: ['W', 'm', 'W'], priority: 30 },
+    { id: 'actionAttack', label: 'attack', actions: ['W', 'a-La-Ra', 'W', 'W'], priority: 90 },
+    { id: 'actionBlock', label: 'block', actions: ['W', 'b-Lb-Rb', 'b-Lb-Rb'], priority: 99 },
+    { id: 'actionCharge', label: 'charge', actions: ['W', 'c', 'W', 'W', 'W'], priority: 75 },
+    { id: 'actionJump', label: 'jump', actions: ['2j', 'W', 'W', 'W'], priority: 20 },
+  ];
+  const actionButtons = actionConfigs.map((config) => ({
+    ...config,
+    element: document.getElementById(config.id),
+  }));
   const rotationWheel = document.getElementById('rotationWheel');
 
   if (!gameArea || !canvas) return;
@@ -83,8 +92,9 @@ export function initGame() {
 
   const updateActionButtonsEnabled = () => {
     const enabled = Boolean(gameId) && selectedRotation !== null;
-    if (moveButton) moveButton.disabled = !enabled;
-    if (attackButton) attackButton.disabled = !enabled;
+    actionButtons.forEach((button) => {
+      if (button.element) button.element.disabled = !enabled;
+    });
   };
 
   const sendActionSet = async (actionList) => {
@@ -125,27 +135,19 @@ export function initGame() {
     updateActionButtonsEnabled();
   });
 
-  if (moveButton) {
-    moveButton.addEventListener('click', async () => {
+  const bindActionButton = (button) => {
+    if (!button.element) return;
+    button.element.addEventListener('click', async () => {
       try {
         if (selectedRotation === null) return;
-        await sendActionSet(buildActionSet(['W', 'm', 'W'], selectedRotation, 30));
+        await sendActionSet(buildActionSet(button.actions, selectedRotation, button.priority));
       } catch (err) {
-        console.error('Failed to send move action set', err);
+        console.error(`Failed to send ${button.label} action set`, err);
       }
     });
-  }
+  };
 
-  if (attackButton) {
-    attackButton.addEventListener('click', async () => {
-      try {
-        if (selectedRotation === null) return;
-        await sendActionSet(buildActionSet(['W', 'a-La-Ra', 'W', 'W'], selectedRotation, 90));
-      } catch (err) {
-        console.error('Failed to send attack action set', err);
-      }
-    });
-  }
+  actionButtons.forEach(bindActionButton);
 
   updateActionButtonsEnabled();
   bindControls(canvas, viewState, pointerState, GAME_CONFIG, timeIndicatorViewModel);

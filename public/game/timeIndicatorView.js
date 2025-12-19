@@ -293,8 +293,9 @@ const drawRowSeparator = (ctx, layout, numberArea, y, color) => {
 const drawRotationBadge = (ctx, x, y, size, rotation, theme) => {
   const radius = Math.max(6, size * 0.22);
   const padding = Math.max(2, size * 0.05);
+  const badgeOffset = Math.max(4, size * 0.25);
   const centerX = x + radius + padding;
-  const centerY = y + radius + padding;
+  const centerY = y + radius + padding - badgeOffset;
   const fontSize = Math.max(9, radius * 1.1);
   const borderColor = theme.textDark || theme.text;
   const fillColor = theme.text;
@@ -319,8 +320,9 @@ const drawRotationBadge = (ctx, x, y, size, rotation, theme) => {
 const drawPriorityBadge = (ctx, x, y, size, priority, theme) => {
   const radius = Math.max(6, size * 0.22);
   const padding = Math.max(2, size * 0.05);
+  const badgeOffset = Math.max(4, size * 0.25);
   const centerX = x + size - radius - padding;
-  const centerY = y + size - radius - padding;
+  const centerY = y + size - radius - padding + badgeOffset;
   const fontSize = Math.max(9, radius * 1.05);
 
   if (priorityIcon.complete && priorityIcon.naturalWidth > 0) {

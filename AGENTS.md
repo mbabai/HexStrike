@@ -7,6 +7,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - Server: dependency-light Node.js + TypeScript HTTP server in `src/server.ts` with REST endpoints and SSE (`GET /events`).
 - State: lobby queues (`quickplayQueue`, `rankedQueue`, `botQueue`) and in-memory match/game records via `src/state/lobby.ts` and `src/persistence/memoryDb.ts`; games now include starting characters assigned on queue join.
 - UI: static assets in `public/` with ES module scripts (`public/menu.js`, `public/queue.js`, `public/storage.js`) and styling in `public/theme.css`.
+- UI action buttons for gameplay live in `public/index.html` and are wired via `actionConfigs` in `public/game.js`.
 - Matchmaking: Quickplay join/leave is wired from the UI; other queue options are placeholders.
 
 # Documentation map (start here)
@@ -64,6 +65,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Beat entries include `damage`, `location`, and `priority` fields; tests should assert full beat payloads, not just `username`/`action`.
 - Action-set insertion is per player: replace that player's last `E`, fill empty beats in place, and avoid shifting other players' beats.
 - Action-set rotations only apply to the first action entry; subsequent actions must use a blank rotation to keep timelines aligned.
+- Action buttons only enable after a rotation is selected; new buttons must be added to `public/game.js` `actionConfigs` to wire enablement + handler behavior.
 - Keep beat arrays ordered by character roster when mutating to prevent UI rows from swapping entries.
 - Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
 - Node test runner reads from `dist`; run `npm run build` (or `tsc`) before `node --test test` when working on TS source.
