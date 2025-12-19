@@ -53,9 +53,16 @@ export interface CharacterState {
   facing: Facing;
 }
 
+export interface BeatAction {
+  userId: string;
+  action: string;
+}
+
+export type BeatEntry = BeatAction[];
+
 export interface GameStatePublic {
   land: HexCoord[];
-  beats: Array<unknown[]>;
+  beats: BeatEntry[];
   characters: CharacterState[];
 }
 

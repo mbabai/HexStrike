@@ -20,8 +20,13 @@ export function buildServer(port: number) {
   const matchDisconnects = new Map<string, Set<string>>();
   const winsRequired = 3;
   const characterIds: CharacterId[] = ['murelious', 'monkey-queen'];
+  let anonymousCounter = 0;
 
   const pickRandomCharacterId = () => characterIds[Math.floor(Math.random() * characterIds.length)];
+  const nextAnonymousName = () => {
+    anonymousCounter += 1;
+    return `Anonymous${anonymousCounter}`;
+  };
 
   const sendEvent = (packet: EventPacket, targetId?: string) => {
     const entries: Array<[string, ServerResponse | undefined]> = targetId
@@ -64,17 +69,33 @@ export function buildServer(port: number) {
 
   const notFound = (res: ServerResponse) => respondJson(res, 404, { error: 'Not found' });
 
-  const getPresenceSnapshot = () => {
+  const getPresenceSnapshot = async () => {
     const snapshot = lobby.serialize();
+    const connectedIds = Array.from(sseClients.keys());
+    const connectedUsers = await Promise.all(
+      connectedIds.map(async (userId) => {
+        const user = await upsertUserFromRequest(userId);
+        return { userId, username: user.username };
+      }),
+    );
     return {
-      connected: Array.from(sseClients.keys()),
+      connected: connectedUsers,
       quickplayQueue: [...snapshot.quickplayQueue],
       inGame: [...snapshot.inGame],
     };
   };
 
   const upsertUserFromRequest = async (userId?: string, username?: string): Promise<UserDoc> => {
-    return db.upsertUser({ id: userId, username: username || userId || randomUUID(), elo: 1000 });
+    if (userId) {
+      const existing = await db.findUser(userId);
+      if (existing) {
+        if (username && existing.username !== username) {
+          return db.upsertUser({ id: userId, username });
+        }
+        return existing;
+      }
+    }
+    return db.upsertUser({ id: userId, username: username || nextAnonymousName(), elo: 1000 });
   };
 
   const ensureUserCharacter = async (user: UserDoc): Promise<UserDoc> => {
@@ -122,7 +143,7 @@ export function buildServer(port: number) {
   };
 
   const createMatchWithUsers = async (users: Array<{ id: string; username?: string }>) => {
-    const resolved = await Promise.all(users.map((user) => upsertUserFromRequest(user.id, user.username || user.id)));
+    const resolved = await Promise.all(users.map((user) => upsertUserFromRequest(user.id, user.username)));
     const withCharacters = await Promise.all(resolved.map((user) => ensureUserCharacter(user)));
     lobby.markInGame(withCharacters.map((user) => user.id));
     const match = await db.createMatch({
@@ -216,7 +237,7 @@ export function buildServer(port: number) {
     return match;
   };
 
-  const serveEvents = (req: IncomingMessage, res: ServerResponse) => {
+  const serveEvents = async (req: IncomingMessage, res: ServerResponse) => {
     const { query } = parse(req.url || '', true);
     const userId = (query.userId as string) || randomUUID();
     res.writeHead(200, {
@@ -225,7 +246,8 @@ export function buildServer(port: number) {
       'Cache-Control': 'no-cache',
       'Access-Control-Allow-Origin': '*',
     });
-    res.write(`data: ${JSON.stringify({ type: 'connected', payload: { userId, lobby: lobby.serialize() } })}\n\n`);
+    const user = await upsertUserFromRequest(userId);
+    res.write(`data: ${JSON.stringify({ type: 'connected', payload: { userId, username: user.username, lobby: lobby.serialize() } })}\n\n`);
     sseClients.set(userId, res);
     pendingInvites.delete(userId);
     void sendActiveMatchState(userId);
@@ -281,7 +303,7 @@ export function buildServer(port: number) {
         return respondJson(res, 200, lobby.serialize());
       }
       if (req.method === 'GET' && pathname === '/api/v1/lobby/admin') {
-        return respondJson(res, 200, getPresenceSnapshot());
+        return respondJson(res, 200, await getPresenceSnapshot());
       }
       if (req.method === 'POST' && pathname === '/api/v1/lobby/join') {
         try {

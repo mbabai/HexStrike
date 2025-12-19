@@ -1,32 +1,109 @@
+import { CHARACTER_IMAGE_SOURCES, CHARACTER_TOKEN_STYLE } from './characterTokens.mjs';
+
 const DEFAULT_BORDER_SIZE = { width: 280, height: 64 };
+const ACTION_ICON_FALLBACK = 'empty';
+const actionArt = new Map();
+const characterArt = new Map();
+
+const getActionArt = (action) => {
+  const key = action || ACTION_ICON_FALLBACK;
+  if (actionArt.has(key)) return actionArt.get(key);
+  const image = new Image();
+  image.src = `/public/images/${key}.png`;
+  actionArt.set(key, image);
+  return image;
+};
+
+const getCharacterArt = (characterId) => {
+  if (!characterId) return null;
+  if (characterArt.has(characterId)) return characterArt.get(characterId);
+  const src = CHARACTER_IMAGE_SOURCES[characterId];
+  if (!src) return null;
+  const image = new Image();
+  image.src = src;
+  characterArt.set(characterId, image);
+  return image;
+};
 
 export const getTimeIndicatorLayout = (viewport) => {
   const padding = viewport.width < 520 ? 8 : 12;
   const maxWidth = Math.max(180, viewport.width - padding * 4);
   const borderWidth = DEFAULT_BORDER_SIZE.width;
   const borderHeight = DEFAULT_BORDER_SIZE.height;
-  const scale = Math.min(1, maxWidth / borderWidth) * 0.75;
-  const width = borderWidth * scale;
-  const height = borderHeight * scale;
-  const x = (viewport.width - width) / 2;
+  let scale = Math.min(1, maxWidth / borderWidth);
+  let width = borderWidth * scale;
+  let actionHeight = borderHeight * scale;
+  let timeHeight = actionHeight * 0.7;
+  let portraitOverlap = Math.max(2, actionHeight * 0.8);
+  let groupWidth = width + actionHeight - portraitOverlap;
+  const maxGroupWidth = Math.max(0, viewport.width - padding * 2);
+
+  if (maxGroupWidth && groupWidth > maxGroupWidth) {
+    const adjust = maxGroupWidth / groupWidth;
+    scale *= adjust;
+    width = borderWidth * scale;
+    actionHeight = borderHeight * scale * 1.5;
+    timeHeight = actionHeight * 0.5;
+    portraitOverlap = Math.max(2, actionHeight * 0.08);
+    groupWidth = width + actionHeight - portraitOverlap;
+  }
+
+  const groupX = (viewport.width - groupWidth) / 2;
+  const x = groupX + actionHeight - portraitOverlap;
   const y = padding;
-  const arrowWidth = Math.max(24, height * 0.4);
-  const innerPadding = Math.max(8, height * 0.16);
+  const arrowWidth = Math.max(30, actionHeight * 0.25);
+  const innerPadding = Math.max(6, actionHeight * 0.12);
   const numberArea = {
-    x: x + arrowWidth,
-    y: y + innerPadding * 0.5,
-    width: width - arrowWidth * 2,
-    height: height - innerPadding,
+    x: x + arrowWidth * 0.7,
+    y,
+    width: width - arrowWidth * 1.4,
+    height: timeHeight,
   };
-  const leftArrow = { x, y, width: arrowWidth, height };
+  const leftArrow = { x, y, width: arrowWidth, height: timeHeight };
   const rightArrow = {
     x: x + width - arrowWidth,
     y,
     width: arrowWidth,
-    height,
+    height: timeHeight,
+  };
+  const portraitRadius = actionHeight / 2;
+  const portraitBorderWidth = Math.max(1.5, portraitRadius * CHARACTER_TOKEN_STYLE.borderFactor);
+
+  return {
+    x,
+    y,
+    width,
+    timeHeight,
+    actionHeight,
+    leftArrow,
+    rightArrow,
+    numberArea,
+    arrowWidth,
+    innerPadding,
+    portraitOverlap,
+    portraitSize: actionHeight,
+    portraitBorderWidth,
+  };
+};
+
+const getRowLayout = (layout, rowIndex) => {
+  const rowHeight = rowIndex === 0 ? layout.timeHeight : layout.actionHeight;
+  const y = rowIndex === 0 ? layout.y : layout.y + layout.timeHeight + (rowIndex - 1) * layout.actionHeight;
+  const numberArea = {
+    x: layout.x + layout.arrowWidth * 0.7,
+    y,
+    width: layout.width - layout.arrowWidth * 1.4,
+    height: rowHeight,
+  };
+  const leftArrow = { x: layout.x, y, width: layout.arrowWidth, height: rowHeight };
+  const rightArrow = {
+    x: layout.x + layout.width - layout.arrowWidth,
+    y,
+    width: layout.arrowWidth,
+    height: rowHeight,
   };
 
-  return { x, y, width, height, leftArrow, rightArrow, numberArea };
+  return { y, rowHeight, numberArea, leftArrow, rightArrow };
 };
 
 export const getTimeIndicatorHit = (layout, x, y) => {
@@ -36,43 +113,35 @@ export const getTimeIndicatorHit = (layout, x, y) => {
   return null;
 };
 
-export const drawTimeIndicator = (ctx, viewport, theme, viewModel) => {
+export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState) => {
   const layout = getTimeIndicatorLayout(viewport);
   if (!layout) return;
 
   ctx.setTransform(viewport.dpr, 0, 0, viewport.dpr, 0, 0);
 
-  const { x, y, width, height, leftArrow, rightArrow, numberArea } = layout;
   const value = viewModel?.value ?? 0;
   const leftDisabled = viewModel?.canStep ? !viewModel.canStep(-1) : value === 0;
+  const offsets = [-2, -1, 0, 1, 2];
 
-  const numberPadding = Math.max(4, numberArea.height * 0.18);
-  const numberBg = {
-    x: numberArea.x + numberPadding * 0.2,
-    y: numberArea.y + numberPadding * 0.35,
-    width: numberArea.width - numberPadding * 0.4,
-    height: numberArea.height - numberPadding * 0.7,
-  };
-  ctx.fillStyle = '#000000';
-  drawRoundedRect(ctx, numberBg.x, numberBg.y, numberBg.width, numberBg.height, Math.min(10, numberBg.height * 0.35));
-  ctx.fill();
+  const topRow = getRowLayout(layout, 0);
+  drawNumberWell(ctx, topRow.numberArea, theme.queueLavender || theme.panel);
 
-  const fontSize = Math.max(12, numberArea.height * 0.47);
+  const fontSize = Math.max(12, topRow.numberArea.height * 0.47);
   ctx.font = `${fontSize}px ${theme.fontBody}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  const centerX = numberArea.x + numberArea.width / 2;
-  const centerY = numberArea.y + numberArea.height / 2;
-  const spacing = Math.max(26, numberArea.height * 0.72);
-  const offsets = [-2, -1, 0, 1, 2];
+  const centerX = topRow.numberArea.x + topRow.numberArea.width / 2;
+  const centerY = topRow.numberArea.y + topRow.numberArea.height / 2;
+  const spacingTarget = Math.max(26, layout.actionHeight * 0.72);
+  const spacing = Math.min(spacingTarget, topRow.numberArea.width / 4);
 
   offsets.forEach((offset) => {
     const target = value + offset;
     if (target < 0) return;
     const xPos = centerX + offset * spacing;
-    const alpha = offset === 0 ? 1 : 0.28 + Math.max(0, 0.4 - Math.abs(offset) * 0.08);
-    ctx.fillStyle = offset === 0 ? theme.accentStrong : theme.subtle;
+    const alpha = offset === 0 ? 1 : 0.9;
+    ctx.fillStyle = offset === 0 ? theme.accentStrong : theme.text;
     ctx.globalAlpha = alpha;
     ctx.fillText(`${target}`.padStart(2, '0'), xPos, centerY);
   });
@@ -80,16 +149,121 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel) => {
   ctx.globalAlpha = 1;
   if (leftDisabled) {
     ctx.strokeStyle = theme.subtle;
-    ctx.lineWidth = Math.max(1, height * 0.04);
+    ctx.lineWidth = Math.max(1, topRow.numberArea.height * 0.04);
     ctx.beginPath();
-    ctx.moveTo(numberArea.x + 2, numberArea.y + numberArea.height * 0.2);
-    ctx.lineTo(numberArea.x + 2, numberArea.y + numberArea.height * 0.8);
+    ctx.moveTo(topRow.numberArea.x + 2, topRow.numberArea.y + topRow.numberArea.height * 0.2);
+    ctx.lineTo(topRow.numberArea.x + 2, topRow.numberArea.y + topRow.numberArea.height * 0.8);
     ctx.stroke();
   }
 
   const arrowColor = theme.accentStrong || '#d5a34a';
-  drawArrow(ctx, leftArrow, 'left', arrowColor, leftDisabled ? 0.35 : 0.95);
-  drawArrow(ctx, rightArrow, 'right', arrowColor, 0.95);
+  drawArrow(ctx, topRow.leftArrow, 'left', arrowColor, leftDisabled ? 0.35 : 0.95);
+  drawArrow(ctx, topRow.rightArrow, 'right', arrowColor, 0.95);
+
+  const characters = gameState?.state?.public?.characters ?? [];
+  if (!characters.length) return;
+
+  const beats = gameState?.state?.public?.beats ?? [];
+  const beatLookup = beats.map((beat) => {
+    const map = new Map();
+    if (!Array.isArray(beat)) return map;
+    beat.forEach((entry) => {
+      if (!entry || typeof entry !== 'object') return;
+      const userId = entry.userId ?? entry.userID;
+      if (!userId) return;
+      map.set(userId, entry.action);
+    });
+    return map;
+  });
+
+  const separators = [{ numberArea: topRow.numberArea, y: topRow.y + topRow.rowHeight }];
+
+  characters.forEach((character, index) => {
+    const row = getRowLayout(layout, index + 1);
+    drawNumberWell(ctx, row.numberArea, theme.queueLavender || theme.panel);
+
+    const rowCenterX = row.numberArea.x + row.numberArea.width / 2;
+    const rowCenterY = row.numberArea.y + row.numberArea.height / 2;
+    const rowSpacing = spacing;
+    const iconSize = Math.min(row.numberArea.height * 0.82, rowSpacing * 0.8);
+
+    offsets.forEach((offset) => {
+      const beatIndex = value + offset;
+      if (beatIndex < 0) return;
+      const action = beatLookup[beatIndex]?.get(character.userId) ?? ACTION_ICON_FALLBACK;
+      const image = getActionArt(action);
+      if (!image || !image.complete || image.naturalWidth === 0) return;
+      const xPos = rowCenterX + offset * rowSpacing;
+      const alpha = offset === 0 ? 1 : Math.max(0.18, 0.5 - Math.abs(offset) * 0.2);
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(image, xPos - iconSize / 2, rowCenterY - iconSize / 2, iconSize, iconSize);
+    });
+    ctx.globalAlpha = 1;
+
+    const portraitRadius = layout.portraitSize / 2;
+    const portraitX = layout.x - portraitRadius + layout.portraitOverlap;
+    const portraitY = row.y + layout.actionHeight / 2;
+    const portraitImage = getCharacterArt(character.characterId);
+    drawCharacterPortrait(ctx, portraitImage, portraitX, portraitY, portraitRadius, theme.panelStrong);
+    drawCharacterRing(ctx, portraitX, portraitY, portraitRadius, layout.portraitBorderWidth, theme.accentStrong);
+
+    if (index === characters.length - 1) return;
+    separators.push({ numberArea: row.numberArea, y: row.y + row.rowHeight });
+  });
+
+  separators.forEach((separator) => {
+    drawRowSeparator(ctx, layout, separator.numberArea, separator.y, theme.accentStrong);
+  });
+};
+
+const drawCharacterPortrait = (ctx, image, x, y, radius, fillColor) => {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+  ctx.clip();
+
+  if (image && image.complete && image.naturalWidth > 0) {
+    const minSide = Math.min(image.naturalWidth, image.naturalHeight);
+    const scale = (radius * 2) / minSide;
+    const drawWidth = image.naturalWidth * scale;
+    const drawHeight = image.naturalHeight * scale;
+    ctx.drawImage(image, x - drawWidth / 2, y - drawHeight / 2, drawWidth, drawHeight);
+  }
+
+  ctx.restore();
+};
+
+const drawCharacterRing = (ctx, x, y, radius, borderWidth, color) => {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = borderWidth;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.stroke();
+};
+
+const drawNumberWell = (ctx, numberArea, fillColor) => {
+  ctx.fillStyle = fillColor || '#000000';
+  drawRoundedRect(
+    ctx,
+    numberArea.x,
+    numberArea.y,
+    numberArea.width,
+    numberArea.height,
+    Math.min(12, numberArea.height * 0.4),
+  );
+  ctx.fill();
+};
+
+const drawRowSeparator = (ctx, layout, numberArea, y, color) => {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = layout.portraitBorderWidth;
+  ctx.beginPath();
+  ctx.moveTo(numberArea.x, y);
+  ctx.lineTo(numberArea.x + numberArea.width, y);
+  ctx.stroke();
 };
 
 const isPointInRect = (x, y, rect) =>
@@ -98,7 +272,7 @@ const isPointInRect = (x, y, rect) =>
 const drawArrow = (ctx, rect, direction, color, alpha) => {
   const cx = rect.x + rect.width / 2;
   const cy = rect.y + rect.height / 2;
-  const size = Math.min(rect.width, rect.height) * 0.25;
+  const size = Math.min(rect.width, rect.height) * 0.4;
   ctx.fillStyle = color;
   ctx.globalAlpha = alpha;
   ctx.beginPath();

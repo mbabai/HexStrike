@@ -23,16 +23,22 @@ const STARTING_CHARACTERS: Array<Omit<CharacterState, 'userId' | 'characterId'>>
   { position: { q: 2, r: 0 }, facing: 'left' },
   { position: { q: -2, r: 0 }, facing: 'right' },
 ];
+const DEFAULT_BEAT_COUNT = 10;
+const DEFAULT_ACTION = 'E';
 
 export const createInitialGameState = async (
   players: Array<{ userId: string; characterId: CharacterState['characterId'] }> = [],
 ): Promise<GameState> => {
   const { LAND_HEXES } = await loadSharedHex();
+  const roster = players.slice(0, STARTING_CHARACTERS.length);
+  const beats = Array.from({ length: roster.length ? DEFAULT_BEAT_COUNT : 0 }, () =>
+    roster.map((player) => ({ userId: player.userId, action: DEFAULT_ACTION })),
+  );
   return {
     public: {
       land: LAND_HEXES.map((tile) => ({ q: tile.q, r: tile.r })),
-      beats: [],
-      characters: players.slice(0, STARTING_CHARACTERS.length).map((player, index) => ({
+      beats,
+      characters: roster.map((player, index) => ({
         userId: player.userId,
         characterId: player.characterId,
         ...STARTING_CHARACTERS[index],

@@ -18,6 +18,7 @@ const getTheme = () => {
     subtle: css.getPropertyValue('--color-subtle').trim(),
     accent: css.getPropertyValue('--color-accent').trim(),
     accentStrong: css.getPropertyValue('--color-accent-strong').trim(),
+    queueLavender: css.getPropertyValue('--color-queue-lavender').trim(),
   };
 };
 
@@ -143,7 +144,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
 
     const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
     if (!land.length) {
-      drawTimeIndicator(ctx, viewport, theme, timeIndicatorViewModel);
+      drawTimeIndicator(ctx, viewport, theme, timeIndicatorViewModel, gameState);
       return;
     }
 
@@ -181,7 +182,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
       });
     }
 
-    drawTimeIndicator(ctx, viewport, theme, timeIndicatorViewModel);
+    drawTimeIndicator(ctx, viewport, theme, timeIndicatorViewModel, gameState);
   };
 
   return { resize, draw, viewport };

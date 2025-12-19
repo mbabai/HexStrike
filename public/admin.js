@@ -32,7 +32,7 @@ const renderRows = (rows) => {
     const row = document.createElement('tr');
 
     const idCell = document.createElement('td');
-    idCell.textContent = rowData.userId;
+    idCell.textContent = rowData.username;
 
     const queueCell = document.createElement('td');
     queueCell.className = 'queue-flag';
@@ -67,12 +67,21 @@ const refresh = async () => {
     const quickplaySet = new Set(quickplayQueue);
     const inGameSet = new Set(inGame);
     const rows = connected
-      .slice()
-      .sort((a, b) => a.localeCompare(b))
-      .map((userId) => ({
-        userId,
-        inQuickplay: quickplaySet.has(userId),
-        inMatch: inGameSet.has(userId),
+      .map((entry) => {
+        if (typeof entry === 'string') {
+          return { userId: entry, username: entry };
+        }
+        return {
+          userId: entry.userId,
+          username: entry.username || entry.userId,
+        };
+      })
+      .sort((a, b) => a.username.localeCompare(b.username))
+      .map((user) => ({
+        userId: user.userId,
+        username: user.username,
+        inQuickplay: quickplaySet.has(user.userId),
+        inMatch: inGameSet.has(user.userId),
       }));
 
     setCount(rows.length);
