@@ -6,6 +6,13 @@ import { createTimeIndicatorViewModel } from './game/timeIndicatorViewModel.js';
 import { applyMomentum, centerView, createPointerState, createViewState } from './game/viewState.js';
 import { getOrCreateUserId } from './storage.js';
 import { getTimelineMaxIndex } from './game/beatTimeline.js';
+import { buildRotationWheel } from './game/rotationWheel.js';
+
+const buildActionSet = (actions, rotation) =>
+  actions.map((action, index) => ({
+    action,
+    rotation: index === 0 ? rotation : '',
+  }));
 
 export function initGame() {
   const gameArea = document.getElementById('gameArea');
@@ -13,6 +20,7 @@ export function initGame() {
   const menuMatch = document.querySelector('.menu-match');
   const moveButton = document.getElementById('actionMove');
   const attackButton = document.getElementById('actionAttack');
+  const rotationWheel = document.getElementById('rotationWheel');
 
   if (!gameArea || !canvas) return;
 
@@ -28,6 +36,7 @@ export function initGame() {
   let gameState = null;
   let gameId = null;
   let usernameById = new Map();
+  let selectedRotation = null;
 
   const formatGameLog = (game, nameMap) => {
     const characters = game?.state?.public?.characters || [];
@@ -71,7 +80,8 @@ export function initGame() {
     timeIndicatorModel.setMax(maxIndex);
   };
 
-  const setActionButtonsEnabled = (enabled) => {
+  const updateActionButtonsEnabled = () => {
+    const enabled = Boolean(gameId) && selectedRotation !== null;
     if (moveButton) moveButton.disabled = !enabled;
     if (attackButton) attackButton.disabled = !enabled;
   };
@@ -104,15 +114,21 @@ export function initGame() {
   window.addEventListener('hexstrike:game', (event) => {
     gameState = event.detail;
     gameId = gameState?.id || null;
-    setActionButtonsEnabled(Boolean(gameId));
+    updateActionButtonsEnabled();
     updateTimeIndicatorMax(gameState);
     console.log(formatGameLog(gameState, usernameById));
+  });
+
+  buildRotationWheel(rotationWheel, (rotation) => {
+    selectedRotation = rotation;
+    updateActionButtonsEnabled();
   });
 
   if (moveButton) {
     moveButton.addEventListener('click', async () => {
       try {
-        await sendActionSet(['W', 'm', 'W']);
+        if (selectedRotation === null) return;
+        await sendActionSet(buildActionSet(['W', 'm', 'W'], selectedRotation));
       } catch (err) {
         console.error('Failed to send move action set', err);
       }
@@ -122,14 +138,15 @@ export function initGame() {
   if (attackButton) {
     attackButton.addEventListener('click', async () => {
       try {
-        await sendActionSet(['W', 'a-La-Ra', 'W', 'W']);
+        if (selectedRotation === null) return;
+        await sendActionSet(buildActionSet(['W', 'a-La-Ra', 'W', 'W'], selectedRotation));
       } catch (err) {
         console.error('Failed to send attack action set', err);
       }
     });
   }
 
-  setActionButtonsEnabled(false);
+  updateActionButtonsEnabled();
   bindControls(canvas, viewState, pointerState, GAME_CONFIG, timeIndicatorViewModel);
 
   const tick = (now) => {

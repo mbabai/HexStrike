@@ -48,9 +48,17 @@
     <section id="gameArea" class="game-area" hidden>
       <div class="game-actions panel">
         <h3 class="game-actions-title">Actions</h3>
-        <div class="pill-group">
-          <button id="actionMove" class="btn btn-primary" type="button">Move</button>
-          <button id="actionAttack" class="btn" type="button">Attack</button>
+        <div class="game-actions-body">
+          <div class="rotation-selector">
+            <span class="rotation-label">Rotation</span>
+            <div id="rotationWheel" class="rotation-wheel"></div>
+          </div>
+          <div class="action-buttons">
+            <div class="pill-group">
+              <button id="actionMove" class="btn btn-primary" type="button">Move</button>
+              <button id="actionAttack" class="btn" type="button">Attack</button>
+            </div>
+          </div>
         </div>
       </div>
       <div id="gameFrame" class="game-frame">

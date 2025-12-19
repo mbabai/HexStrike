@@ -3,7 +3,7 @@ import { parse } from 'url';
 import { readFile } from 'fs';
 import { randomUUID } from 'crypto';
 import { createLobbyStore } from './state/lobby';
-import { GameDoc, LobbySnapshot, MatchDoc, QueueName, UserDoc } from './types';
+import { ActionSetItem, GameDoc, LobbySnapshot, MatchDoc, QueueName, UserDoc } from './types';
 import { MemoryDb } from './persistence/memoryDb';
 import { CHARACTER_IDS } from './game/characters';
 import { createInitialGameState } from './game/state';
@@ -69,10 +69,22 @@ export function buildServer(port: number) {
   };
 
   const notFound = (res: ServerResponse) => respondJson(res, 404, { error: 'Not found' });
-  const normalizeActionList = (actionList: unknown): string[] | null => {
+  const normalizeActionList = (actionList: unknown): ActionSetItem[] | null => {
     if (!Array.isArray(actionList)) return null;
-    const normalized = actionList.map((action) => (typeof action === 'string' ? action.trim() : ''));
-    if (!normalized.length || normalized.some((action) => !action)) return null;
+    const normalized = actionList.map((item) => {
+      if (typeof item === 'string') {
+        return { action: item.trim(), rotation: '' };
+      }
+      if (!item || typeof item !== 'object') {
+        return { action: '', rotation: '' };
+      }
+      const action = typeof item.action === 'string' ? item.action.trim() : '';
+      const rotationRaw = item.rotation;
+      const rotation =
+        typeof rotationRaw === 'string' || typeof rotationRaw === 'number' ? `${rotationRaw}`.trim() : '';
+      return { action, rotation };
+    });
+    if (!normalized.length || normalized.some((action) => !action.action)) return null;
     return normalized;
   };
 

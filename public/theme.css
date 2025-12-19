@@ -46,7 +46,7 @@
   --color-game-surface: var(--color-surface-1);
   --color-hex-fill: var(--color-surface-2);
   --color-hex-stroke: var(--color-link);
-  --color-hex-land-fill: #7fbf6a;
+  --color-hex-land-fill: #0a681e;
   --color-hex-land-stroke: #0a0a0a;
   --color-surface-1-muted: rgba(15, 32, 38, 0.4);
   --color-surface-1-soft: rgba(15, 32, 38, 0.6);
@@ -886,7 +886,7 @@ small {
   bottom: 18px;
   right: 18px;
   z-index: 6;
-  width: min(260px, 70vw);
+  width: min(420px, 92vw);
   display: grid;
   gap: 10px;
   padding: 14px 16px 16px;
@@ -902,6 +902,69 @@ small {
 
 .game-actions .pill-group {
   justify-content: space-between;
+}
+
+.game-actions-body {
+  display: grid;
+  grid-template-columns: minmax(120px, 160px) 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.rotation-selector {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+}
+
+.rotation-label {
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: var(--color-subtle);
+}
+
+.rotation-wheel {
+  width: 140px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+}
+
+.rotation-wheel svg {
+  width: 100%;
+  height: 100%;
+}
+
+.rotation-wheel .rotation-wedge {
+  cursor: pointer;
+  outline: none;
+}
+
+.rotation-wheel .rotation-wedge path {
+  fill: var(--color-surface-1);
+  stroke: var(--color-panel-border);
+  stroke-width: 1.5;
+  transition: fill 160ms ease, stroke 160ms ease;
+}
+
+.rotation-wheel .rotation-wedge.is-selected path {
+  fill: var(--color-subtle);
+}
+
+.rotation-wheel .rotation-wedge.is-selected text {
+  fill: var(--color-text-dark);
+}
+
+.rotation-wheel .rotation-wedge:focus-visible path {
+  stroke: var(--color-accent-strong);
+}
+
+.rotation-wheel text {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  fill: var(--color-text);
+  pointer-events: none;
 }
 
 .game-frame {
@@ -924,4 +987,22 @@ small {
 
 .game-canvas.is-dragging {
   cursor: grabbing;
+}
+
+@media (max-width: 640px) {
+  .game-actions {
+    width: min(320px, 92vw);
+  }
+
+  .game-actions-body {
+    grid-template-columns: 1fr;
+  }
+
+  .rotation-wheel {
+    width: 120px;
+  }
+
+  .game-actions .pill-group {
+    justify-content: center;
+  }
 }

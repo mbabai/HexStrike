@@ -49,7 +49,7 @@ npm run test
 - `POST /api/v1/lobby/clear` - `{}`
 - `POST /api/v1/match/custom` - `{ hostId, hostName, guestId, guestName }`
 - `POST /api/v1/match/:matchId/end` - `{ winnerId }`
-- `POST /api/v1/game/action-set` - `{ userId, gameId, actionList }`
+- `POST /api/v1/game/action-set` - `{ userId, gameId, actionList: [{ action, rotation }] }` (rotation is set on the first entry).
 - `GET /api/v1/history/matches`
 - `GET /api/v1/history/games`
 

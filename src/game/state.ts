@@ -43,6 +43,7 @@ export const createInitialGameState = async (
     characters.map((character) => ({
       username: character.username,
       action: DEFAULT_ACTION,
+      rotation: '',
       damage: 0,
       location: { q: character.position.q, r: character.position.r },
     })),

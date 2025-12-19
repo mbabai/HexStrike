@@ -13,8 +13,8 @@ test('createInitialGameState seeds starting characters', async () => {
   assert.equal(state.public.characters.length, 2);
   assert.equal(state.public.beats.length, 1);
   assert.deepEqual(state.public.beats[0], [
-    { username: 'Player A', action: 'E', damage: 0, location: { q: 2, r: 0 } },
-    { username: 'Player B', action: 'E', damage: 0, location: { q: -2, r: 0 } },
+    { username: 'Player A', action: 'E', rotation: '', damage: 0, location: { q: 2, r: 0 } },
+    { username: 'Player B', action: 'E', rotation: '', damage: 0, location: { q: -2, r: 0 } },
   ]);
   assert.deepEqual(state.public.characters[0], {
     userId: 'player-a',

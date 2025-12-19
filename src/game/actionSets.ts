@@ -1,4 +1,4 @@
-import { BeatEntry, CharacterState } from '../types';
+import { ActionSetItem, BeatEntry, CharacterState } from '../types';
 
 const DEFAULT_ACTION = 'E';
 
@@ -14,9 +14,12 @@ const normalizeBeatEntry = (entry: BeatEntry[number], characters: CharacterState
   );
   const damage = typeof entry.damage === 'number' ? entry.damage : 0;
   const location = cloneLocation(entry.location ?? character?.position);
+  const rotation =
+    typeof entry.rotation === 'string' || typeof entry.rotation === 'number' ? `${entry.rotation}` : '';
   return {
     ...entry,
     action: entry.action || DEFAULT_ACTION,
+    rotation,
     damage,
     location,
   };
@@ -40,10 +43,12 @@ const sortBeatEntries = (beat: BeatEntry, characters: CharacterState[]) => {
 const buildTargetEntry = (
   target: CharacterState,
   action: string,
+  rotation: string,
   seed: { damage: number; location: { q: number; r: number } },
 ) => ({
   username: target.username,
   action,
+  rotation,
   damage: seed.damage,
   location: cloneLocation(seed.location),
 });
@@ -52,7 +57,7 @@ export const applyActionSetToBeats = (
   beats: BeatEntry[],
   characters: CharacterState[],
   targetUserId: string,
-  actionList: string[],
+  actionList: ActionSetItem[],
 ): BeatEntry[] => {
   const target = characters.find((character) => character.userId === targetUserId);
   if (!target || !actionList.length) return beats;
@@ -78,7 +83,13 @@ export const applyActionSetToBeats = (
   };
 
   const startIndex = lastEIndex >= 0 ? lastEIndex : updated.length;
-  const actions = [...actionList, DEFAULT_ACTION];
+  const actions = [
+    ...actionList.map((item, index) => ({
+      action: item.action,
+      rotation: index === 0 ? item.rotation : '',
+    })),
+    { action: DEFAULT_ACTION, rotation: '' },
+  ];
 
   const ensureBeat = (index: number) => {
     while (updated.length <= index) {
@@ -86,17 +97,18 @@ export const applyActionSetToBeats = (
     }
   };
 
-  actions.forEach((action, offset) => {
+  actions.forEach((actionItem, offset) => {
     const index = startIndex + offset;
     ensureBeat(index);
     const beat = updated[index];
     const entry = findEntryForUser(beat, target.username, target.userId);
     if (entry) {
-      entry.action = action;
+      entry.action = actionItem.action;
+      entry.rotation = actionItem.rotation;
       entry.damage = seed.damage;
       entry.location = cloneLocation(seed.location);
     } else {
-      beat.push(buildTargetEntry(target, action, seed));
+      beat.push(buildTargetEntry(target, actionItem.action, actionItem.rotation, seed));
     }
     if (beat.length > 1) {
       sortBeatEntries(beat, characters);

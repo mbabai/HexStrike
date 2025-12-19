@@ -197,7 +197,13 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState) =>
       const image = getActionArt(action);
       if (!image || !image.complete || image.naturalWidth === 0) return;
       const xPos = rowCenterX + offset * rowSpacing;
-      ctx.drawImage(image, xPos - iconSize / 2, rowCenterY - iconSize / 2, iconSize, iconSize);
+      const imageX = xPos - iconSize / 2;
+      const imageY = rowCenterY - iconSize / 2;
+      ctx.drawImage(image, imageX, imageY, iconSize, iconSize);
+      const rotation = entry?.rotation;
+      if (rotation !== undefined && rotation !== null && rotation !== '') {
+        drawRotationBadge(ctx, imageX, imageY, iconSize, `${rotation}`, theme);
+      }
     });
 
     const portraitRadius = layout.portraitSize / 2;
@@ -276,6 +282,32 @@ const drawRowSeparator = (ctx, layout, numberArea, y, color) => {
   ctx.moveTo(numberArea.x, y);
   ctx.lineTo(numberArea.x + numberArea.width, y);
   ctx.stroke();
+};
+
+const drawRotationBadge = (ctx, x, y, size, rotation, theme) => {
+  const radius = Math.max(6, size * 0.22);
+  const padding = Math.max(2, size * 0.05);
+  const centerX = x + radius + padding;
+  const centerY = y + radius + padding;
+  const fontSize = Math.max(9, radius * 1.1);
+  const borderColor = theme.textDark || theme.text;
+  const fillColor = theme.text;
+
+  ctx.save();
+  ctx.fillStyle = fillColor;
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = Math.max(1, radius * 0.2);
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = borderColor;
+  ctx.font = `600 ${fontSize}px ${theme.fontBody}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(rotation, centerX, centerY + radius * 0.05);
+  ctx.restore();
 };
 
 const isPointInRect = (x, y, rect) =>

@@ -15,6 +15,7 @@ This document defines the single source of truth for HexStrike's browser UI styl
 - Grids: prefer `.grid-layout` for responsive card grids and `.field-row` for stacked form controls.
 - Tables: wrap data tables in `.table-wrapper` and apply `.data-table` for striped rows and header styling.
 - Game surface: use `.game-area` as the full-page canvas host, `.game-frame` as the clipping wrapper, and `.game-canvas` for the drawing surface; hex grid colors should read from `--color-game-surface`, `--color-hex-fill`, and `--color-hex-stroke`.
+- Rotation wheel: use `.rotation-selector` with `.rotation-wheel` for the donut control; `.rotation-wedge` handles segments and `.is-selected` applies the grey highlight.
 
 ## Backgrounds and mood
 - Use the base body gradient from `public/theme.css` to mirror the dark teal + gold fantasy mood. If new sections need emphasis, layer subtle radial glows (see `.hero-header::after`).

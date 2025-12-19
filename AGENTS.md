@@ -63,6 +63,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 ## Gotchas (current)
 - Beat entries include `damage` and `location` fields; tests should assert full beat payloads, not just `username`/`action`.
 - Action-set insertion is per player: replace that player's last `E`, fill empty beats in place, and avoid shifting other players' beats.
+- Action-set rotations only apply to the first action entry; subsequent actions must use a blank rotation to keep timelines aligned.
 - Keep beat arrays ordered by character roster when mutating to prevent UI rows from swapping entries.
 - Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
 - Node test runner reads from `dist`; run `npm run build` (or `tsc`) before `node --test test` when working on TS source.

@@ -15,6 +15,7 @@ const getTheme = () => {
     panel: css.getPropertyValue('--color-panel-mid').trim(),
     panelStrong: css.getPropertyValue('--color-panel-strong').trim(),
     text: css.getPropertyValue('--color-text').trim(),
+    textDark: css.getPropertyValue('--color-text-dark').trim(),
     subtle: css.getPropertyValue('--color-subtle').trim(),
     accent: css.getPropertyValue('--color-accent').trim(),
     accentStrong: css.getPropertyValue('--color-accent-strong').trim(),
