@@ -48,13 +48,15 @@ export type Facing = 'left' | 'right';
 
 export interface CharacterState {
   userId: string;
+  username: string;
   characterId: CharacterId;
+  characterName: string;
   position: HexCoord;
   facing: Facing;
 }
 
 export interface BeatAction {
-  userId: string;
+  username: string;
   action: string;
 }
 

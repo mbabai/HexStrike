@@ -25,7 +25,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Front-end UI: For any browser-facing UI styling or layout, follow `front-end-ui.md` as the single source of truth for palette, components, and interactions. Extend that document when adding reusable primitives.
 - Platform: Node.js with TypeScript preferred for type safety; keep server code framework-light (dependency-light HTTP + SSE).
 - Bounded contexts (implemented): `matchmaking` (lobby, seat assignment, game bootstrap) and `persistence` (in-memory data).
-- State model: Lobby snapshots and match/game records are kept in memory; no frame ledger exists yet.
+- State model: Lobby snapshots and match/game records are kept in memory; no frame ledger exists yet. Game public state includes `characterName` on characters, and beats reference players by `username`.
 
 ## Realtime and client interactions (current)
 - SSE message envelope: `{ type, payload, recipient }`.

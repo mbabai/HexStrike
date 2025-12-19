@@ -22,6 +22,27 @@ export function initGame() {
   let hasCentered = false;
   let lastTime = performance.now();
   let gameState = null;
+  let usernameById = new Map();
+
+  const formatGameLog = (game, nameMap) => {
+    const characters = game?.state?.public?.characters || [];
+    const beats = game?.state?.public?.beats || [];
+    const lines = ['[game:update] Player locations:'];
+    if (!characters.length) {
+      lines.push('- (none)');
+    } else {
+      characters.forEach((character) => {
+        const name = nameMap.get(character.userId) || character.userId;
+        const characterLabel = character.characterName || character.characterId || 'unknown';
+        const position = character.position ? `q=${character.position.q} r=${character.position.r}` : 'unknown position';
+        const facing = character.facing ? ` facing=${character.facing}` : '';
+        lines.push(`- ${name} [${characterLabel}]: ${position}${facing}`);
+      });
+    }
+    lines.push('[game:update] Beats:');
+    lines.push(JSON.stringify(beats, null, 2));
+    return lines.join('\n');
+  };
 
   const resize = () => {
     renderer.resize();
@@ -41,8 +62,18 @@ export function initGame() {
   window.addEventListener('resize', resize);
   window.addEventListener('hexstrike:match', showGameArea);
   window.addEventListener('hexstrike:game', showGameArea);
+  window.addEventListener('hexstrike:match', (event) => {
+    const match = event.detail;
+    usernameById = new Map();
+    if (match?.players) {
+      match.players.forEach((player) => {
+        usernameById.set(player.userId, player.username);
+      });
+    }
+  });
   window.addEventListener('hexstrike:game', (event) => {
     gameState = event.detail;
+    console.log(formatGameLog(gameState, usernameById));
   });
 
   bindControls(canvas, viewState, pointerState, GAME_CONFIG, timeIndicatorViewModel);

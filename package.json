@@ -16,5 +16,8 @@
   "type": "commonjs",
   "devDependencies": {
     "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "codex": "^0.2.3"
   }
 }

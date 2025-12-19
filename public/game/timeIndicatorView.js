@@ -169,9 +169,9 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState) =>
     if (!Array.isArray(beat)) return map;
     beat.forEach((entry) => {
       if (!entry || typeof entry !== 'object') return;
-      const userId = entry.userId ?? entry.userID;
-      if (!userId) return;
-      map.set(userId, entry.action);
+      const username = entry.username ?? entry.userId ?? entry.userID;
+      if (!username) return;
+      map.set(username, entry.action);
     });
     return map;
   });
@@ -190,7 +190,8 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState) =>
     offsets.forEach((offset) => {
       const beatIndex = value + offset;
       if (beatIndex < 0) return;
-      const action = beatLookup[beatIndex]?.get(character.userId) ?? ACTION_ICON_FALLBACK;
+      const lookupKey = character.username ?? character.userId;
+      const action = beatLookup[beatIndex]?.get(lookupKey) ?? ACTION_ICON_FALLBACK;
       const image = getActionArt(action);
       if (!image || !image.complete || image.naturalWidth === 0) return;
       const xPos = rowCenterX + offset * rowSpacing;

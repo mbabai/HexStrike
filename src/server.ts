@@ -3,8 +3,9 @@ import { parse } from 'url';
 import { readFile } from 'fs';
 import { randomUUID } from 'crypto';
 import { createLobbyStore } from './state/lobby';
-import { CharacterId, GameDoc, LobbySnapshot, MatchDoc, QueueName, UserDoc } from './types';
+import { GameDoc, LobbySnapshot, MatchDoc, QueueName, UserDoc } from './types';
 import { MemoryDb } from './persistence/memoryDb';
+import { CHARACTER_IDS } from './game/characters';
 import { createInitialGameState } from './game/state';
 
 interface EventPacket {
@@ -19,10 +20,9 @@ export function buildServer(port: number) {
   const pendingInvites = new Map<string, { from: string; to: string; createdAt: Date }>();
   const matchDisconnects = new Map<string, Set<string>>();
   const winsRequired = 3;
-  const characterIds: CharacterId[] = ['murelious', 'monkey-queen'];
   let anonymousCounter = 0;
 
-  const pickRandomCharacterId = () => characterIds[Math.floor(Math.random() * characterIds.length)];
+  const pickRandomCharacterId = () => CHARACTER_IDS[Math.floor(Math.random() * CHARACTER_IDS.length)];
   const nextAnonymousName = () => {
     anonymousCounter += 1;
     return `Anonymous${anonymousCounter}`;
@@ -103,6 +103,34 @@ export function buildServer(port: number) {
     return db.upsertUser({ id: user.id, username: user.username, characterId: pickRandomCharacterId() });
   };
 
+  const formatGameLog = (game: GameDoc, match?: MatchDoc) => {
+    const usernameById = new Map<string, string>();
+    match?.players.forEach((player) => {
+      usernameById.set(player.userId, player.username);
+    });
+    const characters = game.state?.public?.characters ?? [];
+    const beats = game.state?.public?.beats ?? [];
+    const lines = ['[game:update] Player locations:'];
+    if (!characters.length) {
+      lines.push('- (none)');
+    } else {
+      characters.forEach((character) => {
+        const name = usernameById.get(character.userId) ?? character.userId;
+        const characterLabel = character.characterName ?? character.characterId ?? 'unknown';
+        const position = character.position ? `q=${character.position.q} r=${character.position.r}` : 'unknown position';
+        const facing = character.facing ? ` facing=${character.facing}` : '';
+        lines.push(`- ${name} [${characterLabel}]: ${position}${facing}`);
+      });
+    }
+    lines.push('[game:update] Beats:');
+    lines.push(JSON.stringify(beats, null, 2));
+    return lines.join('\n');
+  };
+
+  const logGameState = (game: GameDoc, match?: MatchDoc) => {
+    console.log(formatGameLog(game, match));
+  };
+
   const handleJoin = async (body: any) => {
     const user = await upsertUserFromRequest(body.userId, body.username);
     const assignedUser = await ensureUserCharacter(user);
@@ -130,12 +158,17 @@ export function buildServer(port: number) {
       timers: { turnSeconds: 60, incrementSeconds: 0 },
       outcome: undefined,
       state: await createInitialGameState(
-        match.players.map((player) => ({ userId: player.userId, characterId: player.characterId })),
+        match.players.map((player) => ({
+          userId: player.userId,
+          username: player.username,
+          characterId: player.characterId,
+        })),
       ),
     });
   };
 
   const notifyMatchPlayers = (match: MatchDoc, game: GameDoc) => {
+    logGameState(game, match);
     match.players.forEach((player) => {
       sendEvent({ type: 'match:created', payload: match }, player.userId);
       sendEvent({ type: 'game:update', payload: game }, player.userId);
@@ -206,7 +239,10 @@ export function buildServer(port: number) {
     sendEvent({ type: 'match:created', payload: match }, userId);
     if (match.gameId) {
       const game = await db.findGame(match.gameId);
-      if (game) sendEvent({ type: 'game:update', payload: game }, userId);
+      if (game) {
+        logGameState(game, match);
+        sendEvent({ type: 'game:update', payload: game }, userId);
+      }
     }
   };
 
