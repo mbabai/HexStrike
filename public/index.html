@@ -5,142 +5,41 @@
     <title>HexStrike Lobby</title>
     <link rel="stylesheet" href="/public/theme.css" />
   </head>
-  <body>
-    <div class="lobby-shell">
-      <header class="top-bar panel stagger-1">
-        <div class="brand">
-          <p class="eyebrow">HexStrike / Live Lobby</p>
-          <h1>Command the Hexfront</h1>
-          <p class="subtitle">Assemble your squad, lock in your tactics, and march into the next frame.</p>
-        </div>
-        <div class="top-bar-actions">
-          <div id="connectionStatus" class="status-pill">Idle</div>
-          <button id="findGame" class="btn btn-primary btn-cta">Find Game</button>
-        </div>
-      </header>
-
-      <main class="lobby-main">
-        <aside class="side-nav panel stagger-2">
-          <p class="nav-title">War Table</p>
-          <ul class="nav-list">
-            <li class="nav-item active">Home</li>
-            <li class="nav-item">Heroes</li>
-            <li class="nav-item">Quests</li>
-            <li class="nav-item">Collection</li>
-            <li class="nav-item">Leaderboard</li>
-            <li class="nav-item">Settings</li>
-          </ul>
-          <p class="nav-footer">Season 01 / Emerald Vale</p>
-        </aside>
-
-        <section class="hero-panel panel stagger-3">
-          <div class="hero-copy">
-            <p class="eyebrow">Featured Campaign</p>
-            <h2>Echoes of the Hollow Spires</h2>
-            <p class="hero-lead">
-              A chorus of arcane signals ripples across the forested frontier. Rally your allies and
-              shape the timeline before the spires awaken.
-            </p>
-            <div class="hero-tags">
-              <span class="tag">Co-op</span>
-              <span class="tag">Simultaneous Turns</span>
-              <span class="tag">Replay Ready</span>
-            </div>
+  <body class="menu-body">
+    <div id="menuShell" class="menu-shell">
+      <aside id="menuSidebar" class="menu-sidebar panel">
+        <div class="menu-brand">
+          <div class="brand-stack">
+            <p class="brand-name">Murelious</p>
+            <p class="brand-sub">HexStrike</p>
           </div>
-          <div class="hero-stats">
-            <div class="stat">
-              <span class="stat-label">Queue</span>
-              <span id="queueStatus" class="stat-value">Standby</span>
-            </div>
-            <div class="stat">
-              <span class="stat-label">Frames Logged</span>
-              <span class="stat-value">1,248</span>
-            </div>
-            <div class="stat">
-              <span class="stat-label">Season Rank</span>
-              <span class="stat-value">Bronze III</span>
-            </div>
-          </div>
-        </section>
+        </div>
+        <nav class="menu-nav">
+          <button class="menu-link" type="button">Account</button>
+          <button class="menu-link" type="button">Rulebook</button>
+          <button class="menu-link" type="button">Video Rules</button>
+          <button class="menu-link" type="button">Feedback</button>
+        </nav>
+        <a class="menu-footer-link" href="https://bymarcell.com" target="_blank" rel="noreferrer">By Marcell</a>
+      </aside>
 
-        <section class="info-stack">
-          <section class="panel stagger-4">
-            <h2>Lobby Snapshot</h2>
-            <p>Matchmaking presence and active rooms.</p>
-            <pre id="lobby">Awaiting signal...</pre>
-          </section>
-          <section class="panel stagger-5">
-            <h2>Event Log</h2>
-            <p>Chronological updates from the server stream.</p>
-            <pre id="log">No events yet.</pre>
-          </section>
-        </section>
-      </main>
+      <section class="menu-match panel">
+        <div class="match-cta">
+          <button id="findGame" class="btn btn-primary btn-cta" type="button">Find Game</button>
+        </div>
+        <label class="queue-field">
+          <span class="queue-label">Queue</span>
+          <select id="queueSelect" class="menu-select">
+            <option value="quickplayQueue" selected>Quickplay</option>
+            <option value="rankedQueue">Ranked</option>
+            <option value="customQueue">Custom</option>
+            <option value="botsQueue">Bots</option>
+            <option value="spectateQueue">Spectate</option>
+          </select>
+        </label>
+      </section>
     </div>
 
-    <script>
-      const logEl = document.getElementById('log');
-      const lobbyEl = document.getElementById('lobby');
-      const statusEl = document.getElementById('connectionStatus');
-      const queueStatusEl = document.getElementById('queueStatus');
-      const findGameButton = document.getElementById('findGame');
-      let eventSource;
-      let userId = localStorage.getItem('hexstrikeUser') || crypto.randomUUID();
-      let username = localStorage.getItem('hexstrikeName') || `Player-${userId.slice(0, 6)}`;
-
-      function log(message, data) {
-        const line = `[${new Date().toLocaleTimeString()}] ${message}`;
-        logEl.textContent = `${line}\n${data ? JSON.stringify(data, null, 2) : ''}\n\n${logEl.textContent}`;
-      }
-
-      function renderLobby(snapshot) {
-        lobbyEl.textContent = JSON.stringify(snapshot, null, 2);
-      }
-
-      function connectStream() {
-        if (eventSource) eventSource.close();
-        userId = userId || crypto.randomUUID();
-        localStorage.setItem('hexstrikeUser', userId);
-        localStorage.setItem('hexstrikeName', username);
-        const url = `/events?userId=${encodeURIComponent(userId)}`;
-        eventSource = new EventSource(url);
-        eventSource.onmessage = (event) => {
-          const parsed = JSON.parse(event.data);
-          log(parsed.type, parsed.payload);
-          if (parsed.type === 'connected') {
-            statusEl.textContent = `Connected as ${parsed.payload.userId}`;
-            renderLobby(parsed.payload.lobby);
-          }
-          if (parsed.type === 'queueChanged') renderLobby(parsed.payload);
-        };
-        eventSource.onerror = () => {
-          statusEl.textContent = 'Connection lost';
-          queueStatusEl.textContent = 'Offline';
-        };
-      }
-
-      async function post(path, payload) {
-        const res = await fetch(path, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        return res.json();
-      }
-
-      async function findGame() {
-        statusEl.textContent = 'Searching for a match...';
-        queueStatusEl.textContent = 'Searching';
-        connectStream();
-        const response = await post('/api/v1/lobby/join', {
-          userId,
-          username,
-          queue: 'quickplayQueue',
-        });
-        renderLobby(response.lobby);
-      }
-
-      findGameButton.addEventListener('click', findGame);
-    </script>
+    <script src="/public/index.js"></script>
   </body>
 </html>
