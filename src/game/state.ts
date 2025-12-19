@@ -1,4 +1,4 @@
-import { GameState, HexCoord } from '../types';
+import { CharacterState, GameState, HexCoord } from '../types';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
 
@@ -19,12 +19,24 @@ const loadSharedHex = () => {
   return sharedHexPromise;
 };
 
-export const createInitialGameState = async (): Promise<GameState> => {
+const STARTING_CHARACTERS: Array<Omit<CharacterState, 'userId' | 'characterId'>> = [
+  { position: { q: 2, r: 0 }, facing: 'left' },
+  { position: { q: -2, r: 0 }, facing: 'right' },
+];
+
+export const createInitialGameState = async (
+  players: Array<{ userId: string; characterId: CharacterState['characterId'] }> = [],
+): Promise<GameState> => {
   const { LAND_HEXES } = await loadSharedHex();
   return {
     public: {
       land: LAND_HEXES.map((tile) => ({ q: tile.q, r: tile.r })),
       beats: [],
+      characters: players.slice(0, STARTING_CHARACTERS.length).map((player, index) => ({
+        userId: player.userId,
+        characterId: player.characterId,
+        ...STARTING_CHARACTERS[index],
+      })),
     },
     secret: {},
   };

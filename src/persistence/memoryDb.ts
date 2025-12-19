@@ -18,6 +18,7 @@ export class MemoryDb {
       username: user.username,
       email: user.email,
       elo: user.elo ?? 1000,
+      characterId: user.characterId,
       isBot: user.isBot,
       botDifficulty: user.botDifficulty,
       createdAt: now,

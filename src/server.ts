@@ -3,7 +3,7 @@ import { parse } from 'url';
 import { readFile } from 'fs';
 import { randomUUID } from 'crypto';
 import { createLobbyStore } from './state/lobby';
-import { GameDoc, LobbySnapshot, MatchDoc, QueueName, UserDoc } from './types';
+import { CharacterId, GameDoc, LobbySnapshot, MatchDoc, QueueName, UserDoc } from './types';
 import { MemoryDb } from './persistence/memoryDb';
 import { createInitialGameState } from './game/state';
 
@@ -19,6 +19,9 @@ export function buildServer(port: number) {
   const pendingInvites = new Map<string, { from: string; to: string; createdAt: Date }>();
   const matchDisconnects = new Map<string, Set<string>>();
   const winsRequired = 3;
+  const characterIds: CharacterId[] = ['murelious', 'monkey-queen'];
+
+  const pickRandomCharacterId = () => characterIds[Math.floor(Math.random() * characterIds.length)];
 
   const sendEvent = (packet: EventPacket, targetId?: string) => {
     const entries: Array<[string, ServerResponse | undefined]> = targetId
@@ -73,14 +76,20 @@ export function buildServer(port: number) {
     return db.upsertUser({ id: userId, username: username || userId || randomUUID(), elo: 1000 });
   };
 
+  const ensureUserCharacter = async (user: UserDoc): Promise<UserDoc> => {
+    if (user.characterId) return user;
+    return db.upsertUser({ id: user.id, username: user.username, characterId: pickRandomCharacterId() });
+  };
+
   const handleJoin = async (body: any) => {
     const user = await upsertUserFromRequest(body.userId, body.username);
+    const assignedUser = await ensureUserCharacter(user);
     const queue: QueueName = body.queue || 'quickplayQueue';
-    lobby.addToQueue(user.id, queue);
+    lobby.addToQueue(assignedUser.id, queue);
     if (queue === 'quickplayQueue') {
-      console.log(`[lobby] ${user.username} (${user.id}) joined quickplay queue`);
+      console.log(`[lobby] ${assignedUser.username} (${assignedUser.id}) joined quickplay queue`);
     }
-    return { user, lobby: lobby.serialize() };
+    return { user: assignedUser, lobby: lobby.serialize() };
   };
 
   const handleLeave = async (body: any) => {
@@ -98,7 +107,9 @@ export function buildServer(port: number) {
       })),
       timers: { turnSeconds: 60, incrementSeconds: 0 },
       outcome: undefined,
-      state: await createInitialGameState(),
+      state: await createInitialGameState(
+        match.players.map((player) => ({ userId: player.userId, characterId: player.characterId })),
+      ),
     });
   };
 
@@ -111,13 +122,15 @@ export function buildServer(port: number) {
 
   const createMatchWithUsers = async (users: Array<{ id: string; username?: string }>) => {
     const resolved = await Promise.all(users.map((user) => upsertUserFromRequest(user.id, user.username || user.id)));
-    lobby.markInGame(resolved.map((user) => user.id));
+    const withCharacters = await Promise.all(resolved.map((user) => ensureUserCharacter(user)));
+    lobby.markInGame(withCharacters.map((user) => user.id));
     const match = await db.createMatch({
-      players: resolved.map((user) => ({
+      players: withCharacters.map((user) => ({
         userId: user.id,
         username: user.username,
         score: 0,
         eloChange: 0,
+        characterId: user.characterId ?? pickRandomCharacterId(),
       })),
       gameId: '',
       winsRequired,

@@ -1,5 +1,6 @@
 import { GAME_CONFIG } from './config.js';
 import { drawTimeIndicator } from './timeIndicatorView.js';
+import { CHARACTER_IMAGE_SOURCES, getCharacterTokenMetrics, getFacingArrowPoints } from './characterTokens.mjs';
 import { LAND_HEXES, axialToPixel, getColumnRange, getHexSize, getRowRange, getWorldBounds } from '../shared/hex.mjs';
 
 const getTheme = () => {
@@ -37,12 +38,62 @@ const drawHex = (ctx, x, y, size) => {
   ctx.stroke();
 };
 
+const drawCharacterPortrait = (ctx, image, x, y, radius, fillColor) => {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+  ctx.clip();
+
+  if (image && image.complete && image.naturalWidth > 0) {
+    const minSide = Math.min(image.naturalWidth, image.naturalHeight);
+    const scale = (radius * 2) / minSide;
+    const drawWidth = image.naturalWidth * scale;
+    const drawHeight = image.naturalHeight * scale;
+    ctx.drawImage(image, x - drawWidth / 2, y - drawHeight / 2, drawWidth, drawHeight);
+  }
+
+  ctx.restore();
+};
+
+const drawCharacterRing = (ctx, x, y, radius, borderWidth, color) => {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = borderWidth;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.stroke();
+};
+
+const drawFacingArrow = (ctx, points, color) => {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(points.tip.x, points.tip.y);
+  ctx.lineTo(points.baseTop.x, points.baseTop.y);
+  ctx.lineTo(points.baseBottom.x, points.baseBottom.y);
+  ctx.closePath();
+  ctx.fill();
+};
+
 export const createRenderer = (canvas, config = GAME_CONFIG) => {
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
 
   const theme = getTheme();
   const viewport = { width: 0, height: 0, dpr: window.devicePixelRatio || 1 };
+  const characterArt = new Map();
+
+  const getCharacterArt = (characterId) => {
+    if (!characterId) return null;
+    if (characterArt.has(characterId)) return characterArt.get(characterId);
+    const src = CHARACTER_IMAGE_SOURCES[characterId];
+    if (!src) return null;
+    const image = new Image();
+    image.src = src;
+    characterArt.set(characterId, image);
+    return image;
+  };
 
   const resize = () => {
     viewport.width = canvas.clientWidth;
@@ -112,6 +163,21 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
       land.forEach((tile) => {
         const { x, y } = axialToPixel(tile.q, tile.r, size);
         ctx.fillText(`${tile.q},${tile.r}`, x, y);
+      });
+    }
+
+    const characters = gameState?.state?.public?.characters ?? [];
+    if (characters.length) {
+      const metrics = getCharacterTokenMetrics(size);
+      characters.forEach((character) => {
+        const { x, y } = axialToPixel(character.position.q, character.position.r, size);
+        const image = getCharacterArt(character.characterId);
+
+        drawCharacterPortrait(ctx, image, x, y, metrics.radius, theme.panelStrong);
+        drawCharacterRing(ctx, x, y, metrics.radius, metrics.borderWidth, theme.accentStrong);
+
+        const arrowPoints = getFacingArrowPoints(x, y, metrics, character.facing);
+        drawFacingArrow(ctx, arrowPoints, theme.accentStrong);
       });
     }
 

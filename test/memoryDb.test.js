@@ -13,8 +13,8 @@ test('memory db upserts users and stores matches/games', async () => {
 
   const match = await db.createMatch({
     players: [
-      { userId: alice.id, username: alice.username, score: 0, eloChange: 0 },
-      { userId: 'bob', username: 'Bob', score: 0, eloChange: 0 },
+      { userId: alice.id, username: alice.username, score: 0, eloChange: 0, characterId: 'murelious' },
+      { userId: 'bob', username: 'Bob', score: 0, eloChange: 0, characterId: 'monkey-queen' },
     ],
     gameId: '',
     winsRequired: 3,

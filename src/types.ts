@@ -12,6 +12,7 @@ export interface UserDoc {
   username: string;
   email?: string;
   elo: number;
+  characterId?: CharacterId;
   isBot?: boolean;
   botDifficulty?: string;
   createdAt: Date;
@@ -25,6 +26,7 @@ export interface MatchDoc {
     username: string;
     score: number;
     eloChange: number;
+    characterId: CharacterId;
   }>;
   gameId: string;
   winsRequired: number;
@@ -40,9 +42,21 @@ export interface HexCoord {
   r: number;
 }
 
+export type CharacterId = 'murelious' | 'monkey-queen';
+
+export type Facing = 'left' | 'right';
+
+export interface CharacterState {
+  userId: string;
+  characterId: CharacterId;
+  position: HexCoord;
+  facing: Facing;
+}
+
 export interface GameStatePublic {
   land: HexCoord[];
   beats: Array<unknown[]>;
+  characters: CharacterState[];
 }
 
 export interface GameStateSecret {
