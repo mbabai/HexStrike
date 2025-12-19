@@ -27,6 +27,7 @@ export interface MatchDoc {
     eloChange: number;
   }>;
   gameId: string;
+  winsRequired: number;
   state: 'pending' | 'in-progress' | 'complete';
   winnerId?: string;
   completedAt?: Date;

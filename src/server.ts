@@ -17,6 +17,7 @@ export function buildServer(port: number) {
   const sseClients = new Map<string, ServerResponse>();
   const pendingInvites = new Map<string, { from: string; to: string; createdAt: Date }>();
   const matchDisconnects = new Map<string, Set<string>>();
+  const winsRequired = 3;
 
   const sendEvent = (packet: EventPacket, targetId?: string) => {
     const entries: Array<[string, ServerResponse | undefined]> = targetId
@@ -100,25 +101,41 @@ export function buildServer(port: number) {
     });
   };
 
-  const createCustomMatch = async (body: any) => {
-    const host = await upsertUserFromRequest(body.hostId, body.hostName || body.hostId);
-    const guest = await upsertUserFromRequest(body.guestId, body.guestName || body.guestId);
-    lobby.markInGame([host.id, guest.id]);
+  const notifyMatchPlayers = (match: MatchDoc, game: GameDoc) => {
+    match.players.forEach((player) => {
+      sendEvent({ type: 'match:created', payload: match }, player.userId);
+      sendEvent({ type: 'game:update', payload: game }, player.userId);
+    });
+  };
+
+  const createMatchWithUsers = async (users: Array<{ id: string; username?: string }>) => {
+    const resolved = await Promise.all(users.map((user) => upsertUserFromRequest(user.id, user.username || user.id)));
+    lobby.markInGame(resolved.map((user) => user.id));
     const match = await db.createMatch({
-      players: [
-        { userId: host.id, username: host.username, score: 0, eloChange: 0 },
-        { userId: guest.id, username: guest.username, score: 0, eloChange: 0 },
-      ],
+      players: resolved.map((user) => ({
+        userId: user.id,
+        username: user.username,
+        score: 0,
+        eloChange: 0,
+      })),
       gameId: '',
+      winsRequired,
       state: 'in-progress',
       winnerId: undefined,
       completedAt: undefined,
     });
     const game = await createSkeletonGame(match);
-    await db.updateMatch(match.id, { gameId: game.id });
-    sendEvent({ type: 'match:created', payload: match });
-    sendEvent({ type: 'game:update', payload: game });
-    return { match, game };
+    const updatedMatch = await db.updateMatch(match.id, { gameId: game.id });
+    const finalMatch = updatedMatch ?? match;
+    notifyMatchPlayers(finalMatch, game);
+    return { match: finalMatch, game };
+  };
+
+  const createCustomMatch = async (body: any) => {
+    return createMatchWithUsers([
+      { id: body.hostId, username: body.hostName || body.hostId },
+      { id: body.guestId, username: body.guestName || body.guestId },
+    ]);
   };
 
   const launchBotIfNeeded = async () => {
@@ -128,6 +145,33 @@ export function buildServer(port: number) {
     lobby.removeFromQueue(botCandidate, 'botQueue');
     const bot = await db.upsertUser({ username: 'Bot', isBot: true, botDifficulty: 'easy' });
     await createCustomMatch({ hostId: botCandidate, guestId: bot.id, guestName: bot.username });
+  };
+
+  let matchmakeInProgress = false;
+  const matchmakeQuickplay = async () => {
+    if (matchmakeInProgress) return;
+    matchmakeInProgress = true;
+    try {
+      let snapshot = lobby.serialize();
+      while (snapshot.quickplayQueue.length >= 2) {
+        const [first, second] = snapshot.quickplayQueue;
+        if (!first || !second) break;
+        await createMatchWithUsers([{ id: first }, { id: second }]);
+        snapshot = lobby.serialize();
+      }
+    } finally {
+      matchmakeInProgress = false;
+    }
+  };
+
+  const sendActiveMatchState = async (userId: string) => {
+    const match = await db.findActiveMatchByUser(userId);
+    if (!match) return;
+    sendEvent({ type: 'match:created', payload: match }, userId);
+    if (match.gameId) {
+      const game = await db.findGame(match.gameId);
+      if (game) sendEvent({ type: 'game:update', payload: game }, userId);
+    }
   };
 
   const completeMatch = async (matchId: string, body: any) => {
@@ -169,6 +213,7 @@ export function buildServer(port: number) {
     res.write(`data: ${JSON.stringify({ type: 'connected', payload: { userId, lobby: lobby.serialize() } })}\n\n`);
     sseClients.set(userId, res);
     pendingInvites.delete(userId);
+    void sendActiveMatchState(userId);
 
     req.on('close', () => {
       sseClients.delete(userId);
@@ -280,6 +325,9 @@ export function buildServer(port: number) {
     setInterval(() => {
       launchBotIfNeeded();
     }, 5000);
+    setInterval(() => {
+      void matchmakeQuickplay();
+    }, 2000);
   });
 
   return server;

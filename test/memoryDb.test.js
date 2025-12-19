@@ -17,6 +17,7 @@ test('memory db upserts users and stores matches/games', async () => {
       { userId: 'bob', username: 'Bob', score: 0, eloChange: 0 },
     ],
     gameId: '',
+    winsRequired: 3,
     state: 'pending',
     winnerId: undefined,
     completedAt: undefined,
@@ -38,4 +39,10 @@ test('memory db upserts users and stores matches/games', async () => {
 
   const games = await db.listGames();
   assert.equal(games[0].id, game.id);
+
+  const activeMatch = await db.findActiveMatchByUser(alice.id);
+  assert.equal(activeMatch.id, match.id);
+
+  const storedGame = await db.findGame(game.id);
+  assert.equal(storedGame.id, game.id);
 });

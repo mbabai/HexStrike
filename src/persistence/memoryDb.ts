@@ -49,6 +49,16 @@ export class MemoryDb {
     return match;
   }
 
+  async findMatch(id: string): Promise<MatchDoc | undefined> {
+    return this.matches.find((match) => match.id === id);
+  }
+
+  async findActiveMatchByUser(userId: string): Promise<MatchDoc | undefined> {
+    return [...this.matches]
+      .reverse()
+      .find((match) => match.state !== 'complete' && match.players.some((player) => player.userId === userId));
+  }
+
   async createGame(payload: Omit<GameDoc, 'id' | 'createdAt' | 'updatedAt'>): Promise<GameDoc> {
     const now = new Date();
     const game: GameDoc = { ...payload, id: randomUUID(), createdAt: now, updatedAt: now };
@@ -61,6 +71,10 @@ export class MemoryDb {
     if (!game) return undefined;
     Object.assign(game, updates, { updatedAt: new Date() });
     return game;
+  }
+
+  async findGame(id: string): Promise<GameDoc | undefined> {
+    return this.games.find((game) => game.id === id);
   }
 
   async listMatches(limit = 25): Promise<MatchDoc[]> {

@@ -59,6 +59,12 @@ export function initQueue() {
     window.alert('comming soon, please try quickplay');
   };
 
+  window.addEventListener('hexstrike:match', () => {
+    if (isSearching) {
+      setSearchingState(false);
+    }
+  });
+
   if (findGameButton) {
     findGameButton.addEventListener('click', async () => {
       if (isSearching) {
