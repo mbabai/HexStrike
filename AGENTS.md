@@ -75,4 +75,5 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 When the user says "let's wrap this up" or something along those lines, execute the following steps:
 - Refactor the most recently written code as necessary to make sure these methods are properly abstracted, encapsulated, built in extensible ways, and use the proper separations of controls/views/states on the front end UI. 
 - Add/remove/update the gotchas into the AGENTS.md file graph so that we don't run into similar errors in the future. 
+- Update the AGENTS.md file with any other relevant information to better understand the codebase. 
 - Add any required tests (if needed).
