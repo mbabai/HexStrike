@@ -1,7 +1,9 @@
 import { CHARACTER_IMAGE_SOURCES, CHARACTER_TOKEN_STYLE } from './characterTokens.mjs';
 
-const DEFAULT_BORDER_SIZE = { width: 280, height: 64 };
+const DEFAULT_BORDER_SIZE = { width: 640, height: 64 };
 const ACTION_ICON_FALLBACK = 'empty';
+const VISIBLE_BEAT_RADIUS = 6;
+const TIMELINE_OFFSETS = Array.from({ length: VISIBLE_BEAT_RADIUS * 2 + 1 }, (_, index) => index - VISIBLE_BEAT_RADIUS);
 const actionArt = new Map();
 const characterArt = new Map();
 
@@ -122,7 +124,7 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState) =>
   const value = viewModel?.value ?? 0;
   const leftDisabled = viewModel?.canStep ? !viewModel.canStep(-1) : value === 0;
   const rightDisabled = viewModel?.canStep ? !viewModel.canStep(1) : false;
-  const offsets = [-2, -1, 0, 1, 2];
+  const offsets = TIMELINE_OFFSETS;
 
   const topRow = getRowLayout(layout, 0);
   drawNumberWell(ctx, topRow.numberArea, theme.queueLavender || theme.panel);
@@ -135,15 +137,13 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState) =>
   const centerX = topRow.numberArea.x + topRow.numberArea.width / 2;
   const centerY = topRow.numberArea.y + topRow.numberArea.height / 2;
   const spacingTarget = Math.max(26, layout.actionHeight * 0.72);
-  const spacing = Math.min(spacingTarget, topRow.numberArea.width / 4);
+  const spacing = Math.min(spacingTarget, topRow.numberArea.width / (offsets.length - 1));
 
   offsets.forEach((offset) => {
     const target = value + offset;
     if (target < 0) return;
     const xPos = centerX + offset * spacing;
-    const alpha = offset === 0 ? 1 : 0.9;
     ctx.fillStyle = offset === 0 ? theme.accentStrong : theme.text;
-    ctx.globalAlpha = alpha;
     ctx.fillText(`${target}`.padStart(2, '0'), xPos, centerY);
   });
 
@@ -197,11 +197,8 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState) =>
       const image = getActionArt(action);
       if (!image || !image.complete || image.naturalWidth === 0) return;
       const xPos = rowCenterX + offset * rowSpacing;
-      const alpha = offset === 0 ? 1 : Math.max(0.18, 0.5 - Math.abs(offset) * 0.2);
-      ctx.globalAlpha = alpha;
       ctx.drawImage(image, xPos - iconSize / 2, rowCenterY - iconSize / 2, iconSize, iconSize);
     });
-    ctx.globalAlpha = 1;
 
     const portraitRadius = layout.portraitSize / 2;
     const portraitX = layout.x - portraitRadius + layout.portraitOverlap;
@@ -217,6 +214,18 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState) =>
   separators.forEach((separator) => {
     drawRowSeparator(ctx, layout, separator.numberArea, separator.y, theme.accentStrong);
   });
+
+  const lastRow = getRowLayout(layout, characters.length);
+  const nowLeft = centerX - spacing / 2;
+  const nowRight = centerX + spacing / 2;
+  ctx.strokeStyle = theme.accentStrong;
+  ctx.lineWidth = layout.portraitBorderWidth;
+  ctx.beginPath();
+  ctx.moveTo(nowLeft, topRow.numberArea.y);
+  ctx.lineTo(nowLeft, lastRow.numberArea.y + lastRow.rowHeight);
+  ctx.moveTo(nowRight, topRow.numberArea.y);
+  ctx.lineTo(nowRight, lastRow.numberArea.y + lastRow.rowHeight);
+  ctx.stroke();
 };
 
 const drawCharacterPortrait = (ctx, image, x, y, radius, fillColor) => {
