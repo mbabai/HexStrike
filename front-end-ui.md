@@ -13,6 +13,7 @@ This document defines the single source of truth for HexStrike's browser UI styl
 - Buttons: start from `.btn`; apply `.btn-primary` for golden calls-to-action, `.btn-queueing` for active queue/search state, and `.btn-ghost` for secondary/dismissive actions. Avoid inline styles; compose classes.
 - Pills and groups: use `.pill-group` for horizontal stacks; prefer `.status-pill` for status text.
 - Grids: prefer `.grid-layout` for responsive card grids and `.field-row` for stacked form controls.
+- Tables: wrap data tables in `.table-wrapper` and apply `.data-table` for striped rows and header styling.
 
 ## Backgrounds and mood
 - Use the base body gradient from `public/theme.css` to mirror the dark teal + gold fantasy mood. If new sections need emphasis, layer subtle radial glows (see `.hero-header::after`).

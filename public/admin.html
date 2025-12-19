@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>HexStrike Admin</title>
+    <link rel="stylesheet" href="/public/theme.css" />
+  </head>
+  <body>
+    <main class="ui-shell">
+      <header class="hero-header">
+        <div class="hero-header-content">
+          <div class="branding">
+            <p class="eyebrow">Admin Console</p>
+            <h1>Lobby Presence</h1>
+            <p class="subtitle">Track who is connected and who is queueing.</p>
+          </div>
+          <div class="hero-actions">
+            <span id="connectedCount" class="status-pill">0 connected</span>
+            <a class="btn btn-ghost btn-small" href="/">Back to Lobby</a>
+          </div>
+        </div>
+      </header>
+
+      <section class="panel">
+        <h2>Connected Players</h2>
+        <p>Players are counted when the lobby page is open.</p>
+        <div class="table-wrapper">
+          <table class="data-table" aria-live="polite">
+            <thead>
+              <tr>
+                <th scope="col">User ID</th>
+                <th scope="col">Queue</th>
+              </tr>
+            </thead>
+            <tbody id="presenceRows">
+              <tr>
+                <td colspan="2" class="empty-state">Loading lobby presence...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <small>Queue key: Q = quickplay</small>
+      </section>
+    </main>
+
+    <script type="module" src="/public/admin.js"></script>
+  </body>
+</html>

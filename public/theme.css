@@ -313,6 +313,58 @@ small {
   color: var(--color-subtle);
 }
 
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 320px;
+}
+
+.data-table thead th {
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 11px;
+  color: var(--color-subtle);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.data-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.data-table tbody tr {
+  background: var(--color-surface-1-soft);
+}
+
+.data-table tbody tr:nth-child(even) {
+  background: var(--color-surface-1-muted);
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table .queue-flag {
+  text-align: center;
+  font-family: var(--font-heading);
+  color: var(--color-queue-lavender-strong);
+  letter-spacing: 0.08em;
+}
+
+.data-table .empty-state {
+  text-align: center;
+  color: var(--color-subtle);
+  font-style: italic;
+  padding: 16px 12px;
+}
+
 @keyframes panel-rise {
   from {
     opacity: 0;

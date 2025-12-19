@@ -59,6 +59,14 @@ export function buildServer(port: number) {
 
   const notFound = (res: ServerResponse) => respondJson(res, 404, { error: 'Not found' });
 
+  const getPresenceSnapshot = () => {
+    const snapshot = lobby.serialize();
+    return {
+      connected: Array.from(sseClients.keys()),
+      quickplayQueue: [...snapshot.quickplayQueue],
+    };
+  };
+
   const upsertUserFromRequest = async (userId?: string, username?: string): Promise<UserDoc> => {
     return db.upsertUser({ id: userId, username: username || userId || randomUUID(), elo: 1000 });
   };
@@ -169,7 +177,14 @@ export function buildServer(port: number) {
   };
 
   const handleStatic = (res: ServerResponse, path: string) => {
-    const resolved = path === '/' ? '/public/index.html' : path.startsWith('/public/') ? path : `/public${path}`;
+    const resolved =
+      path === '/'
+        ? '/public/index.html'
+        : path === '/admin' || path === '/admin/'
+          ? '/public/admin.html'
+          : path.startsWith('/public/')
+            ? path
+            : `/public${path}`;
     readFile(process.cwd() + resolved, (err, data) => {
       if (err) {
         notFound(res);
@@ -204,6 +219,9 @@ export function buildServer(port: number) {
     if (pathname.startsWith('/api/v1/lobby')) {
       if (req.method === 'GET' && pathname === '/api/v1/lobby/state') {
         return respondJson(res, 200, lobby.serialize());
+      }
+      if (req.method === 'GET' && pathname === '/api/v1/lobby/admin') {
+        return respondJson(res, 200, getPresenceSnapshot());
       }
       if (req.method === 'POST' && pathname === '/api/v1/lobby/join') {
         try {
@@ -249,7 +267,7 @@ export function buildServer(port: number) {
       }
     }
 
-    if (pathname === '/' || pathname.startsWith('/public')) {
+    if (pathname === '/' || pathname === '/admin' || pathname === '/admin/' || pathname.startsWith('/public')) {
       return handleStatic(res, pathname);
     }
 
