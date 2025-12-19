@@ -7,6 +7,7 @@ import { GameDoc, LobbySnapshot, MatchDoc, QueueName, UserDoc } from './types';
 import { MemoryDb } from './persistence/memoryDb';
 import { CHARACTER_IDS } from './game/characters';
 import { createInitialGameState } from './game/state';
+import { applyActionSetToBeats } from './game/actionSets';
 
 interface EventPacket {
   type: string;
@@ -68,6 +69,12 @@ export function buildServer(port: number) {
   };
 
   const notFound = (res: ServerResponse) => respondJson(res, 404, { error: 'Not found' });
+  const normalizeActionList = (actionList: unknown): string[] | null => {
+    if (!Array.isArray(actionList)) return null;
+    const normalized = actionList.map((action) => (typeof action === 'string' ? action.trim() : ''));
+    if (!normalized.length || normalized.some((action) => !action)) return null;
+    return normalized;
+  };
 
   const getPresenceSnapshot = async () => {
     const snapshot = lobby.serialize();
@@ -373,6 +380,42 @@ export function buildServer(port: number) {
         const match = await completeMatch(matchId, body);
         if (!match) return notFound(res);
         return respondJson(res, 200, match);
+      }
+    }
+
+    if (pathname.startsWith('/api/v1/game')) {
+      if (req.method === 'POST' && pathname === '/api/v1/game/action-set') {
+        let body;
+        try {
+          body = await parseBody(req);
+        } catch (err) {
+          return respondJson(res, 400, { error: 'Invalid action set payload' });
+        }
+        const userId = body.userId || body.userID;
+        const gameId = body.gameId || body.gameID;
+        const actions = normalizeActionList(body.actionList);
+        if (!userId || !gameId || !actions) {
+          return respondJson(res, 400, { error: 'Invalid action set payload' });
+        }
+        const game = await db.findGame(gameId);
+        if (!game) return notFound(res);
+        const characters = game.state?.public?.characters ?? [];
+        const isPlayer = game.players.some((player) => player.userId === userId);
+        const hasCharacter = characters.some((character) => character.userId === userId);
+        if (!isPlayer || !hasCharacter) {
+          return respondJson(res, 403, { error: 'User not in game' });
+        }
+        const beats = game.state?.public?.beats ?? [];
+        const updatedBeats = applyActionSetToBeats(beats, characters, userId, actions);
+        game.state.public.beats = updatedBeats;
+        const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
+        const match = await db.findMatch(game.matchId);
+        if (match) {
+          match.players.forEach((player) => {
+            sendEvent({ type: 'game:update', payload: updatedGame }, player.userId);
+          });
+        }
+        return respondJson(res, 200, updatedGame);
       }
     }
 

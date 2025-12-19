@@ -58,6 +58,8 @@ export interface CharacterState {
 export interface BeatAction {
   username: string;
   action: string;
+  damage: number;
+  location: HexCoord;
 }
 
 export type BeatEntry = BeatAction[];

@@ -19,6 +19,8 @@ const getTheme = () => {
     accent: css.getPropertyValue('--color-accent').trim(),
     accentStrong: css.getPropertyValue('--color-accent-strong').trim(),
     queueLavender: css.getPropertyValue('--color-queue-lavender').trim(),
+    damage: css.getPropertyValue('--color-damage').trim(),
+    damageText: css.getPropertyValue('--color-damage-text').trim(),
   };
 };
 
@@ -75,6 +77,54 @@ const drawFacingArrow = (ctx, points, color) => {
   ctx.lineTo(points.baseBottom.x, points.baseBottom.y);
   ctx.closePath();
   ctx.fill();
+};
+
+const drawDamageCapsule = (ctx, x, y, radius, damage, theme) => {
+  const safeDamage = Number.isFinite(damage) ? Math.max(0, Math.round(damage)) : 0;
+  const label = `${safeDamage}`;
+  const fontSize = Math.max(10, radius * 0.42);
+  const paddingX = Math.max(3, radius * 0.12);
+  const paddingY = Math.max(2, radius * 0.08);
+
+  ctx.save();
+  ctx.font = `600 ${fontSize}px ${theme.fontBody}`;
+  const minWidth = ctx.measureText('88').width + paddingX * 2;
+  const textWidth = ctx.measureText(label).width;
+  const capsuleWidth = Math.max(textWidth + paddingX * 2, minWidth);
+  const capsuleHeight = fontSize + paddingY * 2;
+  const centerX = x + radius * 0.45;
+  const centerY = y + radius * 0.45;
+  const capsuleX = centerX - capsuleWidth / 2;
+  const capsuleY = centerY - capsuleHeight / 2;
+
+  ctx.beginPath();
+  ctx.arc(x, y, radius - 1, 0, Math.PI * 2);
+  ctx.clip();
+
+  ctx.fillStyle = theme.damage || '#d04840';
+  drawRoundedRect(ctx, capsuleX, capsuleY, capsuleWidth, capsuleHeight, capsuleHeight / 2);
+  ctx.fill();
+
+  ctx.fillStyle = theme.damageText || '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, centerX, centerY + fontSize * 0.02);
+  ctx.restore();
+};
+
+const drawRoundedRect = (ctx, x, y, width, height, radius) => {
+  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
 };
 
 export const createRenderer = (canvas, config = GAME_CONFIG) => {
@@ -170,6 +220,9 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     const characters = gameState?.state?.public?.characters ?? [];
     if (characters.length) {
       const metrics = getCharacterTokenMetrics(size);
+      const beats = gameState?.state?.public?.beats ?? [];
+      const beatIndex = beats.length ? Math.min(timeIndicatorViewModel?.value ?? 0, beats.length - 1) : -1;
+      const beatLookup = beatIndex >= 0 ? beats[beatIndex] : null;
       characters.forEach((character) => {
         const { x, y } = axialToPixel(character.position.q, character.position.r, size);
         const image = getCharacterArt(character.characterId);
@@ -179,6 +232,13 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
 
         const arrowPoints = getFacingArrowPoints(x, y, metrics, character.facing);
         drawFacingArrow(ctx, arrowPoints, theme.accentStrong);
+
+        if (Array.isArray(beatLookup)) {
+          const lookupKey = character.username ?? character.userId;
+          const entry = beatLookup.find((item) => item?.username === lookupKey || item?.username === character.userId);
+          const damage = typeof entry?.damage === 'number' ? entry.damage : 0;
+          drawDamageCapsule(ctx, x, y, metrics.radius, damage, theme);
+        }
       });
     }
 

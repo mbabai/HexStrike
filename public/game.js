@@ -4,11 +4,15 @@ import { createRenderer } from './game/renderer.js';
 import { createTimeIndicatorModel } from './game/timeIndicatorModel.js';
 import { createTimeIndicatorViewModel } from './game/timeIndicatorViewModel.js';
 import { applyMomentum, centerView, createPointerState, createViewState } from './game/viewState.js';
+import { getOrCreateUserId } from './storage.js';
+import { getTimelineMaxIndex } from './game/beatTimeline.js';
 
 export function initGame() {
   const gameArea = document.getElementById('gameArea');
   const canvas = document.getElementById('gameCanvas');
   const menuMatch = document.querySelector('.menu-match');
+  const moveButton = document.getElementById('actionMove');
+  const attackButton = document.getElementById('actionAttack');
 
   if (!gameArea || !canvas) return;
 
@@ -22,6 +26,7 @@ export function initGame() {
   let hasCentered = false;
   let lastTime = performance.now();
   let gameState = null;
+  let gameId = null;
   let usernameById = new Map();
 
   const formatGameLog = (game, nameMap) => {
@@ -59,6 +64,31 @@ export function initGame() {
     requestAnimationFrame(resize);
   };
 
+  const updateTimeIndicatorMax = (state) => {
+    const beats = state?.state?.public?.beats ?? [];
+    const characters = state?.state?.public?.characters ?? [];
+    const maxIndex = getTimelineMaxIndex(beats, characters);
+    timeIndicatorModel.setMax(maxIndex);
+  };
+
+  const setActionButtonsEnabled = (enabled) => {
+    if (moveButton) moveButton.disabled = !enabled;
+    if (attackButton) attackButton.disabled = !enabled;
+  };
+
+  const sendActionSet = async (actionList) => {
+    if (!gameId) {
+      console.warn('No active game to send action set');
+      return;
+    }
+    const userId = getOrCreateUserId();
+    await fetch('/api/v1/game/action-set', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, gameId, actionList }),
+    });
+  };
+
   window.addEventListener('resize', resize);
   window.addEventListener('hexstrike:match', showGameArea);
   window.addEventListener('hexstrike:game', showGameArea);
@@ -73,9 +103,33 @@ export function initGame() {
   });
   window.addEventListener('hexstrike:game', (event) => {
     gameState = event.detail;
+    gameId = gameState?.id || null;
+    setActionButtonsEnabled(Boolean(gameId));
+    updateTimeIndicatorMax(gameState);
     console.log(formatGameLog(gameState, usernameById));
   });
 
+  if (moveButton) {
+    moveButton.addEventListener('click', async () => {
+      try {
+        await sendActionSet(['W', 'm', 'W']);
+      } catch (err) {
+        console.error('Failed to send move action set', err);
+      }
+    });
+  }
+
+  if (attackButton) {
+    attackButton.addEventListener('click', async () => {
+      try {
+        await sendActionSet(['W', 'a-La-Ra', 'W', 'W']);
+      } catch (err) {
+        console.error('Failed to send attack action set', err);
+      }
+    });
+  }
+
+  setActionButtonsEnabled(false);
   bindControls(canvas, viewState, pointerState, GAME_CONFIG, timeIndicatorViewModel);
 
   const tick = (now) => {

@@ -32,20 +32,26 @@ export const createInitialGameState = async (
 ): Promise<GameState> => {
   const { LAND_HEXES } = await loadSharedHex();
   const roster = players.slice(0, STARTING_CHARACTERS.length);
-  const beats = Array.from({ length: roster.length ? DEFAULT_BEAT_COUNT : 0 }, () =>
-    roster.map((player) => ({ username: player.username, action: DEFAULT_ACTION })),
+  const characters = roster.map((player, index) => ({
+    userId: player.userId,
+    username: player.username,
+    characterId: player.characterId,
+    characterName: getCharacterName(player.characterId),
+    ...STARTING_CHARACTERS[index],
+  }));
+  const beats = Array.from({ length: characters.length ? DEFAULT_BEAT_COUNT : 0 }, () =>
+    characters.map((character) => ({
+      username: character.username,
+      action: DEFAULT_ACTION,
+      damage: 0,
+      location: { q: character.position.q, r: character.position.r },
+    })),
   );
   return {
     public: {
       land: LAND_HEXES.map((tile) => ({ q: tile.q, r: tile.r })),
       beats,
-      characters: roster.map((player, index) => ({
-        userId: player.userId,
-        username: player.username,
-        characterId: player.characterId,
-        characterName: getCharacterName(player.characterId),
-        ...STARTING_CHARACTERS[index],
-      })),
+      characters,
     },
     secret: {},
   };

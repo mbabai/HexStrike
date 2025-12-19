@@ -7,7 +7,11 @@ export const createTimeIndicatorViewModel = (model) => {
     isHolding: false,
   };
 
-  const canStep = (direction) => !(direction < 0 && model.value <= model.min);
+  const canStep = (direction) => {
+    if (direction < 0) return model.value > model.min;
+    if (direction > 0 && typeof model.max === 'number') return model.value < model.max;
+    return true;
+  };
 
   const press = (direction, now, pointerId) => {
     if (!canStep(direction)) return false;
@@ -33,11 +37,11 @@ export const createTimeIndicatorViewModel = (model) => {
     const elapsed = now - state.holdStart;
     const interval = Math.max(70, 320 - elapsed * 0.3);
     if (now - state.lastStep >= interval) {
-      if (canStep(state.holdDirection)) {
-        model.step(state.holdDirection);
-      }
-      state.lastStep = now;
+    if (canStep(state.holdDirection)) {
+      model.step(state.holdDirection);
     }
+    state.lastStep = now;
+  }
   };
 
   return {
@@ -46,6 +50,9 @@ export const createTimeIndicatorViewModel = (model) => {
     },
     get min() {
       return model.min;
+    },
+    get max() {
+      return model.max;
     },
     get isHolding() {
       return state.isHolding;

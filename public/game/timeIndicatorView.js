@@ -121,6 +121,7 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState) =>
 
   const value = viewModel?.value ?? 0;
   const leftDisabled = viewModel?.canStep ? !viewModel.canStep(-1) : value === 0;
+  const rightDisabled = viewModel?.canStep ? !viewModel.canStep(1) : false;
   const offsets = [-2, -1, 0, 1, 2];
 
   const topRow = getRowLayout(layout, 0);
@@ -158,7 +159,7 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState) =>
 
   const arrowColor = theme.accentStrong || '#d5a34a';
   drawArrow(ctx, topRow.leftArrow, 'left', arrowColor, leftDisabled ? 0.35 : 0.95);
-  drawArrow(ctx, topRow.rightArrow, 'right', arrowColor, 0.95);
+  drawArrow(ctx, topRow.rightArrow, 'right', arrowColor, rightDisabled ? 0.35 : 0.95);
 
   const characters = gameState?.state?.public?.characters ?? [];
   if (!characters.length) return;
@@ -171,7 +172,7 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState) =>
       if (!entry || typeof entry !== 'object') return;
       const username = entry.username ?? entry.userId ?? entry.userID;
       if (!username) return;
-      map.set(username, entry.action);
+      map.set(username, entry);
     });
     return map;
   });
@@ -186,12 +187,13 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState) =>
     const rowCenterY = row.numberArea.y + row.numberArea.height / 2;
     const rowSpacing = spacing;
     const iconSize = Math.min(row.numberArea.height * 0.82, rowSpacing * 0.8);
+    const lookupKey = character.username ?? character.userId;
 
     offsets.forEach((offset) => {
       const beatIndex = value + offset;
       if (beatIndex < 0) return;
-      const lookupKey = character.username ?? character.userId;
-      const action = beatLookup[beatIndex]?.get(lookupKey) ?? ACTION_ICON_FALLBACK;
+      const entry = beatLookup[beatIndex]?.get(lookupKey);
+      const action = entry?.action ?? ACTION_ICON_FALLBACK;
       const image = getActionArt(action);
       if (!image || !image.complete || image.naturalWidth === 0) return;
       const xPos = rowCenterX + offset * rowSpacing;

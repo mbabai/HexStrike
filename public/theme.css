@@ -26,6 +26,8 @@
   --color-accent-deep: #b38137;
   --color-accent-glow: rgba(213, 163, 74, 0.25);
   --color-accent-glow-strong: rgba(213, 163, 74, 0.55);
+  --color-damage: #d34b42;
+  --color-damage-text: #ffffff;
   --color-queue-lavender: #b9a7f2;
   --color-queue-lavender-strong: #cbb7ff;
   --color-queue-lavender-border: #a18be0;
@@ -877,6 +879,29 @@ small {
 
 .game-area[hidden] {
   display: none;
+}
+
+.game-actions {
+  position: absolute;
+  bottom: 18px;
+  right: 18px;
+  z-index: 6;
+  width: min(260px, 70vw);
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px 16px;
+}
+
+.game-actions-title {
+  margin: 0;
+  font-family: var(--font-heading);
+  color: var(--color-accent-strong);
+  letter-spacing: 0.04em;
+  font-size: 16px;
+}
+
+.game-actions .pill-group {
+  justify-content: space-between;
 }
 
 .game-frame {

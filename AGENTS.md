@@ -60,6 +60,19 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Document new protocols (message schemas, frame structure) in `docs/` with examples.
 - Update this guide if architectural decisions change.
 
+## Gotchas (current)
+- Beat entries include `damage` and `location` fields; tests should assert full beat payloads, not just `username`/`action`.
+- Action-set insertion is per player: replace that player's last `E`, fill empty beats in place, and avoid shifting other players' beats.
+- Keep beat arrays ordered by character roster when mutating to prevent UI rows from swapping entries.
+- Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
+- Node test runner reads from `dist`; run `npm run build` (or `tsc`) before `node --test test` when working on TS source.
+
 ## PR expectations
 - Summarize rule/engine changes clearly; include replay determinism notes when relevant.
 - Include tests for new behaviors and note coverage in the PR description.
+
+# Wrap up
+When the user says "let's wrap this up" or something along those lines, execute the following steps:
+- Refactor the most recently written code as necessary to make sure these methods are properly abstracted, encapsulated, built in extensible ways, and use the proper separations of controls/views/states on the front end UI. 
+- Add/remove/update the gotchas into the AGENTS.md file graph so that we don't run into similar errors in the future. 
+- Add any required tests (if needed).
