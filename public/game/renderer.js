@@ -2,6 +2,7 @@ import { GAME_CONFIG } from './config.js';
 import { drawTimeIndicator } from './timeIndicatorView.js';
 import { CHARACTER_IMAGE_SOURCES, getCharacterTokenMetrics, getFacingArrowPoints } from './characterTokens.mjs';
 import { LAND_HEXES, axialToPixel, getColumnRange, getHexSize, getRowRange, getWorldBounds } from '../shared/hex.mjs';
+import { drawNameCapsule } from './portraitBadges.js';
 
 const getTheme = () => {
   const css = getComputedStyle(document.documentElement);
@@ -19,7 +20,9 @@ const getTheme = () => {
     subtle: css.getPropertyValue('--color-subtle').trim(),
     accent: css.getPropertyValue('--color-accent').trim(),
     accentStrong: css.getPropertyValue('--color-accent-strong').trim(),
+    playerAccent: css.getPropertyValue('--color-player-accent').trim(),
     queueLavender: css.getPropertyValue('--color-queue-lavender').trim(),
+    nameCapsuleFill: css.getPropertyValue('--color-name-capsule-fill').trim(),
     damage: css.getPropertyValue('--color-damage').trim(),
     damageText: css.getPropertyValue('--color-damage-text').trim(),
     actionAttack: css.getPropertyValue('--color-action-attack').trim(),
@@ -101,14 +104,10 @@ const drawDamageCapsule = (ctx, x, y, radius, damage, theme) => {
   const textWidth = ctx.measureText(label).width;
   const capsuleWidth = Math.max(textWidth + paddingX * 2, minWidth);
   const capsuleHeight = fontSize + paddingY * 2;
-  const centerX = x + radius * 0.45;
-  const centerY = y + radius * 0.45;
+  const centerX = x + radius * 0.75;
+  const centerY = y - radius * 0.75;
   const capsuleX = centerX - capsuleWidth / 2;
   const capsuleY = centerY - capsuleHeight / 2;
-
-  ctx.beginPath();
-  ctx.arc(x, y, radius - 1, 0, Math.PI * 2);
-  ctx.clip();
 
   ctx.fillStyle = theme.damage || '#d04840';
   drawRoundedRect(ctx, capsuleX, capsuleY, capsuleWidth, capsuleHeight, capsuleHeight / 2);
@@ -266,7 +265,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     }
   };
 
-  const draw = (viewState, gameState, timeIndicatorViewModel, scene) => {
+  const draw = (viewState, gameState, timeIndicatorViewModel, scene, localUserId) => {
     if (!viewport.width || !viewport.height) return;
     const size = getHexSize(viewport.width, config.hexSizeFactor);
     const bounds = getWorldBounds(viewport, viewState);
@@ -297,7 +296,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
 
     const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
     if (!land.length) {
-      drawTimeIndicator(ctx, viewport, theme, timeIndicatorViewModel, gameState);
+      drawTimeIndicator(ctx, viewport, theme, timeIndicatorViewModel, gameState, localUserId);
       return;
     }
 
@@ -332,12 +331,14 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
       renderCharacters.forEach((character) => {
         const { x, y } = axialToPixel(character.position.q, character.position.r, size);
         const image = getCharacterArt(character.characterId);
+        const isLocalPlayer = localUserId && character.userId === localUserId;
+        const ringColor = isLocalPlayer ? theme.playerAccent || '#7dcfff' : theme.accentStrong;
 
         drawCharacterPortrait(ctx, image, x, y, metrics.radius, theme.panelStrong);
-        drawCharacterRing(ctx, x, y, metrics.radius, metrics.borderWidth, theme.accentStrong);
+        drawCharacterRing(ctx, x, y, metrics.radius, metrics.borderWidth, ringColor);
 
         const arrowPoints = getFacingArrowPoints(x, y, metrics, character.facing);
-        drawFacingArrow(ctx, arrowPoints, theme.accentStrong);
+        drawFacingArrow(ctx, arrowPoints, ringColor);
 
         const damage =
           typeof character.damage === 'number'
@@ -346,10 +347,18 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
               ? beatLookup.find((item) => item?.username === character.username || item?.username === character.userId)?.damage ?? 0
               : 0;
         drawDamageCapsule(ctx, x, y, metrics.radius, damage, theme);
+        drawNameCapsule(ctx, x, y, metrics.radius, character.username || character.userId, theme, {
+          baseFontScale: 0.3,
+          paddingXScale: 0.12,
+          paddingYScale: 0.08,
+          maxWidthScale: 1.9,
+          minWidthScale: 1.05,
+          borderScale: 0.08,
+        });
       });
     }
 
-    drawTimeIndicator(ctx, viewport, theme, timeIndicatorViewModel, gameState);
+    drawTimeIndicator(ctx, viewport, theme, timeIndicatorViewModel, gameState, localUserId);
   };
 
   return { resize, draw, viewport };

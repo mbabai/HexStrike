@@ -9,6 +9,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - UI: static assets in `public/` with ES module scripts (`public/menu.js`, `public/queue.js`, `public/storage.js`) and styling in `public/theme.css`.
 - UI action buttons for gameplay live in `public/index.html` and are wired via `actionConfigs` in `public/game.js`.
 - Front-end animation: `public/game/timelinePlayback.js` builds beat-by-beat scenes (characters + effects) consumed by `public/game/renderer.js`.
+- UI portrait badges (name capsules) are drawn with `public/game/portraitBadges.js`; local player accents use `--color-player-accent`.
 - Matchmaking: Quickplay join/leave is wired from the UI; other queue options are placeholders.
 
 # Documentation map (start here)
@@ -73,6 +74,9 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Keep `getDirectionIndex` logic in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized so visuals match server resolution.
 - Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.
 - Node test runner reads from `dist`; run `npm run build` (or `tsc`) before `node --test test` when working on TS source.
+- Timeline row separators must render before portrait rings so the local player highlight is visually on top.
+- Board damage capsules are offset outside the ring and drawn without clipping so they sit over the border.
+- Name capsule sizing is centralized in `public/game/portraitBadges.js`; pass config overrides for board vs timeline to keep consistency.
 
 ## PR expectations
 - Summarize rule/engine changes clearly; include replay determinism notes when relevant.

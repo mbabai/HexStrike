@@ -26,6 +26,8 @@
   --color-accent-deep: #b38137;
   --color-accent-glow: rgba(213, 163, 74, 0.25);
   --color-accent-glow-strong: rgba(213, 163, 74, 0.55);
+  --color-player-accent: #7dcfff;
+  --color-name-capsule-fill: #ffffff;
   --color-damage: #d34b42;
   --color-damage-text: #ffffff;
   --color-action-attack: #d34b42;
@@ -902,6 +904,15 @@ small {
   color: var(--color-accent-strong);
   letter-spacing: 0.04em;
   font-size: 16px;
+}
+
+.game-actions-username {
+  margin: 0;
+  text-align: center;
+  font-family: var(--font-heading);
+  font-size: 22px;
+  color: var(--color-player-accent);
+  letter-spacing: 0.04em;
 }
 
 .game-actions .pill-group {

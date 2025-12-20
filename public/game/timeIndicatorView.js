@@ -1,4 +1,5 @@
 import { CHARACTER_IMAGE_SOURCES, CHARACTER_TOKEN_STYLE } from './characterTokens.mjs';
+import { drawNameCapsule } from './portraitBadges.js';
 
 const DEFAULT_BORDER_SIZE = { width: 640, height: 64 };
 const ACTION_ICON_FALLBACK = 'empty';
@@ -117,7 +118,7 @@ export const getTimeIndicatorHit = (layout, x, y) => {
   return null;
 };
 
-export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState) => {
+export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, localUserId) => {
   const layout = getTimeIndicatorLayout(viewport);
   if (!layout) return;
 
@@ -179,10 +180,13 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState) =>
     return map;
   });
 
-  const separators = [{ numberArea: topRow.numberArea, y: topRow.y + topRow.rowHeight }];
+  let previousSeparator = { numberArea: topRow.numberArea, y: topRow.y + topRow.rowHeight };
 
   characters.forEach((character, index) => {
     const row = getRowLayout(layout, index + 1);
+    if (previousSeparator) {
+      drawRowSeparator(ctx, layout, previousSeparator.numberArea, previousSeparator.y, theme.accentStrong);
+    }
     drawNumberWell(ctx, row.numberArea, theme.queueLavender || theme.panel);
 
     const rowCenterX = row.numberArea.x + row.numberArea.width / 2;
@@ -216,15 +220,14 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState) =>
     const portraitX = layout.x - portraitRadius + layout.portraitOverlap;
     const portraitY = row.y + layout.actionHeight / 2;
     const portraitImage = getCharacterArt(character.characterId);
+    const isLocalPlayer = localUserId && character.userId === localUserId;
+    const ringColor = isLocalPlayer ? theme.playerAccent || '#7dcfff' : theme.accentStrong;
     drawCharacterPortrait(ctx, portraitImage, portraitX, portraitY, portraitRadius, theme.panelStrong);
-    drawCharacterRing(ctx, portraitX, portraitY, portraitRadius, layout.portraitBorderWidth, theme.accentStrong);
+    drawCharacterRing(ctx, portraitX, portraitY, portraitRadius, layout.portraitBorderWidth, ringColor);
+    drawNameCapsule(ctx, portraitX, portraitY, portraitRadius, character.username || character.userId, theme);
 
     if (index === characters.length - 1) return;
-    separators.push({ numberArea: row.numberArea, y: row.y + row.rowHeight });
-  });
-
-  separators.forEach((separator) => {
-    drawRowSeparator(ctx, layout, separator.numberArea, separator.y, theme.accentStrong);
+    previousSeparator = { numberArea: row.numberArea, y: row.y + row.rowHeight };
   });
 
   const lastRow = getRowLayout(layout, characters.length);

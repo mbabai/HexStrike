@@ -20,6 +20,7 @@ export function initGame() {
   const gameArea = document.getElementById('gameArea');
   const canvas = document.getElementById('gameCanvas');
   const menuMatch = document.querySelector('.menu-match');
+  const playerName = document.getElementById('playerName');
   const actionConfigs = [
     { id: 'actionMove', label: 'move', actions: ['W', 'm', 'W'], priority: 30 },
     { id: 'actionAttack', label: 'attack', actions: ['W', 'a-La-Ra', 'W', 'W'], priority: 90 },
@@ -43,6 +44,7 @@ export function initGame() {
 
   const viewState = createViewState();
   const pointerState = createPointerState();
+  const localUserId = getOrCreateUserId();
   let hasCentered = false;
   let lastTime = performance.now();
   let gameState = null;
@@ -99,16 +101,21 @@ export function initGame() {
     });
   };
 
+  const updatePlayerName = () => {
+    if (!playerName) return;
+    const label = usernameById.get(localUserId) || 'You';
+    playerName.textContent = label;
+  };
+
   const sendActionSet = async (actionList) => {
     if (!gameId) {
       console.warn('No active game to send action set');
       return;
     }
-    const userId = getOrCreateUserId();
     await fetch('/api/v1/game/action-set', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, gameId, actionList }),
+      body: JSON.stringify({ userId: localUserId, gameId, actionList }),
     });
   };
 
@@ -123,12 +130,14 @@ export function initGame() {
         usernameById.set(player.userId, player.username);
       });
     }
+    updatePlayerName();
   });
   window.addEventListener('hexstrike:game', (event) => {
     gameState = event.detail;
     gameId = gameState?.id || null;
     updateActionButtonsEnabled();
     updateTimeIndicatorMax(gameState);
+    updatePlayerName();
     console.log(formatGameLog(gameState, usernameById));
   });
 
@@ -163,7 +172,7 @@ export function initGame() {
 
     if (!gameArea.hidden) {
       timelinePlayback.update(now, gameState, timeIndicatorViewModel.value ?? 0);
-      renderer.draw(viewState, gameState, timeIndicatorViewModel, timelinePlayback.getScene());
+      renderer.draw(viewState, gameState, timeIndicatorViewModel, timelinePlayback.getScene(), localUserId);
     }
 
     requestAnimationFrame(tick);
