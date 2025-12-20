@@ -4,7 +4,95 @@ const DAMAGE_ICON_ACTION = 'DamageIcon';
 const ATTACK_DAMAGE = 3;
 const KNOCKBACK_FACTOR = 2;
 const KNOCKBACK_DIVISOR = 10;
-const ACTION_DURATION_MS = 600;
+const ACTION_DURATION_MS = 1200;
+
+const HIT_WINDOW_START = 0.18;
+const HIT_WINDOW_END = 0.32;
+const KNOCKBACK_START = 0.32;
+const KNOCKBACK_END = 0.55;
+const SWIPE_DURATION = 0.22;
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const easeInOut = (t) => 0.5 - Math.cos(clamp(t, 0, 1) * Math.PI) / 2;
+
+const buildPathFromPositions = (origin, positions, destination) => {
+  const path = [{ q: origin.q, r: origin.r }];
+  if (!Array.isArray(positions) || !positions.length) return path;
+  for (const position of positions) {
+    path.push({ q: position.q, r: position.r });
+    if (destination && sameCoord(position, destination)) break;
+  }
+  return path;
+};
+
+const buildPartialPath = (path, progress) => {
+  if (!Array.isArray(path) || !path.length) return [];
+  if (path.length === 1) return [{ q: path[0].q, r: path[0].r }];
+  const clamped = clamp(progress, 0, 1);
+  const totalSegments = path.length - 1;
+  const scaled = clamped * totalSegments;
+  const segmentIndex = Math.min(totalSegments - 1, Math.floor(scaled));
+  const segmentProgress = scaled - segmentIndex;
+  const points = path.slice(0, segmentIndex + 1).map((point) => ({ q: point.q, r: point.r }));
+  const start = path[segmentIndex];
+  const end = path[segmentIndex + 1];
+  points.push({
+    q: start.q + (end.q - start.q) * segmentProgress,
+    r: start.r + (end.r - start.r) * segmentProgress,
+  });
+  return points;
+};
+
+const hashSeed = (value) => {
+  const str = `${value ?? ''}`;
+  let hash = 0;
+  for (let i = 0; i < str.length; i += 1) {
+    hash = (hash * 31 + str.charCodeAt(i)) % 100000;
+  }
+  return (hash / 100000) * Math.PI * 2;
+};
+
+const getShakeOffset = (progress, intensity, seed) => {
+  if (!intensity) return { x: 0, y: 0 };
+  const phase = clamp(progress, 0, 1) * Math.PI * 2;
+  return {
+    x: Math.sin(phase * 7 + seed) * intensity,
+    y: Math.cos(phase * 9 + seed * 1.3) * intensity,
+  };
+};
+
+const getSwipeState = (stepProgress) => {
+  const alpha = Math.sin(stepProgress * Math.PI);
+  const easedProgress = easeInOut(stepProgress);
+  const swipeProgress = clamp(stepProgress / SWIPE_DURATION, 0, 1);
+  const swipeFade = clamp((stepProgress - SWIPE_DURATION) / 0.18, 0, 1);
+  const swipeIntensity = 1 - swipeFade;
+  const attackAlpha = alpha * swipeIntensity;
+  return { alpha, easedProgress, swipeProgress, attackAlpha };
+};
+
+const getHitState = (stepProgress) => {
+  const hitProgress = clamp(
+    (stepProgress - HIT_WINDOW_START) / (HIT_WINDOW_END - HIT_WINDOW_START),
+    0,
+    1,
+  );
+  const hitPulse = Math.sin(hitProgress * Math.PI);
+  const knockbackProgress = clamp(
+    (stepProgress - KNOCKBACK_START) / (KNOCKBACK_END - KNOCKBACK_START),
+    0,
+    1,
+  );
+  const knockbackEase = easeInOut(knockbackProgress);
+  return {
+    hitProgress,
+    hitPulse,
+    knockbackProgress,
+    knockbackEase,
+    isHitWindow: stepProgress >= HIT_WINDOW_START && stepProgress <= HIT_WINDOW_END,
+  };
+};
 
 const LOCAL_DIRECTIONS = {
   F: { q: 1, r: 0 },
@@ -250,8 +338,12 @@ const buildActionSteps = (beat, characters, baseState) => {
     const effects = [];
     const damageChanges = [];
     const positionChanges = [];
+    const attackTargets = [];
+    const hitTargets = [];
+    const blockHits = [];
     let moveDestination = null;
     let moveType = null;
+    let movePath = null;
 
     const tokens = parseActionTokens(entry.action ?? '');
     tokens.forEach((token) => {
@@ -278,6 +370,7 @@ const buildActionSteps = (beat, characters, baseState) => {
 
       if (token.type === 'a') {
         effects.push({ type: 'attack', coord: destination });
+        attackTargets.push({ q: destination.q, r: destination.r });
       }
       if (token.type === 'm') {
         effects.push({ type: 'move', coord: destination });
@@ -287,6 +380,7 @@ const buildActionSteps = (beat, characters, baseState) => {
       }
       if (token.type === 'c') {
         effects.push({ type: 'charge', coord: destination });
+        attackTargets.push({ q: destination.q, r: destination.r });
       }
 
       const isBlocked =
@@ -294,15 +388,20 @@ const buildActionSteps = (beat, characters, baseState) => {
         blockMap.get(targetKey)?.has(directionIndex);
 
       if (token.type === 'a' || token.type === 'c') {
+        if (targetId && isBlocked && directionIndex != null) {
+          blockHits.push({ coord: { q: destination.q, r: destination.r }, directionIndex });
+        }
         if (targetId && !isBlocked) {
           const targetState = state.get(targetId);
           if (targetState) {
+            const fromPosition = { q: targetState.position.q, r: targetState.position.r };
             targetState.damage += ATTACK_DAMAGE;
             damageChanges.push({ targetId, delta: ATTACK_DAMAGE });
             const knockbackDirection = getKnockbackDirection(origin, destination, lastStep);
             const knockbackDistance = getKnockbackDistance(targetState.damage);
+            let finalPosition = { ...targetState.position };
+            const knockbackPath = [{ q: targetState.position.q, r: targetState.position.r }];
             if (knockbackDirection && knockbackDistance > 0) {
-              let finalPosition = { ...targetState.position };
               for (let step = 0; step < knockbackDistance; step += 1) {
                 const candidate = {
                   q: finalPosition.q + knockbackDirection.q,
@@ -311,14 +410,26 @@ const buildActionSteps = (beat, characters, baseState) => {
                 const occupant = occupancy.get(coordKey(candidate));
                 if (occupant && occupant !== targetId) break;
                 finalPosition = candidate;
-              }
-              if (!sameCoord(finalPosition, targetState.position)) {
-                occupancy.delete(coordKey(targetState.position));
-                targetState.position = { q: finalPosition.q, r: finalPosition.r };
-                occupancy.set(coordKey(targetState.position), targetId);
-                positionChanges.push({ targetId, position: { ...targetState.position } });
+                knockbackPath.push({ q: finalPosition.q, r: finalPosition.r });
               }
             }
+            if (!sameCoord(finalPosition, targetState.position)) {
+              occupancy.delete(coordKey(targetState.position));
+              targetState.position = { q: finalPosition.q, r: finalPosition.r };
+              occupancy.set(coordKey(targetState.position), targetId);
+              positionChanges.push({
+                targetId,
+                position: { q: targetState.position.q, r: targetState.position.r },
+                from: { q: fromPosition.q, r: fromPosition.r },
+                path: knockbackPath,
+              });
+            }
+            hitTargets.push({
+              targetId,
+              from: { q: fromPosition.q, r: fromPosition.r },
+              to: { q: finalPosition.q, r: finalPosition.r },
+              path: knockbackPath,
+            });
             disabledActors.add(targetId);
           }
         }
@@ -340,6 +451,7 @@ const buildActionSteps = (beat, characters, baseState) => {
           occupancy.set(coordKey(actorState.position), actorId);
           moveDestination = { q: finalPosition.q, r: finalPosition.r };
           moveType = token.type;
+          movePath = buildPathFromPositions(origin, positions, finalPosition);
         }
       }
 
@@ -350,6 +462,7 @@ const buildActionSteps = (beat, characters, baseState) => {
           occupancy.set(coordKey(actorState.position), actorId);
           moveDestination = { q: destination.q, r: destination.r };
           moveType = token.type;
+          movePath = buildPathFromPositions(origin, positions, destination);
         }
       }
     });
@@ -359,8 +472,13 @@ const buildActionSteps = (beat, characters, baseState) => {
       facingAfter: actorState.facing,
       moveDestination,
       moveType,
+      movePath,
       damageChanges,
       positionChanges,
+      attackOrigin: attackTargets.length ? { q: origin.q, r: origin.r } : null,
+      attackTargets,
+      hitTargets,
+      blockHits,
       effects,
     });
   });
@@ -451,10 +569,111 @@ export const createTimelinePlayback = () => {
       });
     }
 
-    const alpha = Math.sin(stepProgress * Math.PI);
-    const effects = currentStep?.effects?.map((effect) => ({ ...effect, alpha })) ?? [];
-    const blockEffects = (persistentEffects ?? []).map((effect) => ({ ...effect, alpha: 0.9 }));
-    scene = { characters: renderCharacters, effects: [...blockEffects, ...effects] };
+    const { alpha, easedProgress, swipeProgress, attackAlpha } = getSwipeState(stepProgress);
+    const effects =
+      currentStep?.effects?.map((effect) => {
+        const effectAlpha = effect.type === 'attack' || effect.type === 'charge' ? attackAlpha : alpha;
+        return { ...effect, alpha: effectAlpha };
+      }) ?? [];
+    const trailEffects = [];
+    const arcEffects = [];
+    const blockShake = new Map();
+
+    const characterIndex = new Map();
+    renderCharacters.forEach((character, index) => {
+      characterIndex.set(character.userId, index);
+      if (character.username) characterIndex.set(character.username, index);
+    });
+
+    const applyCharacterUpdate = (characterId, patch) => {
+      const index = characterIndex.get(characterId);
+      if (index == null) return;
+      const current = renderCharacters[index];
+      const next = { ...current, ...patch };
+      if (patch.renderOffset) {
+        const base = current.renderOffset ?? { x: 0, y: 0 };
+        next.renderOffset = { x: base.x + patch.renderOffset.x, y: base.y + patch.renderOffset.y };
+      } else if (current.renderOffset) {
+        next.renderOffset = { ...current.renderOffset };
+      }
+      if (typeof patch.flashAlpha === 'number') {
+        next.flashAlpha = Math.max(current.flashAlpha ?? 0, patch.flashAlpha);
+      }
+      renderCharacters[index] = next;
+    };
+
+    if (currentStep && stepProgress > 0) {
+      const { hitProgress, hitPulse, knockbackProgress, knockbackEase, isHitWindow } = getHitState(stepProgress);
+
+      if (currentStep.movePath?.length && currentStep.moveType) {
+        const partialPath = buildPartialPath(currentStep.movePath, easedProgress);
+        const currentPosition = partialPath[partialPath.length - 1];
+        applyCharacterUpdate(currentStep.actorId, { position: currentPosition });
+        trailEffects.push({
+          type: 'trail',
+          trailType: currentStep.moveType === 'j' ? 'jump' : 'move',
+          path: partialPath,
+          alpha: alpha * 0.85,
+        });
+      }
+
+      if (currentStep.hitTargets?.length) {
+        currentStep.hitTargets.forEach((hit) => {
+          if (isHitWindow) {
+            const seed = hashSeed(hit.targetId);
+            const shake = getShakeOffset(hitProgress, hitPulse * 0.05, seed);
+            applyCharacterUpdate(hit.targetId, { renderOffset: shake, flashAlpha: hitPulse * 0.8 });
+          }
+          if (hit.path?.length > 1 && knockbackProgress > 0) {
+            const partialPath = buildPartialPath(hit.path, knockbackEase);
+            const currentPosition = partialPath[partialPath.length - 1];
+            applyCharacterUpdate(hit.targetId, { position: currentPosition });
+            trailEffects.push({
+              type: 'trail',
+              trailType: 'hit',
+              path: partialPath,
+              alpha: attackAlpha * 0.9,
+            });
+          }
+        });
+      }
+
+      if (currentStep.blockHits?.length) {
+        currentStep.blockHits.forEach((hit) => {
+          if (hit.directionIndex == null) return;
+          const key = `${coordKey(hit.coord)}:${hit.directionIndex}`;
+          const seed = hashSeed(key);
+          blockShake.set(key, getShakeOffset(stepProgress, alpha * 0.08, seed));
+        });
+      }
+
+      if (currentStep.attackTargets?.length && currentStep.attackOrigin) {
+        arcEffects.push({
+          type: 'attackArc',
+          origin: currentStep.attackOrigin,
+          targets: currentStep.attackTargets,
+          alpha: attackAlpha * 0.95,
+          progress: swipeProgress,
+        });
+      }
+    }
+
+    const blockEffects = (persistentEffects ?? []).map((effect) => {
+      const key =
+        effect.directionIndex != null && effect.coord
+          ? `${coordKey(effect.coord)}:${effect.directionIndex}`
+          : null;
+      return {
+        ...effect,
+        alpha: 0.9,
+        shakeOffset: key ? blockShake.get(key) : null,
+      };
+    });
+
+    scene = {
+      characters: renderCharacters,
+      effects: [...trailEffects, ...effects, ...arcEffects, ...blockEffects],
+    };
   };
 
   return {

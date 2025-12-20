@@ -32,6 +32,8 @@ const getTheme = () => {
   };
 };
 
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
 const drawHexPath = (ctx, x, y, size) => {
   ctx.beginPath();
   for (let i = 0; i < 6; i += 1) {
@@ -164,6 +166,108 @@ const getHexCorners = (x, y, size) => {
   return points;
 };
 
+const normalizeAngle = (value) => {
+  const twoPi = Math.PI * 2;
+  return ((value % twoPi) + twoPi) % twoPi;
+};
+
+const getArcSpan = (angles) => {
+  if (!angles.length) return { start: 0, span: 0 };
+  const normalized = angles.map((angle) => normalizeAngle(angle)).sort((a, b) => a - b);
+  if (normalized.length === 1) {
+    return { start: normalized[0] - Math.PI / 8, span: Math.PI / 4 };
+  }
+  let maxGap = -Infinity;
+  let gapIndex = 0;
+  for (let i = 0; i < normalized.length; i += 1) {
+    const current = normalized[i];
+    const next = i === normalized.length - 1 ? normalized[0] + Math.PI * 2 : normalized[i + 1];
+    const gap = next - current;
+    if (gap > maxGap) {
+      maxGap = gap;
+      gapIndex = i;
+    }
+  }
+  const span = Math.max(Math.PI / 8, Math.PI * 2 - maxGap);
+  const start = normalized[(gapIndex + 1) % normalized.length];
+  return { start, span };
+};
+
+const drawTrail = (ctx, path, size, color, alpha, widthScale) => {
+  if (!Array.isArray(path) || path.length < 2) return;
+  const safeAlpha = clamp(alpha, 0, 1);
+  if (!safeAlpha) return;
+  const baseWidth = Math.max(2, size * (widthScale ?? 0.25));
+  const points = path.map((point) => axialToPixel(point.q, point.r, size));
+  const lastIndex = points.length - 1;
+  const left = [];
+  const right = [];
+
+  points.forEach((point, index) => {
+    const prev = points[index - 1] ?? point;
+    const next = points[index + 1] ?? point;
+    const dir = { x: next.x - prev.x, y: next.y - prev.y };
+    const length = Math.hypot(dir.x, dir.y) || 1;
+    const normal = { x: -dir.y / length, y: dir.x / length };
+    const t = lastIndex ? index / lastIndex : 0;
+    const width = Math.max(0.5, baseWidth * (1 - t * 0.9));
+    const half = width / 2;
+    left.push({ x: point.x + normal.x * half, y: point.y + normal.y * half });
+    right.push({ x: point.x - normal.x * half, y: point.y - normal.y * half });
+  });
+
+  ctx.save();
+  ctx.globalAlpha = safeAlpha;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(left[0].x, left[0].y);
+  for (let i = 1; i < left.length; i += 1) {
+    ctx.lineTo(left[i].x, left[i].y);
+  }
+  for (let i = right.length - 1; i >= 0; i -= 1) {
+    ctx.lineTo(right[i].x, right[i].y);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+};
+
+const drawAttackArc = (ctx, origin, targets, size, color, alpha, progress) => {
+  if (!origin || !Array.isArray(targets) || !targets.length) return;
+  const safeAlpha = clamp(alpha, 0, 1);
+  const safeProgress = clamp(progress, 0, 1);
+  if (!safeAlpha || !safeProgress) return;
+  const originPixel = axialToPixel(origin.q, origin.r, size);
+  const angles = [];
+  let maxDistance = size;
+  targets.forEach((target) => {
+    const { x, y } = axialToPixel(target.q, target.r, size);
+    const corners = getHexCorners(x, y, size);
+    corners.forEach((corner) => {
+      const dx = corner.x - originPixel.x;
+      const dy = corner.y - originPixel.y;
+      angles.push(Math.atan2(dy, dx));
+      maxDistance = Math.max(maxDistance, Math.hypot(dx, dy));
+    });
+  });
+  const { start, span } = getArcSpan(angles);
+  const lineWidth = Math.max(3, size * 0.6);
+  const radius = Math.max(size * 0.8, maxDistance - lineWidth * 0.35);
+  const arcStart = start + span;
+  const arcEnd = arcStart - span * safeProgress;
+  ctx.save();
+  ctx.globalAlpha = safeAlpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.lineCap = 'round';
+  ctx.shadowColor = color;
+  ctx.shadowBlur = size * 0.35;
+  ctx.beginPath();
+  ctx.arc(originPixel.x, originPixel.y, radius, arcStart, arcEnd, true);
+  ctx.stroke();
+  ctx.restore();
+};
+
 const getEdgeIndexForDirection = (size, directionIndex) => {
   const dir = AXIAL_DIRECTIONS[((directionIndex % 6) + 6) % 6] ?? AXIAL_DIRECTIONS[0];
   const dirPixel = axialToPixel(dir.q, dir.r, size);
@@ -187,15 +291,20 @@ const getEdgeIndexForDirection = (size, directionIndex) => {
   return bestIndex;
 };
 
-const drawBlockEdge = (ctx, coord, size, color, alpha, directionIndex) => {
+const drawBlockEdge = (ctx, coord, size, color, alpha, directionIndex, offset) => {
   if (!coord || directionIndex == null) return;
   const edgeIndex = getEdgeIndexForDirection(size, directionIndex);
   const { x, y } = axialToPixel(coord.q, coord.r, size);
   const corners = getHexCorners(x, y, size);
-  const start = corners[edgeIndex % 6];
-  const end = corners[(edgeIndex + 1) % 6];
+  const baseStart = corners[edgeIndex % 6];
+  const baseEnd = corners[(edgeIndex + 1) % 6];
+  const shake = offset
+    ? { x: offset.x * size, y: offset.y * size }
+    : { x: 0, y: 0 };
+  const start = { x: baseStart.x + shake.x, y: baseStart.y + shake.y };
+  const end = { x: baseEnd.x + shake.x, y: baseEnd.y + shake.y };
   ctx.save();
-  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.globalAlpha = clamp(alpha, 0, 1);
   ctx.strokeStyle = color;
   ctx.lineWidth = Math.max(3, size * 0.2);
   ctx.lineCap = 'round';
@@ -208,7 +317,40 @@ const drawBlockEdge = (ctx, coord, size, color, alpha, directionIndex) => {
 
 const drawActionEffects = (ctx, effects, size, theme) => {
   if (!Array.isArray(effects) || !effects.length) return;
+  const trails = [];
+  const arcs = [];
+  const hexes = [];
+  const blocks = [];
+
   effects.forEach((effect) => {
+    if (effect.type === 'trail') {
+      trails.push(effect);
+      return;
+    }
+    if (effect.type === 'attackArc') {
+      arcs.push(effect);
+      return;
+    }
+    if (effect.type === 'block') {
+      blocks.push(effect);
+      return;
+    }
+    hexes.push(effect);
+  });
+
+  trails.forEach((effect) => {
+    const alpha = typeof effect.alpha === 'number' ? effect.alpha : 0.7;
+    const trailType = effect.trailType || 'move';
+    const trailColor =
+      trailType === 'jump'
+        ? theme.actionJump || theme.queueLavender
+        : trailType === 'hit'
+          ? theme.actionAttack || theme.damage
+          : theme.actionMove || theme.accent;
+    drawTrail(ctx, effect.path, size, trailColor, alpha, trailType === 'hit' ? 0.3 : 0.22);
+  });
+
+  hexes.forEach((effect) => {
     const alpha = typeof effect.alpha === 'number' ? effect.alpha : 0.8;
     if (effect.type === 'attack') {
       drawHexEffect(ctx, effect.coord, size, theme.actionAttack || theme.damage, alpha);
@@ -223,9 +365,32 @@ const drawActionEffects = (ctx, effects, size, theme) => {
       drawHexEffect(ctx, effect.coord, size, theme.actionAttack || theme.damage, alpha);
       drawHexEffect(ctx, effect.coord, size, theme.actionMove || theme.accent, alpha, 0.45);
     }
-    if (effect.type === 'block') {
-      drawBlockEdge(ctx, effect.coord, size, theme.actionBlock || theme.accentStrong, alpha, effect.directionIndex);
-    }
+  });
+
+  arcs.forEach((effect) => {
+    const alpha = typeof effect.alpha === 'number' ? effect.alpha : 0.85;
+    drawAttackArc(
+      ctx,
+      effect.origin,
+      effect.targets,
+      size,
+      theme.actionAttack || theme.damage,
+      alpha,
+      effect.progress ?? 1,
+    );
+  });
+
+  blocks.forEach((effect) => {
+    const alpha = typeof effect.alpha === 'number' ? effect.alpha : 0.9;
+    drawBlockEdge(
+      ctx,
+      effect.coord,
+      size,
+      theme.actionBlock || theme.accentStrong,
+      alpha,
+      effect.directionIndex,
+      effect.shakeOffset,
+    );
   });
 };
 
@@ -330,14 +495,28 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
       const beatLookup = beatIndex >= 0 ? beats[beatIndex] : null;
       renderCharacters.forEach((character) => {
         const { x, y } = axialToPixel(character.position.q, character.position.r, size);
+        const renderOffset = character.renderOffset ?? null;
+        const offsetX = renderOffset ? renderOffset.x * size : 0;
+        const offsetY = renderOffset ? renderOffset.y * size : 0;
+        const drawX = x + offsetX;
+        const drawY = y + offsetY;
         const image = getCharacterArt(character.characterId);
         const isLocalPlayer = localUserId && character.userId === localUserId;
         const ringColor = isLocalPlayer ? theme.playerAccent || '#7dcfff' : theme.accentStrong;
 
-        drawCharacterPortrait(ctx, image, x, y, metrics.radius, theme.panelStrong);
-        drawCharacterRing(ctx, x, y, metrics.radius, metrics.borderWidth, ringColor);
+        drawCharacterPortrait(ctx, image, drawX, drawY, metrics.radius, theme.panelStrong);
+        if (character.flashAlpha) {
+          ctx.save();
+          ctx.globalAlpha = clamp(character.flashAlpha, 0, 1);
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(drawX, drawY, metrics.radius * 0.9, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+        drawCharacterRing(ctx, drawX, drawY, metrics.radius, metrics.borderWidth, ringColor);
 
-        const arrowPoints = getFacingArrowPoints(x, y, metrics, character.facing);
+        const arrowPoints = getFacingArrowPoints(drawX, drawY, metrics, character.facing);
         drawFacingArrow(ctx, arrowPoints, ringColor);
 
         const damage =
@@ -346,8 +525,8 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
             : Array.isArray(beatLookup)
               ? beatLookup.find((item) => item?.username === character.username || item?.username === character.userId)?.damage ?? 0
               : 0;
-        drawDamageCapsule(ctx, x, y, metrics.radius, damage, theme);
-        drawNameCapsule(ctx, x, y, metrics.radius, character.username || character.userId, theme, {
+        drawDamageCapsule(ctx, drawX, drawY, metrics.radius, damage, theme);
+        drawNameCapsule(ctx, drawX, drawY, metrics.radius, character.username || character.userId, theme, {
           baseFontScale: 0.3,
           paddingXScale: 0.12,
           paddingYScale: 0.08,

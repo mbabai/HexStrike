@@ -78,6 +78,8 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Timeline row separators must render before portrait rings so the local player highlight is visually on top.
 - Board damage capsules are offset outside the ring and drawn without clipping so they sit over the border.
 - Name capsule sizing is centralized in `public/game/portraitBadges.js`; pass config overrides for board vs timeline to keep consistency.
+- Timeline playback timing is tuned in `public/game/timelinePlayback.js` via `ACTION_DURATION_MS` plus swipe/hit/knockback windows; adjust there before changing renderer effects.
+- Trails are drawn as tapered polygons (sharp edges) in `public/game/renderer.js` instead of stroked lines; keep this in mind if changing trail caps or widths.
 
 ## PR expectations
 - Summarize rule/engine changes clearly; include replay determinism notes when relevant.
