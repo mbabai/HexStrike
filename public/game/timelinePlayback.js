@@ -1,5 +1,9 @@
 const DEFAULT_ACTION = 'E';
 const WAIT_ACTION = 'W';
+const DAMAGE_ICON_ACTION = 'DamageIcon';
+const ATTACK_DAMAGE = 3;
+const KNOCKBACK_FACTOR = 2;
+const KNOCKBACK_DIVISOR = 10;
 const ACTION_DURATION_MS = 600;
 
 const LOCAL_DIRECTIONS = {
@@ -122,9 +126,14 @@ const parsePath = (path) => {
   return steps.length ? steps : [{ dir: 'F', distance: 1 }];
 };
 
+const isWaitAction = (action) => {
+  const trimmed = `${action ?? ''}`.trim().toUpperCase();
+  return !trimmed || trimmed === WAIT_ACTION || trimmed === DAMAGE_ICON_ACTION.toUpperCase();
+};
+
 const parseActionTokens = (action) => {
   const trimmed = `${action ?? ''}`.trim();
-  if (!trimmed || trimmed.toUpperCase() === WAIT_ACTION) return [];
+  if (isWaitAction(trimmed)) return [];
   return trimmed
     .split('-')
     .map((token) => token.trim())
@@ -151,6 +160,16 @@ const buildPath = (origin, steps, facing) => {
     }
   });
   return { positions, destination: current, lastStep };
+};
+
+const getKnockbackDistance = (damage) =>
+  Math.max(1, Math.floor((damage * KNOCKBACK_FACTOR) / KNOCKBACK_DIVISOR));
+
+const getKnockbackDirection = (origin, destination, lastStep) => {
+  if (lastStep) return { q: lastStep.q, r: lastStep.r };
+  const delta = { q: destination.q - origin.q, r: destination.r - origin.r };
+  const directionIndex = getDirectionIndex(delta);
+  return directionIndex == null ? null : AXIAL_DIRECTIONS[directionIndex];
 };
 
 const getEntryForCharacter = (beat, character) => {
@@ -201,6 +220,7 @@ const buildActionSteps = (beat, characters, baseState) => {
   });
 
   const blockMap = new Map();
+  const disabledActors = new Set();
 
   const ordered = (beat ?? [])
     .slice()
@@ -219,6 +239,7 @@ const buildActionSteps = (beat, characters, baseState) => {
   ordered.forEach((entry) => {
     const actorId = userLookup.get(entry.username);
     if (!actorId) return;
+    if (disabledActors.has(actorId)) return;
     const actorState = state.get(actorId);
     if (!actorState) return;
 
@@ -228,6 +249,7 @@ const buildActionSteps = (beat, characters, baseState) => {
 
     const effects = [];
     const damageChanges = [];
+    const positionChanges = [];
     let moveDestination = null;
     let moveType = null;
 
@@ -275,8 +297,29 @@ const buildActionSteps = (beat, characters, baseState) => {
         if (targetId && !isBlocked) {
           const targetState = state.get(targetId);
           if (targetState) {
-            targetState.damage += 3;
-            damageChanges.push({ targetId, delta: 3 });
+            targetState.damage += ATTACK_DAMAGE;
+            damageChanges.push({ targetId, delta: ATTACK_DAMAGE });
+            const knockbackDirection = getKnockbackDirection(origin, destination, lastStep);
+            const knockbackDistance = getKnockbackDistance(targetState.damage);
+            if (knockbackDirection && knockbackDistance > 0) {
+              let finalPosition = { ...targetState.position };
+              for (let step = 0; step < knockbackDistance; step += 1) {
+                const candidate = {
+                  q: finalPosition.q + knockbackDirection.q,
+                  r: finalPosition.r + knockbackDirection.r,
+                };
+                const occupant = occupancy.get(coordKey(candidate));
+                if (occupant && occupant !== targetId) break;
+                finalPosition = candidate;
+              }
+              if (!sameCoord(finalPosition, targetState.position)) {
+                occupancy.delete(coordKey(targetState.position));
+                targetState.position = { q: finalPosition.q, r: finalPosition.r };
+                occupancy.set(coordKey(targetState.position), targetId);
+                positionChanges.push({ targetId, position: { ...targetState.position } });
+              }
+            }
+            disabledActors.add(targetId);
           }
         }
       }
@@ -317,6 +360,7 @@ const buildActionSteps = (beat, characters, baseState) => {
       moveDestination,
       moveType,
       damageChanges,
+      positionChanges,
       effects,
     });
   });
@@ -339,6 +383,14 @@ const applyStep = (characters, step) => {
     if (index >= 0) {
       const target = updated[index];
       updated[index] = { ...target, damage: (target.damage ?? 0) + change.delta };
+    }
+  });
+
+  step.positionChanges.forEach((change) => {
+    const index = updated.findIndex((character) => character.userId === change.targetId);
+    if (index >= 0) {
+      const target = updated[index];
+      updated[index] = { ...target, position: { q: change.position.q, r: change.position.r } };
     }
   });
 
@@ -395,6 +447,7 @@ export const createTimelinePlayback = () => {
         ...currentStep,
         moveDestination: stepProgress >= 1 ? currentStep.moveDestination : null,
         damageChanges: stepProgress >= 1 ? currentStep.damageChanges : [],
+        positionChanges: stepProgress >= 1 ? currentStep.positionChanges : [],
       });
     }
 

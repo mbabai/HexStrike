@@ -2,6 +2,10 @@ import { BeatEntry, CharacterState, HexCoord } from '../types';
 
 const DEFAULT_ACTION = 'E';
 const WAIT_ACTION = 'W';
+const DAMAGE_ICON_ACTION = 'DamageIcon';
+const ATTACK_DAMAGE = 3;
+const KNOCKBACK_FACTOR = 2;
+const KNOCKBACK_DIVISOR = 10;
 
 const LOCAL_DIRECTIONS: Record<string, HexCoord> = {
   F: { q: 1, r: 0 },
@@ -126,9 +130,14 @@ const parsePath = (path: string) => {
   return steps.length ? steps : [{ dir: 'F', distance: 1 }];
 };
 
+const isWaitAction = (action: string) => {
+  const trimmed = action.trim().toUpperCase();
+  return !trimmed || trimmed === WAIT_ACTION || trimmed === DAMAGE_ICON_ACTION.toUpperCase();
+};
+
 const parseActionTokens = (action: string) => {
   const trimmed = action.trim();
-  if (!trimmed || trimmed.toUpperCase() === WAIT_ACTION) return [];
+  if (isWaitAction(trimmed)) return [];
   return trimmed
     .split('-')
     .map((token) => token.trim())
@@ -159,10 +168,20 @@ const buildPath = (origin: HexCoord, steps: Array<{ dir: string; distance: numbe
 
 type ExecutionState = { position: HexCoord; damage: number; facing: number };
 
+const getKnockbackDistance = (damage: number) =>
+  Math.max(1, Math.floor((damage * KNOCKBACK_FACTOR) / KNOCKBACK_DIVISOR));
+
+const getKnockbackDirection = (origin: HexCoord, destination: HexCoord, lastStep: HexCoord | null) => {
+  if (lastStep) return { q: lastStep.q, r: lastStep.r };
+  const delta = { q: destination.q - origin.q, r: destination.r - origin.r };
+  const directionIndex = getDirectionIndex(delta);
+  return directionIndex == null ? null : AXIAL_DIRECTIONS[directionIndex];
+};
+
 const buildEntryForCharacter = (
   character: CharacterState,
   state: ExecutionState,
-  entry?: BeatEntry[number],
+  entry?: Partial<BeatEntry[number]>,
   calculated = false,
 ): BeatEntry[number] => ({
   username: character.username,
@@ -199,6 +218,11 @@ export const executeBeats = (beats: BeatEntry[], characters: CharacterState[]) =
 
   const normalizedBeats = beats.map((beat) => beat.map((entry) => ({ ...entry })));
   let lastCalculated = -1;
+  const characterById = new Map<string, CharacterState>();
+  characters.forEach((character) => {
+    characterById.set(character.userId, character);
+    characterById.set(character.username, character);
+  });
 
   const getRosterIndex = (entry: BeatEntry[number]) => {
     const key = entry.username ?? '';
@@ -250,6 +274,60 @@ export const executeBeats = (beats: BeatEntry[], characters: CharacterState[]) =
     ordered.forEach((entry) => beat.push(entry));
   };
 
+  const ensureBeatIndex = (index: number) => {
+    while (normalizedBeats.length <= index) {
+      normalizedBeats.push([]);
+    }
+  };
+
+  const upsertBeatEntry = (
+    beat: BeatEntry,
+    character: CharacterState,
+    action: string,
+    stateSnapshot: ExecutionState,
+  ) => {
+    const entry =
+      beat.find((item) => item.username === character.username || item.username === character.userId) ?? null;
+    if (entry) {
+      entry.action = action;
+      entry.rotation = '';
+      entry.priority = 0;
+      entry.damage = stateSnapshot.damage;
+      entry.location = { q: stateSnapshot.position.q, r: stateSnapshot.position.r };
+      entry.facing = stateSnapshot.facing;
+      entry.calculated = false;
+      return;
+    }
+    beat.push(
+      buildEntryForCharacter(character, stateSnapshot, { action, rotation: '', priority: 0 }, false),
+    );
+  };
+
+  const applyHitTimeline = (targetId: string, beatIndex: number, targetState: ExecutionState) => {
+    const character = characterById.get(targetId);
+    if (!character) return;
+    const knockbackDistance = getKnockbackDistance(targetState.damage);
+    const damageIcons = knockbackDistance + 1;
+    const endIndex = beatIndex + damageIcons;
+    ensureBeatIndex(endIndex);
+
+    for (let i = beatIndex; i <= endIndex; i += 1) {
+      const beat = normalizedBeats[i];
+      if (!beat) continue;
+      const action = i < endIndex ? DAMAGE_ICON_ACTION : DEFAULT_ACTION;
+      upsertBeatEntry(beat, character, action, targetState);
+    }
+
+    for (let i = endIndex + 1; i < normalizedBeats.length; i += 1) {
+      const beat = normalizedBeats[i];
+      if (!beat?.length) continue;
+      const filtered = beat.filter((entry) => entry.username !== character.username && entry.username !== character.userId);
+      if (filtered.length !== beat.length) {
+        normalizedBeats[i] = filtered;
+      }
+    }
+  };
+
   for (let index = 0; index < normalizedBeats.length; index += 1) {
     const beat = normalizedBeats[index];
     const entriesByUser = new Map<string, BeatEntry[number]>();
@@ -277,6 +355,7 @@ export const executeBeats = (beats: BeatEntry[], characters: CharacterState[]) =
       occupancy.set(coordKey(value.position), userId);
     });
     const blockMap = new Map<string, Set<number>>();
+    const disabledActors = new Set<string>();
 
     const ordered = beat
       .slice()
@@ -292,6 +371,7 @@ export const executeBeats = (beats: BeatEntry[], characters: CharacterState[]) =
     ordered.forEach((entry) => {
       const actorId = userLookup.get(entry.username ?? '');
       if (!actorId) return;
+      if (disabledActors.has(actorId)) return;
       const actorState = state.get(actorId);
       if (!actorState) return;
 
@@ -329,7 +409,28 @@ export const executeBeats = (beats: BeatEntry[], characters: CharacterState[]) =
           if (targetId && !isBlocked) {
             const targetState = state.get(targetId);
             if (targetState) {
-              targetState.damage += 3;
+              targetState.damage += ATTACK_DAMAGE;
+              const knockbackDirection = getKnockbackDirection(origin, destination, lastStep);
+              const knockbackDistance = getKnockbackDistance(targetState.damage);
+              if (knockbackDirection && knockbackDistance > 0) {
+                let finalPosition = { ...targetState.position };
+                for (let step = 0; step < knockbackDistance; step += 1) {
+                  const candidate = {
+                    q: finalPosition.q + knockbackDirection.q,
+                    r: finalPosition.r + knockbackDirection.r,
+                  };
+                  const occupant = occupancy.get(coordKey(candidate));
+                  if (occupant && occupant !== targetId) break;
+                  finalPosition = candidate;
+                }
+                if (!sameCoord(finalPosition, targetState.position)) {
+                  occupancy.delete(coordKey(targetState.position));
+                  targetState.position = { q: finalPosition.q, r: finalPosition.r };
+                  occupancy.set(coordKey(targetState.position), targetId);
+                }
+              }
+              applyHitTimeline(targetId, index, targetState);
+              disabledActors.add(targetId);
             }
           }
         }

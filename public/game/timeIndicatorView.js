@@ -206,7 +206,7 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       const imageX = xPos - iconSize / 2;
       const imageY = rowCenterY - iconSize / 2;
       ctx.drawImage(image, imageX, imageY, iconSize, iconSize);
-      if (action && action !== 'E' && action !== ACTION_ICON_FALLBACK) {
+      if (action && action !== 'E' && action !== ACTION_ICON_FALLBACK && action !== 'DamageIcon') {
         const priorityValue = Number.isFinite(entry?.priority) ? entry.priority : 0;
         drawPriorityBadge(ctx, imageX, imageY, iconSize, priorityValue, theme);
       }
