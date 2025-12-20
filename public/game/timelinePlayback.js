@@ -536,13 +536,20 @@ export const createTimelinePlayback = () => {
 
     const { steps, persistentEffects } = buildActionSteps(beat, characters, baseState);
     const stepDuration = steps.length ? ACTION_DURATION_MS / steps.length : 0;
-    playback = { baseState, steps, stepDuration, startTime: now, persistentEffects };
+    playback = {
+      baseState,
+      steps,
+      stepDuration,
+      startTime: now,
+      persistentEffects,
+      damagePreviewByStep: new Map(),
+    };
     scene = { characters: baseState, effects: [] };
   };
 
   const updateScene = (now) => {
     if (!playback) return;
-    const { baseState, steps, stepDuration, startTime, persistentEffects } = playback;
+    const { baseState, steps, stepDuration, startTime, persistentEffects, damagePreviewByStep } = playback;
     if (!steps.length || stepDuration <= 0) {
       scene = { characters: baseState, effects: [] };
       return;
@@ -572,8 +579,9 @@ export const createTimelinePlayback = () => {
     const { alpha, easedProgress, swipeProgress, attackAlpha } = getSwipeState(stepProgress);
     const effects =
       currentStep?.effects?.map((effect) => {
-        const effectAlpha = effect.type === 'attack' || effect.type === 'charge' ? attackAlpha : alpha;
-        return { ...effect, alpha: effectAlpha };
+        const baseAlpha =
+          effect.type === 'attack' || effect.type === 'charge' ? attackAlpha : alpha;
+        return { ...effect, alpha: baseAlpha };
       }) ?? [];
     const trailEffects = [];
     const arcEffects = [];
@@ -600,6 +608,19 @@ export const createTimelinePlayback = () => {
         next.flashAlpha = Math.max(current.flashAlpha ?? 0, patch.flashAlpha);
       }
       renderCharacters[index] = next;
+    };
+
+    const buildDamagePreview = (changes) => {
+      const preview = new Map();
+      (changes ?? []).forEach((change) => {
+        const index = characterIndex.get(change.targetId);
+        if (index == null) return;
+        const current = renderCharacters[index];
+        const base = typeof current.damage === 'number' ? current.damage : 0;
+        const existing = preview.get(change.targetId) ?? base;
+        preview.set(change.targetId, existing + change.delta);
+      });
+      return preview;
     };
 
     if (currentStep && stepProgress > 0) {
@@ -630,9 +651,9 @@ export const createTimelinePlayback = () => {
             applyCharacterUpdate(hit.targetId, { position: currentPosition });
             trailEffects.push({
               type: 'trail',
-              trailType: 'hit',
+              trailType: 'knockback',
               path: partialPath,
-              alpha: attackAlpha * 0.9,
+              alpha: alpha * 0.9,
             });
           }
         });
@@ -656,7 +677,25 @@ export const createTimelinePlayback = () => {
           progress: swipeProgress,
         });
       }
+
+      if (isHitWindow && currentStep.damageChanges?.length && !damagePreviewByStep.has(stepIndex)) {
+        damagePreviewByStep.set(stepIndex, buildDamagePreview(currentStep.damageChanges));
+      }
     }
+
+    const previewedDamage = damagePreviewByStep.get(stepIndex);
+    if (previewedDamage?.size) {
+      previewedDamage.forEach((damageValue, targetId) => {
+        const index = characterIndex.get(targetId);
+        if (index == null) return;
+        const current = renderCharacters[index];
+        renderCharacters[index] = { ...current, displayDamage: damageValue };
+      });
+    }
+
+    damagePreviewByStep.forEach((_, key) => {
+      if (key < stepIndex) damagePreviewByStep.delete(key);
+    });
 
     const blockEffects = (persistentEffects ?? []).map((effect) => {
       const key =

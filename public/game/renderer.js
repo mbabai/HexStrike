@@ -34,6 +34,52 @@ const getTheme = () => {
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+const normalizeActionTag = (action) =>
+  typeof action === 'string' ? action.trim().toLowerCase() : '';
+
+const getBeatEntryForCharacter = (beat, character) => {
+  if (!Array.isArray(beat) || !character) return null;
+  return (
+    beat.find((item) => item?.username === character.username || item?.username === character.userId) ?? null
+  );
+};
+
+const toRgb = (value) => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (trimmed.startsWith('#')) {
+    const hex = trimmed.slice(1);
+    if (hex.length === 3) {
+      const r = parseInt(hex[0] + hex[0], 16);
+      const g = parseInt(hex[1] + hex[1], 16);
+      const b = parseInt(hex[2] + hex[2], 16);
+      return { r, g, b };
+    }
+    if (hex.length >= 6) {
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      return { r, g, b };
+    }
+    return null;
+  }
+  const match = trimmed.match(/rgba?\(([^)]+)\)/i);
+  if (!match) return null;
+  const parts = match[1]
+    .split(',')
+    .map((part) => Number(part.trim()))
+    .filter((part) => Number.isFinite(part));
+  if (parts.length < 3) return null;
+  return { r: parts[0], g: parts[1], b: parts[2] };
+};
+
+const withAlpha = (color, alpha) => {
+  const rgb = toRgb(color);
+  if (!rgb) return color;
+  const safe = clamp(alpha, 0, 1);
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${safe})`;
+};
+
 const drawHexPath = (ctx, x, y, size) => {
   ctx.beginPath();
   for (let i = 0; i < 6; i += 1) {
@@ -55,7 +101,7 @@ const drawHex = (ctx, x, y, size) => {
   ctx.stroke();
 };
 
-const drawCharacterPortrait = (ctx, image, x, y, radius, fillColor) => {
+const drawCharacterPortrait = (ctx, image, x, y, radius, fillColor, grayscale = false) => {
   ctx.save();
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
@@ -69,7 +115,13 @@ const drawCharacterPortrait = (ctx, image, x, y, radius, fillColor) => {
     const scale = (radius * 2) / minSide;
     const drawWidth = image.naturalWidth * scale;
     const drawHeight = image.naturalHeight * scale;
+    if (grayscale) {
+      ctx.filter = 'grayscale(1)';
+    }
     ctx.drawImage(image, x - drawWidth / 2, y - drawHeight / 2, drawWidth, drawHeight);
+    if (grayscale) {
+      ctx.filter = 'none';
+    }
   }
 
   ctx.restore();
@@ -193,11 +245,11 @@ const getArcSpan = (angles) => {
   return { start, span };
 };
 
-const drawTrail = (ctx, path, size, color, alpha, widthScale) => {
+const drawTrail = (ctx, path, size, color, alpha, widthScale, taperToEnd) => {
   if (!Array.isArray(path) || path.length < 2) return;
   const safeAlpha = clamp(alpha, 0, 1);
   if (!safeAlpha) return;
-  const baseWidth = Math.max(2, size * (widthScale ?? 0.25));
+  const baseWidth = Math.max(2, size * (widthScale ?? 0.25) * 2);
   const points = path.map((point) => axialToPixel(point.q, point.r, size));
   const lastIndex = points.length - 1;
   const left = [];
@@ -210,15 +262,19 @@ const drawTrail = (ctx, path, size, color, alpha, widthScale) => {
     const length = Math.hypot(dir.x, dir.y) || 1;
     const normal = { x: -dir.y / length, y: dir.x / length };
     const t = lastIndex ? index / lastIndex : 0;
-    const width = Math.max(0.5, baseWidth * (1 - t * 0.9));
+    const width = Math.max(0.5, baseWidth * (taperToEnd ? 0.1 + t * 0.9 : 1 - t * 0.9));
     const half = width / 2;
     left.push({ x: point.x + normal.x * half, y: point.y + normal.y * half });
     right.push({ x: point.x - normal.x * half, y: point.y - normal.y * half });
   });
 
   ctx.save();
-  ctx.globalAlpha = safeAlpha;
-  ctx.fillStyle = color;
+  const startPoint = taperToEnd ? points[lastIndex] : points[0];
+  const endPoint = taperToEnd ? points[0] : points[lastIndex];
+  const gradient = ctx.createLinearGradient(startPoint.x, startPoint.y, endPoint.x, endPoint.y);
+  gradient.addColorStop(0, withAlpha(color, 1));
+  gradient.addColorStop(1, withAlpha(color, safeAlpha));
+  ctx.fillStyle = gradient;
   ctx.beginPath();
   ctx.moveTo(left[0].x, left[0].y);
   for (let i = 1; i < left.length; i += 1) {
@@ -239,32 +295,70 @@ const drawAttackArc = (ctx, origin, targets, size, color, alpha, progress) => {
   if (!safeAlpha || !safeProgress) return;
   const originPixel = axialToPixel(origin.q, origin.r, size);
   const angles = [];
-  let maxDistance = size;
+  let maxDistance = 0;
   targets.forEach((target) => {
     const { x, y } = axialToPixel(target.q, target.r, size);
+    const dx = x - originPixel.x;
+    const dy = y - originPixel.y;
+    maxDistance = Math.max(maxDistance, Math.hypot(dx, dy));
     const corners = getHexCorners(x, y, size);
     corners.forEach((corner) => {
-      const dx = corner.x - originPixel.x;
-      const dy = corner.y - originPixel.y;
-      angles.push(Math.atan2(dy, dx));
-      maxDistance = Math.max(maxDistance, Math.hypot(dx, dy));
+      const cornerDx = corner.x - originPixel.x;
+      const cornerDy = corner.y - originPixel.y;
+      angles.push(Math.atan2(cornerDy, cornerDx));
     });
   });
   const { start, span } = getArcSpan(angles);
-  const lineWidth = Math.max(3, size * 0.6);
-  const radius = Math.max(size * 0.8, maxDistance - lineWidth * 0.35);
+  const baseThickness = Math.max(4, size * 0.6 * 3);
+  const metrics = getCharacterTokenMetrics(size);
+  const outerRadius = Math.max(size * 0.8, maxDistance);
+  const minInnerRadius = metrics.radius * 1.08;
+  const maxInnerRadius = Math.max(minInnerRadius, outerRadius - baseThickness);
   const arcStart = start + span;
   const arcEnd = arcStart - span * safeProgress;
+  const sampleCount = Math.max(6, Math.ceil(span * 8));
+  const arcPointsOuter = [];
+  const arcPointsInner = [];
+  const minTailScale = 0.7;
   ctx.save();
-  ctx.globalAlpha = safeAlpha;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = lineWidth;
-  ctx.lineCap = 'round';
   ctx.shadowColor = color;
   ctx.shadowBlur = size * 0.35;
+  for (let i = 0; i <= sampleCount; i += 1) {
+    const t = sampleCount ? i / sampleCount : 0;
+    const smoothT = t * t * (3 - 2 * t);
+    const angle = arcStart - span * safeProgress * t;
+    const thicknessScale = 1 - (1 - minTailScale) * smoothT;
+    const innerRadius = Math.min(outerRadius - 1, outerRadius - baseThickness * thicknessScale);
+    const clampedInner = Math.min(outerRadius - 1, Math.max(maxInnerRadius, innerRadius));
+    arcPointsOuter.push({
+      x: originPixel.x + Math.cos(angle) * outerRadius,
+      y: originPixel.y + Math.sin(angle) * outerRadius,
+    });
+    arcPointsInner.push({
+      x: originPixel.x + Math.cos(angle) * clampedInner,
+      y: originPixel.y + Math.sin(angle) * clampedInner,
+    });
+  }
+  const gradient = ctx.createLinearGradient(
+    arcPointsOuter[0].x,
+    arcPointsOuter[0].y,
+    arcPointsOuter[arcPointsOuter.length - 1].x,
+    arcPointsOuter[arcPointsOuter.length - 1].y,
+  );
+  gradient.addColorStop(0, withAlpha(color, 1));
+  gradient.addColorStop(0.65, withAlpha(color, safeAlpha));
+  gradient.addColorStop(1, withAlpha(color, 1));
+  ctx.fillStyle = gradient;
   ctx.beginPath();
-  ctx.arc(originPixel.x, originPixel.y, radius, arcStart, arcEnd, true);
-  ctx.stroke();
+  ctx.moveTo(arcPointsOuter[0].x, arcPointsOuter[0].y);
+  for (let i = 1; i < arcPointsOuter.length; i += 1) {
+    ctx.lineTo(arcPointsOuter[i].x, arcPointsOuter[i].y);
+  }
+  for (let i = arcPointsInner.length - 1; i >= 0; i -= 1) {
+    ctx.lineTo(arcPointsInner[i].x, arcPointsInner[i].y);
+  }
+  ctx.closePath();
+  ctx.fill();
   ctx.restore();
 };
 
@@ -319,7 +413,6 @@ const drawActionEffects = (ctx, effects, size, theme) => {
   if (!Array.isArray(effects) || !effects.length) return;
   const trails = [];
   const arcs = [];
-  const hexes = [];
   const blocks = [];
 
   effects.forEach((effect) => {
@@ -335,7 +428,6 @@ const drawActionEffects = (ctx, effects, size, theme) => {
       blocks.push(effect);
       return;
     }
-    hexes.push(effect);
   });
 
   trails.forEach((effect) => {
@@ -344,27 +436,19 @@ const drawActionEffects = (ctx, effects, size, theme) => {
     const trailColor =
       trailType === 'jump'
         ? theme.actionJump || theme.queueLavender
-        : trailType === 'hit'
-          ? theme.actionAttack || theme.damage
-          : theme.actionMove || theme.accent;
-    drawTrail(ctx, effect.path, size, trailColor, alpha, trailType === 'hit' ? 0.3 : 0.22);
-  });
-
-  hexes.forEach((effect) => {
-    const alpha = typeof effect.alpha === 'number' ? effect.alpha : 0.8;
-    if (effect.type === 'attack') {
-      drawHexEffect(ctx, effect.coord, size, theme.actionAttack || theme.damage, alpha);
-    }
-    if (effect.type === 'move') {
-      drawHexEffect(ctx, effect.coord, size, theme.actionMove || theme.accent, alpha);
-    }
-    if (effect.type === 'jump') {
-      drawHexEffect(ctx, effect.coord, size, theme.actionJump || theme.queueLavender, alpha);
-    }
-    if (effect.type === 'charge') {
-      drawHexEffect(ctx, effect.coord, size, theme.actionAttack || theme.damage, alpha);
-      drawHexEffect(ctx, effect.coord, size, theme.actionMove || theme.accent, alpha, 0.45);
-    }
+        : trailType === 'knockback'
+          ? '#8b8f96'
+          : trailType === 'hit'
+            ? theme.actionAttack || theme.damage
+            : theme.actionMove || theme.accent;
+    const widthScale =
+      trailType === 'hit' || trailType === 'knockback'
+        ? 0.3
+        : trailType === 'move'
+          ? 0.44
+          : 0.44;
+    const taperToEnd = true;
+    drawTrail(ctx, effect.path, size, trailColor, alpha, widthScale, taperToEnd);
   });
 
   arcs.forEach((effect) => {
@@ -503,8 +587,11 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
         const image = getCharacterArt(character.characterId);
         const isLocalPlayer = localUserId && character.userId === localUserId;
         const ringColor = isLocalPlayer ? theme.playerAccent || '#7dcfff' : theme.accentStrong;
+        const beatEntry = getBeatEntryForCharacter(beatLookup, character);
+        const actionTag = normalizeActionTag(beatEntry?.action);
+        const isKnockbackIcon = actionTag === 'knockbackicon' || actionTag === 'damageicon';
 
-        drawCharacterPortrait(ctx, image, drawX, drawY, metrics.radius, theme.panelStrong);
+        drawCharacterPortrait(ctx, image, drawX, drawY, metrics.radius, theme.panelStrong, isKnockbackIcon);
         if (character.flashAlpha) {
           ctx.save();
           ctx.globalAlpha = clamp(character.flashAlpha, 0, 1);
@@ -520,11 +607,11 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
         drawFacingArrow(ctx, arrowPoints, ringColor);
 
         const damage =
-          typeof character.damage === 'number'
-            ? character.damage
-            : Array.isArray(beatLookup)
-              ? beatLookup.find((item) => item?.username === character.username || item?.username === character.userId)?.damage ?? 0
-              : 0;
+          typeof character.displayDamage === 'number'
+            ? character.displayDamage
+            : typeof character.damage === 'number'
+              ? character.damage
+              : beatEntry?.damage ?? 0;
         drawDamageCapsule(ctx, drawX, drawY, metrics.radius, damage, theme);
         drawNameCapsule(ctx, drawX, drawY, metrics.radius, character.username || character.userId, theme, {
           baseFontScale: 0.3,

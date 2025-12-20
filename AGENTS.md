@@ -80,6 +80,8 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Name capsule sizing is centralized in `public/game/portraitBadges.js`; pass config overrides for board vs timeline to keep consistency.
 - Timeline playback timing is tuned in `public/game/timelinePlayback.js` via `ACTION_DURATION_MS` plus swipe/hit/knockback windows; adjust there before changing renderer effects.
 - Trails are drawn as tapered polygons (sharp edges) in `public/game/renderer.js` instead of stroked lines; keep this in mind if changing trail caps or widths.
+- Board portraits render in greyscale when the beat action is `DamageIcon`/`knockbackIcon`; keep the renderer's action tag matching server output.
+- Damage previews during hit shakes are drawn via `displayDamage` on render characters to avoid double-counting at step end.
 
 ## PR expectations
 - Summarize rule/engine changes clearly; include replay determinism notes when relevant.
