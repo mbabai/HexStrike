@@ -36,7 +36,7 @@ const parseRotationDegrees = (rotation: string) => {
       return steps <= 5 ? steps * 60 : steps;
     }
   }
-  const direction = trimmed.startsWith('L') ? 1 : trimmed.startsWith('R') ? -1 : 0;
+  const direction = trimmed.startsWith('L') ? -1 : trimmed.startsWith('R') ? 1 : 0;
   const stepMatch = trimmed.match(/\d+/);
   if (!direction || !stepMatch) return 0;
   const steps = Number(stepMatch[0]);
@@ -68,6 +68,8 @@ const coordKey = (coord: HexCoord) => `${coord.q},${coord.r}`;
 
 const sameCoord = (a: HexCoord, b: HexCoord) => a.q === b.q && a.r === b.r;
 
+const isForwardScale = (value: number) => Number.isFinite(value) && Math.round(value) === value && value > 0;
+
 const getDirectionIndex = (delta: HexCoord) => {
   for (let i = 0; i < AXIAL_DIRECTIONS.length; i += 1) {
     const dir = AXIAL_DIRECTIONS[i];
@@ -75,12 +77,12 @@ const getDirectionIndex = (delta: HexCoord) => {
     if (dir.r === 0 && delta.r !== 0) continue;
     if (dir.q !== 0) {
       const scale = delta.q / dir.q;
-      if (Number.isFinite(scale) && Math.round(scale) === scale && dir.r * scale === delta.r) return i;
+      if (isForwardScale(scale) && dir.r * scale === delta.r) return i;
       continue;
     }
     if (dir.r !== 0) {
       const scale = delta.r / dir.r;
-      if (Number.isFinite(scale) && Math.round(scale) === scale && dir.q * scale === delta.q) return i;
+      if (isForwardScale(scale) && dir.q * scale === delta.q) return i;
     }
   }
   return null;

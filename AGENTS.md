@@ -8,6 +8,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - State: lobby queues (`quickplayQueue`, `rankedQueue`, `botQueue`) and in-memory match/game records via `src/state/lobby.ts` and `src/persistence/memoryDb.ts`; games now include starting characters assigned on queue join.
 - UI: static assets in `public/` with ES module scripts (`public/menu.js`, `public/queue.js`, `public/storage.js`) and styling in `public/theme.css`.
 - UI action buttons for gameplay live in `public/index.html` and are wired via `actionConfigs` in `public/game.js`.
+- Front-end animation: `public/game/timelinePlayback.js` builds beat-by-beat scenes (characters + effects) consumed by `public/game/renderer.js`.
 - Matchmaking: Quickplay join/leave is wired from the UI; other queue options are placeholders.
 
 # Documentation map (start here)
@@ -68,6 +69,9 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Action buttons only enable after a rotation is selected; new buttons must be added to `public/game.js` `actionConfigs` to wire enablement + handler behavior.
 - Keep beat arrays ordered by character roster when mutating to prevent UI rows from swapping entries.
 - Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
+- Direction indexing for blocks/attacks must ignore reverse vectors (only forward, positive steps); otherwise block walls flip away from facing.
+- Keep `getDirectionIndex` logic in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized so visuals match server resolution.
+- Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.
 - Node test runner reads from `dist`; run `npm run build` (or `tsc`) before `node --test test` when working on TS source.
 
 ## PR expectations
