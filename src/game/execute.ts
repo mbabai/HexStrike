@@ -280,22 +280,32 @@ export const executeBeats = (beats: BeatEntry[], characters: CharacterState[]) =
     }
   };
 
+  const findEntryForCharacter = (beat: BeatEntry, character: CharacterState) =>
+    beat.find((item) => item.username === character.username || item.username === character.userId) ?? null;
+
+  const applyStateSnapshotToEntry = (
+    entry: BeatEntry[number],
+    stateSnapshot: ExecutionState,
+    calculated: boolean,
+  ) => {
+    entry.damage = stateSnapshot.damage;
+    entry.location = { q: stateSnapshot.position.q, r: stateSnapshot.position.r };
+    entry.facing = stateSnapshot.facing;
+    entry.calculated = calculated;
+  };
+
   const upsertBeatEntry = (
     beat: BeatEntry,
     character: CharacterState,
     action: string,
     stateSnapshot: ExecutionState,
   ) => {
-    const entry =
-      beat.find((item) => item.username === character.username || item.username === character.userId) ?? null;
+    const entry = findEntryForCharacter(beat, character);
     if (entry) {
       entry.action = action;
       entry.rotation = '';
       entry.priority = 0;
-      entry.damage = stateSnapshot.damage;
-      entry.location = { q: stateSnapshot.position.q, r: stateSnapshot.position.r };
-      entry.facing = stateSnapshot.facing;
-      entry.calculated = false;
+      applyStateSnapshotToEntry(entry, stateSnapshot, false);
       return;
     }
     beat.push(
@@ -311,19 +321,43 @@ export const executeBeats = (beats: BeatEntry[], characters: CharacterState[]) =
     const endIndex = beatIndex + damageIcons;
     ensureBeatIndex(endIndex);
 
+    const isKnockbackWindowApplied = () => {
+      for (let i = beatIndex; i < endIndex; i += 1) {
+        const beat = normalizedBeats[i];
+        if (!beat) return false;
+        const entry = findEntryForCharacter(beat, character);
+        if (!entry || entry.action !== DAMAGE_ICON_ACTION) return false;
+      }
+      return true;
+    };
+
+    const knockbackApplied = isKnockbackWindowApplied();
+
     for (let i = beatIndex; i <= endIndex; i += 1) {
       const beat = normalizedBeats[i];
       if (!beat) continue;
-      const action = i < endIndex ? DAMAGE_ICON_ACTION : DEFAULT_ACTION;
-      upsertBeatEntry(beat, character, action, targetState);
+      if (i < endIndex) {
+        upsertBeatEntry(beat, character, DAMAGE_ICON_ACTION, targetState);
+        continue;
+      }
+      const entry = findEntryForCharacter(beat, character);
+      if (!knockbackApplied || !entry || entry.action === DEFAULT_ACTION || entry.action === DAMAGE_ICON_ACTION) {
+        upsertBeatEntry(beat, character, DEFAULT_ACTION, targetState);
+      } else {
+        applyStateSnapshotToEntry(entry, targetState, false);
+      }
     }
 
-    for (let i = endIndex + 1; i < normalizedBeats.length; i += 1) {
-      const beat = normalizedBeats[i];
-      if (!beat?.length) continue;
-      const filtered = beat.filter((entry) => entry.username !== character.username && entry.username !== character.userId);
-      if (filtered.length !== beat.length) {
-        normalizedBeats[i] = filtered;
+    if (!knockbackApplied) {
+      for (let i = endIndex + 1; i < normalizedBeats.length; i += 1) {
+        const beat = normalizedBeats[i];
+        if (!beat?.length) continue;
+        const filtered = beat.filter(
+          (entry) => entry.username !== character.username && entry.username !== character.userId,
+        );
+        if (filtered.length !== beat.length) {
+          normalizedBeats[i] = filtered;
+        }
       }
     }
   };

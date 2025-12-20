@@ -51,3 +51,41 @@ test('hit applies knockback, clears timeline, and inserts damage icons', () => {
   assert.ok(target2, 'target entry should exist at beat 2');
   assert.equal(target2.action, 'E');
 });
+
+test('knockback re-execution preserves actions added after trailing E', () => {
+  const characters = [
+    { userId: 'attacker', username: 'attacker', position: { q: -1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Attacker' },
+    { userId: 'target', username: 'target', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Target' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('attacker', 'a-a', 90, characters[0].position, characters[0].facing),
+      buildEntry('target', 'DamageIcon', 10, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('attacker', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('target', 'DamageIcon', 10, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('attacker', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('target', 'm', 20, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('attacker', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('target', 'a', 20, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  const result = executeBeats(beats, characters);
+  const beat2 = result.beats[2] || [];
+  const beat3 = result.beats[3] || [];
+  const target2 = beat2.find((entry) => entry.username === 'target');
+  const target3 = beat3.find((entry) => entry.username === 'target');
+
+  assert.ok(target2, 'target entry should exist at beat 2');
+  assert.equal(target2.action, 'm');
+
+  assert.ok(target3, 'target entry should exist at beat 3');
+  assert.equal(target3.action, 'a');
+});

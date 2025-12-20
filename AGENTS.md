@@ -74,6 +74,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Keep `getDirectionIndex` logic in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized so visuals match server resolution.
 - Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.
 - Knockback distance uses `max(1, floor((damage * KNOCKBACK_FACTOR) / KNOCKBACK_DIVISOR))`, and on hit the victim's timeline is rewritten from that beat with `DamageIcon`s plus a trailing `E`.
+- When knockback has already been applied, re-execution must not erase actions placed after the trailing `E`; only the damage-icon window is authoritative.
 - Node test runner reads from `dist`; run `npm run build` (or `tsc`) before `node --test test` when working on TS source.
 - Timeline row separators must render before portrait rings so the local player highlight is visually on top.
 - Board damage capsules are offset outside the ring and drawn without clipping so they sit over the border.
