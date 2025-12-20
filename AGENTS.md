@@ -70,6 +70,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Action buttons only enable after a rotation is selected; new buttons must be added to `public/game.js` `actionConfigs` to wire enablement + handler behavior.
 - Keep beat arrays ordered by character roster when mutating to prevent UI rows from swapping entries.
 - Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
+- Timeline gold highlight uses the earliest `E` beat across all players, not the currently viewed beat.
 - Direction indexing for blocks/attacks must ignore reverse vectors (only forward, positive steps); otherwise block walls flip away from facing.
 - Keep `getDirectionIndex` logic in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized so visuals match server resolution.
 - Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.

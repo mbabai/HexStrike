@@ -1,4 +1,5 @@
 import { CHARACTER_IMAGE_SOURCES, CHARACTER_TOKEN_STYLE } from './characterTokens.mjs';
+import { getTimelineMaxIndex } from './beatTimeline.js';
 import { drawNameCapsule } from './portraitBadges.js';
 
 const DEFAULT_BORDER_SIZE = { width: 640, height: 64 };
@@ -129,6 +130,9 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
   const rightDisabled = viewModel?.canStep ? !viewModel.canStep(1) : false;
   const offsets = TIMELINE_OFFSETS;
 
+  const characters = gameState?.state?.public?.characters ?? [];
+  const beats = gameState?.state?.public?.beats ?? [];
+  const highlightIndex = getTimelineMaxIndex(beats, characters);
   const topRow = getRowLayout(layout, 0);
   drawNumberWell(ctx, topRow.numberArea, theme.queueLavender || theme.panel);
 
@@ -146,7 +150,7 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
     const target = value + offset;
     if (target < 0) return;
     const xPos = centerX + offset * spacing;
-    ctx.fillStyle = offset === 0 ? theme.accentStrong : theme.text;
+    ctx.fillStyle = target === highlightIndex ? theme.accentStrong : theme.text;
     ctx.fillText(`${target}`.padStart(2, '0'), xPos, centerY);
   });
 
@@ -164,10 +168,7 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
   drawArrow(ctx, topRow.leftArrow, 'left', arrowColor, leftDisabled ? 0.35 : 0.95);
   drawArrow(ctx, topRow.rightArrow, 'right', arrowColor, rightDisabled ? 0.35 : 0.95);
 
-  const characters = gameState?.state?.public?.characters ?? [];
   if (!characters.length) return;
-
-  const beats = gameState?.state?.public?.beats ?? [];
   const beatLookup = beats.map((beat) => {
     const map = new Map();
     if (!Array.isArray(beat)) return map;
