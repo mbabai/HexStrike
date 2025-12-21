@@ -887,60 +887,138 @@ small {
   display: none;
 }
 
-.game-actions {
+.action-hud {
   position: absolute;
   bottom: 18px;
-  right: 18px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 6;
-  width: min(420px, 92vw);
+  width: min(980px, 96vw);
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(240px, 320px) minmax(180px, 1fr);
+  gap: 16px;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.action-hud[hidden] {
+  display: none;
+}
+
+.action-hud.is-locked {
+  opacity: 0.85;
+}
+
+.action-hand {
   display: grid;
   gap: 10px;
-  padding: 14px 16px 16px;
+  align-content: center;
 }
 
-.game-actions-title {
-  margin: 0;
-  font-family: var(--font-heading);
-  color: var(--color-accent-strong);
-  letter-spacing: 0.04em;
-  font-size: 16px;
-}
-
-.game-actions-username {
-  margin: 0;
+.action-card {
+  width: 100%;
+  border: 1px solid var(--color-panel-border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: linear-gradient(145deg, var(--color-surface-1), var(--color-surface-2));
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-weight: 600;
   text-align: center;
-  font-family: var(--font-heading);
-  font-size: 22px;
-  color: var(--color-player-accent);
-  letter-spacing: 0.04em;
+  user-select: none;
+  cursor: grab;
+  box-shadow: var(--shadow-soft), inset 0 1px 0 var(--color-highlight-soft);
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
 }
 
-.game-actions .pill-group {
-  justify-content: space-between;
+.action-card[data-card-type='movement'] {
+  border-color: var(--color-action-move);
 }
 
-.game-actions-body {
+.action-card[data-card-type='ability'] {
+  border-color: var(--color-action-attack);
+}
+
+.action-card.is-dragging {
+  opacity: 0.7;
+}
+
+.action-card.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.action-hud.is-locked .action-card {
+  cursor: default;
+  opacity: 0.65;
+  filter: grayscale(0.3);
+}
+
+.action-center {
   display: grid;
-  grid-template-columns: minmax(120px, 160px) 1fr;
+  justify-items: center;
   gap: 12px;
-  align-items: center;
 }
 
-.rotation-selector {
+.action-submit {
+  min-width: 120px;
+}
+
+.action-slot-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+.action-slot {
   display: grid;
   gap: 6px;
   justify-items: center;
 }
 
-.rotation-label {
+.action-slot-label {
   text-transform: uppercase;
   font-size: 11px;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.22em;
   color: var(--color-subtle);
 }
 
+.action-slot-drop {
+  width: 100%;
+  min-height: 46px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px dashed var(--color-panel-border);
+  background: var(--color-panel);
+  display: grid;
+  place-items: center;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.action-slot-drop.is-occupied {
+  border-style: solid;
+  border-color: var(--color-accent);
+  box-shadow: inset 0 0 0 1px var(--color-highlight-medium);
+}
+
+.action-slot-drop.is-hover {
+  border-color: var(--color-accent-strong);
+  box-shadow: 0 0 12px var(--color-accent-glow);
+}
+
+.action-hud.is-locked .action-slot-drop {
+  border-color: var(--color-outline-soft);
+  background: var(--color-panel-veil);
+}
+
+.rotation-selector {
+  display: grid;
+  justify-items: center;
+}
+
 .rotation-wheel {
-  width: 140px;
+  width: 150px;
   aspect-ratio: 1;
   display: grid;
   place-items: center;
@@ -964,11 +1042,24 @@ small {
 }
 
 .rotation-wheel .rotation-wedge.is-selected path {
-  fill: var(--color-subtle);
+  fill: var(--color-accent-strong);
 }
 
 .rotation-wheel .rotation-wedge.is-selected text {
   fill: var(--color-text-dark);
+}
+
+.rotation-wheel .rotation-wedge.is-disabled {
+  cursor: not-allowed;
+}
+
+.rotation-wheel .rotation-wedge.is-disabled path {
+  fill: var(--color-surface-1-muted);
+  stroke: var(--color-panel-border);
+}
+
+.rotation-wheel .rotation-wedge.is-disabled text {
+  fill: var(--color-subtle);
 }
 
 .rotation-wheel .rotation-wedge:focus-visible path {
@@ -980,6 +1071,28 @@ small {
   font-size: 12px;
   fill: var(--color-text);
   pointer-events: none;
+}
+
+.rotation-wheel .rotation-center circle {
+  fill: var(--color-panel);
+  stroke: var(--color-panel-border);
+  stroke-width: 1.5;
+}
+
+.rotation-wheel .rotation-center {
+  pointer-events: none;
+}
+
+.rotation-wheel .rotation-center text {
+  font-family: var(--font-body);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  fill: var(--color-subtle);
+}
+
+.action-hud.is-locked .rotation-wheel {
+  pointer-events: none;
+  opacity: 0.6;
 }
 
 .game-frame {
@@ -1005,19 +1118,18 @@ small {
 }
 
 @media (max-width: 640px) {
-  .game-actions {
-    width: min(320px, 92vw);
+  .action-hud {
+    width: min(520px, 94vw);
+    grid-template-columns: 1fr;
+    gap: 12px;
   }
 
-  .game-actions-body {
-    grid-template-columns: 1fr;
+  .action-hand {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+    justify-items: stretch;
   }
 
   .rotation-wheel {
     width: 120px;
-  }
-
-  .game-actions .pill-group {
-    justify-content: center;
   }
 }

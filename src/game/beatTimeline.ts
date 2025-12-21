@@ -36,3 +36,8 @@ export const isCharacterAtEarliestE = (
   if (!character) return false;
   return getCharacterFirstEIndex(beats, character) === getTimelineEarliestEIndex(beats, characters);
 };
+
+export const getCharactersAtEarliestE = (beats: BeatEntry[], characters: CharacterState[]) => {
+  const earliest = getTimelineEarliestEIndex(beats, characters);
+  return characters.filter((character) => getCharacterFirstEIndex(beats, character) === earliest);
+};

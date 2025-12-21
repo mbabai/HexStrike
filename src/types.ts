@@ -74,10 +74,17 @@ export interface ActionSetItem {
 
 export type BeatEntry = BeatAction[];
 
+export interface PendingActions {
+  beatIndex: number;
+  requiredUserIds: string[];
+  submittedUserIds: string[];
+}
+
 export interface GameStatePublic {
   land: HexCoord[];
   beats: BeatEntry[];
   characters: CharacterState[];
+  pendingActions?: PendingActions;
 }
 
 export interface GameStateSecret {

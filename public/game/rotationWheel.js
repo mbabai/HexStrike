@@ -1,4 +1,4 @@
-const ROTATION_LABELS = ['0', 'R1', 'R2', '3', 'L2', 'L1'];
+export const ROTATION_LABELS = ['0', 'R1', 'R2', '3', 'L2', 'L1'];
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 const polarToCartesian = (centerX, centerY, radius, angleDeg) => {
@@ -70,9 +70,41 @@ export const buildRotationWheel = (container, onSelect) => {
     wedges.push(wedge);
   });
 
+  const centerGroup = document.createElementNS(SVG_NS, 'g');
+  centerGroup.setAttribute('class', 'rotation-center');
+
+  const centerCircle = document.createElementNS(SVG_NS, 'circle');
+  centerCircle.setAttribute('cx', `${center.x}`);
+  centerCircle.setAttribute('cy', `${center.y}`);
+  centerCircle.setAttribute('r', `${innerRadius - 6}`);
+
+  const centerText = document.createElementNS(SVG_NS, 'text');
+  centerText.setAttribute('x', `${center.x}`);
+  centerText.setAttribute('y', `${center.y}`);
+  centerText.setAttribute('text-anchor', 'middle');
+  centerText.setAttribute('dominant-baseline', 'middle');
+  centerText.textContent = 'rotation';
+
+  centerGroup.appendChild(centerCircle);
+  centerGroup.appendChild(centerText);
+  svg.appendChild(centerGroup);
+
   container.appendChild(svg);
 
   let selectedIndex = null;
+  let allowedRotations = null;
+
+  const isAllowed = (label) => !allowedRotations || allowedRotations.has(label);
+
+  const updateAvailability = () => {
+    wedges.forEach((wedge) => {
+      const label = wedge.dataset.rotation;
+      const disabled = !label || !isAllowed(label);
+      wedge.classList.toggle('is-disabled', disabled);
+      wedge.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+      wedge.setAttribute('tabindex', disabled ? '-1' : '0');
+    });
+  };
 
   const updateSelection = (index) => {
     selectedIndex = typeof index === 'number' && index >= 0 && index < wedges.length ? index : null;
@@ -89,6 +121,7 @@ export const buildRotationWheel = (container, onSelect) => {
     const target = event.target instanceof Element ? event.target : null;
     const wedge = target ? target.closest('.rotation-wedge') : null;
     if (!wedge) return;
+    if (wedge.classList.contains('is-disabled')) return;
     const index = Number(wedge.dataset.index);
     if (Number.isNaN(index)) return;
     updateSelection(index);
@@ -101,7 +134,48 @@ export const buildRotationWheel = (container, onSelect) => {
     selectFromEvent(event);
   });
 
+  const setAllowedRotations = (allowed) => {
+    if (!allowed) {
+      allowedRotations = null;
+    } else if (allowed instanceof Set) {
+      allowedRotations = allowed;
+    } else if (Array.isArray(allowed) && allowed.length) {
+      allowedRotations = new Set(allowed);
+    } else {
+      allowedRotations = null;
+    }
+    updateAvailability();
+    if (selectedIndex !== null) {
+      const label = ROTATION_LABELS[selectedIndex];
+      if (!isAllowed(label)) {
+        updateSelection(null);
+      }
+    }
+  };
+
+  const setValue = (value) => {
+    if (value === null || value === undefined || value === '') {
+      updateSelection(null);
+      return;
+    }
+    const index = ROTATION_LABELS.indexOf(`${value}`);
+    if (index < 0) {
+      updateSelection(null);
+      return;
+    }
+    if (!isAllowed(ROTATION_LABELS[index])) {
+      updateSelection(null);
+      return;
+    }
+    updateSelection(index);
+  };
+
+  updateAvailability();
+
   return {
     getValue: () => (selectedIndex === null ? null : ROTATION_LABELS[selectedIndex]),
+    setValue,
+    clear: () => updateSelection(null),
+    setAllowedRotations,
   };
 };

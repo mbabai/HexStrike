@@ -10,6 +10,7 @@ const actionArt = new Map();
 const characterArt = new Map();
 const priorityIcon = new Image();
 priorityIcon.src = '/public/images/priority.webp';
+const PENDING_BLINK_MS = 700;
 
 const getActionArt = (action) => {
   const key = action || ACTION_ICON_FALLBACK;
@@ -133,6 +134,18 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
   const characters = gameState?.state?.public?.characters ?? [];
   const beats = gameState?.state?.public?.beats ?? [];
   const highlightIndex = getTimelineMaxIndex(beats, characters);
+  const pending = gameState?.state?.public?.pendingActions ?? null;
+  const waitingUserIds = new Set();
+  if (pending && pending.beatIndex === highlightIndex && Array.isArray(pending.requiredUserIds)) {
+    const submitted = new Set(Array.isArray(pending.submittedUserIds) ? pending.submittedUserIds : []);
+    pending.requiredUserIds.forEach((userId) => {
+      if (!submitted.has(userId)) {
+        waitingUserIds.add(userId);
+      }
+    });
+  }
+  const blinkPhase = (performance.now() % PENDING_BLINK_MS) / PENDING_BLINK_MS;
+  const blinkAlpha = 0.4 + 0.6 * Math.sin(blinkPhase * Math.PI * 2) ** 2;
   const topRow = getRowLayout(layout, 0);
   drawNumberWell(ctx, topRow.numberArea, theme.queueLavender || theme.panel);
 
@@ -222,9 +235,23 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
     const portraitY = row.y + layout.actionHeight / 2;
     const portraitImage = getCharacterArt(character.characterId);
     const isLocalPlayer = localUserId && character.userId === localUserId;
-    const ringColor = isLocalPlayer ? theme.playerAccent || '#7dcfff' : theme.accentStrong;
+    const isWaiting =
+      waitingUserIds.has(character.userId) || waitingUserIds.has(character.username);
+    const ringColor = isWaiting
+      ? theme.actionAttack || theme.damage
+      : isLocalPlayer
+        ? theme.playerAccent || '#7dcfff'
+        : theme.accentStrong;
     drawCharacterPortrait(ctx, portraitImage, portraitX, portraitY, portraitRadius, theme.panelStrong);
-    drawCharacterRing(ctx, portraitX, portraitY, portraitRadius, layout.portraitBorderWidth, ringColor);
+    drawCharacterRing(
+      ctx,
+      portraitX,
+      portraitY,
+      portraitRadius,
+      layout.portraitBorderWidth,
+      ringColor,
+      isWaiting ? blinkAlpha : 1,
+    );
     drawNameCapsule(ctx, portraitX, portraitY, portraitRadius, character.username || character.userId, theme);
 
     if (index === characters.length - 1) return;
@@ -264,12 +291,15 @@ const drawCharacterPortrait = (ctx, image, x, y, radius, fillColor) => {
   ctx.restore();
 };
 
-const drawCharacterRing = (ctx, x, y, radius, borderWidth, color) => {
+const drawCharacterRing = (ctx, x, y, radius, borderWidth, color, alpha = 1) => {
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
   ctx.strokeStyle = color;
   ctx.lineWidth = borderWidth;
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.stroke();
+  ctx.restore();
 };
 
 const drawNumberWell = (ctx, numberArea, fillColor) => {

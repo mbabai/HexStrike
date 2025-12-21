@@ -56,6 +56,7 @@ export const createInitialGameState = async (
       land: LAND_HEXES.map((tile) => ({ q: tile.q, r: tile.r })),
       beats,
       characters,
+      pendingActions: undefined,
     },
     secret: {},
   };

@@ -1,0 +1,115 @@
+{
+  "movement": [
+    {
+      "id": "step",
+      "name": "Step",
+      "priority": 10,
+      "actions": ["W", "m", "W"],
+      "rotations": "*"
+    },
+    {
+      "id": "advance",
+      "name": "Advance",
+      "priority": 15,
+      "actions": ["W", "m", "m", "W"],
+      "rotations": "*"
+    },
+    {
+      "id": "jump",
+      "name": "Jump",
+      "priority": 35,
+      "actions": ["W", "W", "2j", "W", "W"],
+      "rotations": "*"
+    },
+    {
+      "id": "backflip",
+      "name": "Backflip",
+      "priority": 25,
+      "actions": ["Bm", "W", "W", "W"],
+      "rotations": "*"
+    }
+  ],
+  "ability": [
+    {
+      "id": "balestra-lunge",
+      "name": "Balestra Lunge",
+      "priority": 69,
+      "actions": ["m", "a", "W", "W"],
+      "rotations": "0-1",
+      "damage": 4,
+      "kbf": 1
+    },
+    {
+      "id": "long-thrust",
+      "name": "Long Thrust",
+      "priority": 67,
+      "actions": ["W", "a-2a", "W", "W", "W"],
+      "rotations": "0-2",
+      "damage": 3,
+      "kbf": 2
+    },
+    {
+      "id": "cross-slash",
+      "name": "Cross Slash",
+      "priority": 70,
+      "actions": ["W", "a-La-Ra", "W", "W"],
+      "rotations": "0-2",
+      "damage": 4,
+      "kbf": 2
+    },
+    {
+      "id": "hammer",
+      "name": "Hammer",
+      "priority": 80,
+      "actions": ["W", "W", "a-La-Ra", "W", "W", "W"],
+      "rotations": "0-2",
+      "damage": 6,
+      "kbf": 4
+    },
+    {
+      "id": "jab",
+      "name": "Jab",
+      "priority": 65,
+      "actions": ["a", "W"],
+      "rotations": "*",
+      "damage": 1,
+      "kbf": 0
+    },
+    {
+      "id": "smash-attack",
+      "name": "Smash Attack",
+      "priority": 85,
+      "actions": ["W", "W", "a", "W", "W", "W"],
+      "rotations": "*",
+      "damage": 5,
+      "kbf": 5
+    },
+    {
+      "id": "flying-knee",
+      "name": "Flying Knee",
+      "priority": 55,
+      "actions": ["W", "c", "W", "W"],
+      "rotations": "0-1",
+      "damage": 2,
+      "kbf": 2
+    },
+    {
+      "id": "double-daggers",
+      "name": "Double Daggers",
+      "priority": 59,
+      "actions": ["m", "La-Ra", "W", "W"],
+      "rotations": "0-2",
+      "damage": 2,
+      "kbf": 0
+    },
+    {
+      "id": "push-kick",
+      "name": "Push Kick",
+      "priority": 76,
+      "actions": ["a", "Bm", "W", "W"],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0
+    }
+  ]
+}

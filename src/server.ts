@@ -9,17 +9,24 @@ import { CHARACTER_IDS } from './game/characters';
 import { createInitialGameState } from './game/state';
 import { applyActionSetToBeats } from './game/actionSets';
 import { executeBeats } from './game/execute';
-import { isCharacterAtEarliestE } from './game/beatTimeline';
+import { getCharactersAtEarliestE, getTimelineEarliestEIndex, isCharacterAtEarliestE } from './game/beatTimeline';
 
 interface EventPacket {
   type: string;
   payload?: unknown;
 }
 
+interface PendingActionBatch {
+  beatIndex: number;
+  requiredUserIds: string[];
+  submitted: Map<string, ActionSetItem[]>;
+}
+
 export function buildServer(port: number) {
   const lobby = createLobbyStore();
   const db = new MemoryDb();
   const sseClients = new Map<string, ServerResponse>();
+  const pendingActionSets = new Map<string, PendingActionBatch>();
   const pendingInvites = new Map<string, { from: string; to: string; createdAt: Date }>();
   const matchDisconnects = new Map<string, Set<string>>();
   const winsRequired = 3;
@@ -158,6 +165,13 @@ export function buildServer(port: number) {
 
   const logGameState = (game: GameDoc, match?: MatchDoc) => {
     console.log(formatGameLog(game, match));
+  };
+
+  const sendGameUpdate = (match: MatchDoc | undefined, game: GameDoc) => {
+    if (!match) return;
+    match.players.forEach((player) => {
+      sendEvent({ type: 'game:update', payload: game }, player.userId);
+    });
   };
 
   const handleJoin = async (body: any) => {
@@ -432,17 +446,64 @@ export function buildServer(port: number) {
         if (!isCharacterAtEarliestE(beats, characters, character)) {
           return respondJson(res, 409, { error: 'Action set rejected: player is behind the earliest timeline beat' });
         }
-        const updatedBeats = applyActionSetToBeats(beats, characters, userId, actions);
+        const earliestIndex = getTimelineEarliestEIndex(beats, characters);
+        const atBatCharacters = getCharactersAtEarliestE(beats, characters);
+        const atBatUserIds = atBatCharacters.map((candidate) => candidate.userId);
+        const match = await db.findMatch(game.matchId);
+
+        if (atBatUserIds.length <= 1) {
+          pendingActionSets.delete(game.id);
+          game.state.public.pendingActions = undefined;
+          const updatedBeats = applyActionSetToBeats(beats, characters, userId, actions);
+          const executed = executeBeats(updatedBeats, characters);
+          game.state.public.beats = executed.beats;
+          game.state.public.characters = executed.characters;
+          const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
+          sendGameUpdate(match, updatedGame);
+          return respondJson(res, 200, updatedGame);
+        }
+
+        let batch = pendingActionSets.get(game.id);
+        if (!batch || batch.beatIndex !== earliestIndex) {
+          batch = { beatIndex: earliestIndex, requiredUserIds: atBatUserIds, submitted: new Map() };
+          pendingActionSets.set(game.id, batch);
+        }
+
+        if (!batch.requiredUserIds.includes(userId)) {
+          return respondJson(res, 409, { error: 'Action set rejected: player is not required for current beat' });
+        }
+        if (batch.submitted.has(userId)) {
+          return respondJson(res, 409, { error: 'Action set already submitted for this beat' });
+        }
+
+        batch.submitted.set(userId, actions);
+        game.state.public.pendingActions = {
+          beatIndex: batch.beatIndex,
+          requiredUserIds: [...batch.requiredUserIds],
+          submittedUserIds: Array.from(batch.submitted.keys()),
+        };
+
+        const pendingGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
+        sendGameUpdate(match, pendingGame);
+
+        if (batch.submitted.size < batch.requiredUserIds.length) {
+          return respondJson(res, 200, pendingGame);
+        }
+
+        let updatedBeats = beats;
+        batch.requiredUserIds.forEach((requiredId) => {
+          const list = batch?.submitted.get(requiredId);
+          if (list) {
+            updatedBeats = applyActionSetToBeats(updatedBeats, characters, requiredId, list);
+          }
+        });
         const executed = executeBeats(updatedBeats, characters);
         game.state.public.beats = executed.beats;
         game.state.public.characters = executed.characters;
+        game.state.public.pendingActions = undefined;
+        pendingActionSets.delete(game.id);
         const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
-        const match = await db.findMatch(game.matchId);
-        if (match) {
-          match.players.forEach((player) => {
-            sendEvent({ type: 'game:update', payload: updatedGame }, player.userId);
-          });
-        }
+        sendGameUpdate(match, updatedGame);
         return respondJson(res, 200, updatedGame);
       }
     }

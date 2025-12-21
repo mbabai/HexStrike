@@ -6,32 +6,20 @@ import { createTimeIndicatorViewModel } from './game/timeIndicatorViewModel.js';
 import { applyMomentum, centerView, createPointerState, createViewState } from './game/viewState.js';
 import { getOrCreateUserId } from './storage.js';
 import { getTimelineMaxIndex, isCharacterAtEarliestE } from './game/beatTimeline.js';
-import { buildRotationWheel } from './game/rotationWheel.js';
 import { createTimelinePlayback } from './game/timelinePlayback.js';
-
-const buildActionSet = (actions, rotation, priority) =>
-  actions.map((action, index) => ({
-    action,
-    rotation: index === 0 ? rotation : '',
-    priority,
-  }));
+import { loadCardCatalog, buildPlayerHand } from './game/cards.js';
+import { createActionHud } from './game/actionHud.js';
 
 export function initGame() {
   const gameArea = document.getElementById('gameArea');
   const canvas = document.getElementById('gameCanvas');
   const menuMatch = document.querySelector('.menu-match');
-  const playerName = document.getElementById('playerName');
-  const actionConfigs = [
-    { id: 'actionMove', label: 'move', actions: ['W', 'm', 'W'], priority: 30 },
-    { id: 'actionAttack', label: 'attack', actions: ['W', 'a-La-Ra', 'W', 'W'], priority: 90 },
-    { id: 'actionBlock', label: 'block', actions: ['W', 'b-Lb-Rb', 'b-Lb-Rb'], priority: 99 },
-    { id: 'actionCharge', label: 'charge', actions: ['W', 'c', 'W', 'W', 'W'], priority: 75 },
-    { id: 'actionJump', label: 'jump', actions: ['2j', 'W', 'W', 'W'], priority: 20 },
-  ];
-  const actionButtons = actionConfigs.map((config) => ({
-    ...config,
-    element: document.getElementById(config.id),
-  }));
+  const actionHudRoot = document.getElementById('actionHud');
+  const movementHand = document.getElementById('movementHand');
+  const abilityHand = document.getElementById('abilityHand');
+  const activeSlot = document.getElementById('activeSlot');
+  const passiveSlot = document.getElementById('passiveSlot');
+  const actionSubmit = document.getElementById('actionSubmit');
   const rotationWheel = document.getElementById('rotationWheel');
 
   if (!gameArea || !canvas) return;
@@ -50,7 +38,30 @@ export function initGame() {
   let gameState = null;
   let gameId = null;
   let usernameById = new Map();
-  let selectedRotation = null;
+  let optimisticLock = false;
+  let hasServerPendingForLocal = false;
+  let lastIndicatorValue = null;
+  let optimisticBeatIndex = null;
+
+  const actionHud = createActionHud({
+    root: actionHudRoot,
+    movementHand,
+    abilityHand,
+    activeSlot,
+    passiveSlot,
+    submitButton: actionSubmit,
+    rotationWheel,
+    onSubmit: submitAction,
+  });
+
+  loadCardCatalog()
+    .then((catalog) => {
+      const hand = buildPlayerHand(catalog);
+      actionHud.setCards(hand.movement, hand.ability);
+    })
+    .catch((err) => {
+      console.error('Failed to load card catalog', err);
+    });
 
   const formatGameLog = (game, nameMap) => {
     const characters = game?.state?.public?.characters || [];
@@ -94,34 +105,77 @@ export function initGame() {
     timeIndicatorModel.setMax(maxIndex);
   };
 
-  const updateActionButtonsEnabled = () => {
+  const getLocalCharacter = (characters) =>
+    characters.find((character) => character.userId === localUserId) || null;
+
+  const updateActionHudState = () => {
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
-    const localCharacter = characters.find((character) => character.userId === localUserId) || null;
-    const canSubmit = isCharacterAtEarliestE(beats, characters, localCharacter);
-    const enabled = Boolean(gameId) && selectedRotation !== null && canSubmit;
-    actionButtons.forEach((button) => {
-      if (button.element) button.element.disabled = !enabled;
-    });
+    const localCharacter = getLocalCharacter(characters);
+    const earliestIndex = getTimelineMaxIndex(beats, characters);
+    const isAtBat = isCharacterAtEarliestE(beats, characters, localCharacter);
+    const isViewingEarliest = timeIndicatorViewModel.value === earliestIndex;
+    const pending = gameState?.state?.public?.pendingActions ?? null;
+    const serverLocked = Boolean(pending?.submittedUserIds?.includes(localUserId));
+
+    if (serverLocked) {
+      hasServerPendingForLocal = true;
+      optimisticLock = false;
+      optimisticBeatIndex = null;
+    }
+
+    const shouldLock = serverLocked || optimisticLock;
+    const shouldShow = Boolean(gameId) && isAtBat && isViewingEarliest;
+    actionHud.setVisible(shouldShow);
+    actionHud.setLocked(shouldLock);
+
+    if (optimisticLock && !serverLocked && optimisticBeatIndex !== null && earliestIndex !== optimisticBeatIndex) {
+      optimisticLock = false;
+      optimisticBeatIndex = null;
+      actionHud.setLocked(false);
+      actionHud.clearSelection();
+    }
+
+    if (hasServerPendingForLocal && !serverLocked && !optimisticLock) {
+      actionHud.clearSelection();
+      hasServerPendingForLocal = false;
+    }
   };
 
-  const updatePlayerName = () => {
-    if (!playerName) return;
-    const label = usernameById.get(localUserId) || 'You';
-    playerName.textContent = label;
-  };
-
-  const sendActionSet = async (actionList) => {
+  async function sendActionSet(actionList) {
     if (!gameId) {
       console.warn('No active game to send action set');
       return;
     }
-    await fetch('/api/v1/game/action-set', {
+    const response = await fetch('/api/v1/game/action-set', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId: localUserId, gameId, actionList }),
     });
-  };
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      const message = payload?.error ? `${payload.error}` : `Action set rejected (${response.status})`;
+      throw new Error(message);
+    }
+  }
+
+  async function submitAction(actionList) {
+    if (!Array.isArray(actionList) || !actionList.length) return;
+    const beats = gameState?.state?.public?.beats ?? [];
+    const characters = gameState?.state?.public?.characters ?? [];
+    const localCharacter = getLocalCharacter(characters);
+    if (!isCharacterAtEarliestE(beats, characters, localCharacter)) return;
+    optimisticBeatIndex = getTimelineMaxIndex(beats, characters);
+    optimisticLock = true;
+    actionHud.setLocked(true);
+    try {
+      await sendActionSet(actionList);
+    } catch (err) {
+      optimisticLock = false;
+      actionHud.setLocked(false);
+      console.error('Failed to submit action set', err);
+    }
+  }
 
   window.addEventListener('resize', resize);
   window.addEventListener('hexstrike:match', showGameArea);
@@ -134,41 +188,16 @@ export function initGame() {
         usernameById.set(player.userId, player.username);
       });
     }
-    updatePlayerName();
   });
   window.addEventListener('hexstrike:game', (event) => {
     gameState = event.detail;
     gameId = gameState?.id || null;
-    updateActionButtonsEnabled();
     updateTimeIndicatorMax(gameState);
-    updatePlayerName();
+    updateActionHudState();
     console.log(formatGameLog(gameState, usernameById));
   });
 
-  buildRotationWheel(rotationWheel, (rotation) => {
-    selectedRotation = rotation;
-    updateActionButtonsEnabled();
-  });
-
-  const bindActionButton = (button) => {
-    if (!button.element) return;
-    button.element.addEventListener('click', async () => {
-      try {
-        if (selectedRotation === null) return;
-        const beats = gameState?.state?.public?.beats ?? [];
-        const characters = gameState?.state?.public?.characters ?? [];
-        const localCharacter = characters.find((character) => character.userId === localUserId) || null;
-        if (!isCharacterAtEarliestE(beats, characters, localCharacter)) return;
-        await sendActionSet(buildActionSet(button.actions, selectedRotation, button.priority));
-      } catch (err) {
-        console.error(`Failed to send ${button.label} action set`, err);
-      }
-    });
-  };
-
-  actionButtons.forEach(bindActionButton);
-
-  updateActionButtonsEnabled();
+  updateActionHudState();
   bindControls(canvas, viewState, pointerState, GAME_CONFIG, timeIndicatorViewModel);
 
   const tick = (now) => {
@@ -177,6 +206,11 @@ export function initGame() {
 
     applyMomentum(viewState, dt, GAME_CONFIG);
     timeIndicatorViewModel.update(now);
+    const indicatorValue = timeIndicatorViewModel.value;
+    if (indicatorValue !== lastIndicatorValue) {
+      lastIndicatorValue = indicatorValue;
+      updateActionHudState();
+    }
 
     if (!gameArea.hidden) {
       timelinePlayback.update(now, gameState, timeIndicatorViewModel.value ?? 0);

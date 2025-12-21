@@ -7,7 +7,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - Server: dependency-light Node.js + TypeScript HTTP server in `src/server.ts` with REST endpoints and SSE (`GET /events`).
 - State: lobby queues (`quickplayQueue`, `rankedQueue`, `botQueue`) and in-memory match/game records via `src/state/lobby.ts` and `src/persistence/memoryDb.ts`; games now include starting characters assigned on queue join.
 - UI: static assets in `public/` with ES module scripts (`public/menu.js`, `public/queue.js`, `public/storage.js`) and styling in `public/theme.css`.
-- UI action buttons for gameplay live in `public/index.html` and are wired via `actionConfigs` in `public/game.js`.
+- UI action HUD uses movement/ability cards from `public/game/cards.json`, random hand selection in `public/game/cards.js`, and drag/drop wiring in `public/game/actionHud.js`.
 - Front-end animation: `public/game/timelinePlayback.js` builds beat-by-beat scenes (characters + effects) consumed by `public/game/renderer.js`.
 - UI portrait badges (name capsules) are drawn with `public/game/portraitBadges.js`; local player accents use `--color-player-accent`.
 - Matchmaking: Quickplay join/leave is wired from the UI; other queue options are placeholders.
@@ -34,6 +34,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - SSE message envelope: `{ type, payload, recipient }`.
 - Message types currently emitted: `connected`, `queueChanged`, `match:created`, `game:update`, `match:ended`.
 - REST endpoints live under `/api/v1/lobby`, `/api/v1/match`, and `/api/v1/history`.
+- `game:update` payloads may include `pendingActions` in public state when concurrent players are submitting action sets.
 
 ## Persistence and operations (current)
 - `MemoryDb` in `src/persistence/memoryDb.ts` is the only persistence layer and resets on restart.
@@ -67,10 +68,13 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Beat entries include `damage`, `location`, and `priority` fields; tests should assert full beat payloads, not just `username`/`action`.
 - Action-set insertion is per player: replace that player's first open slot (missing entry or `E`), fill empty beats in place, and avoid shifting other players' beats.
 - Action-set rotations only apply to the first action entry; subsequent actions must use a blank rotation to keep timelines aligned.
-- Action buttons only enable after a rotation is selected; new buttons must be added to `public/game.js` `actionConfigs` to wire enablement + handler behavior.
+- Action HUD only shows when the timeline selector is on the earliest `E` across all players and the local player is at-bat; the HUD locks after submit until resolution.
+- Active/passive slots must be filled with cards from different sides (movement vs ability); only the active card drives the action list and rotation restrictions.
 - Keep beat arrays ordered by character roster when mutating to prevent UI rows from swapping entries.
 - Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
 - Timeline gold highlight uses the earliest `E` beat across all players, not the currently viewed beat.
+- Rotation restrictions like `0-2` are interpreted as rotation magnitude (both left/right labels plus `0`/`3` where applicable), not directional ranges.
+- When multiple players share the earliest `E`, the server batches action sets in `pendingActions` and reveals them simultaneously once all required players submit; timeline rings blink red for players still needed.
 - Direction indexing for blocks/attacks must ignore reverse vectors (only forward, positive steps); otherwise block walls flip away from facing.
 - Keep `getDirectionIndex` logic in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized so visuals match server resolution.
 - Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.

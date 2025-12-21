@@ -46,24 +46,25 @@
     </div>
 
     <section id="gameArea" class="game-area" hidden>
-      <div class="game-actions panel">
-        <div id="playerName" class="game-actions-username"></div>
-        <h3 class="game-actions-title">Actions</h3>
-        <div class="game-actions-body">
-          <div class="rotation-selector">
-            <span class="rotation-label">Rotation</span>
-            <div id="rotationWheel" class="rotation-wheel"></div>
-          </div>
-          <div class="action-buttons">
-            <div class="pill-group">
-              <button id="actionMove" class="btn" type="button">Move</button>
-              <button id="actionAttack" class="btn" type="button">Attack</button>
-              <button id="actionBlock" class="btn" type="button">Block</button>
-              <button id="actionCharge" class="btn" type="button">Charge</button>
-              <button id="actionJump" class="btn" type="button">Jump</button>
+      <div id="actionHud" class="action-hud" hidden>
+        <div id="movementHand" class="action-hand action-hand-movement" aria-label="Movement cards"></div>
+        <div class="action-center">
+          <button id="actionSubmit" class="btn btn-primary action-submit" type="button" hidden>Submit</button>
+          <div class="action-slot-row">
+            <div class="action-slot">
+              <span class="action-slot-label">Active</span>
+              <div id="activeSlot" class="action-slot-drop" data-slot="active" aria-label="Active card slot"></div>
+            </div>
+            <div class="action-slot">
+              <span class="action-slot-label">Passive</span>
+              <div id="passiveSlot" class="action-slot-drop" data-slot="passive" aria-label="Passive card slot"></div>
             </div>
           </div>
+          <div class="rotation-selector">
+            <div id="rotationWheel" class="rotation-wheel"></div>
+          </div>
         </div>
+        <div id="abilityHand" class="action-hand action-hand-ability" aria-label="Ability cards"></div>
       </div>
       <div id="gameFrame" class="game-frame">
         <canvas id="gameCanvas" class="game-canvas"></canvas>
