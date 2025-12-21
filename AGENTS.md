@@ -8,6 +8,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - State: lobby queues (`quickplayQueue`, `rankedQueue`, `botQueue`) and in-memory match/game records via `src/state/lobby.ts` and `src/persistence/memoryDb.ts`; games now include starting characters assigned on queue join.
 - UI: static assets in `public/` with ES module scripts (`public/menu.js`, `public/queue.js`, `public/storage.js`) and styling in `public/theme.css`.
 - UI action HUD uses movement/ability cards from `public/game/cards.json`, random hand selection in `public/game/cards.js`, and drag/drop wiring in `public/game/actionHud.js`.
+- Action HUD hands are always rendered in a stacked spread, with turn-only slots/rotation and icon-driven card badges.
 - Front-end animation: `public/game/timelinePlayback.js` builds beat-by-beat scenes (characters + effects) consumed by `public/game/renderer.js`.
 - UI portrait badges (name capsules) are drawn with `public/game/portraitBadges.js`; local player accents use `--color-player-accent`.
 - Matchmaking: Quickplay join/leave is wired from the UI; other queue options are placeholders.
@@ -69,7 +70,10 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Action-set insertion is per player: replace that player's first open slot (missing entry or `E`), fill empty beats in place, and avoid shifting other players' beats.
 - Action-set rotations only apply to the first action entry; subsequent actions must use a blank rotation to keep timelines aligned.
 - Action HUD only shows when the timeline selector is on the earliest `E` across all players and the local player is at-bat; the HUD locks after submit until resolution.
+- Action HUD hands are always visible in the game view; only the slots and rotation wheel toggle with the `.is-turn` state.
 - Active/passive slots must be filled with cards from different sides (movement vs ability); only the active card drives the action list and rotation restrictions.
+- Slot assignment overwrites same-type cards in the opposite slot by returning them to the hand.
+- Action card UI always appends an `E` symbol and uses `/public/images/rot*.png`, `priority.webp`, `DamageIcon.png`, and `KnockBackIcon.png`.
 - Keep beat arrays ordered by character roster when mutating to prevent UI rows from swapping entries.
 - Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
 - Timeline gold highlight uses the earliest `E` beat across all players, not the currently viewed beat.

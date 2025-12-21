@@ -1,5 +1,11 @@
 import { buildRotationWheel, ROTATION_LABELS } from './rotationWheel.js';
 
+const ACTION_ICON_FALLBACK = 'empty';
+const ROTATION_ICON_FALLBACK = 'rotStar';
+const PRIORITY_ICON_URL = '/public/images/priority.webp';
+const DAMAGE_ICON_URL = '/public/images/DamageIcon.png';
+const KNOCKBACK_ICON_URL = '/public/images/KnockBackIcon.png';
+
 const buildActionSet = (actions, rotation, priority) =>
   actions.map((action, index) => ({
     action,
@@ -36,6 +42,109 @@ const buildAllowedRotationSet = (restriction) => {
   return allowed;
 };
 
+const buildActionIconUrl = (action) => {
+  const key = `${action ?? ''}`.trim();
+  const name = key ? key : ACTION_ICON_FALLBACK;
+  return `/public/images/${name}.png`;
+};
+
+const buildRotationIconUrl = (rotation) => {
+  const key = `${rotation ?? ''}`.trim();
+  if (!key || key === '*') return `/public/images/${ROTATION_ICON_FALLBACK}.png`;
+  return `/public/images/rot${key}.png`;
+};
+
+const buildStatBadge = (type, value, iconUrl) => {
+  const stat = document.createElement('span');
+  stat.className = `action-card-stat action-card-stat-${type}`;
+  stat.style.backgroundImage = `url('${iconUrl}')`;
+  stat.setAttribute('aria-label', `${type} ${value}`);
+  stat.title = `${type.toUpperCase()} ${value}`;
+  const text = document.createElement('span');
+  text.className = 'action-card-stat-value';
+  text.textContent = `${value ?? 0}`;
+  stat.appendChild(text);
+  return stat;
+};
+
+const buildCardElement = (card) => {
+  const element = document.createElement('button');
+  element.type = 'button';
+  element.className = 'action-card';
+  element.dataset.cardId = card.id;
+  element.dataset.cardType = card.type;
+
+  const header = document.createElement('div');
+  header.className = 'action-card-header';
+
+  const title = document.createElement('span');
+  title.className = 'action-card-title';
+  title.textContent = card.name;
+  title.title = card.name;
+  header.appendChild(title);
+
+  const badgeRow = document.createElement('div');
+  badgeRow.className = 'action-card-badges';
+
+  const rotationBadge = document.createElement('span');
+  rotationBadge.className = 'action-card-badge action-card-rotation';
+  rotationBadge.style.backgroundImage = `url('${buildRotationIconUrl(card.rotations)}')`;
+  rotationBadge.setAttribute('aria-label', `Rotation ${card.rotations ?? '*'}`);
+  rotationBadge.title = `${card.rotations ?? '*'}`;
+  badgeRow.appendChild(rotationBadge);
+
+  const priorityBadge = document.createElement('span');
+  priorityBadge.className = 'action-card-badge action-card-priority';
+  priorityBadge.style.backgroundImage = `url('${PRIORITY_ICON_URL}')`;
+  priorityBadge.title = `Priority ${card.priority ?? 0}`;
+  const priorityValue = document.createElement('span');
+  priorityValue.className = 'action-card-priority-value';
+  priorityValue.textContent = `${card.priority ?? 0}`;
+  priorityBadge.appendChild(priorityValue);
+  badgeRow.appendChild(priorityBadge);
+
+  header.appendChild(badgeRow);
+
+  const body = document.createElement('div');
+  body.className = 'action-card-body';
+
+  const actions = document.createElement('div');
+  actions.className = 'action-card-actions';
+  const actionList = Array.isArray(card.actions) ? [...card.actions] : [];
+  const lastAction = actionList[actionList.length - 1];
+  if (lastAction !== 'E') {
+    actionList.push('E');
+  }
+  actionList.forEach((action) => {
+    const icon = document.createElement('span');
+    icon.className = 'action-card-action';
+    const label = `${action ?? ''}`.trim() || ACTION_ICON_FALLBACK;
+    icon.style.backgroundImage = `url('${buildActionIconUrl(label)}')`;
+    icon.setAttribute('aria-label', label);
+    icon.title = label;
+    actions.appendChild(icon);
+  });
+
+  const surface = document.createElement('div');
+  surface.className = 'action-card-surface';
+
+  body.appendChild(actions);
+  body.appendChild(surface);
+
+  if (card.type === 'ability') {
+    const stats = document.createElement('div');
+    stats.className = 'action-card-stats';
+    stats.appendChild(buildStatBadge('damage', card.damage ?? 0, DAMAGE_ICON_URL));
+    stats.appendChild(buildStatBadge('kbf', card.kbf ?? 0, KNOCKBACK_ICON_URL));
+    body.appendChild(stats);
+  }
+
+  element.appendChild(header);
+  element.appendChild(body);
+
+  return element;
+};
+
 export const createActionHud = ({
   root,
   movementHand,
@@ -61,7 +170,7 @@ export const createActionHud = ({
     selectedRotation: null,
     allowedRotations: null,
     locked: false,
-    visible: false,
+    turnActive: false,
     draggingCardId: null,
   };
 
@@ -130,7 +239,7 @@ export const createActionHud = ({
     const passiveCard = getPassiveCard();
     const hasActionList = Array.isArray(activeCard?.actions) && activeCard.actions.length > 0;
     const canSubmit =
-      state.visible &&
+      state.turnActive &&
       !state.locked &&
       Boolean(activeCard && passiveCard) &&
       hasActionList &&
@@ -145,7 +254,9 @@ export const createActionHud = ({
     if (!card) return;
     const otherSlot = slotName === 'active' ? 'passive' : 'active';
     const otherCard = getCard(state.slots[otherSlot]);
-    if (otherCard && otherCard.type === card.type) return;
+    if (otherCard && otherCard.type === card.type) {
+      clearSlot(otherSlot);
+    }
     if (state.slots[slotName]) {
       clearSlot(slotName);
     }
@@ -179,9 +290,6 @@ export const createActionHud = ({
       if (state.locked || !state.draggingCardId) return;
       const card = getCard(state.draggingCardId);
       if (!card) return;
-      const otherSlot = slotName === 'active' ? 'passive' : 'active';
-      const otherCard = getCard(state.slots[otherSlot]);
-      if (otherCard && otherCard.type === card.type) return;
       event.preventDefault();
       slot.classList.add('is-hover');
     });
@@ -234,13 +342,8 @@ export const createActionHud = ({
     wheel.clear();
 
     const attachCard = (card, index, container) => {
-      const element = document.createElement('button');
-      element.type = 'button';
-      element.className = 'action-card';
-      element.textContent = card.name;
-      element.dataset.cardId = card.id;
-      element.dataset.cardType = card.type;
-      element.draggable = !state.locked;
+      const element = buildCardElement(card);
+      element.draggable = !state.locked && state.turnActive;
       element.addEventListener('dragstart', (event) => {
         if (state.locked) {
           event.preventDefault();
@@ -276,15 +379,17 @@ export const createActionHud = ({
   };
 
   const setVisible = (visible) => {
-    state.visible = Boolean(visible);
-    root.hidden = !state.visible;
+    state.turnActive = Boolean(visible);
+    root.classList.toggle('is-turn', state.turnActive);
+    root.hidden = false;
+    state.cardsById.forEach((card) => setCardDraggable(card, !state.locked && state.turnActive));
     updateSubmitState();
   };
 
   const setLocked = (locked) => {
     state.locked = Boolean(locked);
     root.classList.toggle('is-locked', state.locked);
-    state.cardsById.forEach((card) => setCardDraggable(card, !state.locked));
+    state.cardsById.forEach((card) => setCardDraggable(card, !state.locked && state.turnActive));
     updateSubmitState();
   };
 
