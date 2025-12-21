@@ -31,3 +31,10 @@ export const getTimelineMaxIndex = (beats, characters) => {
   });
   return Math.max(0, maxIndex);
 };
+
+export const isCharacterAtEarliestE = (beats, characters, character) => {
+  if (!character) return false;
+  const earliest = getTimelineMaxIndex(beats, characters);
+  const firstE = getCharacterFirstEIndex(beats, character);
+  return firstE === earliest;
+};

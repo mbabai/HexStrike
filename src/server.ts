@@ -9,6 +9,7 @@ import { CHARACTER_IDS } from './game/characters';
 import { createInitialGameState } from './game/state';
 import { applyActionSetToBeats } from './game/actionSets';
 import { executeBeats } from './game/execute';
+import { isCharacterAtEarliestE } from './game/beatTimeline';
 
 interface EventPacket {
   type: string;
@@ -427,6 +428,10 @@ export function buildServer(port: number) {
           return respondJson(res, 403, { error: 'User not in game' });
         }
         const beats = game.state?.public?.beats ?? [];
+        const character = characters.find((candidate) => candidate.userId === userId);
+        if (!isCharacterAtEarliestE(beats, characters, character)) {
+          return respondJson(res, 409, { error: 'Action set rejected: player is behind the earliest timeline beat' });
+        }
         const updatedBeats = applyActionSetToBeats(beats, characters, userId, actions);
         const executed = executeBeats(updatedBeats, characters);
         game.state.public.beats = executed.beats;

@@ -5,7 +5,7 @@ import { createTimeIndicatorModel } from './game/timeIndicatorModel.js';
 import { createTimeIndicatorViewModel } from './game/timeIndicatorViewModel.js';
 import { applyMomentum, centerView, createPointerState, createViewState } from './game/viewState.js';
 import { getOrCreateUserId } from './storage.js';
-import { getTimelineMaxIndex } from './game/beatTimeline.js';
+import { getTimelineMaxIndex, isCharacterAtEarliestE } from './game/beatTimeline.js';
 import { buildRotationWheel } from './game/rotationWheel.js';
 import { createTimelinePlayback } from './game/timelinePlayback.js';
 
@@ -95,7 +95,11 @@ export function initGame() {
   };
 
   const updateActionButtonsEnabled = () => {
-    const enabled = Boolean(gameId) && selectedRotation !== null;
+    const beats = gameState?.state?.public?.beats ?? [];
+    const characters = gameState?.state?.public?.characters ?? [];
+    const localCharacter = characters.find((character) => character.userId === localUserId) || null;
+    const canSubmit = isCharacterAtEarliestE(beats, characters, localCharacter);
+    const enabled = Boolean(gameId) && selectedRotation !== null && canSubmit;
     actionButtons.forEach((button) => {
       if (button.element) button.element.disabled = !enabled;
     });
@@ -151,6 +155,10 @@ export function initGame() {
     button.element.addEventListener('click', async () => {
       try {
         if (selectedRotation === null) return;
+        const beats = gameState?.state?.public?.beats ?? [];
+        const characters = gameState?.state?.public?.characters ?? [];
+        const localCharacter = characters.find((character) => character.userId === localUserId) || null;
+        if (!isCharacterAtEarliestE(beats, characters, localCharacter)) return;
         await sendActionSet(buildActionSet(button.actions, selectedRotation, button.priority));
       } catch (err) {
         console.error(`Failed to send ${button.label} action set`, err);
