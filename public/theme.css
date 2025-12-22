@@ -1093,19 +1093,30 @@ small {
 .action-card-surface {
   position: absolute;
   inset: 8px 8px 8px 46px;
-  border-radius: 12px;
+  border-radius: 0;
   border: 1px solid rgba(0, 0, 0, 0.35);
-  background: linear-gradient(150deg, var(--color-card-surface), transparent 70%);
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.08) 0%,
+      rgba(255, 255, 255, 0.08) 50%,
+      rgba(0, 0, 0, 0.12) 50%,
+      rgba(0, 0, 0, 0.12) 75%,
+      rgba(0, 0, 0, 0.2) 75%,
+      rgba(0, 0, 0, 0.2) 100%
+    ),
+    linear-gradient(150deg, var(--color-card-surface), transparent 70%);
   box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.25);
 }
 
 .action-card-stats {
   position: absolute;
-  left: 10px;
-  bottom: 10px;
+  left: 6px;
+  bottom: 6px;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 0;
   z-index: 3;
 }
 
@@ -1121,6 +1132,10 @@ small {
   font-size: 12px;
   font-weight: 700;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+}
+
+.action-card-stat + .action-card-stat {
+  margin-left: -6px;
 }
 
 .action-card-stat-value {

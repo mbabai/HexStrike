@@ -76,6 +76,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Active/passive slots must be filled with cards from different sides (movement vs ability); only the active card drives the action list and rotation restrictions.
 - Slot assignment overwrites same-type cards in the opposite slot by returning them to the hand.
 - Action card UI always appends an `E` symbol and uses `/public/images/rot*.png`, `priority.webp`, `DamageIcon.png`, and `KnockBackIcon.png`.
+- Action card stat badges are anchored bottom-left with overlapping icons (damage left, knockback right), and the surface panel is split into 50%/25%/25% vertical bands with square corners in `public/theme.css`.
 - Keep beat arrays ordered by character roster when mutating to prevent UI rows from swapping entries.
 - Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
 - Timeline gold highlight uses the earliest `E` beat across all players, not the currently viewed beat.
