@@ -72,6 +72,7 @@
   --action-card-height: 250px;
   --action-card-header-height: 44px;
   --action-card-radius: 16px;
+  --action-card-hover-shift: calc(var(--action-card-width) * 0.1);
   --font-heading: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
   --font-body: 'Source Sans Pro', 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
@@ -982,15 +983,17 @@ small {
 }
 
 .action-hand-movement .action-card:hover,
-.action-hand-movement .action-card:focus-visible {
-  transform: translate(52px, 0);
+.action-hand-movement .action-card:focus-visible,
+.action-hand-movement .action-card.is-hovered {
+  transform: translate(var(--action-card-hover-shift), 0);
   z-index: 6;
   box-shadow: var(--shadow-strong);
 }
 
 .action-hand-ability .action-card:hover,
-.action-hand-ability .action-card:focus-visible {
-  transform: translate(-52px, 0);
+.action-hand-ability .action-card:focus-visible,
+.action-hand-ability .action-card.is-hovered {
+  transform: translate(calc(-1 * var(--action-card-hover-shift)), 0);
   z-index: 6;
   box-shadow: var(--shadow-strong);
 }
@@ -1237,12 +1240,12 @@ small {
 }
 
 .rotation-wheel .rotation-wedge.is-disabled path {
-  fill: var(--color-surface-1-muted);
-  stroke: var(--color-panel-border);
+  fill: #3f4347;
+  stroke: #5c6268;
 }
 
 .rotation-wheel .rotation-wedge.is-disabled text {
-  fill: var(--color-subtle);
+  fill: #9aa1a7;
 }
 
 .rotation-wheel .rotation-wedge:focus-visible path {

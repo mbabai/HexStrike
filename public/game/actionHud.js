@@ -59,7 +59,6 @@ const buildStatBadge = (type, value, iconUrl) => {
   stat.className = `action-card-stat action-card-stat-${type}`;
   stat.style.backgroundImage = `url('${iconUrl}')`;
   stat.setAttribute('aria-label', `${type} ${value}`);
-  stat.title = `${type.toUpperCase()} ${value}`;
   const text = document.createElement('span');
   text.className = 'action-card-stat-value';
   text.textContent = `${value ?? 0}`;
@@ -90,13 +89,11 @@ const buildCardElement = (card) => {
   rotationBadge.className = 'action-card-badge action-card-rotation';
   rotationBadge.style.backgroundImage = `url('${buildRotationIconUrl(card.rotations)}')`;
   rotationBadge.setAttribute('aria-label', `Rotation ${card.rotations ?? '*'}`);
-  rotationBadge.title = `${card.rotations ?? '*'}`;
   badgeRow.appendChild(rotationBadge);
 
   const priorityBadge = document.createElement('span');
   priorityBadge.className = 'action-card-badge action-card-priority';
   priorityBadge.style.backgroundImage = `url('${PRIORITY_ICON_URL}')`;
-  priorityBadge.title = `Priority ${card.priority ?? 0}`;
   const priorityValue = document.createElement('span');
   priorityValue.className = 'action-card-priority-value';
   priorityValue.textContent = `${card.priority ?? 0}`;
@@ -121,7 +118,6 @@ const buildCardElement = (card) => {
     const label = `${action ?? ''}`.trim() || ACTION_ICON_FALLBACK;
     icon.style.backgroundImage = `url('${buildActionIconUrl(label)}')`;
     icon.setAttribute('aria-label', label);
-    icon.title = label;
     actions.appendChild(icon);
   });
 
@@ -172,6 +168,11 @@ export const createActionHud = ({
     locked: false,
     turnActive: false,
     draggingCardId: null,
+    hoveredCards: {
+      movement: null,
+      ability: null,
+    },
+    headerHeight: null,
   };
 
   const wheel = buildRotationWheel(rotationWheel, (rotation) => {
@@ -189,6 +190,18 @@ export const createActionHud = ({
     if (!card?.element) return;
     card.element.draggable = enabled;
     card.element.classList.toggle('is-disabled', !enabled);
+  };
+
+  const clearHoverForCard = (cardId) => {
+    if (!cardId) return;
+    Object.entries(state.hoveredCards).forEach(([type, hoveredId]) => {
+      if (hoveredId !== cardId) return;
+      const card = getCard(cardId);
+      if (card?.element) {
+        card.element.classList.remove('is-hovered');
+      }
+      state.hoveredCards[type] = null;
+    });
   };
 
   const updateSlotState = (slotName) => {
@@ -252,6 +265,7 @@ export const createActionHud = ({
     if (state.locked) return;
     const card = getCard(cardId);
     if (!card) return;
+    clearHoverForCard(cardId);
     const otherSlot = slotName === 'active' ? 'passive' : 'active';
     const otherCard = getCard(state.slots[otherSlot]);
     if (otherCard && otherCard.type === card.type) {
@@ -275,6 +289,7 @@ export const createActionHud = ({
     if (state.locked) return;
     const card = getCard(cardId);
     if (!card) return;
+    clearHoverForCard(cardId);
     if (state.slots.active === cardId) {
       clearSlot('active');
       updateRotationRestriction();
@@ -314,6 +329,79 @@ export const createActionHud = ({
   };
 
   const bindHand = (hand, type) => {
+    const clearHovered = () => {
+      const hoveredId = state.hoveredCards[type];
+      if (!hoveredId) return;
+      const card = getCard(hoveredId);
+      if (card?.element) {
+        card.element.classList.remove('is-hovered');
+      }
+      state.hoveredCards[type] = null;
+    };
+
+    const getHeaderHeight = (element) => {
+      const raw = getComputedStyle(element).getPropertyValue('--action-card-header-height');
+      const parsed = Number.parseFloat(raw);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        if (parsed !== state.headerHeight) {
+          state.headerHeight = parsed;
+        }
+        return parsed;
+      }
+      const header = element.querySelector('.action-card-header');
+      if (header) {
+        const height = header.getBoundingClientRect().height;
+        if (height !== state.headerHeight) {
+          state.headerHeight = height;
+        }
+        return height;
+      }
+      return 0;
+    };
+
+    const getHoverPadding = () => {
+      const raw = getComputedStyle(hand).getPropertyValue('--action-card-hover-shift');
+      const parsed = Number.parseFloat(raw);
+      return Number.isFinite(parsed) ? parsed : 52;
+    };
+
+    const findCardUnderHeader = (event) => {
+      const handRect = hand.getBoundingClientRect();
+      const hoverPadding = getHoverPadding();
+      if (event.clientX < handRect.left - hoverPadding || event.clientX > handRect.right + hoverPadding) {
+        return null;
+      }
+      if (event.clientY < handRect.top || event.clientY > handRect.bottom) {
+        return null;
+      }
+      const y = event.clientY - handRect.top;
+      const cards = Array.from(hand.querySelectorAll('.action-card'));
+      for (const element of cards) {
+        const top = element.offsetTop;
+        const headerHeight = getHeaderHeight(element);
+        if (y >= top && y <= top + headerHeight) {
+          return element;
+        }
+      }
+      return null;
+    };
+
+    root.addEventListener('pointermove', (event) => {
+      const element = findCardUnderHeader(event);
+      const cardId = element?.dataset.cardId ?? null;
+      if (cardId === state.hoveredCards[type]) return;
+      clearHovered();
+      if (!cardId) return;
+      const card = getCard(cardId);
+      if (!card?.element) return;
+      card.element.classList.add('is-hovered');
+      state.hoveredCards[type] = cardId;
+    });
+
+    root.addEventListener('pointerleave', () => {
+      clearHovered();
+    });
+
     hand.addEventListener('dragover', (event) => {
       if (state.locked || !state.draggingCardId) return;
       const card = getCard(state.draggingCardId);
@@ -334,6 +422,8 @@ export const createActionHud = ({
     abilityHand.innerHTML = '';
     activeSlot.innerHTML = '';
     passiveSlot.innerHTML = '';
+    state.hoveredCards.movement = null;
+    state.hoveredCards.ability = null;
     state.slots.active = null;
     state.slots.passive = null;
     updateSlotState('active');

@@ -71,6 +71,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Action-set rotations only apply to the first action entry; subsequent actions must use a blank rotation to keep timelines aligned.
 - Action HUD only shows when the timeline selector is on the earliest `E` across all players and the local player is at-bat; the HUD locks after submit until resolution.
 - Action HUD hands are always visible in the game view; only the slots and rotation wheel toggle with the `.is-turn` state.
+- Action HUD hover targeting is based on the hand column + header band (not card transforms); keep `--action-card-hover-shift` synced with the hover rail in `public/game/actionHud.js`.
 - Active/passive slots must be filled with cards from different sides (movement vs ability); only the active card drives the action list and rotation restrictions.
 - Slot assignment overwrites same-type cards in the opposite slot by returning them to the hand.
 - Action card UI always appends an `E` symbol and uses `/public/images/rot*.png`, `priority.webp`, `DamageIcon.png`, and `KnockBackIcon.png`.
