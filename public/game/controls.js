@@ -10,6 +10,10 @@ export const bindControls = (canvas, viewState, pointerState, config = GAME_CONF
       const layout = getTimeIndicatorLayout({ width: rect.width, height: rect.height });
       const hit = getTimeIndicatorHit(layout, event.clientX - rect.left, event.clientY - rect.top);
       if (hit) {
+        if (hit === 'play') {
+          timeIndicatorViewModel.togglePlaying?.();
+          return;
+        }
         const direction = hit === 'left' ? -1 : 1;
         const started = timeIndicatorViewModel.press(direction, performance.now(), event.pointerId);
         if (started) {

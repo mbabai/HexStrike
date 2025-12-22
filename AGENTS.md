@@ -11,6 +11,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - Action HUD hands are always rendered in a stacked spread, with turn-only slots/rotation and icon-driven card badges.
 - Front-end animation: `public/game/timelinePlayback.js` builds beat-by-beat scenes (characters + effects) consumed by `public/game/renderer.js`.
 - UI portrait badges (name capsules) are drawn with `public/game/portraitBadges.js`; local player accents use `--color-player-accent`.
+- Timeline controls: play/pause is rendered in the center time slot and auto-advance steps when the current beat playback completes.
 - Matchmaking: Quickplay join/leave is wired from the UI; other queue options are placeholders.
 
 # Documentation map (start here)
@@ -78,6 +79,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Keep beat arrays ordered by character roster when mutating to prevent UI rows from swapping entries.
 - Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
 - Timeline gold highlight uses the earliest `E` beat across all players, not the currently viewed beat.
+- Timeline play/pause replaces the center beat label; hit detection is a circular button in `public/game/timeIndicatorView.js` and auto-advance only steps after playback reports completion.
 - Rotation restrictions like `0-2` are interpreted as rotation magnitude (both left/right labels plus `0`/`3` where applicable), not directional ranges.
 - When multiple players share the earliest `E`, the server batches action sets in `pendingActions` and reveals them simultaneously once all required players submit; timeline rings blink red for players still needed.
 - Direction indexing for blocks/attacks must ignore reverse vectors (only forward, positive steps); otherwise block walls flip away from facing.

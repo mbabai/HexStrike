@@ -5,6 +5,7 @@ export const createTimeIndicatorViewModel = (model) => {
     lastStep: 0,
     pointerId: null,
     isHolding: false,
+    isPlaying: true,
   };
 
   const canStep = (direction) => {
@@ -37,11 +38,11 @@ export const createTimeIndicatorViewModel = (model) => {
     const elapsed = now - state.holdStart;
     const interval = Math.max(70, 320 - elapsed * 0.3);
     if (now - state.lastStep >= interval) {
-    if (canStep(state.holdDirection)) {
-      model.step(state.holdDirection);
+      if (canStep(state.holdDirection)) {
+        model.step(state.holdDirection);
+      }
+      state.lastStep = now;
     }
-    state.lastStep = now;
-  }
   };
 
   return {
@@ -60,7 +61,19 @@ export const createTimeIndicatorViewModel = (model) => {
     get pointerId() {
       return state.pointerId;
     },
+    get isPlaying() {
+      return state.isPlaying;
+    },
     canStep,
+    step(direction) {
+      if (canStep(direction)) model.step(direction);
+    },
+    setPlaying(next) {
+      state.isPlaying = Boolean(next);
+    },
+    togglePlaying() {
+      state.isPlaying = !state.isPlaying;
+    },
     press,
     release,
     update,

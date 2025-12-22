@@ -520,6 +520,13 @@ export const createTimelinePlayback = () => {
   let lastGameStamp = null;
   let playback = null;
   let scene = { characters: [], effects: [] };
+  let status = {
+    isCalculated: false,
+    isAnimating: false,
+    isComplete: true,
+    elapsed: 0,
+    duration: 0,
+  };
 
   const buildPlayback = (gameState, beatIndex, now) => {
     const beats = gameState?.state?.public?.beats ?? [];
@@ -531,6 +538,13 @@ export const createTimelinePlayback = () => {
     if (!isBeatCalculated(beat)) {
       playback = null;
       scene = { characters: baseState, effects: [] };
+      status = {
+        isCalculated: false,
+        isAnimating: false,
+        isComplete: true,
+        elapsed: 0,
+        duration: 0,
+      };
       return;
     }
 
@@ -544,6 +558,13 @@ export const createTimelinePlayback = () => {
       persistentEffects,
       damagePreviewByStep: new Map(),
     };
+    status = {
+      isCalculated: true,
+      isAnimating: stepDuration > 0 && steps.length > 0,
+      isComplete: stepDuration <= 0 || steps.length === 0,
+      elapsed: 0,
+      duration: stepDuration * steps.length,
+    };
     scene = { characters: baseState, effects: [] };
   };
 
@@ -552,11 +573,25 @@ export const createTimelinePlayback = () => {
     const { baseState, steps, stepDuration, startTime, persistentEffects, damagePreviewByStep } = playback;
     if (!steps.length || stepDuration <= 0) {
       scene = { characters: baseState, effects: [] };
+      status = {
+        isCalculated: true,
+        isAnimating: false,
+        isComplete: true,
+        elapsed: 0,
+        duration: 0,
+      };
       return;
     }
     const elapsed = Math.max(0, now - startTime);
     const totalDuration = stepDuration * steps.length;
     const clamped = Math.min(elapsed, totalDuration);
+    status = {
+      isCalculated: true,
+      isAnimating: elapsed < totalDuration,
+      isComplete: elapsed >= totalDuration,
+      elapsed: clamped,
+      duration: totalDuration,
+    };
     const completed = Math.floor(clamped / stepDuration);
     const stepIndex = Math.min(completed, steps.length - 1);
     const stepProgress = Math.min(1, Math.max(0, (clamped - stepIndex * stepDuration) / stepDuration));
@@ -724,6 +759,9 @@ export const createTimelinePlayback = () => {
         buildPlayback(gameState, beatIndex, now);
       }
       updateScene(now);
+    },
+    getStatus() {
+      return { ...status };
     },
     getScene() {
       return scene;

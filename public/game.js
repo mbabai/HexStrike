@@ -142,6 +142,18 @@ export function initGame() {
     }
   };
 
+  const maybeAutoAdvanceTimeline = () => {
+    if (!timeIndicatorViewModel.isPlaying) return false;
+    if (timeIndicatorViewModel.isHolding) return false;
+    const max = timeIndicatorViewModel.max;
+    if (typeof max !== 'number') return false;
+    if ((timeIndicatorViewModel.value ?? 0) >= max) return false;
+    const status = timelinePlayback.getStatus?.();
+    if (!status || !status.isComplete) return false;
+    timeIndicatorViewModel.step(1);
+    return true;
+  };
+
   async function sendActionSet(actionList) {
     if (!gameId) {
       console.warn('No active game to send action set');
@@ -214,6 +226,11 @@ export function initGame() {
 
     if (!gameArea.hidden) {
       timelinePlayback.update(now, gameState, timeIndicatorViewModel.value ?? 0);
+      if (maybeAutoAdvanceTimeline()) {
+        lastIndicatorValue = timeIndicatorViewModel.value;
+        updateActionHudState();
+        timelinePlayback.update(now, gameState, timeIndicatorViewModel.value ?? 0);
+      }
       renderer.draw(viewState, gameState, timeIndicatorViewModel, timelinePlayback.getScene(), localUserId);
     }
 

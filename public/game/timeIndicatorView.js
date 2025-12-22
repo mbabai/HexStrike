@@ -11,6 +11,7 @@ const characterArt = new Map();
 const priorityIcon = new Image();
 priorityIcon.src = '/public/images/priority.webp';
 const PENDING_BLINK_MS = 700;
+const PLAY_BUTTON_MIN_SIZE = 22;
 
 const getActionArt = (action) => {
   const key = action || ACTION_ICON_FALLBACK;
@@ -75,6 +76,17 @@ export const getTimeIndicatorLayout = (viewport) => {
   };
   const portraitRadius = actionHeight / 2;
   const portraitBorderWidth = Math.max(1.5, portraitRadius * CHARACTER_TOKEN_STYLE.borderFactor);
+  const playSize = Math.max(PLAY_BUTTON_MIN_SIZE, timeHeight * 0.8);
+  const playCenterX = x + width / 2;
+  const playCenterY = y + timeHeight / 2;
+  const playButton = {
+    x: playCenterX - playSize / 2,
+    y: playCenterY - playSize / 2,
+    size: playSize,
+    centerX: playCenterX,
+    centerY: playCenterY,
+    radius: playSize / 2,
+  };
 
   return {
     x,
@@ -90,6 +102,7 @@ export const getTimeIndicatorLayout = (viewport) => {
     portraitOverlap,
     portraitSize: actionHeight,
     portraitBorderWidth,
+    playButton,
   };
 };
 
@@ -115,6 +128,7 @@ const getRowLayout = (layout, rowIndex) => {
 
 export const getTimeIndicatorHit = (layout, x, y) => {
   if (!layout) return null;
+  if (layout.playButton && isPointInCircle(x, y, layout.playButton)) return 'play';
   if (isPointInRect(x, y, layout.leftArrow)) return 'left';
   if (isPointInRect(x, y, layout.rightArrow)) return 'right';
   return null;
@@ -127,6 +141,7 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
   ctx.setTransform(viewport.dpr, 0, 0, viewport.dpr, 0, 0);
 
   const value = viewModel?.value ?? 0;
+  const isPlaying = Boolean(viewModel?.isPlaying);
   const leftDisabled = viewModel?.canStep ? !viewModel.canStep(-1) : value === 0;
   const rightDisabled = viewModel?.canStep ? !viewModel.canStep(1) : false;
   const offsets = TIMELINE_OFFSETS;
@@ -163,6 +178,10 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
     const target = value + offset;
     if (target < 0) return;
     const xPos = centerX + offset * spacing;
+    if (offset === 0) {
+      drawPlayButton(ctx, layout.playButton, theme, isPlaying);
+      return;
+    }
     ctx.fillStyle = target === highlightIndex ? theme.accentStrong : theme.text;
     ctx.fillText(`${target}`.padStart(2, '0'), xPos, centerY);
   });
@@ -374,6 +393,53 @@ const drawPriorityBadge = (ctx, x, y, size, priority, theme) => {
 
 const isPointInRect = (x, y, rect) =>
   x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+
+const isPointInCircle = (x, y, circle) => {
+  const dx = x - circle.centerX;
+  const dy = y - circle.centerY;
+  return dx * dx + dy * dy <= circle.radius * circle.radius;
+};
+
+const drawPlayButton = (ctx, playButton, theme, isPlaying) => {
+  if (!playButton) return;
+  const fill = theme.panelStrong || theme.panel;
+  const stroke = theme.accentStrong || theme.accent;
+  const size = playButton.size;
+  const iconSize = size * 0.4;
+
+  ctx.save();
+  ctx.fillStyle = fill;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = Math.max(1.5, size * 0.08);
+  ctx.beginPath();
+  ctx.arc(playButton.centerX, playButton.centerY, playButton.radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = stroke;
+  if (isPlaying) {
+    const barWidth = Math.max(3, iconSize * 0.32);
+    const barHeight = Math.max(10, iconSize * 1.4);
+    const gap = barWidth * 0.9;
+    const leftX = playButton.centerX - gap;
+    const rightX = playButton.centerX + gap;
+    const topY = playButton.centerY - barHeight / 2;
+    drawRoundedRect(ctx, leftX - barWidth / 2, topY, barWidth, barHeight, barWidth * 0.2);
+    ctx.fill();
+    drawRoundedRect(ctx, rightX - barWidth / 2, topY, barWidth, barHeight, barWidth * 0.2);
+    ctx.fill();
+  } else {
+    const triWidth = iconSize * 1.1;
+    const triHeight = iconSize * 1.3;
+    ctx.beginPath();
+    ctx.moveTo(playButton.centerX - triWidth * 0.35, playButton.centerY - triHeight / 2);
+    ctx.lineTo(playButton.centerX - triWidth * 0.35, playButton.centerY + triHeight / 2);
+    ctx.lineTo(playButton.centerX + triWidth * 0.6, playButton.centerY);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+};
 
 const drawArrow = (ctx, rect, direction, color, alpha) => {
   const cx = rect.x + rect.width / 2;
