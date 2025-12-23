@@ -9,7 +9,7 @@ const TIMELINE_OFFSETS = Array.from({ length: VISIBLE_BEAT_RADIUS * 2 + 1 }, (_,
 const actionArt = new Map();
 const characterArt = new Map();
 const priorityIcon = new Image();
-priorityIcon.src = '/public/images/priority.webp';
+  priorityIcon.src = '/public/images/priority.png';
 const PENDING_BLINK_MS = 700;
 const PLAY_BUTTON_MIN_SIZE = 22;
 

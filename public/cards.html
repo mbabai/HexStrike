@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>HexStrike Cards</title>
+    <link rel="stylesheet" href="/public/theme.css" />
+    <link rel="stylesheet" href="/public/cards.css" />
+  </head>
+  <body>
+    <main class="ui-shell cards-shell">
+      <header class="hero-header">
+        <div class="hero-header-content">
+          <div class="branding">
+            <p class="eyebrow">Card Catalog</p>
+            <h1>HexStrike Cards</h1>
+            <p class="subtitle">Browse every action and movement card in the current set.</p>
+          </div>
+          <div class="hero-actions">
+            <span id="cardCount" class="status-pill">Loading...</span>
+            <a class="btn btn-ghost btn-small" href="/">Back to Lobby</a>
+          </div>
+        </div>
+      </header>
+
+      <section class="panel">
+        <h2>All Cards</h2>
+        <p>Actions show their beats, stats, and passive text as they appear in play.</p>
+        <div id="cardsTable" class="cards-table" aria-live="polite"></div>
+      </section>
+    </main>
+    <script type="module" src="/public/cards.js"></script>
+  </body>
+</html>

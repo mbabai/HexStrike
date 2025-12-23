@@ -1,0 +1,813 @@
+{
+  "movement": [
+    {
+      "id": "advance",
+      "name": "Advance",
+      "type": "movement",
+      "priority": 15,
+      "actions": [
+        "W",
+        "m",
+        "m",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0
+    },
+    {
+      "id": "backflip",
+      "name": "Backflip",
+      "type": "movement",
+      "priority": 30,
+      "actions": [
+        "Bm",
+        "W",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0
+    },
+    {
+      "id": "dash",
+      "name": "Dash",
+      "type": "movement",
+      "priority": 20,
+      "actions": [
+        "2m",
+        "W",
+        "W",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0
+    },
+    {
+      "id": "fleche",
+      "name": "Fleche",
+      "type": "movement",
+      "priority": 25,
+      "actions": [
+        "W",
+        "m",
+        "m",
+        "m",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0,
+      "passiveText": "If you did 0 rotation, skip the last {W} on your attack card."
+    },
+    {
+      "id": "grappling-hook",
+      "name": "Grappling Hook",
+      "type": "movement",
+      "priority": 5,
+      "actions": [
+        "W",
+        "W",
+        "[3c]",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 1,
+      "activeText": "{i}: Grappling Hook charges at most only as far as the first land or target in front of you. If you started Grappling Hook on land, it is a Throw.",
+      "passiveText": "If a {a} lands, place the target on the opposite side of your character, and knock them in that direction."
+    },
+    {
+      "id": "jump",
+      "name": "Jump",
+      "type": "movement",
+      "priority": 35,
+      "actions": [
+        "W",
+        "W",
+        "2j",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0
+    },
+    {
+      "id": "leap",
+      "name": "Leap",
+      "type": "movement",
+      "priority": 32,
+      "actions": [
+        "W",
+        "W",
+        "3j",
+        "W",
+        "W",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0,
+      "passiveText": "Your attack is now a throw."
+    },
+    {
+      "id": "ninja-roll",
+      "name": "Ninja Roll",
+      "type": "movement",
+      "priority": 32,
+      "actions": [
+        "m",
+        "[m]",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "1-2",
+      "damage": 0,
+      "kbf": 0,
+      "activeText": "{i}: Before this movement, rotate 1 in the opposite direction of your original rotation.",
+      "passiveText": "For any {a} attack, it becomes {a-La-Ra} but with half damage and KBF (rounded down)."
+    },
+    {
+      "id": "step",
+      "name": "Step",
+      "type": "movement",
+      "priority": 10,
+      "actions": [
+        "W",
+        "m",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0
+    }
+  ],
+  "ability": [
+    {
+      "id": "absorb",
+      "name": "Absorb",
+      "type": "ability",
+      "priority": 96,
+      "actions": [
+        "W",
+        "[b-Lb-Rb]",
+        "[b-Lb-Rb]",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0,
+      "activeText": "{i}: For each point of damage that would have hit you, draw 1 card.",
+      "passiveText": "After this movement card is done, if you are on the abyss, you may choose to swap a movement card from your hand with one in your discard pile."
+    },
+    {
+      "id": "aerial-strike",
+      "name": "Aerial Strike",
+      "type": "ability",
+      "priority": 88,
+      "actions": [
+        "W",
+        "[2j]",
+        "a",
+        "W",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 3,
+      "kbf": 2,
+      "activeText": "{i}: Must rotate 3 after jumping.",
+      "passiveText": "After completing the final move of any move ability, rotate 3."
+    },
+    {
+      "id": "balestra-lunge",
+      "name": "Balestra Lunge",
+      "type": "ability",
+      "priority": 69,
+      "actions": [
+        "m",
+        "a",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "0-1",
+      "damage": 4,
+      "kbf": 1
+    },
+    {
+      "id": "bow-shot",
+      "name": "Bow Shot",
+      "type": "ability",
+      "priority": 81,
+      "actions": [
+        "W",
+        "X1",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0,
+      "activeText": "{X1}: Place one arrow in front of you facing the direction you are.",
+      "passiveText": "If you rotated by 1 or 2, place an arrow facing your original direction on every {m} on the original side you were facing, after the {m} is completed."
+    },
+    {
+      "id": "burning-strike",
+      "name": "Burning Strike",
+      "type": "ability",
+      "priority": 88,
+      "actions": [
+        "W",
+        "[a]",
+        "Co",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 4,
+      "kbf": 0,
+      "activeText": "{i}: Place a fire hex on this location.\n\nIf Burning Strike is in your hand when you land an attack, you may choose to discard it and a movement card to place a hex on all hexes attacked.",
+      "passiveText": "For every {m}, if you actually move, place a fire hex on your starting hex."
+    },
+    {
+      "id": "chase",
+      "name": "Chase",
+      "type": "ability",
+      "priority": 78,
+      "actions": [
+        "W",
+        "m",
+        "c",
+        "a",
+        "Co",
+        "W",
+        "E"
+      ],
+      "rotations": "0-1",
+      "damage": 4,
+      "kbf": 1,
+      "passiveText": "Add a {W} at the start of your move, turn all {m} to {2m}."
+    },
+    {
+      "id": "counter-attack",
+      "name": "Counter Attack",
+      "type": "ability",
+      "priority": 68,
+      "actions": [
+        "[m]",
+        "a",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 5,
+      "kbf": 3,
+      "activeText": "{i}: Rotate after this move, not before.",
+      "passiveText": "Convert the first {m} to {m-Ba} with damage 3 and KBF 3."
+    },
+    {
+      "id": "cross-slash",
+      "name": "Cross Slash",
+      "type": "ability",
+      "priority": 70,
+      "actions": [
+        "W",
+        "a-La-Ra",
+        "Co",
+        "W",
+        "E"
+      ],
+      "rotations": "0-2",
+      "damage": 4,
+      "kbf": 2,
+      "passiveText": "Replace all {m} with {m-La-Ra} with damage 2, KBF 1. Discard 1."
+    },
+    {
+      "id": "double-daggers",
+      "name": "Double Daggers",
+      "type": "ability",
+      "priority": 59,
+      "actions": [
+        "m",
+        "La-Ra",
+        "Co",
+        "W",
+        "E"
+      ],
+      "rotations": "0-2",
+      "damage": 2,
+      "kbf": 0
+    },
+    {
+      "id": "down-slash",
+      "name": "Down Slash",
+      "type": "ability",
+      "priority": 75,
+      "actions": [
+        "W",
+        "[a]",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "0-2",
+      "damage": 3,
+      "kbf": 3,
+      "activeText": "{i}: Any target hit must discard 1."
+    },
+    {
+      "id": "feint",
+      "name": "Feint",
+      "type": "ability",
+      "priority": 1,
+      "actions": [
+        "W",
+        "E"
+      ],
+      "rotations": "0-1",
+      "damage": 0,
+      "kbf": 0
+    },
+    {
+      "id": "flying-knee",
+      "name": "Flying Knee",
+      "type": "ability",
+      "priority": 55,
+      "actions": [
+        "W",
+        "c",
+        "Co",
+        "W",
+        "E"
+      ],
+      "rotations": "0-1",
+      "damage": 2,
+      "kbf": 2,
+      "passiveText": "All movement (not jumps) become charges with 1 damage and 1 KBF."
+    },
+    {
+      "id": "fumikomi",
+      "name": "Fumikomi",
+      "type": "ability",
+      "priority": 68,
+      "actions": [
+        "m",
+        "a-La-Ra",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "0-1",
+      "damage": 3,
+      "kbf": 1
+    },
+    {
+      "id": "gigantic-staff",
+      "name": "Gigantic Staff",
+      "type": "ability",
+      "priority": 86,
+      "actions": [
+        "W",
+        "W",
+        "a-2a-3a",
+        "W",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "0-2",
+      "damage": 4,
+      "kbf": 4,
+      "passiveText": "If you are over the abyss, all {m} -> {2j}."
+    },
+    {
+      "id": "guard",
+      "name": "Guard",
+      "type": "ability",
+      "priority": 98,
+      "actions": [
+        "W",
+        "[b-Lb-Rb]",
+        "b-Lb-Rb",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0,
+      "activeText": "{i}: On this frame you may choose to \"continue\" your block. If you do, then on Guard's {E} frame, instead return to this frame and discard 1.",
+      "passiveText": "All {W} frames become {Bb} instead."
+    },
+    {
+      "id": "hammer",
+      "name": "Hammer",
+      "type": "ability",
+      "priority": 80,
+      "actions": [
+        "W",
+        "W",
+        "a-La-Ra",
+        "W",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "0-2",
+      "damage": 6,
+      "kbf": 4,
+      "passiveText": "If any attack hits you, deal the attacker 2 damage as well."
+    },
+    {
+      "id": "haven",
+      "name": "Haven",
+      "type": "ability",
+      "priority": 21,
+      "actions": [
+        "W",
+        "X1",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0,
+      "activeText": "{X1}: Place an ethereal platform touching you.",
+      "passiveText": "If you are on the abyss, skip the first {W} on your movement."
+    },
+    {
+      "id": "healing-harmony",
+      "name": "Healing Harmony",
+      "type": "ability",
+      "priority": 15,
+      "actions": [
+        "W",
+        "W",
+        "W",
+        "X1",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0,
+      "activeText": "{X1}: Reduce you and your allies' accumulated damage by 3.",
+      "passiveText": "If you are hit while this movement card is active, reduce the damage by 2 (min 0)."
+    },
+    {
+      "id": "hip-throw",
+      "name": "Hip Throw",
+      "type": "ability",
+      "priority": 50,
+      "actions": [
+        "W",
+        "[a]",
+        "W",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 2,
+      "kbf": "X",
+      "activeText": "{i}: Throw",
+      "passiveText": "While this move card is active, you cannot be thrown."
+    },
+    {
+      "id": "iron-will",
+      "name": "Iron Will",
+      "type": "ability",
+      "priority": 18,
+      "actions": [
+        "W",
+        "W",
+        "W",
+        "X1",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0,
+      "activeText": "{X1}: Draw 2.\n\nIf Iron Will is in your hand when you are hit, you can discard it to reduce the KBF to 0.",
+      "passiveText": "If you are hit while this movement card is active, reduce the KBF by 1 (min 0)."
+    },
+    {
+      "id": "jab",
+      "name": "Jab",
+      "type": "ability",
+      "priority": 65,
+      "actions": [
+        "[a]",
+        "Co",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 1,
+      "kbf": 0,
+      "activeText": "{i}: Draw 1.",
+      "passiveText": "Gain +30 priority."
+    },
+    {
+      "id": "long-thrust",
+      "name": "Long Thrust",
+      "type": "ability",
+      "priority": 67,
+      "actions": [
+        "W",
+        "a-2a",
+        "W",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "0-2",
+      "damage": 3,
+      "kbf": 2
+    },
+    {
+      "id": "parry",
+      "name": "Parry",
+      "type": "ability",
+      "priority": 99,
+      "actions": [
+        "W",
+        "[b]",
+        "[b]",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0,
+      "activeText": "{i}: If Parry successfully blocks a melee attack, on the following frame do 2x damage and +1 KBF back onto the attacker, and {E}."
+    },
+    {
+      "id": "push-kick",
+      "name": "Push Kick",
+      "type": "ability",
+      "priority": 76,
+      "actions": [
+        "a",
+        "Bm",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 2,
+      "passiveText": "Convert all movements or jumps to backwards movements or jumps."
+    },
+    {
+      "id": "reflex-dodge",
+      "name": "Reflex Dodge",
+      "type": "ability",
+      "priority": 97,
+      "actions": [
+        "b-Lb-Rb",
+        "X1",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0,
+      "activeText": "{X1}: If you successfully avoided an attack, {E}.",
+      "passiveText": "If you would be hit during a {W}, immediately swap your movement card with Reflex Dodge."
+    },
+    {
+      "id": "rewind",
+      "name": "Rewind",
+      "type": "ability",
+      "priority": 90,
+      "actions": [
+        "W",
+        "F",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0,
+      "activeText": "{F}: Note your current hex location. At any {E}, you may end Rewind's concentration to return to that location. While Rewind is concentrated, you cannot refresh, even on land."
+    },
+    {
+      "id": "sinking-shot",
+      "name": "Sinking Shot",
+      "type": "ability",
+      "priority": 82,
+      "actions": [
+        "W",
+        "W",
+        "3a",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 4,
+      "kbf": 2,
+      "activeText": "If Sinking Shot is in your hand when an enemy is hit by a projectile, you may reveal it and discard it to force the target to discard 2 cards."
+    },
+    {
+      "id": "smash-attack",
+      "name": "Smash Attack",
+      "type": "ability",
+      "priority": 85,
+      "actions": [
+        "W",
+        "W",
+        "a",
+        "W",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 5,
+      "kbf": 5,
+      "passiveText": "After completing a jump, {a-La-Ra-BLa-BRa-Ba} for 1 damage, and 1 KBF."
+    },
+    {
+      "id": "smoke-bomb",
+      "name": "Smoke Bomb",
+      "type": "ability",
+      "priority": 87,
+      "actions": [
+        "W",
+        "[a-La-Ra]",
+        "X1",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0,
+      "activeText": "{i}: Rotate after this attack. All targets hit by the attack are interrupted, and stunned for 3 - your rotation. \n{X1}: Swap this card with the movement card.",
+      "passiveText": "All movement frames invert their direction."
+    },
+    {
+      "id": "spike",
+      "name": "Spike",
+      "type": "ability",
+      "priority": 66,
+      "actions": [
+        "W",
+        "W",
+        "[a]",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "0-2",
+      "damage": 4,
+      "kbf": 0,
+      "activeText": "{i}: Target discards 3.",
+      "passiveText": "While this move is active, opponent effects cannot make you discard cards."
+    },
+    {
+      "id": "spinning-back-kick",
+      "name": "Spinning Back Kick",
+      "type": "ability",
+      "priority": 56,
+      "actions": [
+        "Ba-BLa-BRa",
+        "Co",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 2,
+      "kbf": 2
+    },
+    {
+      "id": "stab",
+      "name": "Stab",
+      "type": "ability",
+      "priority": 62,
+      "actions": [
+        "W",
+        "[a]",
+        "Co",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 3,
+      "kbf": 1,
+      "activeText": "{i}: if you are behind your opponent, +3 damage and +3 KBF."
+    },
+    {
+      "id": "sweeping-strike",
+      "name": "Sweeping Strike",
+      "type": "ability",
+      "priority": 60,
+      "actions": [
+        "[a-La-Ra]",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "0-2",
+      "damage": 1,
+      "kbf": 1,
+      "activeText": "{i}: If the center attack hits, the target discards a card.",
+      "passiveText": "If an opponent stands in the way of your move, they must discard 1."
+    },
+    {
+      "id": "tackle",
+      "name": "Tackle",
+      "type": "ability",
+      "priority": 45,
+      "actions": [
+        "W",
+        "m",
+        "[a]",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "0-1",
+      "damage": 1,
+      "kbf": "X",
+      "activeText": "{i}: Throw",
+      "passiveText": "While this move card is active, you cannot be thrown."
+    },
+    {
+      "id": "trip",
+      "name": "Trip",
+      "type": "ability",
+      "priority": 65,
+      "actions": [
+        "W",
+        "[a-La-Ra]",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 3,
+      "kbf": 2,
+      "activeText": "{i}: Target discards 2.",
+      "passiveText": "If you are dealt damage during this movement, convert KBF X into discard X."
+    },
+    {
+      "id": "vengeance",
+      "name": "Vengeance",
+      "type": "ability",
+      "priority": 3,
+      "actions": [
+        "W",
+        "W",
+        "c",
+        "c",
+        "c",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 4,
+      "kbf": 2,
+      "activeText": "If Vengeance is in your hand when you are knocked into the abyss, you may choose to reveal and discard it. If you do, draw as many cards as was the total hexes knocked back."
+    },
+    {
+      "id": "whirlwind",
+      "name": "Whirlwind",
+      "type": "ability",
+      "priority": 66,
+      "actions": [
+        "W",
+        "c-La-Ra-BLa-BRa-Ba",
+        "c-La-Ra-BLa-BRa-Ba",
+        "[c-La-Ra-BLa-BRa-Ba]",
+        "W",
+        "W",
+        "W",
+        "E"
+      ],
+      "rotations": "*",
+      "damage": 3,
+      "kbf": 0,
+      "activeText": "You can only use Whirlwind if you have at least 12 damage accumulated. \n{i}: KBF = 3",
+      "passiveText": "The final {m} becomes {c-La-Ra-BLa-BRa-Ba} with damage 1, and KBF 0."
+    }
+  ]
+}

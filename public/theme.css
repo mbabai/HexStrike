@@ -39,9 +39,14 @@
   --color-queue-lavender-border: #a18be0;
   --color-queue-lavender-glow: rgba(185, 167, 242, 0.45);
   --color-card-movement: #1c5a2c;
-  --color-card-ability: #b07a23;
+  --color-card-ability: #4d3c7a;
+  --color-card-outline: #0b0b0b;
   --color-card-header: rgba(10, 18, 14, 0.55);
   --color-card-surface: rgba(255, 255, 255, 0.08);
+  --color-card-textbox-start: #f2e5cf;
+  --color-card-textbox-end: #e6d3b1;
+  --color-card-textbox-border: #d2a64c;
+  --color-card-textbox-text: #101010;
   --color-link: #8ac6c3;
   --color-text: #e3ecf2;
   --color-subtle: #a5b7c0;
@@ -68,16 +73,56 @@
   --shadow-soft: 0 6px 20px rgba(0, 0, 0, 0.35);
   --shadow-strong: 0 8px 20px rgba(0, 0, 0, 0.35);
   --shadow-cta: 0 12px 30px rgba(0, 0, 0, 0.45), 0 0 20px rgba(213, 163, 74, 0.4);
-  --action-card-width: 190px;
-  --action-card-height: 250px;
-  --action-card-header-height: 44px;
-  --action-card-radius: 16px;
+  --action-card-base-width: 240px;
+  --action-card-base-height: 336px;
+  --action-card-scale: 1;
+  --action-card-width: calc(var(--action-card-base-width) * var(--action-card-scale));
+  --action-card-height: calc(var(--action-card-base-height) * var(--action-card-scale));
+  --action-card-border-width: calc(7px * var(--action-card-scale));
+  --action-card-radius: calc(8px * var(--action-card-scale));
+  --action-card-inner-offset: calc(6px * var(--action-card-scale));
+  --action-card-inner-width: calc(228px * var(--action-card-scale));
+  --action-card-inner-height: calc(324px * var(--action-card-scale));
+  --action-card-header-height: calc(35px * var(--action-card-scale));
+  --action-card-actions-left: calc(6px * var(--action-card-scale));
+  --action-card-actions-top: calc(7px * var(--action-card-scale));
+  --action-card-action-width: calc(34px * var(--action-card-scale));
+  --action-card-action-height: calc(30px * var(--action-card-scale));
+  --action-card-surface-left: calc(40px * var(--action-card-scale));
+  --action-card-surface-top: calc(35px * var(--action-card-scale));
+  --action-card-surface-width: calc(194px * var(--action-card-scale));
+  --action-card-surface-height: calc(295px * var(--action-card-scale));
+  --action-card-surface-top-height: calc(157px * var(--action-card-scale));
+  --action-card-surface-mid-height: calc(72px * var(--action-card-scale));
+  --action-card-surface-bottom-height: calc(66px * var(--action-card-scale));
+  --action-card-title-top: calc(6px * var(--action-card-scale));
+  --action-card-title-left: calc(40px * var(--action-card-scale));
+  --action-card-title-width: calc(139px * var(--action-card-scale));
+  --action-card-title-height: calc(29px * var(--action-card-scale));
+  --action-card-rotation-top: calc(6px * var(--action-card-scale));
+  --action-card-rotation-left: calc(179px * var(--action-card-scale));
+  --action-card-rotation-width: calc(30px * var(--action-card-scale));
+  --action-card-rotation-height: calc(30px * var(--action-card-scale));
+  --action-card-priority-top: calc(8px * var(--action-card-scale));
+  --action-card-priority-left: calc(209px * var(--action-card-scale));
+  --action-card-priority-width: calc(25px * var(--action-card-scale));
+  --action-card-priority-height: calc(26px * var(--action-card-scale));
+  --action-card-damage-top: calc(300px * var(--action-card-scale));
+  --action-card-damage-left: calc(6px * var(--action-card-scale));
+  --action-card-damage-width: calc(26px * var(--action-card-scale));
+  --action-card-damage-height: calc(30px * var(--action-card-scale));
+  --action-card-kbf-top: calc(299px * var(--action-card-scale));
+  --action-card-kbf-left: calc(18px * var(--action-card-scale));
+  --action-card-kbf-width: calc(30px * var(--action-card-scale));
+  --action-card-kbf-height: calc(30px * var(--action-card-scale));
   --action-card-hover-shift: calc(var(--action-card-width) * 0.1);
   --font-heading: 'Cinzel', 'Trajan Pro', 'Times New Roman', serif;
   --font-body: 'Source Sans Pro', 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -950,32 +995,52 @@ small {
   appearance: none;
   width: var(--action-card-width);
   height: var(--action-card-height);
-  border: 1px solid var(--color-panel-border);
+  border: none;
   border-radius: var(--action-card-radius);
   padding: 0;
+  background: transparent;
   color: var(--color-text);
   font-family: var(--font-body);
-  font-weight: 600;
+  font-weight: 500;
   text-align: left;
   user-select: none;
   cursor: grab;
   box-shadow: var(--shadow-soft), inset 0 1px 0 var(--color-highlight-soft);
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
   position: relative;
-  overflow: hidden;
-  display: grid;
-  grid-template-rows: var(--action-card-header-height) 1fr;
+  overflow: visible;
+  display: block;
   isolation: isolate;
 }
 
+.action-card::before {
+  content: '';
+  position: absolute;
+  left: var(--action-card-inner-offset);
+  top: var(--action-card-inner-offset);
+  width: var(--action-card-inner-width);
+  height: var(--action-card-inner-height);
+  background: var(--action-card-inner-bg, var(--color-card-movement));
+  border-radius: 0;
+  z-index: 0;
+}
+
+.action-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: var(--action-card-border-width) solid var(--color-card-outline);
+  border-radius: var(--action-card-radius);
+  pointer-events: none;
+  z-index: 1;
+}
+
 .action-card[data-card-type='movement'] {
-  background: linear-gradient(165deg, rgba(255, 255, 255, 0.08), transparent 65%), var(--color-card-movement);
-  border-color: rgba(82, 170, 112, 0.7);
+  --action-card-inner-bg: linear-gradient(165deg, rgba(255, 255, 255, 0.08), transparent 65%), var(--color-card-movement);
 }
 
 .action-card[data-card-type='ability'] {
-  background: linear-gradient(165deg, rgba(255, 255, 255, 0.18), transparent 65%), var(--color-card-ability);
-  border-color: rgba(221, 177, 88, 0.8);
+  --action-card-inner-bg: linear-gradient(165deg, rgba(255, 255, 255, 0.18), transparent 65%), var(--color-card-ability);
 }
 
 .action-hand .action-card + .action-card {
@@ -1014,35 +1079,47 @@ small {
 }
 
 .action-card-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  background: var(--color-card-header);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.35);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: var(--action-card-header-height);
+  background: transparent;
+  z-index: 3;
 }
 
 .action-card-title {
-  flex: 1;
+  position: absolute;
+  top: var(--action-card-title-top);
+  left: var(--action-card-title-left);
+  width: var(--action-card-title-width);
+  height: var(--action-card-title-height);
   font-family: var(--font-heading);
-  font-size: 11px;
-  letter-spacing: 0.02em;
+  font-size: calc(10px * var(--action-card-scale));
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  pointer-events: none;
 }
 
 .action-card-badges {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
 }
 
 .action-card-badge {
-  width: 28px;
-  height: 28px;
+  position: absolute;
   border-radius: 50%;
-  background-size: cover;
+  background-size: contain;
   background-position: center;
   background-repeat: no-repeat;
   display: grid;
@@ -1050,92 +1127,149 @@ small {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
+.action-card-rotation {
+  width: var(--action-card-rotation-width);
+  height: var(--action-card-rotation-height);
+  top: var(--action-card-rotation-top);
+  left: var(--action-card-rotation-left);
+}
+
 .action-card-priority {
-  background-color: rgba(255, 255, 255, 0.7);
+  width: var(--action-card-priority-width);
+  height: var(--action-card-priority-height);
+  top: var(--action-card-priority-top);
+  left: var(--action-card-priority-left);
+  background-color: transparent;
+  border-radius: 0;
 }
 
 .action-card-priority-value {
-  font-size: 12px;
+  font-size: calc(9px * var(--action-card-scale));
   font-weight: 700;
   color: #1b1b1b;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+  line-height: 1;
 }
 
 .action-card-body {
-  position: relative;
-  padding: 8px;
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  z-index: 2;
 }
 
 .action-card-actions {
   position: absolute;
-  top: 8px;
-  bottom: 8px;
-  left: 8px;
+  top: var(--action-card-actions-top);
+  left: var(--action-card-actions-left);
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 0;
   align-items: center;
+  margin: 0;
+  padding: 0;
   z-index: 2;
 }
 
 .action-card-action {
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background-color: rgba(9, 16, 12, 0.55);
-  background-size: 80%;
+  width: var(--action-card-action-width);
+  height: var(--action-card-action-height);
+  display: block;
+  border-radius: 0;
+  border: none;
+  background-color: transparent;
+  background-size: contain;
   background-position: center;
   background-repeat: no-repeat;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .action-card-surface {
   position: absolute;
-  inset: 8px 8px 8px 46px;
+  top: var(--action-card-surface-top);
+  left: var(--action-card-surface-left);
+  width: var(--action-card-surface-width);
+  height: var(--action-card-surface-height);
   border-radius: 0;
-  border: 1px solid rgba(0, 0, 0, 0.35);
-  background:
-    linear-gradient(
-      to bottom,
-      rgba(255, 255, 255, 0.08) 0%,
-      rgba(255, 255, 255, 0.08) 50%,
-      rgba(0, 0, 0, 0.12) 50%,
-      rgba(0, 0, 0, 0.12) 75%,
-      rgba(0, 0, 0, 0.2) 75%,
-      rgba(0, 0, 0, 0.2) 100%
-    ),
-    linear-gradient(150deg, var(--color-card-surface), transparent 70%);
-  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.25);
+  border: calc(1px * var(--action-card-scale)) solid var(--color-card-textbox-border);
+  color: var(--color-card-textbox-text);
+  background: transparent;
+  box-shadow: none;
+  display: grid;
+  grid-template-rows: var(--action-card-surface-top-height) var(--action-card-surface-mid-height) var(--action-card-surface-bottom-height);
+  gap: 0;
+}
+
+.action-card-surface-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: left;
+  color: var(--color-card-textbox-text);
+  font-size: calc(9px * var(--action-card-scale));
+  line-height: 1;
+  font-weight: 400;
+  overflow: hidden;
+}
+
+.action-card-surface-row.is-active,
+.action-card-surface-row.is-passive {
+  background: linear-gradient(160deg, var(--color-card-textbox-start), var(--color-card-textbox-end));
+}
+
+.action-card-surface-row.is-passive {
+  font-size: calc(8px * var(--action-card-scale));
+}
+
+.action-card-surface-row + .action-card-surface-row {
+  border-top: calc(1px * var(--action-card-scale)) solid var(--color-card-textbox-border);
+}
+
+.action-card-surface-row.is-empty {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.action-card-surface-text {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  display: block;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .action-card-stats {
   position: absolute;
-  left: 6px;
-  bottom: 6px;
-  display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 0;
-  z-index: 3;
+  inset: 0;
+  display: block;
+  z-index: 4;
 }
 
 .action-card-stat {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background-size: cover;
+  position: absolute;
+  border-radius: 0;
+  background-size: contain;
   background-position: center;
+  background-repeat: no-repeat;
   display: grid;
   place-items: center;
   color: #ffffff;
-  font-size: 12px;
+  font-size: calc(9px * var(--action-card-scale));
   font-weight: 700;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
 }
 
-.action-card-stat + .action-card-stat {
-  margin-left: -6px;
+.action-card-stat-damage {
+  width: var(--action-card-damage-width);
+  height: var(--action-card-damage-height);
+  top: var(--action-card-damage-top);
+  left: var(--action-card-damage-left);
+}
+
+.action-card-stat-kbf {
+  width: var(--action-card-kbf-width);
+  height: var(--action-card-kbf-height);
+  top: var(--action-card-kbf-top);
+  left: var(--action-card-kbf-left);
 }
 
 .action-card-stat-value {
@@ -1323,9 +1457,6 @@ small {
     width: min(520px, 94vw);
     grid-template-columns: 1fr;
     gap: 12px;
-    --action-card-width: 150px;
-    --action-card-height: 210px;
-    --action-card-header-height: 40px;
   }
 
   .action-hand {

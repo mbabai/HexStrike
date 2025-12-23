@@ -7,6 +7,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - Server: dependency-light Node.js + TypeScript HTTP server in `src/server.ts` with REST endpoints and SSE (`GET /events`).
 - State: lobby queues (`quickplayQueue`, `rankedQueue`, `botQueue`) and in-memory match/game records via `src/state/lobby.ts` and `src/persistence/memoryDb.ts`; games now include starting characters assigned on queue join.
 - UI: static assets in `public/` with ES module scripts (`public/menu.js`, `public/queue.js`, `public/storage.js`) and styling in `public/theme.css`.
+- UI: `/cards` catalog page renders the full card set from `public/cards/cards.json` via `public/cards.js` + `public/cards.css`.
 - UI action HUD uses movement/ability cards from `public/game/cards.json`, random hand selection in `public/game/cards.js`, and drag/drop wiring in `public/game/actionHud.js`.
 - Action HUD hands are always rendered in a stacked spread, with turn-only slots/rotation and icon-driven card badges.
 - Front-end animation: `public/game/timelinePlayback.js` builds beat-by-beat scenes (characters + effects) consumed by `public/game/renderer.js`.
@@ -75,8 +76,10 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Action HUD hover targeting is based on the hand column + header band (not card transforms); keep `--action-card-hover-shift` synced with the hover rail in `public/game/actionHud.js`.
 - Active/passive slots must be filled with cards from different sides (movement vs ability); only the active card drives the action list and rotation restrictions.
 - Slot assignment overwrites same-type cards in the opposite slot by returning them to the hand.
-- Action card UI always appends an `E` symbol and uses `/public/images/rot*.png`, `priority.webp`, `DamageIcon.png`, and `KnockBackIcon.png`.
+- Action card UI always appends an `E` symbol and uses `/public/images/rot*.png`, `priority.png`, `DamageIcon.png`, and `KnockBackIcon.png`.
 - Action card stat badges are anchored bottom-left with overlapping icons (damage left, knockback right), and the surface panel is split into 50%/25%/25% vertical bands with square corners in `public/theme.css`.
+- Action card layout uses fixed pixel positions via CSS variables in `public/theme.css`; scale with `--action-card-scale` (cards page sets `1.5` in `public/cards.css`) instead of resizing individual elements to keep proportions locked.
+- Action icon column placement is controlled by `--action-card-actions-top` in `public/theme.css`; adjust that single value to keep the top icon aligned without colliding with the border.
 - Keep beat arrays ordered by character roster when mutating to prevent UI rows from swapping entries.
 - Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
 - Timeline gold highlight uses the earliest `E` beat across all players, not the currently viewed beat.

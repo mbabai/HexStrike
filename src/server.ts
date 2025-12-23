@@ -343,9 +343,11 @@ export function buildServer(port: number) {
         ? '/public/index.html'
         : path === '/admin' || path === '/admin/'
           ? '/public/admin.html'
-          : path.startsWith('/public/')
-            ? path
-            : `/public${path}`;
+          : path === '/cards' || path === '/cards/'
+            ? '/public/cards.html'
+            : path.startsWith('/public/')
+              ? path
+              : `/public${path}`;
     readFile(process.cwd() + resolved, (err, data) => {
       if (err) {
         notFound(res);
@@ -517,7 +519,14 @@ export function buildServer(port: number) {
       }
     }
 
-    if (pathname === '/' || pathname === '/admin' || pathname === '/admin/' || pathname.startsWith('/public')) {
+    if (
+      pathname === '/' ||
+      pathname === '/admin' ||
+      pathname === '/admin/' ||
+      pathname === '/cards' ||
+      pathname === '/cards/' ||
+      pathname.startsWith('/public')
+    ) {
       return handleStatic(res, pathname);
     }
 

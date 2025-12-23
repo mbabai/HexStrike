@@ -2,9 +2,10 @@ import { buildRotationWheel, ROTATION_LABELS } from './rotationWheel.js';
 
 const ACTION_ICON_FALLBACK = 'empty';
 const ROTATION_ICON_FALLBACK = 'rotStar';
-const PRIORITY_ICON_URL = '/public/images/priority.webp';
+const PRIORITY_ICON_URL = '/public/images/priority.png';
 const DAMAGE_ICON_URL = '/public/images/DamageIcon.png';
 const KNOCKBACK_ICON_URL = '/public/images/KnockBackIcon.png';
+const EMPHASIS_ICON_URL = '/public/images/i.png';
 
 const buildActionSet = (actions, rotation, priority) =>
   actions.map((action, index) => ({
@@ -115,8 +116,18 @@ const buildCardElement = (card) => {
   actionList.forEach((action) => {
     const icon = document.createElement('span');
     icon.className = 'action-card-action';
-    const label = `${action ?? ''}`.trim() || ACTION_ICON_FALLBACK;
-    icon.style.backgroundImage = `url('${buildActionIconUrl(label)}')`;
+    const rawLabel = `${action ?? ''}`.trim();
+    const isEmphasized = rawLabel.startsWith('[') && rawLabel.endsWith(']');
+    const label = (isEmphasized ? rawLabel.slice(1, -1).trim() : rawLabel) || ACTION_ICON_FALLBACK;
+    const iconUrl = buildActionIconUrl(label);
+    if (isEmphasized) {
+      icon.style.backgroundImage = `url('${EMPHASIS_ICON_URL}'), url('${iconUrl}')`;
+      icon.style.backgroundSize = '100% 100%, 80% 80%';
+      icon.style.backgroundPosition = 'center, center';
+      icon.style.backgroundRepeat = 'no-repeat, no-repeat';
+    } else {
+      icon.style.backgroundImage = `url('${iconUrl}')`;
+    }
     icon.setAttribute('aria-label', label);
     actions.appendChild(icon);
   });
@@ -125,6 +136,15 @@ const buildCardElement = (card) => {
   surface.className = 'action-card-surface';
 
   body.appendChild(actions);
+  const emptyRow = document.createElement('div');
+  emptyRow.className = 'action-card-surface-row is-empty';
+  const activeRow = document.createElement('div');
+  activeRow.className = 'action-card-surface-row is-active';
+  const passiveRow = document.createElement('div');
+  passiveRow.className = 'action-card-surface-row is-passive';
+  surface.appendChild(emptyRow);
+  surface.appendChild(activeRow);
+  surface.appendChild(passiveRow);
   body.appendChild(surface);
 
   if (card.type === 'ability') {
