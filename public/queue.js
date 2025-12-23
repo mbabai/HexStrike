@@ -1,4 +1,5 @@
-import { getOrCreateUserId } from './storage.js';
+import { getOrCreateUserId, getSelectedDeckId } from './storage.js';
+import { getSelectedDeck } from './deckStore.js';
 
 const QUICKPLAY_QUEUE = 'quickplayQueue';
 const SEARCHING_LABEL = 'Searching...';
@@ -9,6 +10,15 @@ export function initQueue() {
   let searchInterval = null;
   let searchStart = 0;
   let isSearching = false;
+
+  const updateFindGameAvailability = () => {
+    if (!findGameButton) return;
+    const hasDeck = Boolean(getSelectedDeckId());
+    const canSearch = hasDeck || isSearching;
+    findGameButton.disabled = !canSearch;
+    findGameButton.classList.toggle('btn-primary', hasDeck);
+    findGameButton.classList.toggle('is-disabled', !hasDeck && !isSearching);
+  };
 
   const updateSearchLabel = () => {
     if (!findGameButton) return;
@@ -35,14 +45,17 @@ export function initQueue() {
       }
       findGameButton.textContent = 'Find Game';
     }
+    updateFindGameAvailability();
   };
 
   const joinQuickplayQueue = async () => {
     const userId = getOrCreateUserId();
+    const selectedDeck = await getSelectedDeck(userId);
+    const characterId = selectedDeck?.characterId;
     await fetch('/api/v1/lobby/join', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, queue: QUICKPLAY_QUEUE }),
+      body: JSON.stringify({ userId, queue: QUICKPLAY_QUEUE, characterId }),
     });
   };
 
@@ -67,6 +80,7 @@ export function initQueue() {
 
   if (findGameButton) {
     findGameButton.addEventListener('click', async () => {
+      if (findGameButton.disabled) return;
       if (isSearching) {
         setSearchingState(false);
         try {
@@ -91,4 +105,8 @@ export function initQueue() {
       }
     });
   }
+
+  window.addEventListener('hexstrike:deck-selected', updateFindGameAvailability);
+  window.addEventListener('hexstrike:decks-updated', updateFindGameAvailability);
+  updateFindGameAvailability();
 }

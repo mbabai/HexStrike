@@ -15,6 +15,8 @@ This document defines the single source of truth for HexStrike's browser UI styl
 - Pills and groups: use `.pill-group` for horizontal stacks; prefer `.status-pill` for status text.
 - Grids: prefer `.grid-layout` for responsive card grids and `.field-row` for stacked form controls.
 - Tables: wrap data tables in `.table-wrapper` and apply `.data-table` for striped rows and header styling.
+- Modals: use `.modal-overlay` with a `.panel` inner container (e.g. `.deck-preview`, `.deck-builder`, `.deck-name`) to keep overlays consistent with the lobby theme.
+- Deck library: use `.menu-decks` with `.deck-grid` and `.deck-card` for portrait-based deck browsing.
 - Game surface: use `.game-area` as the full-page canvas host, `.game-frame` as the clipping wrapper, and `.game-canvas` for the drawing surface; hex grid colors should read from `--color-game-surface`, `--color-hex-fill`, and `--color-hex-stroke`.
 - Rotation wheel: use `.rotation-selector` with `.rotation-wheel` for the donut control; `.rotation-wedge` handles segments, `.is-selected` applies the gold highlight, and `.is-disabled` greys out illegal rotations.
 - Action HUD: use `.action-hud` for the bottom-center action layout, `.action-hand` for card columns, `.action-card` for movement/ability cards, `.action-slot`/`.action-slot-drop` for active/passive slots, and `.action-hud.is-locked` for locked-in styling.

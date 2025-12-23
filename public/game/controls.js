@@ -2,10 +2,43 @@ import { GAME_CONFIG } from './config.js';
 import { getTimeIndicatorHit, getTimeIndicatorLayout } from './timeIndicatorView.js';
 import { clamp } from './utils.js';
 
-export const bindControls = (canvas, viewState, pointerState, config = GAME_CONFIG, timeIndicatorViewModel) => {
+const PAN_BLOCK_SELECTORS = [
+  '.action-card',
+  '.action-slot',
+  '.action-slot-drop',
+  '.action-submit',
+  '.rotation-wheel',
+  '.rotation-selector',
+];
+
+const isEventWithinRoot = (event, root) => {
+  if (!root || !event) return false;
+  const rect = root.getBoundingClientRect();
+  return event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+};
+
+const shouldBlockPan = (target) => {
+  if (!target || typeof target.closest !== 'function') return false;
+  return PAN_BLOCK_SELECTORS.some((selector) => target.closest(selector));
+};
+
+export const bindControls = (canvas, viewState, pointerState, config = GAME_CONFIG, timeIndicatorViewModel, root) => {
+  const controlRoot = root || canvas;
+  const setCapture = (pointerId) => {
+    if (!controlRoot?.setPointerCapture) return;
+    controlRoot.setPointerCapture(pointerId);
+  };
+  const releaseCapture = (pointerId) => {
+    if (!controlRoot?.hasPointerCapture || !controlRoot?.releasePointerCapture) return;
+    if (controlRoot.hasPointerCapture(pointerId)) {
+      controlRoot.releasePointerCapture(pointerId);
+    }
+  };
+
   const onPointerDown = (event) => {
     if (event.button !== 0) return;
-    if (timeIndicatorViewModel) {
+    if (shouldBlockPan(event.target)) return;
+    if (timeIndicatorViewModel && event.target === canvas) {
       const rect = canvas.getBoundingClientRect();
       const layout = getTimeIndicatorLayout({ width: rect.width, height: rect.height });
       const hit = getTimeIndicatorHit(layout, event.clientX - rect.left, event.clientY - rect.top);
@@ -17,7 +50,7 @@ export const bindControls = (canvas, viewState, pointerState, config = GAME_CONF
         const direction = hit === 'left' ? -1 : 1;
         const started = timeIndicatorViewModel.press(direction, performance.now(), event.pointerId);
         if (started) {
-          canvas.setPointerCapture(event.pointerId);
+          setCapture(event.pointerId);
         }
         return;
       }
@@ -29,7 +62,7 @@ export const bindControls = (canvas, viewState, pointerState, config = GAME_CONF
     pointerState.x = event.clientX;
     pointerState.y = event.clientY;
     pointerState.time = performance.now();
-    canvas.setPointerCapture(event.pointerId);
+    setCapture(event.pointerId);
     canvas.classList.add('is-dragging');
   };
 
@@ -52,21 +85,18 @@ export const bindControls = (canvas, viewState, pointerState, config = GAME_CONF
     if (!viewState.dragging || (event && pointerState.id !== event.pointerId)) return;
     viewState.dragging = false;
     canvas.classList.remove('is-dragging');
-    if (event && canvas.hasPointerCapture(event.pointerId)) {
-      canvas.releasePointerCapture(event.pointerId);
-    }
+    if (event) releaseCapture(event.pointerId);
     pointerState.id = null;
   };
 
   const endIndicatorHold = (event) => {
     if (!timeIndicatorViewModel?.isHolding) return;
     timeIndicatorViewModel.release(event?.pointerId ?? null);
-    if (event && canvas.hasPointerCapture(event.pointerId)) {
-      canvas.releasePointerCapture(event.pointerId);
-    }
+    if (event) releaseCapture(event.pointerId);
   };
 
   const onWheel = (event) => {
+    if (!isEventWithinRoot(event, controlRoot)) return;
     event.preventDefault();
     const rect = canvas.getBoundingClientRect();
     const mouseX = event.clientX - rect.left;
@@ -80,21 +110,21 @@ export const bindControls = (canvas, viewState, pointerState, config = GAME_CONF
     viewState.offset.y = mouseY - worldY * viewState.scale;
   };
 
-  canvas.addEventListener('pointerdown', onPointerDown);
-  canvas.addEventListener('pointermove', onPointerMove);
-  canvas.addEventListener('pointerup', endDrag);
-  canvas.addEventListener('pointercancel', endDrag);
-  canvas.addEventListener('pointerup', endIndicatorHold);
-  canvas.addEventListener('pointercancel', endIndicatorHold);
-  canvas.addEventListener('wheel', onWheel, { passive: false });
+  controlRoot.addEventListener('pointerdown', onPointerDown);
+  controlRoot.addEventListener('pointermove', onPointerMove);
+  controlRoot.addEventListener('pointerup', endDrag);
+  controlRoot.addEventListener('pointercancel', endDrag);
+  controlRoot.addEventListener('pointerup', endIndicatorHold);
+  controlRoot.addEventListener('pointercancel', endIndicatorHold);
+  controlRoot.addEventListener('wheel', onWheel, { passive: false, capture: true });
 
   return () => {
-    canvas.removeEventListener('pointerdown', onPointerDown);
-    canvas.removeEventListener('pointermove', onPointerMove);
-    canvas.removeEventListener('pointerup', endDrag);
-    canvas.removeEventListener('pointercancel', endDrag);
-    canvas.removeEventListener('pointerup', endIndicatorHold);
-    canvas.removeEventListener('pointercancel', endIndicatorHold);
-    canvas.removeEventListener('wheel', onWheel);
+    controlRoot.removeEventListener('pointerdown', onPointerDown);
+    controlRoot.removeEventListener('pointermove', onPointerMove);
+    controlRoot.removeEventListener('pointerup', endDrag);
+    controlRoot.removeEventListener('pointercancel', endDrag);
+    controlRoot.removeEventListener('pointerup', endIndicatorHold);
+    controlRoot.removeEventListener('pointercancel', endIndicatorHold);
+    controlRoot.removeEventListener('wheel', onWheel, { capture: true });
   };
 };

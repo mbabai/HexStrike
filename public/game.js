@@ -7,8 +7,9 @@ import { applyMomentum, centerView, createPointerState, createViewState } from '
 import { getOrCreateUserId } from './storage.js';
 import { getTimelineMaxIndex, isCharacterAtEarliestE } from './game/beatTimeline.js';
 import { createTimelinePlayback } from './game/timelinePlayback.js';
-import { loadCardCatalog, buildPlayerHand } from './game/cards.js';
+import { loadCardCatalog, buildDeckHand, buildPlayerHand } from './game/cards.js';
 import { createActionHud } from './game/actionHud.js';
+import { getSelectedDeck } from './deckStore.js';
 
 export function initGame() {
   const gameArea = document.getElementById('gameArea');
@@ -42,6 +43,7 @@ export function initGame() {
   let hasServerPendingForLocal = false;
   let lastIndicatorValue = null;
   let optimisticBeatIndex = null;
+  let cardCatalog = null;
 
   const actionHud = createActionHud({
     root: actionHudRoot,
@@ -54,10 +56,17 @@ export function initGame() {
     onSubmit: submitAction,
   });
 
+  const updateHandFromDeck = async () => {
+    if (!cardCatalog) return;
+    const selectedDeck = await getSelectedDeck(localUserId);
+    const hand = selectedDeck ? buildDeckHand(cardCatalog, selectedDeck) : buildPlayerHand(cardCatalog);
+    actionHud.setCards(hand.movement, hand.ability);
+  };
+
   loadCardCatalog()
     .then((catalog) => {
-      const hand = buildPlayerHand(catalog);
-      actionHud.setCards(hand.movement, hand.ability);
+      cardCatalog = catalog;
+      return updateHandFromDeck();
     })
     .catch((err) => {
       console.error('Failed to load card catalog', err);
@@ -192,6 +201,12 @@ export function initGame() {
   window.addEventListener('resize', resize);
   window.addEventListener('hexstrike:match', showGameArea);
   window.addEventListener('hexstrike:game', showGameArea);
+  window.addEventListener('hexstrike:deck-selected', () => {
+    void updateHandFromDeck();
+  });
+  window.addEventListener('hexstrike:decks-updated', () => {
+    void updateHandFromDeck();
+  });
   window.addEventListener('hexstrike:match', (event) => {
     const match = event.detail;
     usernameById = new Map();
@@ -210,7 +225,7 @@ export function initGame() {
   });
 
   updateActionHudState();
-  bindControls(canvas, viewState, pointerState, GAME_CONFIG, timeIndicatorViewModel);
+  bindControls(canvas, viewState, pointerState, GAME_CONFIG, timeIndicatorViewModel, gameArea);
 
   const tick = (now) => {
     const dt = Math.max(0, now - lastTime);

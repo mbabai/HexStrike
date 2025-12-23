@@ -1,6 +1,10 @@
 export const CHARACTER_IMAGE_SOURCES = {
   murelious: '/public/images/Murelious.png',
+  strylan: '/public/images/Strylan.png',
   'monkey-queen': '/public/images/MonkeyQueen.png',
+  ryathan: '/public/images/Ryathan.png',
+  zenytha: '/public/images/Zenytha.png',
+  aumandetta: '/public/images/Aumandetta.png',
 };
 
 export const CHARACTER_TOKEN_STYLE = {

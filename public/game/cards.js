@@ -1,18 +1,4 @@
-const CARD_DATA_URL = '/public/game/cards.json';
-
-const normalizeCard = (card, type, index) => {
-  if (!card || typeof card !== 'object') {
-    return { id: `${type}-${index}`, name: `${type}-${index}`, type, priority: 0, actions: [], rotations: '*' };
-  }
-  const id = typeof card.id === 'string' && card.id.trim() ? card.id.trim() : `${type}-${index}`;
-  const name = typeof card.name === 'string' && card.name.trim() ? card.name.trim() : id;
-  const actions = Array.isArray(card.actions) ? card.actions.map((action) => `${action}`.trim()) : [];
-  const rotations = typeof card.rotations === 'string' && card.rotations.trim() ? card.rotations.trim() : '*';
-  const priority = Number.isFinite(card.priority) ? card.priority : 0;
-  const damage = Number.isFinite(card.damage) ? card.damage : 0;
-  const kbf = Number.isFinite(card.kbf) ? card.kbf : 0;
-  return { id, name, type, priority, actions, rotations, damage, kbf };
-};
+import { loadCardCatalog as loadCatalog } from '../shared/cardCatalog.js';
 
 const shuffle = (list, rng) => {
   const copy = [...list];
@@ -23,19 +9,18 @@ const shuffle = (list, rng) => {
   return copy;
 };
 
-export const loadCardCatalog = async () => {
-  const response = await fetch(CARD_DATA_URL, { cache: 'no-store' });
-  if (!response.ok) {
-    throw new Error(`Failed to load cards: ${response.status}`);
+const buildCardLookup = (catalog) => {
+  const map = new Map();
+  if (Array.isArray(catalog?.movement)) {
+    catalog.movement.forEach((card) => map.set(card.id, card));
   }
-  const data = await response.json();
-  const movement = Array.isArray(data?.movement) ? data.movement : [];
-  const ability = Array.isArray(data?.ability) ? data.ability : [];
-  return {
-    movement: movement.map((card, index) => normalizeCard(card, 'movement', index)),
-    ability: ability.map((card, index) => normalizeCard(card, 'ability', index)),
-  };
+  if (Array.isArray(catalog?.ability)) {
+    catalog.ability.forEach((card) => map.set(card.id, card));
+  }
+  return map;
 };
+
+export const loadCardCatalog = async () => loadCatalog();
 
 export const buildPlayerHand = (catalog, abilityCount = 4, rng = Math.random) => {
   const movement = Array.isArray(catalog?.movement) ? catalog.movement : [];
@@ -45,4 +30,16 @@ export const buildPlayerHand = (catalog, abilityCount = 4, rng = Math.random) =>
     movement,
     ability: selectedAbility,
   };
+};
+
+export const buildDeckHand = (catalog, deck) => {
+  if (!deck) return buildPlayerHand(catalog);
+  const lookup = buildCardLookup(catalog);
+  const movement = Array.isArray(deck?.movement)
+    ? deck.movement.map((cardId) => lookup.get(cardId)).filter(Boolean)
+    : [];
+  const ability = Array.isArray(deck?.ability)
+    ? deck.ability.map((cardId) => lookup.get(cardId)).filter(Boolean)
+    : [];
+  return { movement, ability };
 };

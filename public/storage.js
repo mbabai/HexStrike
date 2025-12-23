@@ -1,4 +1,5 @@
 const USER_ID_KEY = 'hexstrikeUserId';
+const SELECTED_DECK_KEY = 'hexstrikeSelectedDeckId';
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 
 const readCookie = (key) => {
@@ -9,8 +10,12 @@ const readCookie = (key) => {
   return decodeURIComponent(value.split('=')[1]);
 };
 
-const writeCookie = (key, value) => {
-  document.cookie = `${key}=${encodeURIComponent(value)}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; Path=/; SameSite=Lax`;
+const writeCookie = (key, value, maxAgeSeconds = COOKIE_MAX_AGE_SECONDS) => {
+  document.cookie = `${key}=${encodeURIComponent(value)}; Max-Age=${maxAgeSeconds}; Path=/; SameSite=Lax`;
+};
+
+const clearCookie = (key) => {
+  writeCookie(key, '', 0);
 };
 
 export function getOrCreateUserId() {
@@ -22,3 +27,14 @@ export function getOrCreateUserId() {
   writeCookie(USER_ID_KEY, generated);
   return generated;
 }
+
+export const getSelectedDeckId = () => readCookie(SELECTED_DECK_KEY);
+
+export const setSelectedDeckId = (deckId) => {
+  if (!deckId) return;
+  writeCookie(SELECTED_DECK_KEY, deckId);
+};
+
+export const clearSelectedDeckId = () => {
+  clearCookie(SELECTED_DECK_KEY);
+};

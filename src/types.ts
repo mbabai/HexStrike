@@ -42,7 +42,7 @@ export interface HexCoord {
   r: number;
 }
 
-export type CharacterId = 'murelious' | 'monkey-queen';
+export type CharacterId = 'murelious' | 'strylan' | 'monkey-queen' | 'ryathan' | 'zenytha' | 'aumandetta';
 
 export type Facing = number;
 

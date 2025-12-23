@@ -3,7 +3,7 @@ import { parse } from 'url';
 import { readFile } from 'fs';
 import { randomUUID } from 'crypto';
 import { createLobbyStore } from './state/lobby';
-import { ActionSetItem, GameDoc, LobbySnapshot, MatchDoc, QueueName, UserDoc } from './types';
+import { ActionSetItem, CharacterId, GameDoc, LobbySnapshot, MatchDoc, QueueName, UserDoc } from './types';
 import { MemoryDb } from './persistence/memoryDb';
 import { CHARACTER_IDS } from './game/characters';
 import { createInitialGameState } from './game/state';
@@ -36,6 +36,13 @@ export function buildServer(port: number) {
   const nextAnonymousName = () => {
     anonymousCounter += 1;
     return `Anonymous${anonymousCounter}`;
+  };
+
+  const normalizeCharacterId = (value: unknown): CharacterId | undefined => {
+    if (typeof value !== 'string') return undefined;
+    const candidate = value.trim().toLowerCase();
+    if (!candidate) return undefined;
+    return CHARACTER_IDS.includes(candidate as CharacterId) ? (candidate as CharacterId) : undefined;
   };
 
   const sendEvent = (packet: EventPacket, targetId?: string) => {
@@ -115,17 +122,33 @@ export function buildServer(port: number) {
     };
   };
 
-  const upsertUserFromRequest = async (userId?: string, username?: string): Promise<UserDoc> => {
+  const upsertUserFromRequest = async (
+    userId?: string,
+    username?: string,
+    characterId?: CharacterId,
+  ): Promise<UserDoc> => {
     if (userId) {
       const existing = await db.findUser(userId);
       if (existing) {
-        if (username && existing.username !== username) {
-          return db.upsertUser({ id: userId, username });
+        const nextUsername = username && existing.username !== username ? username : existing.username;
+        const nextCharacterId = characterId ?? existing.characterId;
+        if (nextUsername !== existing.username || nextCharacterId !== existing.characterId) {
+          return db.upsertUser({
+            id: userId,
+            username: nextUsername,
+            characterId: nextCharacterId,
+            elo: existing.elo,
+          });
         }
         return existing;
       }
     }
-    return db.upsertUser({ id: userId, username: username || nextAnonymousName(), elo: 1000 });
+    return db.upsertUser({
+      id: userId,
+      username: username || nextAnonymousName(),
+      elo: 1000,
+      characterId,
+    });
   };
 
   const ensureUserCharacter = async (user: UserDoc): Promise<UserDoc> => {
@@ -175,7 +198,8 @@ export function buildServer(port: number) {
   };
 
   const handleJoin = async (body: any) => {
-    const user = await upsertUserFromRequest(body.userId, body.username);
+    const characterId = normalizeCharacterId(body.characterId || body.characterID);
+    const user = await upsertUserFromRequest(body.userId, body.username, characterId);
     const assignedUser = await ensureUserCharacter(user);
     const queue: QueueName = body.queue || 'quickplayQueue';
     lobby.addToQueue(assignedUser.id, queue);
