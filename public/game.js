@@ -14,6 +14,7 @@ import {
 import { createTimelinePlayback } from './game/timelinePlayback.js';
 import { loadCardCatalog } from './game/cards.js';
 import { createActionHud } from './game/actionHud.js';
+import { findDistanceLoss, findMovementLoss, resolveMatchEndState } from './game/matchEndRules.js';
 import { getSelectedDeck } from './deckStore.js';
 import { LAND_HEXES } from './shared/hex.mjs';
 
@@ -209,38 +210,6 @@ export function initGame() {
     }
   };
 
-  const axialDistance = (a, b) => {
-    const dq = a.q - b.q;
-    const dr = a.r - b.r;
-    const dy = -dq - dr;
-    return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dy));
-  };
-
-  const getNearestLandDistance = (location, land) => {
-    if (!location || !Array.isArray(land) || !land.length) return Infinity;
-    let best = Infinity;
-    land.forEach((tile) => {
-      const distance = axialDistance(location, tile);
-      if (distance < best) best = distance;
-    });
-    return best;
-  };
-
-  const buildCoordKey = (coord) => {
-    if (!coord) return null;
-    const q = Number(coord.q);
-    const r = Number(coord.r);
-    if (!Number.isFinite(q) || !Number.isFinite(r)) return null;
-    return `${Math.round(q)},${Math.round(r)}`;
-  };
-
-  const isCoordOnLand = (location, land) => {
-    if (!location || !Array.isArray(land) || !land.length) return false;
-    const key = buildCoordKey(location);
-    if (!key) return false;
-    return land.some((tile) => buildCoordKey(tile) === key);
-  };
-
   const getCharacterLabel = (character) => character?.username || usernameById.get(character?.userId) || character?.userId;
 
   const getWinnerLabel = (winners) => {
@@ -310,95 +279,6 @@ export function initGame() {
     }
   };
 
-  const findDistanceLoss = (beats, characters, land, maxIndex) => {
-    for (let i = 0; i <= maxIndex; i += 1) {
-      const beat = beats[i] ?? [];
-      const losers = [];
-      const details = [];
-      characters.forEach((character) => {
-        const entry = getBeatEntryForCharacter(beat, character);
-        if (!entry || entry.calculated !== true) return;
-        const location = entry?.location ?? character.position;
-        const distance = getNearestLandDistance(location, land);
-        if (distance > 4) {
-          losers.push(character.userId);
-          details.push({ userId: character.userId, location, distance });
-        }
-      });
-      if (losers.length) {
-        return { beatIndex: i, loserIds: new Set(losers), detail: { losers: details } };
-      }
-    }
-    return null;
-  };
-
-  const findMovementLoss = (beats, characters, land) => {
-    if (!deckState || !deckState.movement.length) return null;
-    if (deckState.exhaustedMovementIds.size !== deckState.movement.length) return null;
-    const localCharacter = getLocalCharacter(characters);
-    if (!localCharacter) return null;
-    if (!isCharacterAtEarliestE(beats, characters, localCharacter)) return null;
-    const firstEIndex = getCharacterFirstEIndex(beats, localCharacter);
-    const beat = beats[firstEIndex] ?? [];
-    const entry = getBeatEntryForCharacter(beat, localCharacter);
-    if (entry && entry.action !== 'E') return null;
-    const location = entry?.location ?? localCharacter.position;
-    const onLand = isCoordOnLand(location, land);
-    if (onLand) return null;
-    const distance = getNearestLandDistance(location, land);
-    if (!Number.isFinite(distance) || distance <= 0) return null;
-    return {
-      beatIndex: firstEIndex,
-      loserIds: new Set([localCharacter.userId]),
-      detail: { location, distance, onLand },
-    };
-  };
-
-  const resolveMatchEndState = (match, beats, characters, land) => {
-    const winners = match?.winnerId
-      ? characters.filter((character) => character.userId === match.winnerId)
-      : [];
-    const loserIds = new Set();
-    if (match?.winnerId) {
-      characters
-        .filter((character) => character.userId !== match.winnerId)
-        .forEach((character) => loserIds.add(character.userId));
-    }
-
-    const distanceLoss = findDistanceLoss(beats, characters, land, Math.max(0, beats.length - 1));
-    if (distanceLoss) {
-      const resolvedLosers = distanceLoss.loserIds?.size ? distanceLoss.loserIds : loserIds;
-      const resolvedWinners =
-        resolvedLosers?.size && !match?.winnerId
-          ? characters.filter((character) => !resolvedLosers.has(character.userId))
-          : winners;
-      return {
-        beatIndex: distanceLoss.beatIndex,
-        losers: resolvedLosers,
-        winners: resolvedWinners,
-        reason: 'distance',
-        detail: distanceLoss.detail,
-      };
-    }
-
-    let beatIndex = getTimelineMaxIndex(beats, characters);
-    if (loserIds.size) {
-      const loserIndices = characters
-        .filter((character) => loserIds.has(character.userId))
-        .map((character) => getCharacterFirstEIndex(beats, character));
-      if (loserIndices.length) {
-        beatIndex = Math.min(...loserIndices);
-      }
-    }
-
-    return {
-      beatIndex,
-      losers: loserIds,
-      winners,
-      reason: match?.winnerId ? 'match-ended' : 'unknown',
-      detail: null,
-    };
-  };
 
   const computeGameOverState = () => {
     if (gameOverState || !gameState?.state?.public?.characters?.length) return;
@@ -409,7 +289,15 @@ export function initGame() {
 
     const distanceLoss = findDistanceLoss(beats, characters, land, maxIndex);
     if (distanceLoss) distanceLoss.reason = 'distance';
-    const movementLoss = findMovementLoss(beats, characters, land);
+    const movementLoss = findMovementLoss({
+      beats,
+      characters,
+      land,
+      deckState,
+      localUserId,
+      pendingActions: gameState?.state?.public?.pendingActions,
+      optimisticLock,
+    });
     if (movementLoss) movementLoss.reason = 'no-movement-abyss';
 
     let result = null;
@@ -567,7 +455,7 @@ export function initGame() {
     return true;
   };
 
-  async function sendActionSet(actionList) {
+  async function sendActionSet(actionList, meta = {}) {
     if (!gameId) {
       console.warn('No active game to send action set');
       return;
@@ -575,7 +463,7 @@ export function initGame() {
     const response = await fetch('/api/v1/game/action-set', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: localUserId, gameId, actionList }),
+      body: JSON.stringify({ userId: localUserId, gameId, actionList, ...meta }),
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
@@ -605,7 +493,12 @@ export function initGame() {
       markPendingUse(movementCard.id, abilityCard.id, earliestIndex + refreshOffset);
     }
     try {
-      await sendActionSet(actionList);
+      const rotation = actionList[0]?.rotation ?? '';
+      await sendActionSet(actionList, {
+        activeCardId: activeCard?.id,
+        passiveCardId: passiveCard?.id,
+        rotation,
+      });
     } catch (err) {
       optimisticLock = false;
       actionHud.setLocked(false);

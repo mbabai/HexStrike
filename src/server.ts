@@ -9,7 +9,22 @@ import { CHARACTER_IDS } from './game/characters';
 import { createInitialGameState } from './game/state';
 import { applyActionSetToBeats } from './game/actionSets';
 import { executeBeats } from './game/execute';
-import { getCharactersAtEarliestE, getTimelineEarliestEIndex, isCharacterAtEarliestE } from './game/beatTimeline';
+import {
+  getCharacterFirstEIndex,
+  getCharactersAtEarliestE,
+  getTimelineEarliestEIndex,
+  isCharacterAtEarliestE,
+} from './game/beatTimeline';
+import { DeckDefinition, loadCardCatalog } from './game/cardCatalog';
+import {
+  applyPendingUse,
+  buildDefaultDeckDefinition,
+  createDeckState,
+  parseDeckDefinition,
+  resolvePendingRefreshes,
+  validateActionSubmission,
+  PlayerDeckState,
+} from './game/cardRules';
 
 interface EventPacket {
   type: string;
@@ -29,6 +44,8 @@ export function buildServer(port: number) {
   const pendingActionSets = new Map<string, PendingActionBatch>();
   const pendingInvites = new Map<string, { from: string; to: string; createdAt: Date }>();
   const matchDisconnects = new Map<string, Set<string>>();
+  const queuedDecks = new Map<string, DeckDefinition>();
+  const gameDeckStates = new Map<string, Map<string, PlayerDeckState>>();
   const winsRequired = 3;
   let anonymousCounter = 0;
 
@@ -85,25 +102,34 @@ export function buildServer(port: number) {
   };
 
   const notFound = (res: ServerResponse) => respondJson(res, 404, { error: 'Not found' });
-  const normalizeActionList = (actionList: unknown): ActionSetItem[] | null => {
-    if (!Array.isArray(actionList)) return null;
-    const normalized = actionList.map((item) => {
-      if (typeof item === 'string') {
-        return { action: item.trim(), rotation: '', priority: 0 };
-      }
-      if (!item || typeof item !== 'object') {
-        return { action: '', rotation: '', priority: 0 };
-      }
-      const action = typeof item.action === 'string' ? item.action.trim() : '';
-      const rotationRaw = item.rotation;
-      const rotation =
-        typeof rotationRaw === 'string' || typeof rotationRaw === 'number' ? `${rotationRaw}`.trim() : '';
-      const priorityRaw = (item as { priority?: unknown }).priority;
-      const priority = typeof priorityRaw === 'number' && Number.isFinite(priorityRaw) ? priorityRaw : 0;
-      return { action, rotation, priority };
+
+  const buildDeckStatesForMatch = async (match: MatchDoc, game: GameDoc) => {
+    const catalog = await loadCardCatalog();
+    const deckStates = new Map<string, PlayerDeckState>();
+    match.players.forEach((player) => {
+      const queued = queuedDecks.get(player.userId);
+      const deck = queued ?? buildDefaultDeckDefinition(catalog);
+      deckStates.set(player.userId, createDeckState(deck));
+      queuedDecks.delete(player.userId);
     });
-    if (!normalized.length || normalized.some((action) => !action.action)) return null;
-    return normalized;
+    gameDeckStates.set(game.id, deckStates);
+    return deckStates;
+  };
+
+  const ensureDeckStatesForGame = async (game: GameDoc, match?: MatchDoc) => {
+    const existing = gameDeckStates.get(game.id);
+    if (existing) return existing;
+    if (match) {
+      return buildDeckStatesForMatch(match, game);
+    }
+    const catalog = await loadCardCatalog();
+    const deckStates = new Map<string, PlayerDeckState>();
+    const characters = game.state?.public?.characters ?? [];
+    characters.forEach((character) => {
+      deckStates.set(character.userId, createDeckState(buildDefaultDeckDefinition(catalog)));
+    });
+    gameDeckStates.set(game.id, deckStates);
+    return deckStates;
   };
 
   const getPresenceSnapshot = async () => {
@@ -201,6 +227,20 @@ export function buildServer(port: number) {
     const characterId = normalizeCharacterId(body.characterId || body.characterID);
     const user = await upsertUserFromRequest(body.userId, body.username, characterId);
     const assignedUser = await ensureUserCharacter(user);
+    if (body.deck) {
+      const catalog = await loadCardCatalog();
+      const parsed = parseDeckDefinition(body.deck, catalog);
+      if (!parsed.deck || parsed.errors.length) {
+        const detail = parsed.errors.map((error) => error.message).join(' ');
+        throw new Error(detail || 'Invalid deck payload');
+      }
+      if (parsed.deck.movement.length !== 4 || parsed.deck.ability.length !== 12) {
+        throw new Error('Deck must include 4 movement cards and 12 ability cards.');
+      }
+      queuedDecks.set(assignedUser.id, parsed.deck);
+    } else {
+      queuedDecks.delete(assignedUser.id);
+    }
     const queue: QueueName = body.queue || 'quickplayQueue';
     lobby.addToQueue(assignedUser.id, queue);
     if (queue === 'quickplayQueue') {
@@ -210,7 +250,10 @@ export function buildServer(port: number) {
   };
 
   const handleLeave = async (body: any) => {
-    if (body.userId) lobby.removeFromQueue(body.userId, body.queue as QueueName | undefined);
+    if (body.userId) {
+      lobby.removeFromQueue(body.userId, body.queue as QueueName | undefined);
+      queuedDecks.delete(body.userId);
+    }
     return { lobby: lobby.serialize() };
   };
 
@@ -263,6 +306,7 @@ export function buildServer(port: number) {
     const game = await createSkeletonGame(match);
     const updatedMatch = await db.updateMatch(match.id, { gameId: game.id });
     const finalMatch = updatedMatch ?? match;
+    await buildDeckStatesForMatch(finalMatch, game);
     notifyMatchPlayers(finalMatch, game);
     return { match: finalMatch, game };
   };
@@ -337,6 +381,9 @@ export function buildServer(port: number) {
     }
     match.players.forEach((player) => lobby.removeFromQueue(player.userId));
     sendEvent({ type: 'match:ended', payload: match });
+    if (match.gameId) {
+      gameDeckStates.delete(match.gameId);
+    }
     return match;
   };
 
@@ -416,7 +463,8 @@ export function buildServer(port: number) {
           const result = await handleJoin(body);
           return respondJson(res, 200, result);
         } catch (err) {
-          return respondJson(res, 400, { error: 'Invalid join payload' });
+          const message = err instanceof Error ? err.message : 'Invalid join payload';
+          return respondJson(res, 400, { error: message });
         }
       }
       if (req.method === 'POST' && pathname === '/api/v1/lobby/leave') {
@@ -426,6 +474,7 @@ export function buildServer(port: number) {
       }
       if (req.method === 'POST' && pathname === '/api/v1/lobby/clear') {
         lobby.clearQueues();
+        queuedDecks.clear();
         return respondJson(res, 200, lobby.serialize());
       }
     }
@@ -455,8 +504,10 @@ export function buildServer(port: number) {
         }
         const userId = body.userId || body.userID;
         const gameId = body.gameId || body.gameID;
-        const actions = normalizeActionList(body.actionList);
-        if (!userId || !gameId || !actions) {
+        const activeCardId = body.activeCardId || body.activeCardID;
+        const passiveCardId = body.passiveCardId || body.passiveCardID;
+        const rotation = body.rotation ?? body.rotationLabel;
+        if (!userId || !gameId) {
           return respondJson(res, 400, { error: 'Invalid action set payload' });
         }
         const game = await db.findGame(gameId);
@@ -476,14 +527,40 @@ export function buildServer(port: number) {
         const atBatCharacters = getCharactersAtEarliestE(beats, characters);
         const atBatUserIds = atBatCharacters.map((candidate) => candidate.userId);
         const match = await db.findMatch(game.matchId);
+        const catalog = await loadCardCatalog();
+        const deckStates = await ensureDeckStatesForGame(game, match);
+        const land = game.state?.public?.land ?? [];
+        resolvePendingRefreshes(deckStates, beats, characters, land);
+        const deckState = deckStates.get(userId);
+        if (!deckState) {
+          return respondJson(res, 500, { error: 'Missing deck state for player' });
+        }
 
         if (atBatUserIds.length <= 1) {
+          const validation = validateActionSubmission(
+            { activeCardId, passiveCardId, rotation },
+            deckState,
+            catalog,
+          );
+          if (!validation.ok) {
+            return respondJson(res, 400, { error: validation.error.message, code: validation.error.code });
+          }
+          const firstEIndex = getCharacterFirstEIndex(beats, character);
+          const pendingResult = applyPendingUse(deckState, {
+            beatIndex: firstEIndex + validation.refreshOffset,
+            movementCardId: validation.movementCardId,
+            abilityCardId: validation.abilityCardId,
+          });
+          if (!pendingResult.ok && pendingResult.error) {
+            return respondJson(res, 409, { error: pendingResult.error.message, code: pendingResult.error.code });
+          }
           pendingActionSets.delete(game.id);
           game.state.public.pendingActions = undefined;
-          const updatedBeats = applyActionSetToBeats(beats, characters, userId, actions);
+          const updatedBeats = applyActionSetToBeats(beats, characters, userId, validation.actionList);
           const executed = executeBeats(updatedBeats, characters);
           game.state.public.beats = executed.beats;
           game.state.public.characters = executed.characters;
+          resolvePendingRefreshes(deckStates, executed.beats, executed.characters, land);
           const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
           sendGameUpdate(match, updatedGame);
           return respondJson(res, 200, updatedGame);
@@ -502,7 +579,24 @@ export function buildServer(port: number) {
           return respondJson(res, 409, { error: 'Action set already submitted for this beat' });
         }
 
-        batch.submitted.set(userId, actions);
+        const validation = validateActionSubmission(
+          { activeCardId, passiveCardId, rotation },
+          deckState,
+          catalog,
+        );
+        if (!validation.ok) {
+          return respondJson(res, 400, { error: validation.error.message, code: validation.error.code });
+        }
+        const firstEIndex = getCharacterFirstEIndex(beats, character);
+        const pendingResult = applyPendingUse(deckState, {
+          beatIndex: firstEIndex + validation.refreshOffset,
+          movementCardId: validation.movementCardId,
+          abilityCardId: validation.abilityCardId,
+        });
+        if (!pendingResult.ok && pendingResult.error) {
+          return respondJson(res, 409, { error: pendingResult.error.message, code: pendingResult.error.code });
+        }
+        batch.submitted.set(userId, validation.actionList);
         game.state.public.pendingActions = {
           beatIndex: batch.beatIndex,
           requiredUserIds: [...batch.requiredUserIds],
@@ -526,6 +620,7 @@ export function buildServer(port: number) {
         const executed = executeBeats(updatedBeats, characters);
         game.state.public.beats = executed.beats;
         game.state.public.characters = executed.characters;
+        resolvePendingRefreshes(deckStates, executed.beats, executed.characters, land);
         game.state.public.pendingActions = undefined;
         pendingActionSets.delete(game.id);
         const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;

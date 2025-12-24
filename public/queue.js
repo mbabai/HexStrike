@@ -52,11 +52,22 @@ export function initQueue() {
     const userId = getOrCreateUserId();
     const selectedDeck = await getSelectedDeck(userId);
     const characterId = selectedDeck?.characterId;
-    await fetch('/api/v1/lobby/join', {
+    const deck = selectedDeck
+      ? {
+          movement: Array.isArray(selectedDeck.movement) ? selectedDeck.movement : [],
+          ability: Array.isArray(selectedDeck.ability) ? selectedDeck.ability : [],
+        }
+      : null;
+    const response = await fetch('/api/v1/lobby/join', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, queue: QUICKPLAY_QUEUE, characterId }),
+      body: JSON.stringify({ userId, queue: QUICKPLAY_QUEUE, characterId, deck }),
     });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      const message = payload?.error ? `${payload.error}` : 'Failed to join queue.';
+      throw new Error(message);
+    }
   };
 
   const leaveQuickplayQueue = async () => {
@@ -101,6 +112,8 @@ export function initQueue() {
         await joinQuickplayQueue();
       } catch (err) {
         console.error('Failed to join quickplay queue', err);
+        const message = err instanceof Error ? err.message : 'Failed to join queue.';
+        window.alert(message);
         setSearchingState(false);
       }
     });

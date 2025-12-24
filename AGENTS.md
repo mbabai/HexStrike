@@ -6,11 +6,13 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 ## Current scope (lobby prototype)
 - Server: dependency-light Node.js + TypeScript HTTP server in `src/server.ts` with REST endpoints and SSE (`GET /events`).
 - State: lobby queues (`quickplayQueue`, `rankedQueue`, `botQueue`) and in-memory match/game records via `src/state/lobby.ts` and `src/persistence/memoryDb.ts`; games now include starting characters assigned on queue join.
+- Server: action-set validation uses `src/game/cardCatalog.ts` + `src/game/cardRules.ts` to enforce deck/hand exhaustion, rotation limits, and refresh timing.
 - UI: static assets in `public/` with ES module scripts (`public/menu.js`, `public/queue.js`, `public/storage.js`) and styling in `public/theme.css`.
 - UI: lobby deck library + deck builder (stored per-user in localStorage) in `public/decks.js` + `public/deckStore.js`; selected deck is saved in cookies and gates matchmaking.
 - UI: `/cards` catalog page renders the full card set from `public/cards/cards.json` via `public/cards.js` + `public/cards.css`.
 - UI action HUD uses movement/ability cards from `public/cards/cards.json`, random/selected deck hand selection in `public/game/cards.js`, and drag/drop wiring in `public/game/actionHud.js`.
 - Action HUD hands are always rendered in a stacked spread, with turn-only slots/rotation and icon-driven card badges.
+- UI match-end rule checks are centralized in `public/game/matchEndRules.js` to keep game-over logic separate from controller wiring.
 - Front-end animation: `public/game/timelinePlayback.js` builds beat-by-beat scenes (characters + effects) consumed by `public/game/renderer.js`.
 - UI portrait badges (name capsules) are drawn with `public/game/portraitBadges.js`; local player accents use `--color-player-accent`.
 - Timeline controls: play/pause is rendered in the center time slot and auto-advance steps when the current beat playback completes.
@@ -72,6 +74,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Beat entries include `damage`, `location`, and `priority` fields; tests should assert full beat payloads, not just `username`/`action`.
 - Action-set insertion is per player: replace that player's first open slot (missing entry or `E`), fill empty beats in place, and avoid shifting other players' beats.
 - Action-set rotations only apply to the first action entry; subsequent actions must use a blank rotation to keep timelines aligned.
+- Action-set submissions must include `activeCardId`, `passiveCardId`, and `rotation`; the server rebuilds the action list from the card catalog and rejects unavailable or exhausted cards.
 - Action HUD only shows when the timeline selector is on the earliest `E` across all players and the local player is at-bat; the HUD locks after submit until resolution.
 - Action HUD hands are always visible in the game view; only the slots and rotation wheel toggle with the `.is-turn` state.
 - Action HUD hover targeting is based on the hand column + header band (not card transforms); keep `--action-card-hover-shift` synced with the hover rail in `public/game/actionHud.js`.
@@ -90,6 +93,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Direction indexing for blocks/attacks must ignore reverse vectors (only forward, positive steps); otherwise block walls flip away from facing.
 - Keep `getDirectionIndex` logic in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized so visuals match server resolution.
 - Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.
+- Server-side deck state is tracked per game (in memory); refreshes resolve only when the pending refresh beat is the earliest `E`, and movement exhaustion only clears when that `E` entry is on land.
 - Knockback distance uses `max(1, floor((damage * KNOCKBACK_FACTOR) / KNOCKBACK_DIVISOR))`, and on hit the victim's timeline is rewritten from that beat with `DamageIcon`s plus a trailing `E`.
 - When knockback has already been applied, re-execution must not erase actions placed after the trailing `E`; only the damage-icon window is authoritative.
 - Node test runner reads from `dist`; run `npm run build` (or `tsc`) before `node --test test` when working on TS source.
@@ -101,7 +105,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Board portraits render in greyscale when the beat action is `DamageIcon`/`knockbackIcon`; keep the renderer's action tag matching server output.
 - Damage previews during hit shakes are drawn via `displayDamage` on render characters to avoid double-counting at step end.
 - Map panning/zooming is bound to the game area and must ignore UI elements like action cards, slots, or rotation controls; update `PAN_BLOCK_SELECTORS` in `public/game/controls.js` when adding new HUD controls.
-- Find Game is disabled until a deck is selected; the selected deck ID is stored in cookies and its `characterId` is sent with `/api/v1/lobby/join`.
+- Find Game is disabled until a deck is selected; the selected deck ID is stored in cookies and its `characterId` plus movement/ability lists are sent with `/api/v1/lobby/join`.
 
 ## PR expectations
 - Summarize rule/engine changes clearly; include replay determinism notes when relevant.
