@@ -20,6 +20,7 @@ import {
   applyPendingUse,
   buildDefaultDeckDefinition,
   createDeckState,
+  isActionValidationFailure,
   parseDeckDefinition,
   resolvePendingRefreshes,
   validateActionSubmission,
@@ -542,7 +543,7 @@ export function buildServer(port: number) {
             deckState,
             catalog,
           );
-          if (!validation.ok) {
+          if (isActionValidationFailure(validation)) {
             return respondJson(res, 400, { error: validation.error.message, code: validation.error.code });
           }
           const firstEIndex = getCharacterFirstEIndex(beats, character);
@@ -584,7 +585,7 @@ export function buildServer(port: number) {
           deckState,
           catalog,
         );
-        if (!validation.ok) {
+        if (isActionValidationFailure(validation)) {
           return respondJson(res, 400, { error: validation.error.message, code: validation.error.code });
         }
         const firstEIndex = getCharacterFirstEIndex(beats, character);

@@ -1,4 +1,4 @@
-import { readFile } from 'fs/promises';
+import { readFile } from 'fs';
 import { join } from 'path';
 
 export type CardType = 'movement' | 'ability';
@@ -28,6 +28,17 @@ export interface CardCatalog {
 
 const CARD_DATA_PATH = join(process.cwd(), 'public', 'cards', 'cards.json');
 let catalogPromise: Promise<CardCatalog> | null = null;
+const readFileUtf8 = (path: string) =>
+  new Promise<string>((resolve, reject) => {
+    readFile(path, (err, data) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      const raw = typeof data === 'string' ? data : data?.toString?.('utf8') ?? '';
+      resolve(raw);
+    });
+  });
 
 const normalizeCard = (card: any, type: CardType, index: number): CardDefinition => {
   if (!card || typeof card !== 'object') {
@@ -72,7 +83,7 @@ const normalizeDeck = (deck: any, index: number): DeckDefinition => {
 
 export const loadCardCatalog = async (): Promise<CardCatalog> => {
   if (!catalogPromise) {
-    catalogPromise = readFile(CARD_DATA_PATH, 'utf8').then((raw) => {
+    catalogPromise = readFileUtf8(CARD_DATA_PATH).then((raw) => {
       const data = JSON.parse(raw);
       const movement = Array.isArray(data?.movement) ? data.movement : [];
       const ability = Array.isArray(data?.ability) ? data.ability : [];

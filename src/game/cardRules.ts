@@ -39,6 +39,10 @@ export interface ActionValidationFailure {
 
 export type ActionValidationResult = ActionValidationSuccess | ActionValidationFailure;
 
+export const isActionValidationFailure = (
+  result: ActionValidationResult,
+): result is ActionValidationFailure => !result.ok;
+
 const normalizeCardId = (value: unknown): string | null => {
   if (typeof value === 'string') {
     const trimmed = value.trim();
