@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { applyActionSetToBeats } = require('../dist/game/actionSets.js');
 
-test('applyActionSetToBeats replaces trailing E and appends actions', () => {
+test('applyActionSetToBeats replaces trailing E with provided actions', () => {
   const characters = [
     { userId: 'player-a', username: 'Player A', position: { q: 1, r: 0 }, facing: 0 },
     { userId: 'player-b', username: 'Player B', position: { q: -1, r: 0 }, facing: 180 },
@@ -36,7 +36,6 @@ test('applyActionSetToBeats replaces trailing E and appends actions', () => {
       { username: 'Player B', action: 'm', rotation: '', priority: 0, damage: 0, location: { q: -1, r: 0 }, facing: 180, calculated: false },
     ],
     [
-      { username: 'Player A', action: 'E', rotation: '', priority: 0, damage: 0, location: { q: 1, r: 0 }, facing: 0, calculated: false },
       { username: 'Player B', action: 'E', rotation: '', priority: 0, damage: 0, location: { q: -1, r: 0 }, facing: 180, calculated: false },
     ],
     [
@@ -68,7 +67,5 @@ test('applyActionSetToBeats fills the first missing beat for a player', () => {
     { username: 'Player A', action: 'a', rotation: '', priority: 0, damage: 0, location: { q: 1, r: 0 }, facing: 0, calculated: false },
     { username: 'Player B', action: 'm', rotation: '', priority: 10, damage: 0, location: { q: -1, r: 0 }, facing: 180, calculated: false },
   ]);
-  assert.deepEqual(updated[2], [
-    { username: 'Player B', action: 'E', rotation: '', priority: 0, damage: 0, location: { q: -1, r: 0 }, facing: 180, calculated: false },
-  ]);
+  assert.equal(updated[2], undefined);
 });

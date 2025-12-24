@@ -5,11 +5,17 @@ import { createTimeIndicatorModel } from './game/timeIndicatorModel.js';
 import { createTimeIndicatorViewModel } from './game/timeIndicatorViewModel.js';
 import { applyMomentum, centerView, createPointerState, createViewState } from './game/viewState.js';
 import { getOrCreateUserId } from './storage.js';
-import { getTimelineMaxIndex, isCharacterAtEarliestE } from './game/beatTimeline.js';
+import {
+  getBeatEntryForCharacter,
+  getCharacterFirstEIndex,
+  getTimelineMaxIndex,
+  isCharacterAtEarliestE,
+} from './game/beatTimeline.js';
 import { createTimelinePlayback } from './game/timelinePlayback.js';
-import { loadCardCatalog, buildDeckHand, buildPlayerHand } from './game/cards.js';
+import { loadCardCatalog } from './game/cards.js';
 import { createActionHud } from './game/actionHud.js';
 import { getSelectedDeck } from './deckStore.js';
+import { LAND_HEXES } from './shared/hex.mjs';
 
 export function initGame() {
   const gameArea = document.getElementById('gameArea');
@@ -22,6 +28,9 @@ export function initGame() {
   const passiveSlot = document.getElementById('passiveSlot');
   const actionSubmit = document.getElementById('actionSubmit');
   const rotationWheel = document.getElementById('rotationWheel');
+  const gameOverOverlay = document.getElementById('gameOverOverlay');
+  const gameOverMessage = document.getElementById('gameOverMessage');
+  const gameOverDone = document.getElementById('gameOverDone');
 
   if (!gameArea || !canvas) return;
 
@@ -44,6 +53,17 @@ export function initGame() {
   let lastIndicatorValue = null;
   let optimisticBeatIndex = null;
   let cardCatalog = null;
+  let deckState = null;
+  let pendingUse = null;
+  let pendingRefreshIndex = null;
+  let lastRefreshIndex = null;
+  let landLookup = new Set();
+  let lastGameId = null;
+  let gameOverActive = false;
+  let gameOverState = null;
+  let gameOverModalShown = false;
+  let matchEndSent = false;
+  let matchEnded = null;
 
   const actionHud = createActionHud({
     root: actionHudRoot,
@@ -56,17 +76,71 @@ export function initGame() {
     onSubmit: submitAction,
   });
 
-  const updateHandFromDeck = async () => {
-    if (!cardCatalog) return;
+  const buildCardLookup = (catalog) => {
+    const lookup = new Map();
+    if (Array.isArray(catalog?.movement)) {
+      catalog.movement.forEach((card) => lookup.set(card.id, card));
+    }
+    if (Array.isArray(catalog?.ability)) {
+      catalog.ability.forEach((card) => lookup.set(card.id, card));
+    }
+    return lookup;
+  };
+
+  const buildDeckState = async () => {
+    if (!cardCatalog) return null;
+    const lookup = buildCardLookup(cardCatalog);
     const selectedDeck = await getSelectedDeck(localUserId);
-    const hand = selectedDeck ? buildDeckHand(cardCatalog, selectedDeck) : buildPlayerHand(cardCatalog);
-    actionHud.setCards(hand.movement, hand.ability);
+    const movementIds = Array.isArray(selectedDeck?.movement)
+      ? selectedDeck.movement
+      : Array.isArray(cardCatalog?.movement)
+        ? cardCatalog.movement.map((card) => card.id)
+        : [];
+    const abilityIds = Array.isArray(selectedDeck?.ability)
+      ? selectedDeck.ability
+      : Array.isArray(cardCatalog?.ability)
+        ? cardCatalog.ability.map((card) => card.id)
+        : [];
+    const movement = movementIds.map((cardId) => lookup.get(cardId)).filter(Boolean);
+    const abilityCards = abilityIds.map((cardId) => lookup.get(cardId)).filter(Boolean);
+    const abilityHand = abilityCards.slice(0, 4);
+    const abilityDeck = abilityCards.slice(4);
+    return {
+      movement,
+      abilityHand,
+      abilityDeck,
+      exhaustedMovementIds: new Set(),
+      exhaustedAbilityIds: new Set(),
+    };
+  };
+
+  const getExhaustedCardIds = () => {
+    if (!deckState) return new Set();
+    const ids = new Set();
+    deckState.exhaustedMovementIds.forEach((id) => ids.add(id));
+    deckState.exhaustedAbilityIds.forEach((id) => ids.add(id));
+    return ids;
+  };
+
+  const renderHand = () => {
+    if (!deckState) return;
+    actionHud.setCards(deckState.movement, deckState.abilityHand, {
+      exhaustedCardIds: getExhaustedCardIds(),
+    });
+  };
+
+  const resetHandState = async () => {
+    deckState = await buildDeckState();
+    pendingUse = null;
+    pendingRefreshIndex = null;
+    lastRefreshIndex = null;
+    renderHand();
   };
 
   loadCardCatalog()
     .then((catalog) => {
       cardCatalog = catalog;
-      return updateHandFromDeck();
+      return resetHandState();
     })
     .catch((err) => {
       console.error('Failed to load card catalog', err);
@@ -117,7 +191,337 @@ export function initGame() {
   const getLocalCharacter = (characters) =>
     characters.find((character) => character.userId === localUserId) || null;
 
+  const buildLandLookup = (land) => {
+    const tiles = Array.isArray(land) && land.length ? land : LAND_HEXES;
+    return new Set(tiles.map((tile) => `${tile.q},${tile.r}`));
+  };
+
+  const isOnLand = (location) => {
+    if (!location) return false;
+    return landLookup.has(`${location.q},${location.r}`);
+  };
+
+  const drawAbilityCards = () => {
+    if (!deckState) return;
+    while (deckState.abilityHand.length < 4 && deckState.abilityDeck.length) {
+      const next = deckState.abilityDeck.shift();
+      if (next) deckState.abilityHand.push(next);
+    }
+  };
+
+  const axialDistance = (a, b) => {
+    const dq = a.q - b.q;
+    const dr = a.r - b.r;
+    const dy = -dq - dr;
+    return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dy));
+  };
+
+  const getNearestLandDistance = (location, land) => {
+    if (!location || !Array.isArray(land) || !land.length) return Infinity;
+    let best = Infinity;
+    land.forEach((tile) => {
+      const distance = axialDistance(location, tile);
+      if (distance < best) best = distance;
+    });
+    return best;
+  };
+
+  const buildCoordKey = (coord) => {
+    if (!coord) return null;
+    const q = Number(coord.q);
+    const r = Number(coord.r);
+    if (!Number.isFinite(q) || !Number.isFinite(r)) return null;
+    return `${Math.round(q)},${Math.round(r)}`;
+  };
+
+  const isCoordOnLand = (location, land) => {
+    if (!location || !Array.isArray(land) || !land.length) return false;
+    const key = buildCoordKey(location);
+    if (!key) return false;
+    return land.some((tile) => buildCoordKey(tile) === key);
+  };
+
+  const getCharacterLabel = (character) => character?.username || usernameById.get(character?.userId) || character?.userId;
+
+  const getWinnerLabel = (winners) => {
+    if (!Array.isArray(winners) || !winners.length) return 'No winner';
+    return winners.map(getCharacterLabel).join(', ');
+  };
+
+  const setGameOverState = (state) => {
+    if (!state || gameOverState) return;
+    gameOverState = state;
+    gameOverActive = true;
+    if (gameArea) {
+      gameArea.classList.add('is-game-over');
+    }
+    actionHud.setHidden(true);
+    actionHud.setLocked(true);
+    actionHud.setVisible(false);
+    const winnerLabels = Array.isArray(state.winners) ? state.winners.map(getCharacterLabel) : [];
+    console.log('[game:over]', {
+      reason: state.reason ?? 'unknown',
+      beatIndex: state.beatIndex,
+      losers: Array.from(state.losers ?? []),
+      winners: winnerLabels,
+      detail: state.detail ?? null,
+    });
+  };
+
+  const buildGameOverMessage = () => {
+    if (matchEnded?.winnerId) {
+      const winner = matchEnded.players?.find((player) => player.userId === matchEnded.winnerId);
+      const winnerLabel = winner?.username || matchEnded.winnerId;
+      return matchEnded.winnerId === localUserId ? 'You win.' : `You lose. Winner: ${winnerLabel}.`;
+    }
+    if (!gameOverState) return 'Game over.';
+    const winners = gameOverState.winners ?? [];
+    const winnerLabel = getWinnerLabel(winners);
+    if (gameOverState.losers?.has(localUserId)) {
+      return `You lose. Winner: ${winnerLabel}.`;
+    }
+    if (winners.some((winner) => winner.userId === localUserId)) {
+      return 'You win.';
+    }
+    return `Game over. Winner: ${winnerLabel}.`;
+  };
+
+  const showGameOver = (message) => {
+    if (!gameOverOverlay || !gameOverMessage) return;
+    gameOverModalShown = true;
+    gameOverMessage.textContent = message;
+    gameOverOverlay.hidden = false;
+    timeIndicatorViewModel.setPlaying(false);
+  };
+
+  const sendMatchEnd = async (winnerId) => {
+    if (!gameState?.matchId || matchEndSent) return;
+    if (matchEnded && matchEnded.id === gameState.matchId) return;
+    matchEndSent = true;
+    try {
+      await fetch(`/api/v1/match/${gameState.matchId}/end`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ winnerId }),
+      });
+    } catch (err) {
+      matchEndSent = false;
+      console.error('Failed to end match', err);
+    }
+  };
+
+  const findDistanceLoss = (beats, characters, land, maxIndex) => {
+    for (let i = 0; i <= maxIndex; i += 1) {
+      const beat = beats[i] ?? [];
+      const losers = [];
+      const details = [];
+      characters.forEach((character) => {
+        const entry = getBeatEntryForCharacter(beat, character);
+        if (!entry || entry.calculated !== true) return;
+        const location = entry?.location ?? character.position;
+        const distance = getNearestLandDistance(location, land);
+        if (distance > 4) {
+          losers.push(character.userId);
+          details.push({ userId: character.userId, location, distance });
+        }
+      });
+      if (losers.length) {
+        return { beatIndex: i, loserIds: new Set(losers), detail: { losers: details } };
+      }
+    }
+    return null;
+  };
+
+  const findMovementLoss = (beats, characters, land) => {
+    if (!deckState || !deckState.movement.length) return null;
+    if (deckState.exhaustedMovementIds.size !== deckState.movement.length) return null;
+    const localCharacter = getLocalCharacter(characters);
+    if (!localCharacter) return null;
+    if (!isCharacterAtEarliestE(beats, characters, localCharacter)) return null;
+    const firstEIndex = getCharacterFirstEIndex(beats, localCharacter);
+    const beat = beats[firstEIndex] ?? [];
+    const entry = getBeatEntryForCharacter(beat, localCharacter);
+    if (entry && entry.action !== 'E') return null;
+    const location = entry?.location ?? localCharacter.position;
+    const onLand = isCoordOnLand(location, land);
+    if (onLand) return null;
+    const distance = getNearestLandDistance(location, land);
+    if (!Number.isFinite(distance) || distance <= 0) return null;
+    return {
+      beatIndex: firstEIndex,
+      loserIds: new Set([localCharacter.userId]),
+      detail: { location, distance, onLand },
+    };
+  };
+
+  const resolveMatchEndState = (match, beats, characters, land) => {
+    const winners = match?.winnerId
+      ? characters.filter((character) => character.userId === match.winnerId)
+      : [];
+    const loserIds = new Set();
+    if (match?.winnerId) {
+      characters
+        .filter((character) => character.userId !== match.winnerId)
+        .forEach((character) => loserIds.add(character.userId));
+    }
+
+    const distanceLoss = findDistanceLoss(beats, characters, land, Math.max(0, beats.length - 1));
+    if (distanceLoss) {
+      const resolvedLosers = distanceLoss.loserIds?.size ? distanceLoss.loserIds : loserIds;
+      const resolvedWinners =
+        resolvedLosers?.size && !match?.winnerId
+          ? characters.filter((character) => !resolvedLosers.has(character.userId))
+          : winners;
+      return {
+        beatIndex: distanceLoss.beatIndex,
+        losers: resolvedLosers,
+        winners: resolvedWinners,
+        reason: 'distance',
+        detail: distanceLoss.detail,
+      };
+    }
+
+    let beatIndex = getTimelineMaxIndex(beats, characters);
+    if (loserIds.size) {
+      const loserIndices = characters
+        .filter((character) => loserIds.has(character.userId))
+        .map((character) => getCharacterFirstEIndex(beats, character));
+      if (loserIndices.length) {
+        beatIndex = Math.min(...loserIndices);
+      }
+    }
+
+    return {
+      beatIndex,
+      losers: loserIds,
+      winners,
+      reason: match?.winnerId ? 'match-ended' : 'unknown',
+      detail: null,
+    };
+  };
+
+  const computeGameOverState = () => {
+    if (gameOverState || !gameState?.state?.public?.characters?.length) return;
+    const beats = gameState?.state?.public?.beats ?? [];
+    const characters = gameState?.state?.public?.characters ?? [];
+    const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
+    const maxIndex = Math.max(0, beats.length - 1);
+
+    const distanceLoss = findDistanceLoss(beats, characters, land, maxIndex);
+    if (distanceLoss) distanceLoss.reason = 'distance';
+    const movementLoss = findMovementLoss(beats, characters, land);
+    if (movementLoss) movementLoss.reason = 'no-movement-abyss';
+
+    let result = null;
+    if (distanceLoss && movementLoss) {
+      if (distanceLoss.beatIndex < movementLoss.beatIndex) {
+        result = distanceLoss;
+      } else if (movementLoss.beatIndex < distanceLoss.beatIndex) {
+        result = movementLoss;
+      } else {
+        const combined = new Set([...distanceLoss.loserIds, ...movementLoss.loserIds]);
+        result = { beatIndex: distanceLoss.beatIndex, loserIds: combined };
+      }
+    } else {
+      result = distanceLoss || movementLoss;
+    }
+
+    if (!result) return;
+
+    const winners = characters.filter((character) => !result.loserIds.has(character.userId));
+    setGameOverState({
+      beatIndex: result.beatIndex,
+      losers: result.loserIds,
+      winners,
+      reason: result.reason,
+      detail: result.detail,
+    });
+    const winnerId = winners.length === 1 ? winners[0].userId : undefined;
+    void sendMatchEnd(winnerId);
+  };
+
+  const maybeShowGameOverModal = () => {
+    if (!gameOverState || gameOverModalShown) return;
+    const current = timeIndicatorViewModel.value ?? 0;
+    if (current < gameOverState.beatIndex) return;
+    if (timeIndicatorViewModel.isPlaying && current > gameOverState.beatIndex) {
+      timeIndicatorModel.setValue(gameOverState.beatIndex);
+    }
+    showGameOver(buildGameOverMessage());
+  };
+
+  const getRefreshOffset = (actionList) => {
+    if (!Array.isArray(actionList) || !actionList.length) return null;
+    for (let i = actionList.length - 1; i >= 0; i -= 1) {
+      if (actionList[i]?.action === 'E') return i;
+    }
+    return Math.max(0, actionList.length - 1);
+  };
+
+  const resolvePendingRefresh = (onLand) => {
+    if (!deckState || !pendingUse) return;
+    const usedAbilityIndex = deckState.abilityHand.findIndex((card) => card.id === pendingUse.abilityCardId);
+    if (usedAbilityIndex !== -1) {
+      const [usedAbility] = deckState.abilityHand.splice(usedAbilityIndex, 1);
+      if (usedAbility) deckState.abilityDeck.push(usedAbility);
+    }
+    deckState.exhaustedAbilityIds.delete(pendingUse.abilityCardId);
+    if (onLand) {
+      deckState.exhaustedMovementIds.clear();
+      drawAbilityCards();
+    }
+    pendingUse = null;
+    pendingRefreshIndex = null;
+    renderHand();
+  };
+
+  const markPendingUse = (movementCardId, abilityCardId, refreshIndex) => {
+    if (!deckState) return;
+    const movementWasExhausted = deckState.exhaustedMovementIds.has(movementCardId);
+    const abilityWasExhausted = deckState.exhaustedAbilityIds.has(abilityCardId);
+    deckState.exhaustedMovementIds.add(movementCardId);
+    deckState.exhaustedAbilityIds.add(abilityCardId);
+    pendingUse = { movementCardId, abilityCardId, movementWasExhausted, abilityWasExhausted };
+    pendingRefreshIndex = refreshIndex;
+    actionHud.setExhaustedCards(getExhaustedCardIds());
+  };
+
+  const maybeResolveRefresh = () => {
+    if (!pendingUse || pendingRefreshIndex === null) return;
+    const indicatorValue = timeIndicatorViewModel.value;
+    if (indicatorValue !== pendingRefreshIndex) return;
+    if (lastRefreshIndex === indicatorValue) return;
+    const beats = gameState?.state?.public?.beats ?? [];
+    const characters = gameState?.state?.public?.characters ?? [];
+    const localCharacter = getLocalCharacter(characters);
+    const beat = beats[indicatorValue] ?? [];
+    const entry = getBeatEntryForCharacter(beat, localCharacter);
+    if (entry?.action !== 'E') return;
+    const location = entry?.location ?? localCharacter?.position ?? null;
+    lastRefreshIndex = indicatorValue;
+    resolvePendingRefresh(isOnLand(location));
+  };
+
+  const rollbackPendingUse = () => {
+    if (!deckState || !pendingUse) return;
+    if (!pendingUse.movementWasExhausted) {
+      deckState.exhaustedMovementIds.delete(pendingUse.movementCardId);
+    }
+    if (!pendingUse.abilityWasExhausted) {
+      deckState.exhaustedAbilityIds.delete(pendingUse.abilityCardId);
+    }
+    pendingUse = null;
+    pendingRefreshIndex = null;
+    actionHud.setExhaustedCards(getExhaustedCardIds());
+  };
+
   const updateActionHudState = () => {
+    if (gameOverActive) {
+      actionHud.setHidden(true);
+      actionHud.setVisible(false);
+      actionHud.setLocked(true);
+      return;
+    }
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
     const localCharacter = getLocalCharacter(characters);
@@ -180,20 +584,32 @@ export function initGame() {
     }
   }
 
-  async function submitAction(actionList) {
+  async function submitAction(payload) {
+    if (gameOverActive) return;
+    const actionList = Array.isArray(payload) ? payload : payload?.actionList;
     if (!Array.isArray(actionList) || !actionList.length) return;
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
     const localCharacter = getLocalCharacter(characters);
     if (!isCharacterAtEarliestE(beats, characters, localCharacter)) return;
-    optimisticBeatIndex = getTimelineMaxIndex(beats, characters);
+    const earliestIndex = getTimelineMaxIndex(beats, characters);
+    optimisticBeatIndex = earliestIndex;
     optimisticLock = true;
     actionHud.setLocked(true);
+    const activeCard = Array.isArray(payload) ? null : payload?.activeCard;
+    const passiveCard = Array.isArray(payload) ? null : payload?.passiveCard;
+    const movementCard = activeCard?.type === 'movement' ? activeCard : passiveCard?.type === 'movement' ? passiveCard : null;
+    const abilityCard = activeCard?.type === 'ability' ? activeCard : passiveCard?.type === 'ability' ? passiveCard : null;
+    const refreshOffset = getRefreshOffset(actionList);
+    if (movementCard && abilityCard && refreshOffset !== null) {
+      markPendingUse(movementCard.id, abilityCard.id, earliestIndex + refreshOffset);
+    }
     try {
       await sendActionSet(actionList);
     } catch (err) {
       optimisticLock = false;
       actionHud.setLocked(false);
+      rollbackPendingUse();
       console.error('Failed to submit action set', err);
     }
   }
@@ -202,10 +618,10 @@ export function initGame() {
   window.addEventListener('hexstrike:match', showGameArea);
   window.addEventListener('hexstrike:game', showGameArea);
   window.addEventListener('hexstrike:deck-selected', () => {
-    void updateHandFromDeck();
+    void resetHandState();
   });
   window.addEventListener('hexstrike:decks-updated', () => {
-    void updateHandFromDeck();
+    void resetHandState();
   });
   window.addEventListener('hexstrike:match', (event) => {
     const match = event.detail;
@@ -219,10 +635,54 @@ export function initGame() {
   window.addEventListener('hexstrike:game', (event) => {
     gameState = event.detail;
     gameId = gameState?.id || null;
+    landLookup = buildLandLookup(gameState?.state?.public?.land);
+    if (gameId && gameId !== lastGameId) {
+      lastGameId = gameId;
+      gameOverActive = false;
+      gameOverState = null;
+      gameOverModalShown = false;
+      matchEndSent = false;
+      matchEnded = null;
+      if (gameOverOverlay) {
+        gameOverOverlay.hidden = true;
+      }
+      if (gameArea) {
+        gameArea.classList.remove('is-game-over');
+      }
+      actionHud.setHidden(false);
+      void resetHandState();
+    }
     updateTimeIndicatorMax(gameState);
     updateActionHudState();
     console.log(formatGameLog(gameState, usernameById));
+    if (matchEnded && matchEnded.id === gameState?.matchId && !gameOverState) {
+      const beats = gameState?.state?.public?.beats ?? [];
+      const characters = gameState?.state?.public?.characters ?? [];
+      const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
+      const resolved = resolveMatchEndState(matchEnded, beats, characters, land);
+      setGameOverState(resolved);
+    }
   });
+  window.addEventListener('hexstrike:match-ended', (event) => {
+    const match = event.detail;
+    if (!match || match.id !== gameState?.matchId) return;
+    matchEnded = match;
+    if (!gameOverState) {
+      const beats = gameState?.state?.public?.beats ?? [];
+      const characters = gameState?.state?.public?.characters ?? [];
+      const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
+      const resolved = resolveMatchEndState(match, beats, characters, land);
+      setGameOverState(resolved);
+    }
+  });
+
+  if (gameOverDone) {
+    gameOverDone.addEventListener('click', () => {
+      if (gameArea) gameArea.hidden = true;
+      if (menuMatch) menuMatch.hidden = false;
+      window.location.href = '/';
+    });
+  }
 
   updateActionHudState();
   bindControls(canvas, viewState, pointerState, GAME_CONFIG, timeIndicatorViewModel, gameArea);
@@ -238,6 +698,7 @@ export function initGame() {
       lastIndicatorValue = indicatorValue;
       updateActionHudState();
     }
+    maybeResolveRefresh();
 
     if (!gameArea.hidden) {
       timelinePlayback.update(now, gameState, timeIndicatorViewModel.value ?? 0);
@@ -248,6 +709,11 @@ export function initGame() {
       }
       renderer.draw(viewState, gameState, timeIndicatorViewModel, timelinePlayback.getScene(), localUserId);
     }
+
+    if (!gameOverState) {
+      computeGameOverState();
+    }
+    maybeShowGameOverModal();
 
     requestAnimationFrame(tick);
   };

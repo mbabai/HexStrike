@@ -1098,6 +1098,33 @@ small {
   display: none;
 }
 
+.game-over-overlay {
+  inset: auto;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: auto;
+  height: auto;
+  background: transparent;
+  backdrop-filter: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  z-index: 6;
+}
+
+.game-over {
+  width: min(420px, 92vw);
+  text-align: center;
+  padding: 28px 24px;
+}
+
+.game-over-message {
+  margin: 12px 0 20px;
+  font-size: 1.1rem;
+}
+
 .deck-preview {
   width: min(1200px, 96vw);
   max-height: 90vh;
@@ -1392,6 +1419,9 @@ small {
   display: grid;
   overflow: hidden;
 }
+.game-area.is-game-over {
+  filter: sepia(0.85) saturate(0.85);
+}
 
 .game-area[hidden] {
   display: none;
@@ -1526,6 +1556,11 @@ small {
 .action-card.is-disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+.action-card.is-exhausted {
+  cursor: not-allowed;
+  filter: grayscale(1);
 }
 
 .action-hud.is-locked .action-card {

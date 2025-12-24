@@ -209,6 +209,105 @@ const AXIAL_DIRECTIONS = [
   { q: 0, r: 1 },
 ];
 
+const axialToCube = (coord) => ({ x: coord.q, z: coord.r, y: -coord.q - coord.r });
+
+const cubeToAxial = (cube) => ({ q: cube.x, r: cube.z });
+
+const cubeLerp = (a, b, t) => ({
+  x: a.x + (b.x - a.x) * t,
+  y: a.y + (b.y - a.y) * t,
+  z: a.z + (b.z - a.z) * t,
+});
+
+const cubeRound = (cube) => {
+  let rx = Math.round(cube.x);
+  let ry = Math.round(cube.y);
+  let rz = Math.round(cube.z);
+  const xDiff = Math.abs(rx - cube.x);
+  const yDiff = Math.abs(ry - cube.y);
+  const zDiff = Math.abs(rz - cube.z);
+
+  if (xDiff > yDiff && xDiff > zDiff) {
+    rx = -ry - rz;
+  } else if (yDiff > zDiff) {
+    ry = -rx - rz;
+  } else {
+    rz = -rx - ry;
+  }
+
+  return { x: rx, y: ry, z: rz };
+};
+
+const hexDistance = (a, b) => {
+  const ac = axialToCube(a);
+  const bc = axialToCube(b);
+  return Math.max(Math.abs(ac.x - bc.x), Math.abs(ac.y - bc.y), Math.abs(ac.z - bc.z));
+};
+
+const getHexLine = (start, end) => {
+  const distance = hexDistance(start, end);
+  const a = axialToCube(start);
+  const b = axialToCube(end);
+  const results = [];
+  if (!distance) return [start];
+  for (let i = 0; i <= distance; i += 1) {
+    const t = i / distance;
+    results.push(cubeToAxial(cubeRound(cubeLerp(a, b, t))));
+  }
+  return results;
+};
+
+const getNearestLand = (location, land) => {
+  if (!location || !Array.isArray(land) || !land.length) return null;
+  let best = null;
+  let bestDistance = Infinity;
+  land.forEach((tile) => {
+    const distance = hexDistance(location, tile);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = tile;
+    }
+  });
+  return best ? { tile: best, distance: bestDistance } : null;
+};
+
+const buildAbyssPathLabels = (characters, land) => {
+  const labels = new Map();
+  if (!Array.isArray(characters) || !characters.length) return labels;
+  if (!Array.isArray(land) || !land.length) return labels;
+  characters.forEach((character) => {
+    const position = character?.position;
+    if (!position) return;
+    const nearest = getNearestLand(position, land);
+    if (!nearest || nearest.distance <= 1) return;
+    const path = getHexLine(nearest.tile, position);
+    for (let i = 1; i < path.length; i += 1) {
+      const coord = path[i];
+      const key = `${coord.q},${coord.r}`;
+      if (!labels.has(key) || labels.get(key) > i) {
+        labels.set(key, i);
+      }
+    }
+  });
+  return labels;
+};
+
+const drawAbyssPathLabels = (ctx, labels, size, theme) => {
+  if (!labels || labels.size === 0) return;
+  const fontSize = Math.max(14, size * 0.9);
+  ctx.save();
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `700 ${fontSize}px ${theme.fontBody}`;
+  labels.forEach((value, key) => {
+    const [q, r] = key.split(',').map(Number);
+    const { x, y } = axialToPixel(q, r, size);
+    ctx.fillText(`${value}`, x, y);
+  });
+  ctx.restore();
+};
+
 const getHexCorners = (x, y, size) => {
   const points = [];
   for (let i = 0; i < 6; i += 1) {
@@ -570,6 +669,8 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
 
     const renderCharacters = scene?.characters ?? gameState?.state?.public?.characters ?? [];
     const effects = scene?.effects ?? [];
+    const abyssLabels = buildAbyssPathLabels(renderCharacters, land);
+    drawAbyssPathLabels(ctx, abyssLabels, size, theme);
     drawActionEffects(ctx, effects, size, theme);
 
     if (renderCharacters.length) {

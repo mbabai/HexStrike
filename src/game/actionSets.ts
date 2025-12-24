@@ -101,14 +101,11 @@ export const applyActionSetToBeats = (
     facing: normalizeFacing(lastTargetEntry?.facing, target.facing ?? 0),
   };
 
-  const actions = [
-    ...actionList.map((item, index) => ({
-      action: item.action,
-      rotation: index === 0 ? item.rotation : '',
-      priority: item.priority,
-    })),
-    { action: DEFAULT_ACTION, rotation: '', priority: 0 },
-  ];
+  const actions = actionList.map((item, index) => ({
+    action: item.action,
+    rotation: index === 0 ? item.rotation : '',
+    priority: item.priority,
+  }));
 
   const ensureBeat = (index: number) => {
     while (updated.length <= index) {

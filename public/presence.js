@@ -18,6 +18,9 @@ export function initPresence() {
       if (data.type === 'game:update') {
         dispatch('hexstrike:game', data.payload);
       }
+      if (data.type === 'match:ended') {
+        dispatch('hexstrike:match-ended', data.payload);
+      }
     } catch (err) {
       console.warn('Failed to parse SSE message', err);
     }
