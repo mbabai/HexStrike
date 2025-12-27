@@ -1,11 +1,5 @@
+import { buildCardElement, fitAllCardText } from '../shared/cardRenderer.js';
 import { buildRotationWheel, ROTATION_LABELS } from './rotationWheel.js';
-
-const ACTION_ICON_FALLBACK = 'empty';
-const ROTATION_ICON_FALLBACK = 'rotStar';
-const PRIORITY_ICON_URL = '/public/images/priority.png';
-const DAMAGE_ICON_URL = '/public/images/DamageIcon.png';
-const KNOCKBACK_ICON_URL = '/public/images/KnockBackIcon.png';
-const EMPHASIS_ICON_URL = '/public/images/i.png';
 
 const buildActionSet = (actions, rotation, priority) =>
   actions.map((action, index) => ({
@@ -41,124 +35,6 @@ const buildAllowedRotationSet = (restriction) => {
     }
   });
   return allowed;
-};
-
-const buildActionIconUrl = (action) => {
-  const key = `${action ?? ''}`.trim();
-  const name = key ? key : ACTION_ICON_FALLBACK;
-  return `/public/images/${name}.png`;
-};
-
-const buildRotationIconUrl = (rotation) => {
-  const key = `${rotation ?? ''}`.trim();
-  if (!key || key === '*') return `/public/images/${ROTATION_ICON_FALLBACK}.png`;
-  return `/public/images/rot${key}.png`;
-};
-
-const buildStatBadge = (type, value, iconUrl) => {
-  const stat = document.createElement('span');
-  stat.className = `action-card-stat action-card-stat-${type}`;
-  stat.style.backgroundImage = `url('${iconUrl}')`;
-  stat.setAttribute('aria-label', `${type} ${value}`);
-  const text = document.createElement('span');
-  text.className = 'action-card-stat-value';
-  text.textContent = `${value ?? 0}`;
-  stat.appendChild(text);
-  return stat;
-};
-
-const buildCardElement = (card) => {
-  const element = document.createElement('button');
-  element.type = 'button';
-  element.className = 'action-card';
-  element.dataset.cardId = card.id;
-  element.dataset.cardType = card.type;
-
-  const header = document.createElement('div');
-  header.className = 'action-card-header';
-
-  const title = document.createElement('span');
-  title.className = 'action-card-title';
-  title.textContent = card.name;
-  title.title = card.name;
-  header.appendChild(title);
-
-  const badgeRow = document.createElement('div');
-  badgeRow.className = 'action-card-badges';
-
-  const rotationBadge = document.createElement('span');
-  rotationBadge.className = 'action-card-badge action-card-rotation';
-  rotationBadge.style.backgroundImage = `url('${buildRotationIconUrl(card.rotations)}')`;
-  rotationBadge.setAttribute('aria-label', `Rotation ${card.rotations ?? '*'}`);
-  badgeRow.appendChild(rotationBadge);
-
-  const priorityBadge = document.createElement('span');
-  priorityBadge.className = 'action-card-badge action-card-priority';
-  priorityBadge.style.backgroundImage = `url('${PRIORITY_ICON_URL}')`;
-  const priorityValue = document.createElement('span');
-  priorityValue.className = 'action-card-priority-value';
-  priorityValue.textContent = `${card.priority ?? 0}`;
-  priorityBadge.appendChild(priorityValue);
-  badgeRow.appendChild(priorityBadge);
-
-  header.appendChild(badgeRow);
-
-  const body = document.createElement('div');
-  body.className = 'action-card-body';
-
-  const actions = document.createElement('div');
-  actions.className = 'action-card-actions';
-  const actionList = Array.isArray(card.actions) ? [...card.actions] : [];
-  const lastAction = actionList[actionList.length - 1];
-  if (lastAction !== 'E') {
-    actionList.push('E');
-  }
-  actionList.forEach((action) => {
-    const icon = document.createElement('span');
-    icon.className = 'action-card-action';
-    const rawLabel = `${action ?? ''}`.trim();
-    const isEmphasized = rawLabel.startsWith('[') && rawLabel.endsWith(']');
-    const label = (isEmphasized ? rawLabel.slice(1, -1).trim() : rawLabel) || ACTION_ICON_FALLBACK;
-    const iconUrl = buildActionIconUrl(label);
-    if (isEmphasized) {
-      icon.style.backgroundImage = `url('${EMPHASIS_ICON_URL}'), url('${iconUrl}')`;
-      icon.style.backgroundSize = '100% 100%, 80% 80%';
-      icon.style.backgroundPosition = 'center, center';
-      icon.style.backgroundRepeat = 'no-repeat, no-repeat';
-    } else {
-      icon.style.backgroundImage = `url('${iconUrl}')`;
-    }
-    icon.setAttribute('aria-label', label);
-    actions.appendChild(icon);
-  });
-
-  const surface = document.createElement('div');
-  surface.className = 'action-card-surface';
-
-  body.appendChild(actions);
-  const emptyRow = document.createElement('div');
-  emptyRow.className = 'action-card-surface-row is-empty';
-  const activeRow = document.createElement('div');
-  activeRow.className = 'action-card-surface-row is-active';
-  const passiveRow = document.createElement('div');
-  passiveRow.className = 'action-card-surface-row is-passive';
-  surface.appendChild(emptyRow);
-  surface.appendChild(activeRow);
-  surface.appendChild(passiveRow);
-  body.appendChild(surface);
-
-  if (card.type === 'ability') {
-    const stats = document.createElement('div');
-    stats.className = 'action-card-stats';
-    stats.appendChild(buildStatBadge('damage', card.damage ?? 0, DAMAGE_ICON_URL));
-    stats.appendChild(buildStatBadge('kbf', card.kbf ?? 0, KNOCKBACK_ICON_URL));
-    body.appendChild(stats);
-  }
-
-  element.appendChild(header);
-  element.appendChild(body);
-
-  return element;
 };
 
 export const createActionHud = ({
@@ -332,6 +208,40 @@ export const createActionHud = ({
     updateSubmitState();
   };
 
+  const chooseSlotForCard = (card) => {
+    if (!card) return null;
+    const activeCard = getActiveCard();
+    const passiveCard = getPassiveCard();
+
+    if (!activeCard) return 'active';
+
+    if (!passiveCard) {
+      return activeCard.type === card.type ? 'active' : 'passive';
+    }
+
+    if (activeCard.type === card.type) return 'active';
+    if (passiveCard.type === card.type) return 'passive';
+    return null;
+  };
+
+  const handleCardClick = (cardId) => {
+    if (state.locked) return;
+    const card = getCard(cardId);
+    if (!card || card.exhausted) return;
+
+    if (state.slots.active === cardId || state.slots.passive === cardId) {
+      returnCardToHand(cardId);
+      return;
+    }
+
+    if (!state.turnActive) return;
+
+    const slotName = chooseSlotForCard(card);
+    if (slotName) {
+      assignCardToSlot(slotName, cardId);
+    }
+  };
+
   const bindSlot = (slot, slotName) => {
     slot.addEventListener('dragover', (event) => {
       if (state.locked || !state.draggingCardId) return;
@@ -465,7 +375,7 @@ export const createActionHud = ({
     state.exhaustedCards = new Set();
 
     const attachCard = (card, index, container) => {
-      const element = buildCardElement(card);
+      const element = buildCardElement(card, { asButton: true });
       element.draggable = !state.locked && state.turnActive;
       element.addEventListener('dragstart', (event) => {
         const record = state.cardsById.get(card.id);
@@ -483,9 +393,7 @@ export const createActionHud = ({
         element.classList.remove('is-dragging');
       });
       element.addEventListener('click', () => {
-        if (!state.locked && (state.slots.active === card.id || state.slots.passive === card.id)) {
-          returnCardToHand(card.id);
-        }
+        handleCardClick(card.id);
       });
 
       const record = { ...card, order: index, element, exhausted: false };
@@ -503,6 +411,7 @@ export const createActionHud = ({
     if (options.exhaustedCardIds) {
       setExhaustedCards(options.exhaustedCardIds);
     }
+    requestAnimationFrame(() => fitAllCardText(root));
   };
 
   const setExhaustedCards = (cardIds) => {
