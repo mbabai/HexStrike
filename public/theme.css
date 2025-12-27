@@ -1951,6 +1951,30 @@ small {
   cursor: grabbing;
 }
 
+.timeline-tooltip {
+  position: absolute;
+  z-index: 7;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--color-panel-border);
+  background: linear-gradient(150deg, var(--color-panel-strong), var(--color-panel));
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.4;
+  box-shadow: var(--shadow-soft);
+  pointer-events: none;
+}
+
+.timeline-tooltip[hidden] {
+  display: none;
+}
+
+.timeline-tooltip-text {
+  display: block;
+}
+
 @media (max-width: 640px) {
   .action-hud {
     width: min(520px, 94vw);

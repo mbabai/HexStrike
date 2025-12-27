@@ -3,6 +3,7 @@ import { bindControls } from './game/controls.js';
 import { createRenderer } from './game/renderer.js';
 import { createTimeIndicatorModel } from './game/timeIndicatorModel.js';
 import { createTimeIndicatorViewModel } from './game/timeIndicatorViewModel.js';
+import { createTimelineTooltip } from './game/timelineTooltip.js';
 import { applyMomentum, centerView, createPointerState, createViewState } from './game/viewState.js';
 import { getOrCreateUserId } from './storage.js';
 import {
@@ -65,6 +66,7 @@ export function initGame() {
   let gameOverModalShown = false;
   let matchEndSent = false;
   let matchEnded = null;
+  let timelineTooltip = null;
 
   const actionHud = createActionHud({
     root: actionHudRoot,
@@ -76,6 +78,8 @@ export function initGame() {
     rotationWheel,
     onSubmit: submitAction,
   });
+
+  timelineTooltip = createTimelineTooltip({ gameArea, canvas, viewState, timeIndicatorViewModel });
 
   const buildCardLookup = (catalog) => {
     const lookup = new Map();
@@ -141,6 +145,7 @@ export function initGame() {
   loadCardCatalog()
     .then((catalog) => {
       cardCatalog = catalog;
+      timelineTooltip.setCardCatalog(catalog);
       return resetHandState();
     })
     .catch((err) => {
@@ -173,6 +178,7 @@ export function initGame() {
       centerView(viewState, renderer.viewport);
       hasCentered = true;
     }
+    timelineTooltip.hide();
   };
 
   const showGameArea = () => {
@@ -508,6 +514,8 @@ export function initGame() {
   }
 
   window.addEventListener('resize', resize);
+  canvas.addEventListener('pointermove', (event) => timelineTooltip.update(event));
+  canvas.addEventListener('pointerleave', () => timelineTooltip.hide());
   window.addEventListener('hexstrike:match', showGameArea);
   window.addEventListener('hexstrike:game', showGameArea);
   window.addEventListener('hexstrike:deck-selected', () => {
@@ -528,6 +536,7 @@ export function initGame() {
   window.addEventListener('hexstrike:game', (event) => {
     gameState = event.detail;
     gameId = gameState?.id || null;
+    timelineTooltip.setGameState(gameState);
     landLookup = buildLandLookup(gameState?.state?.public?.land);
     if (gameId && gameId !== lastGameId) {
       lastGameId = gameId;
@@ -590,6 +599,7 @@ export function initGame() {
     if (indicatorValue !== lastIndicatorValue) {
       lastIndicatorValue = indicatorValue;
       updateActionHudState();
+      timelineTooltip.hide();
     }
     maybeResolveRefresh();
 

@@ -81,7 +81,7 @@ const buildActionIcon = (action) => {
   return icon;
 };
 
-const appendInlineText = (container, text) => {
+export const appendInlineText = (container, text) => {
   container.textContent = '';
   if (!text) return;
   const lines = `${text}`.split(/\r?\n/);

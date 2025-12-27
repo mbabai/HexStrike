@@ -4,6 +4,7 @@ import { drawNameCapsule } from './portraitBadges.js';
 
 const DEFAULT_BORDER_SIZE = { width: 640, height: 64 };
 const ACTION_ICON_FALLBACK = 'empty';
+const EMPHASIS_ICON_KEY = 'i';
 const VISIBLE_BEAT_RADIUS = 6;
 const TIMELINE_OFFSETS = Array.from({ length: VISIBLE_BEAT_RADIUS * 2 + 1 }, (_, index) => index - VISIBLE_BEAT_RADIUS);
 const actionArt = new Map();
@@ -31,6 +32,16 @@ const getCharacterArt = (characterId) => {
   image.src = src;
   characterArt.set(characterId, image);
   return image;
+};
+
+const parseActionToken = (raw) => {
+  const trimmed = `${raw ?? ''}`.trim();
+  if (!trimmed) return { label: ACTION_ICON_FALLBACK, emphasized: false };
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    const label = trimmed.slice(1, -1).trim();
+    return { label: label || ACTION_ICON_FALLBACK, emphasized: true };
+  }
+  return { label: trimmed, emphasized: false };
 };
 
 export const getTimeIndicatorLayout = (viewport) => {
@@ -134,6 +145,66 @@ export const getTimeIndicatorHit = (layout, x, y) => {
   return null;
 };
 
+export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y) => {
+  if (!layout) return null;
+  const characters = gameState?.state?.public?.characters ?? [];
+  const beats = gameState?.state?.public?.beats ?? [];
+  if (!characters.length || !beats.length) return null;
+  const offsets = TIMELINE_OFFSETS;
+  const value = viewModel?.value ?? 0;
+  const topRow = getRowLayout(layout, 0);
+  const spacingTarget = Math.max(26, layout.actionHeight * 0.72);
+  const spacing = Math.min(spacingTarget, topRow.numberArea.width / (offsets.length - 1));
+  const beatLookup = beats.map((beat) => {
+    const map = new Map();
+    if (!Array.isArray(beat)) return map;
+    beat.forEach((entry) => {
+      if (!entry || typeof entry !== 'object') return;
+      const username = entry.username ?? entry.userId ?? entry.userID;
+      if (!username) return;
+      map.set(username, entry);
+    });
+    return map;
+  });
+
+  for (let rowIndex = 0; rowIndex < characters.length; rowIndex += 1) {
+    const character = characters[rowIndex];
+    const row = getRowLayout(layout, rowIndex + 1);
+    const rowCenterX = row.numberArea.x + row.numberArea.width / 2;
+    const rowCenterY = row.numberArea.y + row.numberArea.height / 2;
+    const iconSize = Math.min(row.numberArea.height * 0.82, spacing * 0.8);
+    const lookupKey = character.username ?? character.userId;
+    for (let offsetIndex = 0; offsetIndex < offsets.length; offsetIndex += 1) {
+      const offset = offsets[offsetIndex];
+      const beatIndex = value + offset;
+      if (beatIndex < 0) continue;
+      const entry = beatLookup[beatIndex]?.get(lookupKey);
+      if (!entry) continue;
+      const token = parseActionToken(entry.action ?? '');
+      const symbol = token.emphasized ? EMPHASIS_ICON_KEY : token.label;
+      if (!(token.emphasized || symbol === 'X1' || symbol === 'X2')) continue;
+      const xPos = rowCenterX + offset * spacing;
+      const bounds = {
+        x: xPos - iconSize / 2,
+        y: rowCenterY - iconSize / 2,
+        width: iconSize,
+        height: iconSize,
+      };
+      if (!isPointInRect(x, y, bounds)) continue;
+      return {
+        beatIndex,
+        character,
+        entry,
+        symbol,
+        center: { x: xPos, y: rowCenterY },
+        size: iconSize,
+      };
+    }
+  }
+
+  return null;
+};
+
 export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, localUserId) => {
   const layout = getTimeIndicatorLayout(viewport);
   if (!layout) return;
@@ -233,13 +304,28 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       if (beatIndex < 0) return;
       const entry = beatLookup[beatIndex]?.get(lookupKey);
       const action = entry?.action ?? ACTION_ICON_FALLBACK;
-      const image = getActionArt(action);
+      const token = parseActionToken(action);
+      const image = getActionArt(token.label);
       if (!image || !image.complete || image.naturalWidth === 0) return;
       const xPos = rowCenterX + offset * rowSpacing;
       const imageX = xPos - iconSize / 2;
       const imageY = rowCenterY - iconSize / 2;
-      ctx.drawImage(image, imageX, imageY, iconSize, iconSize);
-      if (action && action !== 'E' && action !== ACTION_ICON_FALLBACK && action !== 'DamageIcon') {
+      const emphasisImage = token.emphasized ? getActionArt(EMPHASIS_ICON_KEY) : null;
+      if (token.emphasized && emphasisImage && emphasisImage.complete && emphasisImage.naturalWidth > 0) {
+        ctx.drawImage(emphasisImage, imageX, imageY, iconSize, iconSize);
+        const overlaySize = iconSize * 0.8;
+        ctx.drawImage(
+          image,
+          xPos - overlaySize / 2,
+          rowCenterY - overlaySize / 2,
+          overlaySize,
+          overlaySize,
+        );
+      } else {
+        ctx.drawImage(image, imageX, imageY, iconSize, iconSize);
+      }
+      const actionLabel = token.label;
+      if (actionLabel && actionLabel !== 'E' && actionLabel !== ACTION_ICON_FALLBACK && actionLabel !== 'DamageIcon') {
         const priorityValue = Number.isFinite(entry?.priority) ? entry.priority : 0;
         drawPriorityBadge(ctx, imageX, imageY, iconSize, priorityValue, theme);
       }
