@@ -3,9 +3,9 @@ import { CardCatalog, CardDefinition, CardType, DeckDefinition } from './cardCat
 import { getCharacterFirstEIndex, getTimelineEarliestEIndex } from './beatTimeline';
 
 const ROTATION_LABELS = ['0', 'R1', 'R2', '3', 'L2', 'L1'];
+const MAX_HAND_SIZE = 4;
 
-export interface PendingRefresh {
-  beatIndex: number;
+interface CardUse {
   movementCardId: string;
   abilityCardId: string;
 }
@@ -15,8 +15,7 @@ export interface PlayerDeckState {
   abilityHand: string[];
   abilityDeck: string[];
   exhaustedMovementIds: Set<string>;
-  exhaustedAbilityIds: Set<string>;
-  pendingRefresh?: PendingRefresh;
+  lastRefreshIndex: number | null;
 }
 
 export interface DeckParseResult {
@@ -29,7 +28,6 @@ export interface ActionValidationSuccess {
   actionList: ActionSetItem[];
   movementCardId: string;
   abilityCardId: string;
-  refreshOffset: number;
 }
 
 export interface ActionValidationFailure {
@@ -142,7 +140,7 @@ const getEntryForCharacter = (beat: BeatEntry, character: CharacterState) =>
   beat.find((entry) => entry.username === character.username || entry.username === character.userId) ?? null;
 
 const drawAbilityCards = (deckState: PlayerDeckState) => {
-  while (deckState.abilityHand.length < 4 && deckState.abilityDeck.length) {
+  while (deckState.abilityHand.length < MAX_HAND_SIZE && deckState.abilityDeck.length) {
     const next = deckState.abilityDeck.shift();
     if (next) deckState.abilityHand.push(next);
   }
@@ -203,15 +201,14 @@ export const buildDefaultDeckDefinition = (catalog: CardCatalog): DeckDefinition
 export const createDeckState = (deck: DeckDefinition): PlayerDeckState => {
   const movement = Array.isArray(deck.movement) ? deck.movement.map((id) => `${id}`) : [];
   const ability = Array.isArray(deck.ability) ? deck.ability.map((id) => `${id}`) : [];
-  const abilityHand = ability.slice(0, 4);
-  const abilityDeck = ability.slice(4);
+  const abilityHand = ability.slice(0, MAX_HAND_SIZE);
+  const abilityDeck = ability.slice(MAX_HAND_SIZE);
   return {
     movement,
     abilityHand,
     abilityDeck,
     exhaustedMovementIds: new Set(),
-    exhaustedAbilityIds: new Set(),
-    pendingRefresh: undefined,
+    lastRefreshIndex: null,
   };
 };
 
@@ -256,9 +253,6 @@ export const validateActionSubmission = (
   if (deckState.exhaustedMovementIds.has(movementCardId)) {
     return { ok: false, error: { code: 'card-exhausted', message: 'Movement card is exhausted.' } };
   }
-  if (deckState.exhaustedAbilityIds.has(abilityCardId)) {
-    return { ok: false, error: { code: 'card-exhausted', message: 'Ability card is exhausted.' } };
-  }
 
   const rotation = normalizeRotationLabel(submission.rotation);
   if (!rotation) {
@@ -287,24 +281,24 @@ export const validateActionSubmission = (
     actionList,
     movementCardId,
     abilityCardId,
-    refreshOffset,
   };
 };
 
-export const applyPendingUse = (
+export const applyCardUse = (
   deckState: PlayerDeckState,
-  pending: PendingRefresh,
+  cardUse: CardUse,
 ): { ok: boolean; error?: { code: string; message: string } } => {
-  if (deckState.pendingRefresh) {
-    return { ok: false, error: { code: 'pending-refresh', message: 'Pending refresh is already active.' } };
+  deckState.exhaustedMovementIds.add(cardUse.movementCardId);
+  const abilityIndex = deckState.abilityHand.indexOf(cardUse.abilityCardId);
+  if (abilityIndex !== -1) {
+    const [usedAbility] = deckState.abilityHand.splice(abilityIndex, 1);
+    if (usedAbility) deckState.abilityDeck.push(usedAbility);
   }
-  deckState.exhaustedMovementIds.add(pending.movementCardId);
-  deckState.exhaustedAbilityIds.add(pending.abilityCardId);
-  deckState.pendingRefresh = pending;
+  deckState.lastRefreshIndex = null;
   return { ok: true };
 };
 
-export const resolvePendingRefreshes = (
+export const resolveLandRefreshes = (
   deckStates: Map<string, PlayerDeckState>,
   beats: BeatEntry[],
   characters: CharacterState[],
@@ -321,32 +315,20 @@ export const resolvePendingRefreshes = (
   });
 
   deckStates.forEach((deckState, userId) => {
-    const pending = deckState.pendingRefresh;
-    if (!pending) return;
     const character = characterById.get(userId);
     if (!character) return;
     const firstEIndex = getCharacterFirstEIndex(beats, character);
-    if (Number.isFinite(pending.beatIndex) && pending.beatIndex < firstEIndex) {
-      pending.beatIndex = firstEIndex;
-    }
-    if (pending.beatIndex !== earliestIndex) return;
-    const beat = beats[pending.beatIndex];
+    if (firstEIndex !== earliestIndex) return;
+    if (deckState.lastRefreshIndex === firstEIndex) return;
+    const beat = beats[firstEIndex];
     if (!beat) return;
     const entry = getEntryForCharacter(beat, character);
     if (!entry || entry.action !== 'E') return;
     const location = entry.location ?? character.position;
     const onLand = isCoordOnLand(location, land);
-
-    const abilityIndex = deckState.abilityHand.indexOf(pending.abilityCardId);
-    if (abilityIndex !== -1) {
-      const [usedAbility] = deckState.abilityHand.splice(abilityIndex, 1);
-      if (usedAbility) deckState.abilityDeck.push(usedAbility);
-    }
-    deckState.exhaustedAbilityIds.delete(pending.abilityCardId);
-    if (onLand) {
-      deckState.exhaustedMovementIds.clear();
-      drawAbilityCards(deckState);
-    }
-    deckState.pendingRefresh = undefined;
+    if (!onLand) return;
+    deckState.exhaustedMovementIds.clear();
+    drawAbilityCards(deckState);
+    deckState.lastRefreshIndex = firstEIndex;
   });
 };

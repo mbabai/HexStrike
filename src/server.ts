@@ -17,12 +17,12 @@ import {
 } from './game/beatTimeline';
 import { DeckDefinition, loadCardCatalog } from './game/cardCatalog';
 import {
-  applyPendingUse,
+  applyCardUse,
   buildDefaultDeckDefinition,
   createDeckState,
   isActionValidationFailure,
   parseDeckDefinition,
-  resolvePendingRefreshes,
+  resolveLandRefreshes,
   validateActionSubmission,
   PlayerDeckState,
 } from './game/cardRules';
@@ -536,7 +536,7 @@ export function buildServer(port: number) {
         const catalog = await loadCardCatalog();
         const deckStates = await ensureDeckStatesForGame(game, match);
         const land = game.state?.public?.land ?? [];
-        resolvePendingRefreshes(deckStates, beats, characters, land, interactions);
+        resolveLandRefreshes(deckStates, beats, characters, land, interactions);
         const deckState = deckStates.get(userId);
         if (!deckState) {
           return respondJson(res, 500, { error: 'Missing deck state for player' });
@@ -552,8 +552,7 @@ export function buildServer(port: number) {
             return respondJson(res, 400, { error: validation.error.message, code: validation.error.code });
           }
           const firstEIndex = getCharacterFirstEIndex(beats, character);
-          const pendingResult = applyPendingUse(deckState, {
-            beatIndex: firstEIndex + validation.refreshOffset,
+          const pendingResult = applyCardUse(deckState, {
             movementCardId: validation.movementCardId,
             abilityCardId: validation.abilityCardId,
           });
@@ -567,7 +566,7 @@ export function buildServer(port: number) {
           game.state.public.beats = executed.beats;
           game.state.public.characters = executed.characters;
           game.state.public.customInteractions = executed.interactions;
-          resolvePendingRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
+          resolveLandRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
           const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
           sendGameUpdate(match, updatedGame);
           return respondJson(res, 200, updatedGame);
@@ -595,8 +594,7 @@ export function buildServer(port: number) {
           return respondJson(res, 400, { error: validation.error.message, code: validation.error.code });
         }
         const firstEIndex = getCharacterFirstEIndex(beats, character);
-        const pendingResult = applyPendingUse(deckState, {
-          beatIndex: firstEIndex + validation.refreshOffset,
+        const pendingResult = applyCardUse(deckState, {
           movementCardId: validation.movementCardId,
           abilityCardId: validation.abilityCardId,
         });
@@ -628,7 +626,7 @@ export function buildServer(port: number) {
         game.state.public.beats = executed.beats;
         game.state.public.characters = executed.characters;
         game.state.public.customInteractions = executed.interactions;
-        resolvePendingRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
+        resolveLandRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
         game.state.public.pendingActions = undefined;
         pendingActionSets.delete(game.id);
         const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
@@ -683,7 +681,7 @@ export function buildServer(port: number) {
         const match = await db.findMatch(game.matchId);
         const deckStates = await ensureDeckStatesForGame(game, match);
         const land = game.state?.public?.land ?? [];
-        resolvePendingRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
+        resolveLandRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
         const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
         sendGameUpdate(match, updatedGame);
         return respondJson(res, 200, updatedGame);

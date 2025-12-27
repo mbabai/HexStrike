@@ -21,6 +21,8 @@ import { findDistanceLoss, findMovementLoss, resolveMatchEndState } from './game
 import { getSelectedDeck } from './deckStore.js';
 import { LAND_HEXES } from './shared/hex.mjs';
 
+const MAX_HAND_SIZE = 4;
+
 export function initGame() {
   const gameArea = document.getElementById('gameArea');
   const canvas = document.getElementById('gameCanvas');
@@ -59,7 +61,6 @@ export function initGame() {
   let cardCatalog = null;
   let deckState = null;
   let pendingUse = null;
-  let pendingRefreshIndex = null;
   let lastRefreshIndex = null;
   let landLookup = new Set();
   let lastGameId = null;
@@ -116,14 +117,13 @@ export function initGame() {
         : [];
     const movement = movementIds.map((cardId) => lookup.get(cardId)).filter(Boolean);
     const abilityCards = abilityIds.map((cardId) => lookup.get(cardId)).filter(Boolean);
-    const abilityHand = abilityCards.slice(0, 4);
-    const abilityDeck = abilityCards.slice(4);
+    const abilityHand = abilityCards.slice(0, MAX_HAND_SIZE);
+    const abilityDeck = abilityCards.slice(MAX_HAND_SIZE);
     return {
       movement,
       abilityHand,
       abilityDeck,
       exhaustedMovementIds: new Set(),
-      exhaustedAbilityIds: new Set(),
     };
   };
 
@@ -131,7 +131,6 @@ export function initGame() {
     if (!deckState) return new Set();
     const ids = new Set();
     deckState.exhaustedMovementIds.forEach((id) => ids.add(id));
-    deckState.exhaustedAbilityIds.forEach((id) => ids.add(id));
     return ids;
   };
 
@@ -145,7 +144,6 @@ export function initGame() {
   const resetHandState = async () => {
     deckState = await buildDeckState();
     pendingUse = null;
-    pendingRefreshIndex = null;
     lastRefreshIndex = null;
     renderHand();
   };
@@ -196,15 +194,6 @@ export function initGame() {
     requestAnimationFrame(resize);
   };
 
-  const syncPendingRefreshIndex = (beats, localCharacter) => {
-    if (!pendingUse || pendingRefreshIndex === null || !localCharacter) return;
-    const firstEIndex = getCharacterFirstEIndex(beats, localCharacter);
-    if (Number.isFinite(pendingRefreshIndex) && pendingRefreshIndex < firstEIndex) {
-      pendingRefreshIndex = firstEIndex;
-      lastRefreshIndex = null;
-    }
-  };
-
   const applyGameUpdate = (nextState) => {
     if (!nextState) return;
     gameState = nextState;
@@ -231,7 +220,6 @@ export function initGame() {
     updateTimeIndicatorMax(gameState);
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
-    syncPendingRefreshIndex(beats, getLocalCharacter(characters));
     updateActionHudState();
     console.log(formatGameLog(gameState, usernameById));
     if (matchEnded && matchEnded.id === gameState?.matchId && !gameOverState) {
@@ -264,10 +252,45 @@ export function initGame() {
 
   const drawAbilityCards = () => {
     if (!deckState) return;
-    while (deckState.abilityHand.length < 4 && deckState.abilityDeck.length) {
+    while (deckState.abilityHand.length < MAX_HAND_SIZE && deckState.abilityDeck.length) {
       const next = deckState.abilityDeck.shift();
       if (next) deckState.abilityHand.push(next);
     }
+  };
+
+  const applyCardUseToDeckState = (state, movementCardId, abilityCardId) => {
+    const movementWasExhausted = state.exhaustedMovementIds.has(movementCardId);
+    state.exhaustedMovementIds.add(movementCardId);
+    const abilityIndex = state.abilityHand.findIndex((card) => card.id === abilityCardId);
+    let removedAbility = null;
+    if (abilityIndex !== -1) {
+      [removedAbility] = state.abilityHand.splice(abilityIndex, 1);
+      if (removedAbility) state.abilityDeck.push(removedAbility);
+    }
+    return { movementWasExhausted, abilityIndex, removedAbility };
+  };
+
+  const rollbackCardUseToDeckState = (state, use) => {
+    if (!use.movementWasExhausted) {
+      state.exhaustedMovementIds.delete(use.movementCardId);
+    }
+    if (use.removedAbility) {
+      const deckIndex = state.abilityDeck.findIndex((card) => card.id === use.removedAbility.id);
+      if (deckIndex !== -1) {
+        state.abilityDeck.splice(deckIndex, 1);
+      }
+      const insertIndex = Number.isFinite(use.abilityIndex) && use.abilityIndex >= 0 ? use.abilityIndex : state.abilityHand.length;
+      state.abilityHand.splice(Math.min(insertIndex, state.abilityHand.length), 0, use.removedAbility);
+    }
+  };
+
+  const refreshDeckOnLand = (state) => {
+    const needsMovementRefresh = state.exhaustedMovementIds.size > 0;
+    const needsDraw = state.abilityHand.length < MAX_HAND_SIZE && state.abilityDeck.length > 0;
+    if (!needsMovementRefresh && !needsDraw) return false;
+    if (needsMovementRefresh) state.exhaustedMovementIds.clear();
+    if (needsDraw) drawAbilityCards();
+    return true;
   };
 
   const getCharacterLabel = (character) => character?.username || usernameById.get(character?.userId) || character?.userId;
@@ -398,70 +421,43 @@ export function initGame() {
     showGameOver(buildGameOverMessage());
   };
 
-  const getRefreshOffset = (actionList) => {
-    if (!Array.isArray(actionList) || !actionList.length) return null;
-    for (let i = actionList.length - 1; i >= 0; i -= 1) {
-      if (actionList[i]?.action === 'E') return i;
-    }
-    return Math.max(0, actionList.length - 1);
-  };
-
-  const resolvePendingRefresh = (onLand) => {
-    if (!deckState || !pendingUse) return;
-    const usedAbilityIndex = deckState.abilityHand.findIndex((card) => card.id === pendingUse.abilityCardId);
-    if (usedAbilityIndex !== -1) {
-      const [usedAbility] = deckState.abilityHand.splice(usedAbilityIndex, 1);
-      if (usedAbility) deckState.abilityDeck.push(usedAbility);
-    }
-    deckState.exhaustedAbilityIds.delete(pendingUse.abilityCardId);
-    if (onLand) {
-      deckState.exhaustedMovementIds.clear();
-      drawAbilityCards();
-    }
-    pendingUse = null;
-    pendingRefreshIndex = null;
+  const markPendingUse = (movementCardId, abilityCardId) => {
+    if (!deckState) return;
+    const pendingState = applyCardUseToDeckState(deckState, movementCardId, abilityCardId);
+    pendingUse = { movementCardId, abilityCardId, ...pendingState };
+    lastRefreshIndex = null;
     renderHand();
   };
 
-  const markPendingUse = (movementCardId, abilityCardId, refreshIndex) => {
-    if (!deckState) return;
-    const movementWasExhausted = deckState.exhaustedMovementIds.has(movementCardId);
-    const abilityWasExhausted = deckState.exhaustedAbilityIds.has(abilityCardId);
-    deckState.exhaustedMovementIds.add(movementCardId);
-    deckState.exhaustedAbilityIds.add(abilityCardId);
-    pendingUse = { movementCardId, abilityCardId, movementWasExhausted, abilityWasExhausted };
-    pendingRefreshIndex = refreshIndex;
-    actionHud.setExhaustedCards(getExhaustedCardIds());
-  };
-
-  const maybeResolveRefresh = () => {
-    if (!pendingUse || pendingRefreshIndex === null) return;
+  const maybeRefreshOnLand = () => {
+    if (!deckState || !gameState) return;
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
+    const interactions = gameState?.state?.public?.customInteractions ?? [];
+    if (interactions.some((interaction) => interaction.status === 'pending')) return;
+    if (optimisticLock) return;
+    const pending = gameState?.state?.public?.pendingActions ?? null;
+    if (pending?.submittedUserIds?.includes(localUserId)) return;
     const localCharacter = getLocalCharacter(characters);
-    syncPendingRefreshIndex(beats, localCharacter);
-    const indicatorValue = timeIndicatorViewModel.value;
-    if (indicatorValue !== pendingRefreshIndex) return;
-    if (lastRefreshIndex === indicatorValue) return;
-    const beat = beats[indicatorValue] ?? [];
+    if (!isCharacterAtEarliestE(beats, characters, localCharacter)) return;
+    const firstEIndex = getCharacterFirstEIndex(beats, localCharacter);
+    if (lastRefreshIndex === firstEIndex) return;
+    const beat = beats[firstEIndex] ?? [];
     const entry = getBeatEntryForCharacter(beat, localCharacter);
     if (entry?.action !== 'E') return;
     const location = entry?.location ?? localCharacter?.position ?? null;
-    lastRefreshIndex = indicatorValue;
-    resolvePendingRefresh(isOnLand(location));
+    if (!isOnLand(location)) return;
+    lastRefreshIndex = firstEIndex;
+    if (refreshDeckOnLand(deckState)) {
+      renderHand();
+    }
   };
 
   const rollbackPendingUse = () => {
     if (!deckState || !pendingUse) return;
-    if (!pendingUse.movementWasExhausted) {
-      deckState.exhaustedMovementIds.delete(pendingUse.movementCardId);
-    }
-    if (!pendingUse.abilityWasExhausted) {
-      deckState.exhaustedAbilityIds.delete(pendingUse.abilityCardId);
-    }
+    rollbackCardUseToDeckState(deckState, pendingUse);
     pendingUse = null;
-    pendingRefreshIndex = null;
-    actionHud.setExhaustedCards(getExhaustedCardIds());
+    renderHand();
   };
 
   const updateActionHudState = () => {
@@ -593,9 +589,8 @@ export function initGame() {
     const passiveCard = Array.isArray(payload) ? null : payload?.passiveCard;
     const movementCard = activeCard?.type === 'movement' ? activeCard : passiveCard?.type === 'movement' ? passiveCard : null;
     const abilityCard = activeCard?.type === 'ability' ? activeCard : passiveCard?.type === 'ability' ? passiveCard : null;
-    const refreshOffset = getRefreshOffset(actionList);
-    if (movementCard && abilityCard && refreshOffset !== null) {
-      markPendingUse(movementCard.id, abilityCard.id, earliestIndex + refreshOffset);
+    if (movementCard && abilityCard) {
+      markPendingUse(movementCard.id, abilityCard.id);
     }
     try {
       const rotation = actionList[0]?.rotation ?? '';
@@ -604,6 +599,7 @@ export function initGame() {
         passiveCardId: passiveCard?.id,
         rotation,
       });
+      pendingUse = null;
     } catch (err) {
       optimisticLock = false;
       actionHud.setLocked(false);
@@ -671,7 +667,7 @@ export function initGame() {
       updateActionHudState();
       timelineTooltip.hide();
     }
-    maybeResolveRefresh();
+    maybeRefreshOnLand();
 
     if (!gameArea.hidden) {
       timelinePlayback.update(now, gameState, timeIndicatorViewModel.value ?? 0);
