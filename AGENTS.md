@@ -34,13 +34,14 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Front-end UI: For any browser-facing UI styling or layout, follow `front-end-ui.md` as the single source of truth for palette, components, and interactions. Extend that document when adding reusable primitives.
 - Platform: Node.js with TypeScript preferred for type safety; keep server code framework-light (dependency-light HTTP + SSE).
 - Bounded contexts (implemented): `matchmaking` (lobby, seat assignment, game bootstrap) and `persistence` (in-memory data).
-- State model: Lobby snapshots and match/game records are kept in memory; no frame ledger exists yet. Game public state includes `characterName` on characters, and beats reference players by `username`.
+- State model: Lobby snapshots and match/game records are kept in memory; no frame ledger exists yet. Game public state includes `characterName` on characters, `customInteractions`, and beats reference players by `username`.
 
 ## Realtime and client interactions (current)
 - SSE message envelope: `{ type, payload, recipient }`.
 - Message types currently emitted: `connected`, `queueChanged`, `match:created`, `game:update`, `match:ended`.
-- REST endpoints live under `/api/v1/lobby`, `/api/v1/match`, and `/api/v1/history`.
+- REST endpoints live under `/api/v1/lobby`, `/api/v1/match`, `/api/v1/history`, and `/api/v1/game/interaction`.
 - `game:update` payloads may include `pendingActions` in public state when concurrent players are submitting action sets.
+- `game:update` payloads may include `customInteractions` (pending/resolved) that pause the timeline until resolved.
 
 ## Persistence and operations (current)
 - `MemoryDb` in `src/persistence/memoryDb.ts` is the only persistence layer and resets on restart.
@@ -97,6 +98,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Keep `getDirectionIndex` logic in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized so visuals match server resolution.
 - Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.
 - Server-side deck state is tracked per game (in memory); refreshes resolve only when the pending refresh beat is the earliest `E`, and movement exhaustion only clears when that `E` entry is on land.
+- If a hit or custom interaction rewrites a player timeline forward, clamp that player's pending refresh beat to their current first `E` or it will block subsequent action submissions.
 - Knockback distance uses `max(1, floor((damage * KNOCKBACK_FACTOR) / KNOCKBACK_DIVISOR))`, and on hit the victim's timeline is rewritten from that beat with `DamageIcon`s plus a trailing `E`.
 - When knockback has already been applied, re-execution must not erase actions placed after the trailing `E`; only the damage-icon window is authoritative.
 - Node test runner reads from `dist`; run `npm run build` (or `tsc`) before `node --test test` when working on TS source.

@@ -171,6 +171,17 @@
       <div id="gameFrame" class="game-frame">
         <canvas id="gameCanvas" class="game-canvas"></canvas>
       </div>
+      <div id="interactionOverlay" class="interaction-overlay" hidden>
+        <div id="throwModal" class="throw-modal" role="dialog" aria-modal="true" aria-label="Choose throw direction">
+          <div class="throw-center" aria-hidden="true"></div>
+          <button class="throw-arrow" type="button" data-dir="0" aria-label="Throw direction 1"></button>
+          <button class="throw-arrow" type="button" data-dir="1" aria-label="Throw direction 2"></button>
+          <button class="throw-arrow" type="button" data-dir="2" aria-label="Throw direction 3"></button>
+          <button class="throw-arrow" type="button" data-dir="3" aria-label="Throw direction 4"></button>
+          <button class="throw-arrow" type="button" data-dir="4" aria-label="Throw direction 5"></button>
+          <button class="throw-arrow" type="button" data-dir="5" aria-label="Throw direction 6"></button>
+        </div>
+      </div>
     </section>
 
     <div id="gameOverOverlay" class="modal-overlay game-over-overlay" hidden>

@@ -8,7 +8,7 @@ import { MemoryDb } from './persistence/memoryDb';
 import { CHARACTER_IDS } from './game/characters';
 import { createInitialGameState } from './game/state';
 import { applyActionSetToBeats } from './game/actionSets';
-import { executeBeats } from './game/execute';
+import { executeBeatsWithInteractions } from './game/execute';
 import {
   getCharacterFirstEIndex,
   getCharactersAtEarliestE,
@@ -519,6 +519,11 @@ export function buildServer(port: number) {
         if (!isPlayer || !hasCharacter) {
           return respondJson(res, 403, { error: 'User not in game' });
         }
+        const interactions = game.state?.public?.customInteractions ?? [];
+        const hasPendingInteractions = interactions.some((interaction) => interaction.status === 'pending');
+        if (hasPendingInteractions) {
+          return respondJson(res, 409, { error: 'Action set rejected: pending interaction in progress' });
+        }
         const beats = game.state?.public?.beats ?? [];
         const character = characters.find((candidate) => candidate.userId === userId);
         if (!isCharacterAtEarliestE(beats, characters, character)) {
@@ -531,7 +536,7 @@ export function buildServer(port: number) {
         const catalog = await loadCardCatalog();
         const deckStates = await ensureDeckStatesForGame(game, match);
         const land = game.state?.public?.land ?? [];
-        resolvePendingRefreshes(deckStates, beats, characters, land);
+        resolvePendingRefreshes(deckStates, beats, characters, land, interactions);
         const deckState = deckStates.get(userId);
         if (!deckState) {
           return respondJson(res, 500, { error: 'Missing deck state for player' });
@@ -558,10 +563,11 @@ export function buildServer(port: number) {
           pendingActionSets.delete(game.id);
           game.state.public.pendingActions = undefined;
           const updatedBeats = applyActionSetToBeats(beats, characters, userId, validation.actionList);
-          const executed = executeBeats(updatedBeats, characters);
+          const executed = executeBeatsWithInteractions(updatedBeats, characters, interactions);
           game.state.public.beats = executed.beats;
           game.state.public.characters = executed.characters;
-          resolvePendingRefreshes(deckStates, executed.beats, executed.characters, land);
+          game.state.public.customInteractions = executed.interactions;
+          resolvePendingRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
           const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
           sendGameUpdate(match, updatedGame);
           return respondJson(res, 200, updatedGame);
@@ -618,12 +624,66 @@ export function buildServer(port: number) {
             updatedBeats = applyActionSetToBeats(updatedBeats, characters, requiredId, list);
           }
         });
-        const executed = executeBeats(updatedBeats, characters);
+        const executed = executeBeatsWithInteractions(updatedBeats, characters, interactions);
         game.state.public.beats = executed.beats;
         game.state.public.characters = executed.characters;
-        resolvePendingRefreshes(deckStates, executed.beats, executed.characters, land);
+        game.state.public.customInteractions = executed.interactions;
+        resolvePendingRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
         game.state.public.pendingActions = undefined;
         pendingActionSets.delete(game.id);
+        const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
+        sendGameUpdate(match, updatedGame);
+        return respondJson(res, 200, updatedGame);
+      }
+
+      if (req.method === 'POST' && pathname === '/api/v1/game/interaction') {
+        let body;
+        try {
+          body = await parseBody(req);
+        } catch (err) {
+          return respondJson(res, 400, { error: 'Invalid interaction payload' });
+        }
+        const userId = body.userId || body.userID;
+        const gameId = body.gameId || body.gameID;
+        const interactionId = body.interactionId || body.interactionID;
+        const directionIndex = body.directionIndex ?? body.direction;
+        if (!userId || !gameId || !interactionId) {
+          return respondJson(res, 400, { error: 'Invalid interaction payload' });
+        }
+        const game = await db.findGame(gameId);
+        if (!game) return notFound(res);
+        const characters = game.state?.public?.characters ?? [];
+        const isPlayer = game.players.some((player) => player.userId === userId);
+        const hasCharacter = characters.some((character) => character.userId === userId);
+        if (!isPlayer || !hasCharacter) {
+          return respondJson(res, 403, { error: 'User not in game' });
+        }
+        const interactions = game.state?.public?.customInteractions ?? [];
+        const interaction = interactions.find((item) => item.id === interactionId);
+        if (!interaction || interaction.status !== 'pending') {
+          return respondJson(res, 409, { error: 'Interaction is no longer pending' });
+        }
+        if (interaction.actorUserId !== userId) {
+          return respondJson(res, 403, { error: 'User is not authorized to resolve this interaction' });
+        }
+        if (interaction.type !== 'throw') {
+          return respondJson(res, 400, { error: 'Unsupported interaction type' });
+        }
+        const resolvedDirection = Number(directionIndex);
+        if (!Number.isFinite(resolvedDirection) || resolvedDirection < 0 || resolvedDirection > 5) {
+          return respondJson(res, 400, { error: 'Invalid throw direction' });
+        }
+        interaction.status = 'resolved';
+        interaction.resolution = { directionIndex: Math.round(resolvedDirection) };
+        const beats = game.state?.public?.beats ?? [];
+        const executed = executeBeatsWithInteractions(beats, characters, interactions);
+        game.state.public.beats = executed.beats;
+        game.state.public.characters = executed.characters;
+        game.state.public.customInteractions = executed.interactions;
+        const match = await db.findMatch(game.matchId);
+        const deckStates = await ensureDeckStatesForGame(game, match);
+        const land = game.state?.public?.land ?? [];
+        resolvePendingRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
         const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
         sendGameUpdate(match, updatedGame);
         return respondJson(res, 200, updatedGame);

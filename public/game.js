@@ -10,11 +10,13 @@ import {
   getBeatEntryForCharacter,
   getCharacterFirstEIndex,
   getTimelineMaxIndex,
+  getTimelineStopIndex,
   isCharacterAtEarliestE,
 } from './game/beatTimeline.js';
 import { createTimelinePlayback } from './game/timelinePlayback.js';
 import { loadCardCatalog } from './game/cards.js';
 import { createActionHud } from './game/actionHud.js';
+import { createCustomInteractionController } from './game/customInteractions.js';
 import { findDistanceLoss, findMovementLoss, resolveMatchEndState } from './game/matchEndRules.js';
 import { getSelectedDeck } from './deckStore.js';
 import { LAND_HEXES } from './shared/hex.mjs';
@@ -80,6 +82,12 @@ export function initGame() {
   });
 
   timelineTooltip = createTimelineTooltip({ gameArea, canvas, viewState, timeIndicatorViewModel });
+  const interactionController = createCustomInteractionController({
+    gameArea,
+    canvas,
+    viewState,
+    onResolve: resolveInteraction,
+  });
 
   const buildCardLookup = (catalog) => {
     const lookup = new Map();
@@ -188,10 +196,56 @@ export function initGame() {
     requestAnimationFrame(resize);
   };
 
+  const syncPendingRefreshIndex = (beats, localCharacter) => {
+    if (!pendingUse || pendingRefreshIndex === null || !localCharacter) return;
+    const firstEIndex = getCharacterFirstEIndex(beats, localCharacter);
+    if (Number.isFinite(pendingRefreshIndex) && pendingRefreshIndex < firstEIndex) {
+      pendingRefreshIndex = firstEIndex;
+      lastRefreshIndex = null;
+    }
+  };
+
+  const applyGameUpdate = (nextState) => {
+    if (!nextState) return;
+    gameState = nextState;
+    gameId = gameState?.id || null;
+    timelineTooltip.setGameState(gameState);
+    landLookup = buildLandLookup(gameState?.state?.public?.land);
+    if (gameId && gameId !== lastGameId) {
+      lastGameId = gameId;
+      gameOverActive = false;
+      gameOverState = null;
+      gameOverModalShown = false;
+      matchEndSent = false;
+      matchEnded = null;
+      if (gameOverOverlay) {
+        gameOverOverlay.hidden = true;
+      }
+      if (gameArea) {
+        gameArea.classList.remove('is-game-over');
+      }
+      actionHud.setHidden(false);
+      interactionController.hide();
+      void resetHandState();
+    }
+    updateTimeIndicatorMax(gameState);
+    const beats = gameState?.state?.public?.beats ?? [];
+    const characters = gameState?.state?.public?.characters ?? [];
+    syncPendingRefreshIndex(beats, getLocalCharacter(characters));
+    updateActionHudState();
+    console.log(formatGameLog(gameState, usernameById));
+    if (matchEnded && matchEnded.id === gameState?.matchId && !gameOverState) {
+      const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
+      const resolved = resolveMatchEndState(matchEnded, beats, characters, land);
+      setGameOverState(resolved);
+    }
+  };
+
   const updateTimeIndicatorMax = (state) => {
     const beats = state?.state?.public?.beats ?? [];
     const characters = state?.state?.public?.characters ?? [];
-    const maxIndex = getTimelineMaxIndex(beats, characters);
+    const interactions = state?.state?.public?.customInteractions ?? [];
+    const maxIndex = getTimelineStopIndex(beats, characters, interactions);
     timeIndicatorModel.setMax(maxIndex);
   };
 
@@ -382,12 +436,13 @@ export function initGame() {
 
   const maybeResolveRefresh = () => {
     if (!pendingUse || pendingRefreshIndex === null) return;
-    const indicatorValue = timeIndicatorViewModel.value;
-    if (indicatorValue !== pendingRefreshIndex) return;
-    if (lastRefreshIndex === indicatorValue) return;
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
     const localCharacter = getLocalCharacter(characters);
+    syncPendingRefreshIndex(beats, localCharacter);
+    const indicatorValue = timeIndicatorViewModel.value;
+    if (indicatorValue !== pendingRefreshIndex) return;
+    if (lastRefreshIndex === indicatorValue) return;
     const beat = beats[indicatorValue] ?? [];
     const entry = getBeatEntryForCharacter(beat, localCharacter);
     if (entry?.action !== 'E') return;
@@ -418,12 +473,15 @@ export function initGame() {
     }
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
+    const interactions = gameState?.state?.public?.customInteractions ?? [];
     const localCharacter = getLocalCharacter(characters);
     const earliestIndex = getTimelineMaxIndex(beats, characters);
+    const stopIndex = getTimelineStopIndex(beats, characters, interactions);
     const isAtBat = isCharacterAtEarliestE(beats, characters, localCharacter);
-    const isViewingEarliest = timeIndicatorViewModel.value === earliestIndex;
+    const isViewingEarliest = timeIndicatorViewModel.value === stopIndex;
     const pending = gameState?.state?.public?.pendingActions ?? null;
     const serverLocked = Boolean(pending?.submittedUserIds?.includes(localUserId));
+    const hasPendingInteraction = interactions.some((interaction) => interaction.status === 'pending');
 
     if (serverLocked) {
       hasServerPendingForLocal = true;
@@ -432,7 +490,7 @@ export function initGame() {
     }
 
     const shouldLock = serverLocked || optimisticLock;
-    const shouldShow = Boolean(gameId) && isAtBat && isViewingEarliest;
+    const shouldShow = Boolean(gameId) && isAtBat && isViewingEarliest && !hasPendingInteraction;
     actionHud.setVisible(shouldShow);
     actionHud.setLocked(shouldLock);
 
@@ -478,12 +536,53 @@ export function initGame() {
     }
   }
 
+  async function resolveInteraction(interactionId, directionIndex) {
+    const resolvedGameId = gameId ?? gameState?.id;
+    if (!resolvedGameId || !interactionId) {
+      console.warn('[interaction:resolve] missing game id', {
+        interactionId,
+        gameId,
+        resolvedGameId,
+      });
+      return false;
+    }
+    try {
+      console.log('[interaction:resolve] request', { interactionId, directionIndex });
+      const response = await fetch('/api/v1/game/interaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: localUserId,
+          gameId: resolvedGameId,
+          interactionId,
+          directionIndex,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      console.log('[interaction:resolve] response', { status: response.status, ok: response.ok, payload });
+      if (!response.ok) {
+        const message = payload?.error ? `${payload.error}` : `Interaction rejected (${response.status})`;
+        throw new Error(message);
+      }
+      if (payload) {
+        console.log('[interaction:resolve] apply update');
+        applyGameUpdate(payload);
+      }
+      return true;
+    } catch (err) {
+      console.error('Failed to resolve interaction', err);
+    }
+    return false;
+  }
+
   async function submitAction(payload) {
     if (gameOverActive) return;
     const actionList = Array.isArray(payload) ? payload : payload?.actionList;
     if (!Array.isArray(actionList) || !actionList.length) return;
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
+    const interactions = gameState?.state?.public?.customInteractions ?? [];
+    if (interactions.some((interaction) => interaction.status === 'pending')) return;
     const localCharacter = getLocalCharacter(characters);
     if (!isCharacterAtEarliestE(beats, characters, localCharacter)) return;
     const earliestIndex = getTimelineMaxIndex(beats, characters);
@@ -534,36 +633,7 @@ export function initGame() {
     }
   });
   window.addEventListener('hexstrike:game', (event) => {
-    gameState = event.detail;
-    gameId = gameState?.id || null;
-    timelineTooltip.setGameState(gameState);
-    landLookup = buildLandLookup(gameState?.state?.public?.land);
-    if (gameId && gameId !== lastGameId) {
-      lastGameId = gameId;
-      gameOverActive = false;
-      gameOverState = null;
-      gameOverModalShown = false;
-      matchEndSent = false;
-      matchEnded = null;
-      if (gameOverOverlay) {
-        gameOverOverlay.hidden = true;
-      }
-      if (gameArea) {
-        gameArea.classList.remove('is-game-over');
-      }
-      actionHud.setHidden(false);
-      void resetHandState();
-    }
-    updateTimeIndicatorMax(gameState);
-    updateActionHudState();
-    console.log(formatGameLog(gameState, usernameById));
-    if (matchEnded && matchEnded.id === gameState?.matchId && !gameOverState) {
-      const beats = gameState?.state?.public?.beats ?? [];
-      const characters = gameState?.state?.public?.characters ?? [];
-      const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
-      const resolved = resolveMatchEndState(matchEnded, beats, characters, land);
-      setGameOverState(resolved);
-    }
+    applyGameUpdate(event.detail);
   });
   window.addEventListener('hexstrike:match-ended', (event) => {
     const match = event.detail;
@@ -611,6 +681,11 @@ export function initGame() {
         timelinePlayback.update(now, gameState, timeIndicatorViewModel.value ?? 0);
       }
       renderer.draw(viewState, gameState, timeIndicatorViewModel, timelinePlayback.getScene(), localUserId);
+      interactionController.update({
+        gameState,
+        beatIndex: timeIndicatorViewModel.value ?? 0,
+        localUserId,
+      });
     }
 
     if (!gameOverState) {

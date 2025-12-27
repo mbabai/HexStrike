@@ -1098,6 +1098,80 @@ small {
   display: none;
 }
 
+.interaction-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--color-panel-veil);
+  z-index: 8;
+  pointer-events: auto;
+}
+
+.interaction-overlay[hidden] {
+  display: none;
+}
+
+.throw-modal {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform: translate(-50%, -50%);
+  --throw-width: 68px;
+  --throw-height: 102px;
+  pointer-events: none;
+}
+
+.throw-center {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--throw-center-size, 18px);
+  height: var(--throw-center-size, 18px);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 2px solid var(--color-damage);
+  background: var(--color-panel-strong);
+  box-shadow: 0 0 12px rgba(208, 72, 64, 0.45);
+}
+
+.throw-arrow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--throw-width);
+  height: var(--throw-height);
+  background: var(--color-damage);
+  clip-path: polygon(50% 0%, 100% 60%, 70% 60%, 70% 100%, 30% 100%, 30% 60%, 0 60%);
+  transform: translate(-50%, -50%) translate(var(--offset-x, 0px), var(--offset-y, 0px))
+    rotate(var(--angle, 0deg)) scale(var(--scale, 1));
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  filter: drop-shadow(0 0 6px rgba(208, 72, 64, 0.4));
+  transition: transform 0.18s ease, filter 0.18s ease;
+  pointer-events: auto;
+}
+
+.throw-arrow:hover,
+.throw-arrow:focus-visible {
+  --scale: 1.18;
+  filter: drop-shadow(0 0 12px rgba(208, 72, 64, 0.7));
+  animation: throwPulse 0.9s ease-in-out infinite;
+}
+
+@keyframes throwPulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 6px rgba(208, 72, 64, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 16px rgba(208, 72, 64, 0.85));
+  }
+}
+
 .game-over-overlay {
   inset: auto;
   bottom: 30px;

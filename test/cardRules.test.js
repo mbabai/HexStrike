@@ -86,3 +86,66 @@ test('resolvePendingRefreshes clears movement exhaustion only on land', async ()
   assert.equal(offLandState.exhaustedMovementIds.has(movementCardId), true);
   assert.equal(offLandState.exhaustedAbilityIds.has(abilityCardId), false);
 });
+
+test('resolvePendingRefreshes aligns pending refresh to current first E', async () => {
+  const catalog = await loadCardCatalog();
+  const deck = buildSampleDeck(catalog);
+  const movementCardId = deck.movement[0];
+  const abilityCardId = deck.ability[2];
+  const character = {
+    userId: 'player-1',
+    username: 'Player 1',
+    characterId: 'murelious',
+    characterName: 'Murelious',
+    position: { q: 0, r: 0 },
+    facing: 0,
+  };
+  const beats = [
+    [
+      {
+        username: 'Player 1',
+        action: 'W',
+        rotation: '',
+        priority: 0,
+        damage: 0,
+        location: { q: 0, r: 0 },
+        facing: 0,
+        calculated: false,
+      },
+    ],
+    [
+      {
+        username: 'Player 1',
+        action: 'DamageIcon',
+        rotation: '',
+        priority: 0,
+        damage: 1,
+        location: { q: 0, r: 0 },
+        facing: 0,
+        calculated: false,
+      },
+    ],
+    [
+      {
+        username: 'Player 1',
+        action: 'E',
+        rotation: '',
+        priority: 0,
+        damage: 1,
+        location: { q: 0, r: 0 },
+        facing: 0,
+        calculated: false,
+      },
+    ],
+  ];
+  const deckState = createDeckState(deck);
+  deckState.exhaustedMovementIds.add(movementCardId);
+  deckState.exhaustedAbilityIds.add(abilityCardId);
+  deckState.pendingRefresh = { beatIndex: 1, movementCardId, abilityCardId };
+
+  resolvePendingRefreshes(new Map([['player-1', deckState]]), beats, [character], [{ q: 0, r: 0 }]);
+
+  assert.equal(deckState.pendingRefresh, undefined);
+  assert.equal(deckState.exhaustedMovementIds.size, 0);
+  assert.equal(deckState.exhaustedAbilityIds.has(abilityCardId), false);
+});

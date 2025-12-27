@@ -5,6 +5,7 @@ const ATTACK_DAMAGE = 3;
 const KNOCKBACK_FACTOR = 2;
 const KNOCKBACK_DIVISOR = 10;
 const ACTION_DURATION_MS = 1200;
+const THROW_DISTANCE = 2;
 
 const HIT_WINDOW_START = 0.18;
 const HIT_WINDOW_END = 0.32;
@@ -219,12 +220,21 @@ const isWaitAction = (action) => {
   return !trimmed || trimmed === WAIT_ACTION || trimmed === DAMAGE_ICON_ACTION.toUpperCase();
 };
 
+const normalizeActionToken = (token) => {
+  const trimmed = `${token ?? ''}`.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+};
+
 const parseActionTokens = (action) => {
   const trimmed = `${action ?? ''}`.trim();
   if (isWaitAction(trimmed)) return [];
   return trimmed
     .split('-')
-    .map((token) => token.trim())
+    .map((token) => normalizeActionToken(token))
     .filter(Boolean)
     .map((token) => {
       const type = token[token.length - 1]?.toLowerCase() ?? '';
@@ -260,6 +270,16 @@ const getKnockbackDirection = (origin, destination, lastStep) => {
   return directionIndex == null ? null : AXIAL_DIRECTIONS[directionIndex];
 };
 
+const buildInteractionId = (beatIndex, actorId, targetId) => `throw:${beatIndex}:${actorId}:${targetId}`;
+
+const getResolvedDirectionIndex = (interaction) => {
+  const direction = interaction?.resolution?.directionIndex;
+  if (!Number.isFinite(direction)) return null;
+  const rounded = Math.round(direction);
+  if (rounded < 0 || rounded >= AXIAL_DIRECTIONS.length) return null;
+  return rounded;
+};
+
 const getEntryForCharacter = (beat, character) => {
   if (!Array.isArray(beat) || !character) return null;
   return beat.find((entry) => {
@@ -283,7 +303,7 @@ const buildBaseState = (beat, characters) => {
 const isBeatCalculated = (beat) =>
   Array.isArray(beat) && beat.length && beat.every((entry) => entry && entry.calculated);
 
-const buildActionSteps = (beat, characters, baseState) => {
+const buildActionSteps = (beat, characters, baseState, interactions, beatIndex) => {
   const rosterOrder = new Map();
   characters.forEach((character, index) => {
     rosterOrder.set(character.userId, index);
@@ -294,6 +314,13 @@ const buildActionSteps = (beat, characters, baseState) => {
   characters.forEach((character) => {
     userLookup.set(character.userId, character.userId);
     userLookup.set(character.username, character.userId);
+  });
+
+  const interactionById = new Map();
+  (interactions ?? []).forEach((interaction) => {
+    if (interaction?.id) {
+      interactionById.set(interaction.id, interaction);
+    }
   });
 
   const state = new Map();
@@ -395,6 +422,58 @@ const buildActionSteps = (beat, characters, baseState) => {
           const targetState = state.get(targetId);
           if (targetState) {
             const fromPosition = { q: targetState.position.q, r: targetState.position.r };
+            const isThrow = entry.interaction?.type === 'throw';
+            if (isThrow) {
+              const interactionId = buildInteractionId(beatIndex, actorId, targetId);
+              const interaction = interactionById.get(interactionId);
+              const resolvedDirection = getResolvedDirectionIndex(interaction);
+              const knockbackPath = [{ q: targetState.position.q, r: targetState.position.r }];
+              if (interaction?.status === 'resolved' && resolvedDirection != null) {
+                targetState.damage += ATTACK_DAMAGE;
+                damageChanges.push({ targetId, delta: ATTACK_DAMAGE });
+                const knockbackDirection = AXIAL_DIRECTIONS[resolvedDirection];
+                let finalPosition = { ...targetState.position };
+                if (knockbackDirection && THROW_DISTANCE > 0) {
+                  for (let step = 0; step < THROW_DISTANCE; step += 1) {
+                    const candidate = {
+                      q: finalPosition.q + knockbackDirection.q,
+                      r: finalPosition.r + knockbackDirection.r,
+                    };
+                    const occupant = occupancy.get(coordKey(candidate));
+                    if (occupant && occupant !== targetId) break;
+                    finalPosition = candidate;
+                    knockbackPath.push({ q: finalPosition.q, r: finalPosition.r });
+                  }
+                }
+                if (!sameCoord(finalPosition, targetState.position)) {
+                  occupancy.delete(coordKey(targetState.position));
+                  targetState.position = { q: finalPosition.q, r: finalPosition.r };
+                  occupancy.set(coordKey(targetState.position), targetId);
+                  positionChanges.push({
+                    targetId,
+                    position: { q: targetState.position.q, r: targetState.position.r },
+                    from: { q: fromPosition.q, r: fromPosition.r },
+                    path: knockbackPath,
+                  });
+                }
+                hitTargets.push({
+                  targetId,
+                  from: { q: fromPosition.q, r: fromPosition.r },
+                  to: { q: finalPosition.q, r: finalPosition.r },
+                  path: knockbackPath,
+                });
+                disabledActors.add(targetId);
+              } else {
+                hitTargets.push({
+                  targetId,
+                  from: { q: fromPosition.q, r: fromPosition.r },
+                  to: { q: fromPosition.q, r: fromPosition.r },
+                  path: knockbackPath,
+                });
+                disabledActors.add(targetId);
+              }
+              return;
+            }
             targetState.damage += ATTACK_DAMAGE;
             damageChanges.push({ targetId, delta: ATTACK_DAMAGE });
             const knockbackDirection = getKnockbackDirection(origin, destination, lastStep);
@@ -548,7 +627,14 @@ export const createTimelinePlayback = () => {
       return;
     }
 
-    const { steps, persistentEffects } = buildActionSteps(beat, characters, baseState);
+    const interactions = gameState?.state?.public?.customInteractions ?? [];
+    const { steps, persistentEffects } = buildActionSteps(
+      beat,
+      characters,
+      baseState,
+      interactions,
+      beatIndex,
+    );
     const stepDuration = steps.length ? ACTION_DURATION_MS / steps.length : 0;
     playback = {
       baseState,

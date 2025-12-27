@@ -1,4 +1,4 @@
-import { BeatEntry, CharacterState, HexCoord } from '../types';
+import { BeatEntry, CharacterState, CustomInteraction, HexCoord } from '../types';
 
 const DEFAULT_ACTION = 'E';
 const WAIT_ACTION = 'W';
@@ -6,6 +6,7 @@ const DAMAGE_ICON_ACTION = 'DamageIcon';
 const ATTACK_DAMAGE = 3;
 const KNOCKBACK_FACTOR = 2;
 const KNOCKBACK_DIVISOR = 10;
+const THROW_DISTANCE = 2;
 
 const LOCAL_DIRECTIONS: Record<string, HexCoord> = {
   F: { q: 1, r: 0 },
@@ -135,12 +136,21 @@ const isWaitAction = (action: string) => {
   return !trimmed || trimmed === WAIT_ACTION || trimmed === DAMAGE_ICON_ACTION.toUpperCase();
 };
 
+const normalizeActionToken = (token: string) => {
+  const trimmed = token.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+};
+
 const parseActionTokens = (action: string) => {
   const trimmed = action.trim();
   if (isWaitAction(trimmed)) return [];
   return trimmed
     .split('-')
-    .map((token) => token.trim())
+    .map((token) => normalizeActionToken(token))
     .filter(Boolean)
     .map((token) => {
       const type = token[token.length - 1]?.toLowerCase() ?? '';
@@ -178,6 +188,17 @@ const getKnockbackDirection = (origin: HexCoord, destination: HexCoord, lastStep
   return directionIndex == null ? null : AXIAL_DIRECTIONS[directionIndex];
 };
 
+const buildInteractionId = (type: string, beatIndex: number, actorId: string, targetId: string) =>
+  `${type}:${beatIndex}:${actorId}:${targetId}`;
+
+const getResolvedDirectionIndex = (interaction?: CustomInteraction | null) => {
+  const direction = interaction?.resolution?.directionIndex;
+  if (!Number.isFinite(direction)) return null;
+  const rounded = Math.round(direction);
+  if (rounded < 0 || rounded >= AXIAL_DIRECTIONS.length) return null;
+  return rounded;
+};
+
 const buildEntryForCharacter = (
   character: CharacterState,
   state: ExecutionState,
@@ -195,6 +216,14 @@ const buildEntryForCharacter = (
 });
 
 export const executeBeats = (beats: BeatEntry[], characters: CharacterState[]) => {
+  return executeBeatsWithInteractions(beats, characters, []);
+};
+
+export const executeBeatsWithInteractions = (
+  beats: BeatEntry[],
+  characters: CharacterState[],
+  interactions: CustomInteraction[] = [],
+) => {
   const userLookup = new Map<string, string>();
   characters.forEach((character) => {
     userLookup.set(character.userId, character.userId);
@@ -218,6 +247,19 @@ export const executeBeats = (beats: BeatEntry[], characters: CharacterState[]) =
 
   const normalizedBeats = beats.map((beat) => beat.map((entry) => ({ ...entry })));
   let lastCalculated = -1;
+  const updatedInteractions: CustomInteraction[] = interactions.map((interaction) => ({
+    ...interaction,
+    resolution: interaction.resolution ? { ...interaction.resolution } : undefined,
+  }));
+  const interactionById = new Map<string, CustomInteraction>();
+  const pendingIndices: number[] = [];
+  updatedInteractions.forEach((interaction) => {
+    interactionById.set(interaction.id, interaction);
+    if (interaction.status === 'pending' && Number.isFinite(interaction.beatIndex)) {
+      pendingIndices.push(interaction.beatIndex);
+    }
+  });
+  let haltIndex = pendingIndices.length ? Math.min(...pendingIndices) : null;
   const characterById = new Map<string, CharacterState>();
   characters.forEach((character) => {
     characterById.set(character.userId, character);
@@ -313,10 +355,17 @@ export const executeBeats = (beats: BeatEntry[], characters: CharacterState[]) =
     );
   };
 
-  const applyHitTimeline = (targetId: string, beatIndex: number, targetState: ExecutionState) => {
+  const applyHitTimeline = (
+    targetId: string,
+    beatIndex: number,
+    targetState: ExecutionState,
+    knockbackOverride?: number,
+  ) => {
     const character = characterById.get(targetId);
     if (!character) return;
-    const knockbackDistance = getKnockbackDistance(targetState.damage);
+    const knockbackDistance = Number.isFinite(knockbackOverride)
+      ? Math.max(0, Math.round(knockbackOverride))
+      : getKnockbackDistance(targetState.damage);
     const damageIcons = knockbackDistance + 1;
     const endIndex = beatIndex + damageIcons;
     ensureBeatIndex(endIndex);
@@ -363,6 +412,12 @@ export const executeBeats = (beats: BeatEntry[], characters: CharacterState[]) =
   };
 
   for (let index = 0; index < normalizedBeats.length; index += 1) {
+    if (haltIndex != null && index > haltIndex) {
+      for (let j = index; j < normalizedBeats.length; j += 1) {
+        applyStateToBeat(normalizedBeats[j], false, false);
+      }
+      break;
+    }
     const beat = normalizedBeats[index];
     const entriesByUser = new Map<string, BeatEntry[number]>();
     beat.forEach((entry) => {
@@ -443,28 +498,75 @@ export const executeBeats = (beats: BeatEntry[], characters: CharacterState[]) =
           if (targetId && !isBlocked) {
             const targetState = state.get(targetId);
             if (targetState) {
-              targetState.damage += ATTACK_DAMAGE;
-              const knockbackDirection = getKnockbackDirection(origin, destination, lastStep);
-              const knockbackDistance = getKnockbackDistance(targetState.damage);
-              if (knockbackDirection && knockbackDistance > 0) {
-                let finalPosition = { ...targetState.position };
-                for (let step = 0; step < knockbackDistance; step += 1) {
-                  const candidate = {
-                    q: finalPosition.q + knockbackDirection.q,
-                    r: finalPosition.r + knockbackDirection.r,
-                  };
-                  const occupant = occupancy.get(coordKey(candidate));
-                  if (occupant && occupant !== targetId) break;
-                  finalPosition = candidate;
+              const isThrow = entry.interaction?.type === 'throw';
+              if (isThrow) {
+                const interactionId = buildInteractionId('throw', index, actorId, targetId);
+                const existing = interactionById.get(interactionId);
+                const resolvedDirection = getResolvedDirectionIndex(existing);
+                if (existing?.status === 'resolved' && resolvedDirection != null) {
+                  targetState.damage += ATTACK_DAMAGE;
+                  const knockbackDirection = AXIAL_DIRECTIONS[resolvedDirection];
+                  if (knockbackDirection && THROW_DISTANCE > 0) {
+                    let finalPosition = { ...targetState.position };
+                    for (let step = 0; step < THROW_DISTANCE; step += 1) {
+                      const candidate = {
+                        q: finalPosition.q + knockbackDirection.q,
+                        r: finalPosition.r + knockbackDirection.r,
+                      };
+                      const occupant = occupancy.get(coordKey(candidate));
+                      if (occupant && occupant !== targetId) break;
+                      finalPosition = candidate;
+                    }
+                    if (!sameCoord(finalPosition, targetState.position)) {
+                      occupancy.delete(coordKey(targetState.position));
+                      targetState.position = { q: finalPosition.q, r: finalPosition.r };
+                      occupancy.set(coordKey(targetState.position), targetId);
+                    }
+                  }
+                  applyHitTimeline(targetId, index, targetState, THROW_DISTANCE);
+                  disabledActors.add(targetId);
+                } else {
+                  if (!existing) {
+                    const created: CustomInteraction = {
+                      id: interactionId,
+                      type: 'throw',
+                      beatIndex: index,
+                      actorUserId: actorId,
+                      targetUserId: targetId,
+                      status: 'pending',
+                    };
+                    updatedInteractions.push(created);
+                    interactionById.set(interactionId, created);
+                  }
+                  disabledActors.add(targetId);
+                  if (haltIndex == null || index < haltIndex) {
+                    haltIndex = index;
+                  }
                 }
-                if (!sameCoord(finalPosition, targetState.position)) {
-                  occupancy.delete(coordKey(targetState.position));
-                  targetState.position = { q: finalPosition.q, r: finalPosition.r };
-                  occupancy.set(coordKey(targetState.position), targetId);
+              } else {
+                targetState.damage += ATTACK_DAMAGE;
+                const knockbackDirection = getKnockbackDirection(origin, destination, lastStep);
+                const knockbackDistance = getKnockbackDistance(targetState.damage);
+                if (knockbackDirection && knockbackDistance > 0) {
+                  let finalPosition = { ...targetState.position };
+                  for (let step = 0; step < knockbackDistance; step += 1) {
+                    const candidate = {
+                      q: finalPosition.q + knockbackDirection.q,
+                      r: finalPosition.r + knockbackDirection.r,
+                    };
+                    const occupant = occupancy.get(coordKey(candidate));
+                    if (occupant && occupant !== targetId) break;
+                    finalPosition = candidate;
+                  }
+                  if (!sameCoord(finalPosition, targetState.position)) {
+                    occupancy.delete(coordKey(targetState.position));
+                    targetState.position = { q: finalPosition.q, r: finalPosition.r };
+                    occupancy.set(coordKey(targetState.position), targetId);
+                  }
                 }
+                applyHitTimeline(targetId, index, targetState);
+                disabledActors.add(targetId);
               }
-              applyHitTimeline(targetId, index, targetState);
-              disabledActors.add(targetId);
             }
           }
         }
@@ -498,6 +600,12 @@ export const executeBeats = (beats: BeatEntry[], characters: CharacterState[]) =
 
     applyStateToBeat(beat, true, true);
     lastCalculated = index;
+    if (haltIndex != null && index >= haltIndex) {
+      for (let j = index + 1; j < normalizedBeats.length; j += 1) {
+        applyStateToBeat(normalizedBeats[j], false, false);
+      }
+      break;
+    }
   }
 
   const updatedCharacters = characters.map((character) => ({
@@ -505,5 +613,5 @@ export const executeBeats = (beats: BeatEntry[], characters: CharacterState[]) =
     position: { q: character.position.q, r: character.position.r },
   }));
 
-  return { beats: normalizedBeats, characters: updatedCharacters, lastCalculated };
+  return { beats: normalizedBeats, characters: updatedCharacters, lastCalculated, interactions: updatedInteractions };
 };

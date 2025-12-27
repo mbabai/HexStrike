@@ -12,6 +12,8 @@ export interface CardDefinition {
   rotations: string;
   damage: number;
   kbf: number;
+  activeText?: string;
+  passiveText?: string;
 }
 
 export interface DeckDefinition {
@@ -62,7 +64,9 @@ const normalizeCard = (card: any, type: CardType, index: number): CardDefinition
   const priority = Number.isFinite(card.priority) ? card.priority : 0;
   const damage = Number.isFinite(card.damage) ? card.damage : 0;
   const kbf = Number.isFinite(card.kbf) ? card.kbf : 0;
-  return { id, name, type, priority, actions, rotations, damage, kbf };
+  const activeText = typeof card.activeText === 'string' ? card.activeText : undefined;
+  const passiveText = typeof card.passiveText === 'string' ? card.passiveText : undefined;
+  return { id, name, type, priority, actions, rotations, damage, kbf, activeText, passiveText };
 };
 
 const normalizeDeck = (deck: any, index: number): DeckDefinition => {

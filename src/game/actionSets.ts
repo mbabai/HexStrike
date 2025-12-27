@@ -57,17 +57,24 @@ const buildTargetEntry = (
   action: string,
   rotation: string,
   priority: number,
+  interaction: ActionSetItem['interaction'],
   seed: { damage: number; location: { q: number; r: number }; facing: number },
-) => ({
-  username: target.username,
-  action,
-  rotation,
-  priority,
-  damage: seed.damage,
-  location: cloneLocation(seed.location),
-  facing: seed.facing,
-  calculated: false,
-});
+) => {
+  const entry: BeatEntry[number] = {
+    username: target.username,
+    action,
+    rotation,
+    priority,
+    damage: seed.damage,
+    location: cloneLocation(seed.location),
+    facing: seed.facing,
+    calculated: false,
+  };
+  if (interaction) {
+    entry.interaction = interaction;
+  }
+  return entry;
+};
 
 export const applyActionSetToBeats = (
   beats: BeatEntry[],
@@ -101,11 +108,17 @@ export const applyActionSetToBeats = (
     facing: normalizeFacing(lastTargetEntry?.facing, target.facing ?? 0),
   };
 
-  const actions = actionList.map((item, index) => ({
-    action: item.action,
-    rotation: index === 0 ? item.rotation : '',
-    priority: item.priority,
-  }));
+  const actions = actionList.map((item, index) => {
+    const actionItem: ActionSetItem = {
+      action: item.action,
+      rotation: index === 0 ? item.rotation : '',
+      priority: item.priority,
+    };
+    if (item.interaction) {
+      actionItem.interaction = item.interaction;
+    }
+    return actionItem;
+  });
 
   const ensureBeat = (index: number) => {
     while (updated.length <= index) {
@@ -122,12 +135,26 @@ export const applyActionSetToBeats = (
       entry.action = actionItem.action;
       entry.rotation = actionItem.rotation;
       entry.priority = actionItem.priority;
+      if (actionItem.interaction) {
+        entry.interaction = actionItem.interaction;
+      } else if ('interaction' in entry) {
+        delete entry.interaction;
+      }
       entry.damage = seed.damage;
       entry.location = cloneLocation(seed.location);
       entry.facing = seed.facing;
       entry.calculated = false;
     } else {
-      beat.push(buildTargetEntry(target, actionItem.action, actionItem.rotation, actionItem.priority, seed));
+      beat.push(
+        buildTargetEntry(
+          target,
+          actionItem.action,
+          actionItem.rotation,
+          actionItem.priority,
+          actionItem.interaction,
+          seed,
+        ),
+      );
     }
     if (beat.length > 1) {
       sortBeatEntries(beat, characters);

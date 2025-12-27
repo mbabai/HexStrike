@@ -32,6 +32,25 @@ export const getTimelineMaxIndex = (beats, characters) => {
   return Math.max(0, maxIndex);
 };
 
+export const getEarliestPendingInteractionIndex = (interactions) => {
+  if (!Array.isArray(interactions) || !interactions.length) return null;
+  let earliest = null;
+  interactions.forEach((interaction) => {
+    if (!interaction || interaction.status !== 'pending') return;
+    const beatIndex = Number(interaction.beatIndex);
+    if (!Number.isFinite(beatIndex)) return;
+    if (earliest === null || beatIndex < earliest) earliest = beatIndex;
+  });
+  return earliest;
+};
+
+export const getTimelineStopIndex = (beats, characters, interactions) => {
+  const earliestE = getTimelineMaxIndex(beats, characters);
+  const earliestInteraction = getEarliestPendingInteractionIndex(interactions);
+  if (earliestInteraction === null) return earliestE;
+  return Math.min(earliestE, earliestInteraction);
+};
+
 export const isCharacterAtEarliestE = (beats, characters, character) => {
   if (!character) return false;
   const earliest = getTimelineMaxIndex(beats, characters);

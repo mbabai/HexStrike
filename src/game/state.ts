@@ -57,6 +57,7 @@ export const createInitialGameState = async (
       beats,
       characters,
       pendingActions: undefined,
+      customInteractions: [],
     },
     secret: {},
   };

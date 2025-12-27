@@ -1,6 +1,6 @@
-import { ActionSetItem, BeatEntry, CharacterState, HexCoord } from '../types';
+import { ActionSetItem, BeatEntry, CharacterState, CustomInteraction, HexCoord } from '../types';
 import { CardCatalog, CardDefinition, CardType, DeckDefinition } from './cardCatalog';
-import { getTimelineEarliestEIndex } from './beatTimeline';
+import { getCharacterFirstEIndex, getTimelineEarliestEIndex } from './beatTimeline';
 
 const ROTATION_LABELS = ['0', 'R1', 'R2', '3', 'L2', 'L1'];
 
@@ -110,6 +110,32 @@ const isCoordOnLand = (location: HexCoord | null | undefined, land: HexCoord[]):
   const key = buildCoordKey(location);
   if (!key) return false;
   return land.some((tile) => buildCoordKey(tile) === key);
+};
+
+const normalizeActionToken = (token: string) => {
+  const trimmed = `${token ?? ''}`.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+};
+
+const actionHasAttackToken = (action: string) => {
+  if (!action) return false;
+  return action
+    .split('-')
+    .map((token) => normalizeActionToken(token))
+    .some((token) => {
+      if (!token) return false;
+      const type = token[token.length - 1]?.toLowerCase();
+      return type === 'a' || type === 'c';
+    });
+};
+
+const hasThrowInteraction = (text?: string) => {
+  if (!text) return false;
+  return /\{i\}\s*:\s*throw\b/i.test(text);
 };
 
 const getEntryForCharacter = (beat: BeatEntry, character: CharacterState) =>
@@ -245,10 +271,12 @@ export const validateActionSubmission = (
   if (!activeCard.actions.length) {
     return { ok: false, error: { code: 'no-action-list', message: 'Active card has no actions.' } };
   }
+  const supportsThrow = hasThrowInteraction(activeCard.activeText);
   const actionList: ActionSetItem[] = activeCard.actions.map((action, index) => ({
     action,
     rotation: index === 0 ? rotation : '',
     priority: activeCard.priority,
+    interaction: supportsThrow && actionHasAttackToken(action) ? { type: 'throw' } : undefined,
   }));
   const refreshOffset = getRefreshOffset(activeCard.actions);
   if (refreshOffset === null) {
@@ -281,8 +309,10 @@ export const resolvePendingRefreshes = (
   beats: BeatEntry[],
   characters: CharacterState[],
   land: HexCoord[],
+  interactions: CustomInteraction[] = [],
 ) => {
   if (!deckStates.size) return;
+  if (interactions.some((interaction) => interaction.status === 'pending')) return;
   const earliestIndex = getTimelineEarliestEIndex(beats, characters);
   const characterById = new Map<string, CharacterState>();
   characters.forEach((character) => {
@@ -292,9 +322,14 @@ export const resolvePendingRefreshes = (
 
   deckStates.forEach((deckState, userId) => {
     const pending = deckState.pendingRefresh;
-    if (!pending || pending.beatIndex !== earliestIndex) return;
+    if (!pending) return;
     const character = characterById.get(userId);
     if (!character) return;
+    const firstEIndex = getCharacterFirstEIndex(beats, character);
+    if (Number.isFinite(pending.beatIndex) && pending.beatIndex < firstEIndex) {
+      pending.beatIndex = firstEIndex;
+    }
+    if (pending.beatIndex !== earliestIndex) return;
     const beat = beats[pending.beatIndex];
     if (!beat) return;
     const entry = getEntryForCharacter(beat, character);

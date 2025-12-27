@@ -1,5 +1,5 @@
 import { CHARACTER_IMAGE_SOURCES, CHARACTER_TOKEN_STYLE } from './characterTokens.mjs';
-import { getTimelineMaxIndex } from './beatTimeline.js';
+import { getEarliestPendingInteractionIndex, getTimelineStopIndex } from './beatTimeline.js';
 import { drawNameCapsule } from './portraitBadges.js';
 
 const DEFAULT_BORDER_SIZE = { width: 640, height: 64 };
@@ -219,7 +219,11 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
 
   const characters = gameState?.state?.public?.characters ?? [];
   const beats = gameState?.state?.public?.beats ?? [];
-  const highlightIndex = getTimelineMaxIndex(beats, characters);
+  const interactions = gameState?.state?.public?.customInteractions ?? [];
+  const highlightIndex = getTimelineStopIndex(beats, characters, interactions);
+  const interactionStopIndex = getEarliestPendingInteractionIndex(interactions);
+  const fadeAfterIndex =
+    interactionStopIndex !== null && interactionStopIndex <= highlightIndex ? interactionStopIndex : null;
   const pending = gameState?.state?.public?.pendingActions ?? null;
   const waitingUserIds = new Set();
   if (pending && pending.beatIndex === highlightIndex && Array.isArray(pending.requiredUserIds)) {
@@ -230,6 +234,12 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       }
     });
   }
+  interactions.forEach((interaction) => {
+    if (!interaction || interaction.status !== 'pending') return;
+    if (interaction.actorUserId) {
+      waitingUserIds.add(interaction.actorUserId);
+    }
+  });
   const blinkPhase = (performance.now() % PENDING_BLINK_MS) / PENDING_BLINK_MS;
   const blinkAlpha = 0.4 + 0.6 * Math.sin(blinkPhase * Math.PI * 2) ** 2;
   const topRow = getRowLayout(layout, 0);
@@ -310,6 +320,11 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       const xPos = rowCenterX + offset * rowSpacing;
       const imageX = xPos - iconSize / 2;
       const imageY = rowCenterY - iconSize / 2;
+      const shouldFade = fadeAfterIndex !== null && beatIndex > fadeAfterIndex;
+      if (shouldFade) {
+        ctx.save();
+        ctx.globalAlpha = 0.28;
+      }
       const emphasisImage = token.emphasized ? getActionArt(EMPHASIS_ICON_KEY) : null;
       if (token.emphasized && emphasisImage && emphasisImage.complete && emphasisImage.naturalWidth > 0) {
         ctx.drawImage(emphasisImage, imageX, imageY, iconSize, iconSize);
@@ -332,6 +347,9 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       const rotation = entry?.rotation;
       if (rotation !== undefined && rotation !== null && rotation !== '') {
         drawRotationBadge(ctx, imageX, imageY, iconSize, `${rotation}`, theme);
+      }
+      if (shouldFade) {
+        ctx.restore();
       }
     });
 

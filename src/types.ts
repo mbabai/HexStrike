@@ -64,12 +64,20 @@ export interface BeatAction {
   location: HexCoord;
   facing: Facing;
   calculated: boolean;
+  interaction?: BeatInteraction;
+}
+
+export type CustomInteractionType = 'throw';
+
+export interface BeatInteraction {
+  type: CustomInteractionType;
 }
 
 export interface ActionSetItem {
   action: string;
   rotation: string;
   priority: number;
+  interaction?: BeatInteraction;
 }
 
 export type BeatEntry = BeatAction[];
@@ -85,6 +93,19 @@ export interface GameStatePublic {
   beats: BeatEntry[];
   characters: CharacterState[];
   pendingActions?: PendingActions;
+  customInteractions?: CustomInteraction[];
+}
+
+export interface CustomInteraction {
+  id: string;
+  type: CustomInteractionType;
+  beatIndex: number;
+  actorUserId: string;
+  targetUserId: string;
+  status: 'pending' | 'resolved';
+  resolution?: {
+    directionIndex?: number;
+  };
 }
 
 export interface GameStateSecret {

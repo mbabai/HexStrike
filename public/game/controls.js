@@ -9,6 +9,9 @@ const PAN_BLOCK_SELECTORS = [
   '.action-submit',
   '.rotation-wheel',
   '.rotation-selector',
+  '.interaction-overlay',
+  '.throw-modal',
+  '.throw-arrow',
 ];
 
 const isEventWithinRoot = (event, root) => {
