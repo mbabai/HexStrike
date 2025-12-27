@@ -1285,7 +1285,8 @@ small {
   padding-top: 12px;
   display: grid;
   gap: 10px;
-  --action-card-scale: 0.7;
+  --action-card-scale: 1;
+  --deck-selection-hover-lift: calc(var(--action-card-height) * 0.08);
 }
 
 .deck-selection-header {
@@ -1313,15 +1314,25 @@ small {
   align-items: flex-start;
   gap: 0;
   overflow-x: auto;
+  overflow-y: visible;
+  padding-top: var(--deck-selection-hover-lift);
   padding-bottom: 6px;
 }
 
 .deck-selection-row .action-card {
   cursor: pointer;
+  position: relative;
 }
 
 .deck-selection-row .action-card + .action-card {
   margin-left: calc(-1 * var(--action-card-width) * 0.6);
+}
+
+.deck-selection-row .action-card:hover,
+.deck-selection-row .action-card:focus-visible {
+  transform: translateY(calc(-1 * var(--deck-selection-hover-lift)));
+  z-index: 6;
+  box-shadow: var(--shadow-strong);
 }
 
 .deck-selection-draggable {

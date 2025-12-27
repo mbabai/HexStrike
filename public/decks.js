@@ -100,6 +100,7 @@ export const initDecks = async () => {
   const previewMovement = document.getElementById('deckPreviewMovement');
   const previewAbility = document.getElementById('deckPreviewAbility');
   const builderOverlay = document.getElementById('deckBuilderOverlay');
+  const deckBuilderTitle = document.getElementById('deckBuilderTitle');
   const builderClose = document.getElementById('deckBuilderClose');
   const characterPicker = document.getElementById('deckCharacterPicker');
   const deckTypeFilter = document.getElementById('deckTypeFilter');
@@ -126,6 +127,7 @@ export const initDecks = async () => {
     !previewMovement ||
     !previewAbility ||
     !builderOverlay ||
+    !deckBuilderTitle ||
     !builderClose ||
     !characterPicker ||
     !deckTypeFilter ||
@@ -162,6 +164,9 @@ export const initDecks = async () => {
     sort: deckSort.value,
     draggingAbilityId: null,
     suppressClick: false,
+    editingDeckId: null,
+    editingDeckName: '',
+    editingDeckIsBase: false,
   };
 
   const dispatchDeckSelected = (deck) => {
@@ -272,7 +277,7 @@ export const initDecks = async () => {
 
       selectButton.addEventListener('click', (event) => {
         event.stopPropagation();
-        openPreview(deck);
+        openBuilder(deck);
       });
       deleteButton.addEventListener('click', (event) => {
         event.stopPropagation();
@@ -313,23 +318,45 @@ export const initDecks = async () => {
     previewAbility.innerHTML = '';
   };
 
+  const setBuilderFilters = () => {
+    deckTypeFilter.value = 'all';
+    deckSort.value = 'name';
+    builderState.typeFilter = deckTypeFilter.value;
+    builderState.sort = deckSort.value;
+  };
+
   const resetBuilder = () => {
     builderState.characterId = null;
     builderState.movement = [];
     builderState.ability = [];
     builderState.draggingAbilityId = null;
     builderState.suppressClick = false;
-    deckTypeFilter.value = 'all';
-    deckSort.value = 'name';
-    builderState.typeFilter = deckTypeFilter.value;
-    builderState.sort = deckSort.value;
+    builderState.editingDeckId = null;
+    builderState.editingDeckName = '';
+    builderState.editingDeckIsBase = false;
+    setBuilderFilters();
+  };
+
+  const loadBuilderFromDeck = (deck) => {
+    builderState.characterId = deck.characterId || null;
+    builderState.movement = [...deck.movement];
+    builderState.ability = [...deck.ability];
+    builderState.editingDeckId = deck.id;
+    builderState.editingDeckName = deck.name || '';
+    builderState.editingDeckIsBase = Boolean(deck.isBase);
+  };
+
+  const openBuilder = (deck = null) => {
+    resetBuilder();
+    if (deck) {
+      loadBuilderFromDeck(deck);
+      deckBuilderTitle.textContent = 'Edit Deck';
+    } else {
+      deckBuilderTitle.textContent = 'Create a Deck';
+    }
     renderCharacterPicker();
     renderLibrary();
     renderSelection();
-  };
-
-  const openBuilder = () => {
-    resetBuilder();
     builderOverlay.hidden = false;
   };
 
@@ -337,9 +364,9 @@ export const initDecks = async () => {
     builderOverlay.hidden = true;
   };
 
-  const openNameModal = () => {
-    nameInput.value = '';
-    nameOk.disabled = true;
+  const openNameModal = (initialName = '') => {
+    nameInput.value = initialName;
+    nameOk.disabled = !nameInput.value.trim();
     nameOverlay.hidden = false;
     nameInput.focus();
   };
@@ -351,15 +378,35 @@ export const initDecks = async () => {
   const saveDeck = () => {
     const name = nameInput.value.trim();
     if (!name) return;
-    const newDeck = {
-      id: createDeckId(),
+    const payload = {
       name,
       characterId: builderState.characterId,
       movement: [...builderState.movement],
       ability: [...builderState.ability],
-      isBase: false,
     };
-    decks = saveUserDecks(userId, [...decks, newDeck]);
+    if (builderState.editingDeckId) {
+      const next = [...decks];
+      const index = next.findIndex((deck) => deck.id === builderState.editingDeckId);
+      const updated = {
+        ...(index === -1 ? {} : next[index]),
+        id: builderState.editingDeckId,
+        isBase: builderState.editingDeckIsBase,
+        ...payload,
+      };
+      if (index === -1) {
+        next.push(updated);
+      } else {
+        next[index] = updated;
+      }
+      decks = saveUserDecks(userId, next);
+    } else {
+      const newDeck = {
+        id: createDeckId(),
+        isBase: false,
+        ...payload,
+      };
+      decks = saveUserDecks(userId, [...decks, newDeck]);
+    }
     closeNameModal();
     closeBuilder();
     refreshDeckViews();
@@ -517,7 +564,7 @@ export const initDecks = async () => {
     }
   });
 
-  createDeckButton.addEventListener('click', openBuilder);
+  createDeckButton.addEventListener('click', () => openBuilder());
   builderClose.addEventListener('click', closeBuilder);
   deckTypeFilter.addEventListener('change', () => {
     builderState.typeFilter = deckTypeFilter.value;
@@ -527,7 +574,7 @@ export const initDecks = async () => {
     builderState.sort = deckSort.value;
     renderLibrary();
   });
-  deckSave.addEventListener('click', openNameModal);
+  deckSave.addEventListener('click', () => openNameModal(builderState.editingDeckName));
 
   nameInput.addEventListener('input', () => {
     nameOk.disabled = !nameInput.value.trim();

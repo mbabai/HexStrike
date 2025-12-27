@@ -9,6 +9,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - Server: action-set validation uses `src/game/cardCatalog.ts` + `src/game/cardRules.ts` to enforce deck/hand exhaustion, rotation limits, and refresh timing.
 - UI: static assets in `public/` with ES module scripts (`public/menu.js`, `public/queue.js`, `public/storage.js`) and styling in `public/theme.css`.
 - UI: lobby deck library + deck builder (stored per-user in localStorage) in `public/decks.js` + `public/deckStore.js`; selected deck is saved in cookies and gates matchmaking.
+- UI: deck edit uses the same builder overlay as create; edit state is prefilled and saves back to the existing deck id.
 - UI: `/cards` catalog page renders the full card set from `public/cards/cards.json` via `public/cards.js` + `public/cards.css`.
 - UI action HUD uses movement/ability cards from `public/cards/cards.json`, random/selected deck hand selection in `public/game/cards.js`, and drag/drop wiring in `public/game/actionHud.js`.
 - Action HUD hands are always rendered in a stacked spread, with turn-only slots/rotation and icon-driven card badges.
@@ -85,6 +86,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Action card UI always appends an `E` symbol and uses `/public/images/rot*.png`, `priority.png`, `DamageIcon.png`, and `KnockBackIcon.png`.
 - Action card stat badges are anchored bottom-left with overlapping icons (damage left, knockback right), and the surface panel is split into 50%/25%/25% vertical bands with square corners in `public/theme.css`.
 - Action card layout uses fixed pixel positions via CSS variables in `public/theme.css`; scale with `--action-card-scale` (cards page sets `1.5` in `public/cards.css`) instead of resizing individual elements to keep proportions locked.
+- Deck selection cards use `--action-card-scale` and `--deck-selection-hover-lift` in `public/theme.css`; keep the hover lift padding in sync so elevated cards are not clipped.
 - Action icon column placement is controlled by `--action-card-actions-top` in `public/theme.css`; adjust that single value to keep the top icon aligned without colliding with the border.
 - Keep beat arrays ordered by character roster when mutating to prevent UI rows from swapping entries.
 - Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
