@@ -27,7 +27,7 @@ const createIcon = (path, viewBox = '0 0 24 24') => {
   return svg;
 };
 
-const CHECK_ICON = createIcon('M4.5 12.5l5 5 10-10');
+const PENCIL_ICON = createIcon('M3 21l3.5-1 11-11-2.5-2.5-11 11L3 21z M14.5 5.5l2.5 2.5');
 const TRASH_ICON = createIcon('M4 7h16M9 7V5h6v2M8 7l1 12h6l1-12');
 
 const getCharacterMeta = (characterId) =>
@@ -39,8 +39,8 @@ const createDeckActions = () => {
   const selectButton = document.createElement('button');
   selectButton.type = 'button';
   selectButton.className = 'deck-action deck-action-select';
-  selectButton.setAttribute('aria-label', 'Select deck');
-  selectButton.appendChild(CHECK_ICON.cloneNode(true));
+  selectButton.setAttribute('aria-label', 'Edit deck');
+  selectButton.appendChild(PENCIL_ICON.cloneNode(true));
   const deleteButton = document.createElement('button');
   deleteButton.type = 'button';
   deleteButton.className = 'deck-action deck-action-delete';
@@ -249,7 +249,7 @@ export const initDecks = async () => {
       const previewButton = document.createElement('button');
       previewButton.type = 'button';
       previewButton.className = 'deck-card-button';
-      previewButton.setAttribute('aria-label', `Preview ${deck.name}`);
+      previewButton.setAttribute('aria-label', `Select ${deck.name}`);
 
       const portrait = document.createElement('div');
       portrait.className = 'deck-card-portrait';
@@ -272,7 +272,7 @@ export const initDecks = async () => {
 
       selectButton.addEventListener('click', (event) => {
         event.stopPropagation();
-        setSelectedDeck(deck.id);
+        openPreview(deck);
       });
       deleteButton.addEventListener('click', (event) => {
         event.stopPropagation();
@@ -286,7 +286,7 @@ export const initDecks = async () => {
         dispatchDecksUpdated();
       });
 
-      previewButton.addEventListener('click', () => openPreview(deck));
+      previewButton.addEventListener('click', () => setSelectedDeck(deck.id));
 
       card.appendChild(previewButton);
       card.appendChild(actions);
