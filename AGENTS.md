@@ -24,6 +24,8 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - [README.md](README.md): project overview, setup, and API summary; read first when onboarding or running the server.
 - [PLANS.md](PLANS.md): ExecPlan format and rules; use whenever drafting or executing a large feature/refactor plan.
 - [front-end-ui.md](front-end-ui.md): UI palette, components, and interaction rules; use for any browser-facing UI changes.
+- [architecture.md](architecture.md): system overview of server/client/data flow; use when onboarding, tracing state sync issues, or planning cross-cutting changes.
+- [rules.md](rules.md): player-facing rules; use to align gameplay changes, answer rules questions, or sanity-check rule coverage.
 - [docs/hex-grid.md](docs/hex-grid.md): hex coordinate system and land/abyss definitions; use when touching board math or terrain.
 - [plans/basic-lobby.md](plans/basic-lobby.md): historical lobby plan snapshot; reference for context on the initial lobby scope.
 - [plans/queue-matchmaking-game-area.md](plans/queue-matchmaking-game-area.md): historical plan for queue/matchmaking/game surface; reference when revisiting those areas.
