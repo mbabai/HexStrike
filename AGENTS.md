@@ -18,6 +18,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - Front-end animation: `public/game/timelinePlayback.js` builds beat-by-beat scenes (characters + effects) consumed by `public/game/renderer.js`.
 - UI portrait badges (name capsules) are drawn with `public/game/portraitBadges.js`; local player accents use `--color-player-accent`.
 - Timeline controls: play/pause is rendered in the center time slot and auto-advance steps when the current beat playback completes.
+- UI timeline shows a local-only pending action preview (faded + pulsing) when you've submitted and are waiting on other players.
 - Matchmaking: Quickplay join/leave is wired from the UI; other queue options are placeholders.
 
 # Documentation map (start here)
@@ -105,6 +106,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Timeline tooltips for X1/X2/i are derived from `{X1}/{X2}/{i}` fragments in card `activeText`, and tooltip matching relies on the action list starting at the beat with a rotation marker; keep action lists and rotations in sync.
 - Rotation restrictions like `0-2` are interpreted as rotation magnitude (both left/right labels plus `0`/`3` where applicable), not directional ranges.
 - When multiple players share the earliest `E`, the server batches action sets in `pendingActions` and reveals them simultaneously once all required players submit; timeline rings blink red for players still needed.
+- Pending action previews on the timeline are client-side only: build the local player's preview from the submitted active card action list, render it as a faded pulsing overlay only on that player's `E` slots while waiting, and clear it once `pendingActions` no longer includes a local submission.
 - Direction indexing for blocks/attacks must ignore reverse vectors (only forward, positive steps); otherwise block walls flip away from facing.
 - Keep `getDirectionIndex` logic in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized so visuals match server resolution.
 - Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.

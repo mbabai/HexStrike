@@ -613,7 +613,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     }
   };
 
-  const draw = (viewState, gameState, timeIndicatorViewModel, scene, localUserId) => {
+  const draw = (viewState, gameState, timeIndicatorViewModel, scene, localUserId, pendingPreview) => {
     if (!viewport.width || !viewport.height) return;
     const size = getHexSize(viewport.width, config.hexSizeFactor);
     const bounds = getWorldBounds(viewport, viewState);
@@ -644,7 +644,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
 
     const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
     if (!land.length) {
-      drawTimeIndicator(ctx, viewport, theme, timeIndicatorViewModel, gameState, localUserId);
+      drawTimeIndicator(ctx, viewport, theme, timeIndicatorViewModel, gameState, localUserId, pendingPreview);
       return;
     }
 
@@ -725,7 +725,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
       });
     }
 
-    drawTimeIndicator(ctx, viewport, theme, timeIndicatorViewModel, gameState, localUserId);
+    drawTimeIndicator(ctx, viewport, theme, timeIndicatorViewModel, gameState, localUserId, pendingPreview);
   };
 
   return { resize, draw, viewport };

@@ -7,6 +7,7 @@ import { createTimelineTooltip } from './game/timelineTooltip.js';
 import { GAME_CONFIG } from './game/config.js';
 import { createGameOverView } from './game/gameOverView.js';
 import { getMatchOutcome } from './game/matchEndRules.js';
+import { createPendingActionPreview } from './game/pendingActionPreview.js';
 import {
   getCharacterFirstEIndex,
   getCharactersAtEarliestE,
@@ -182,6 +183,7 @@ export const initGame = () => {
   let pendingInteractionId = null;
   let gameOverInFlight = false;
   let didInitTimelinePosition = false;
+  const pendingActionPreview = createPendingActionPreview();
 
   const getMaxIndex = () => {
     const beats = gameState?.state?.public?.beats ?? [];
@@ -410,11 +412,13 @@ export const initGame = () => {
     lastTurnActive = isTurn;
   };
 
-  const handleActionSubmit = async ({ activeCardId, passiveCardId, rotation }) => {
+  const handleActionSubmit = async ({ activeCardId, passiveCardId, rotation, activeCard }) => {
     if (!gameState?.id || actionSubmitInFlight) return;
     if (getMatchOutcome(gameState?.state?.public)) return;
     actionSubmitInFlight = true;
     if (actionHud) actionHud.setLocked(true);
+    const previewCard = activeCard ?? cardLookup.get(activeCardId);
+    pendingActionPreview.setFromCard(previewCard, rotation);
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
     console.log(`${LOG_PREFIX} action:set submit`, {
@@ -454,6 +458,7 @@ export const initGame = () => {
       console.error('Failed to submit action set', err);
       const message = err instanceof Error ? err.message : 'Failed to submit action set.';
       window.alert(message);
+      pendingActionPreview.clear();
     } finally {
       actionSubmitInFlight = false;
       refreshActionHud();
@@ -590,6 +595,7 @@ export const initGame = () => {
     interactionSubmitInFlight = false;
     gameOverInFlight = false;
     didInitTimelinePosition = false;
+    pendingActionPreview.clear();
     if (actionHud) {
       actionHud.clearSelection();
       actionHud.setCards([], []);
@@ -605,6 +611,7 @@ export const initGame = () => {
   const setGameState = (nextState) => {
     gameState = nextState;
     tooltip.setGameState(nextState);
+    pendingActionPreview.syncWithState(nextState, localUserId);
     if (!didInitTimelinePosition && gameState) {
       const beats = gameState?.state?.public?.beats ?? [];
       const characters = gameState?.state?.public?.characters ?? [];
@@ -679,7 +686,8 @@ export const initGame = () => {
     refreshInteractionOverlay();
     refreshGameOver();
     const scene = timelinePlayback.getScene();
-    renderer.draw(viewState, gameState, timeIndicatorViewModel, scene, localUserId);
+    const pendingPreview = pendingActionPreview.getTimelinePreview(gameState, localUserId);
+    renderer.draw(viewState, gameState, timeIndicatorViewModel, scene, localUserId, pendingPreview);
     requestAnimationFrame(renderFrame);
   };
 

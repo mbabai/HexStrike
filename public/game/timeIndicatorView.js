@@ -13,6 +13,9 @@ const characterArt = new Map();
 const priorityIcon = new Image();
   priorityIcon.src = '/public/images/priority.png';
 const PENDING_BLINK_MS = 700;
+const PREVIEW_PULSE_MS = 1400;
+const PREVIEW_ALPHA = 0.5;
+const PREVIEW_SCALE_AMPLITUDE = 0.06;
 const PLAY_BUTTON_MIN_SIZE = 22;
 
 const getActionArt = (action) => {
@@ -43,6 +46,24 @@ const parseActionToken = (raw) => {
     return { label: label || ACTION_ICON_FALLBACK, emphasized: true };
   }
   return { label: trimmed, emphasized: false };
+};
+
+const matchesPreviewUser = (preview, character) => {
+  if (!preview || !character) return false;
+  const keys = new Set([preview.userId, preview.username].filter(Boolean));
+  if (!keys.size) return false;
+  return keys.has(character.userId) || keys.has(character.username);
+};
+
+const getPendingPreviewEntry = (preview, character, beatIndex) => {
+  if (!matchesPreviewUser(preview, character)) return null;
+  const actionList = Array.isArray(preview?.actionList) ? preview.actionList : [];
+  if (!actionList.length) return null;
+  const startIndex = Number.isFinite(preview?.beatIndex) ? preview.beatIndex : null;
+  if (startIndex === null) return null;
+  const offset = beatIndex - startIndex;
+  if (offset < 0 || offset >= actionList.length) return null;
+  return actionList[offset] ?? null;
 };
 
 export const getTimeIndicatorLayout = (viewport) => {
@@ -206,7 +227,7 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
   return null;
 };
 
-export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, localUserId) => {
+export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, localUserId, pendingPreview) => {
   const layout = getTimeIndicatorLayout(viewport);
   if (!layout) return;
 
@@ -246,6 +267,8 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
   });
   const blinkPhase = (performance.now() % PENDING_BLINK_MS) / PENDING_BLINK_MS;
   const blinkAlpha = 0.4 + 0.6 * Math.sin(blinkPhase * Math.PI * 2) ** 2;
+  const previewPhase = (performance.now() % PREVIEW_PULSE_MS) / PREVIEW_PULSE_MS;
+  const previewScale = 1 + PREVIEW_SCALE_AMPLITUDE * Math.sin(previewPhase * Math.PI * 2);
   const topRow = getRowLayout(layout, 0);
   drawNumberWell(ctx, topRow.numberArea, theme.queueLavender || theme.panel);
 
@@ -316,29 +339,40 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
     offsets.forEach((offset) => {
       const beatIndex = value + offset;
       if (beatIndex < 0) return;
-      const entry = beatLookup[beatIndex]?.get(lookupKey);
-      const baseAction = entry?.action ?? ACTION_ICON_FALLBACK;
+      const baseEntry = beatLookup[beatIndex]?.get(lookupKey);
+      const baseAction = baseEntry?.action ?? ACTION_ICON_FALLBACK;
+      const previewEntry = getPendingPreviewEntry(pendingPreview, character, beatIndex);
       const isDeathBeat =
         deathIndex !== null &&
         beatIndex === deathIndex &&
         deathUserId &&
         (character.userId === deathUserId || character.username === deathUserId);
-      const action = isDeathBeat && (!entry || baseAction === DEFAULT_ACTION) ? 'Death' : baseAction;
+      const usePreview =
+        !isDeathBeat && previewEntry && (!baseEntry || baseAction === DEFAULT_ACTION);
+      const entry = usePreview ? previewEntry : baseEntry;
+      const action =
+        isDeathBeat && (!baseEntry || baseAction === DEFAULT_ACTION)
+          ? 'Death'
+          : entry?.action ?? ACTION_ICON_FALLBACK;
       const token = parseActionToken(action);
       const image = getActionArt(token.label);
       if (!image || !image.complete || image.naturalWidth === 0) return;
       const xPos = rowCenterX + offset * rowSpacing;
-      const imageX = xPos - iconSize / 2;
-      const imageY = rowCenterY - iconSize / 2;
+      const drawScale = usePreview ? previewScale : 1;
+      const drawSize = iconSize * drawScale;
+      const imageX = xPos - drawSize / 2;
+      const imageY = rowCenterY - drawSize / 2;
       const shouldFade = fadeAfterIndex !== null && beatIndex > fadeAfterIndex;
-      if (shouldFade) {
+      const alpha = (shouldFade ? 0.28 : 1) * (usePreview ? PREVIEW_ALPHA : 1);
+      const restoreAfter = alpha !== 1;
+      if (restoreAfter) {
         ctx.save();
-        ctx.globalAlpha = 0.28;
+        ctx.globalAlpha = alpha;
       }
       const emphasisImage = token.emphasized ? getActionArt(EMPHASIS_ICON_KEY) : null;
       if (token.emphasized && emphasisImage && emphasisImage.complete && emphasisImage.naturalWidth > 0) {
-        ctx.drawImage(emphasisImage, imageX, imageY, iconSize, iconSize);
-        const overlaySize = iconSize * 0.8;
+        ctx.drawImage(emphasisImage, imageX, imageY, drawSize, drawSize);
+        const overlaySize = drawSize * 0.8;
         ctx.drawImage(
           image,
           xPos - overlaySize / 2,
@@ -347,7 +381,7 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
           overlaySize,
         );
       } else {
-        ctx.drawImage(image, imageX, imageY, iconSize, iconSize);
+        ctx.drawImage(image, imageX, imageY, drawSize, drawSize);
       }
       const actionLabel = token.label;
       if (
@@ -358,13 +392,13 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
         actionLabel !== 'DamageIcon'
       ) {
         const priorityValue = Number.isFinite(entry?.priority) ? entry.priority : 0;
-        drawPriorityBadge(ctx, imageX, imageY, iconSize, priorityValue, theme);
+        drawPriorityBadge(ctx, imageX, imageY, drawSize, priorityValue, theme);
       }
       const rotation = entry?.rotation;
       if (rotation !== undefined && rotation !== null && rotation !== '') {
-        drawRotationBadge(ctx, imageX, imageY, iconSize, `${rotation}`, theme);
+        drawRotationBadge(ctx, imageX, imageY, drawSize, `${rotation}`, theme);
       }
-      if (shouldFade) {
+      if (restoreAfter) {
         ctx.restore();
       }
     });
