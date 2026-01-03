@@ -3,6 +3,7 @@ import { getEarliestPendingInteractionIndex, getTimelineStopIndex } from './beat
 import { drawNameCapsule } from './portraitBadges.js';
 
 const DEFAULT_BORDER_SIZE = { width: 640, height: 64 };
+const DEFAULT_ACTION = 'E';
 const ACTION_ICON_FALLBACK = 'empty';
 const EMPHASIS_ICON_KEY = 'i';
 const VISIBLE_BEAT_RADIUS = 6;
@@ -220,6 +221,9 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
   const characters = gameState?.state?.public?.characters ?? [];
   const beats = gameState?.state?.public?.beats ?? [];
   const interactions = gameState?.state?.public?.customInteractions ?? [];
+  const matchOutcome = gameState?.state?.public?.matchOutcome ?? null;
+  const deathUserId = matchOutcome?.loserUserId ?? null;
+  const deathIndex = Number.isFinite(matchOutcome?.beatIndex) ? matchOutcome.beatIndex : null;
   const highlightIndex = getTimelineStopIndex(beats, characters, interactions);
   const interactionStopIndex = getEarliestPendingInteractionIndex(interactions);
   const fadeAfterIndex =
@@ -313,7 +317,13 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       const beatIndex = value + offset;
       if (beatIndex < 0) return;
       const entry = beatLookup[beatIndex]?.get(lookupKey);
-      const action = entry?.action ?? ACTION_ICON_FALLBACK;
+      const baseAction = entry?.action ?? ACTION_ICON_FALLBACK;
+      const isDeathBeat =
+        deathIndex !== null &&
+        beatIndex === deathIndex &&
+        deathUserId &&
+        (character.userId === deathUserId || character.username === deathUserId);
+      const action = isDeathBeat && (!entry || baseAction === DEFAULT_ACTION) ? 'Death' : baseAction;
       const token = parseActionToken(action);
       const image = getActionArt(token.label);
       if (!image || !image.complete || image.naturalWidth === 0) return;
@@ -340,7 +350,13 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
         ctx.drawImage(image, imageX, imageY, iconSize, iconSize);
       }
       const actionLabel = token.label;
-      if (actionLabel && actionLabel !== 'E' && actionLabel !== ACTION_ICON_FALLBACK && actionLabel !== 'DamageIcon') {
+      if (
+        actionLabel &&
+        actionLabel !== 'E' &&
+        actionLabel !== 'Death' &&
+        actionLabel !== ACTION_ICON_FALLBACK &&
+        actionLabel !== 'DamageIcon'
+      ) {
         const priorityValue = Number.isFinite(entry?.priority) ? entry.priority : 0;
         drawPriorityBadge(ctx, imageX, imageY, iconSize, priorityValue, theme);
       }

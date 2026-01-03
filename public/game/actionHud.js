@@ -1,12 +1,8 @@
 import { buildCardElement, fitAllCardText } from '../shared/cardRenderer.js';
 import { buildRotationWheel, ROTATION_LABELS } from './rotationWheel.js';
 
-const buildActionSet = (actions, rotation, priority) =>
-  actions.map((action, index) => ({
-    action,
-    rotation: index === 0 ? rotation : '',
-    priority,
-  }));
+const LOG_PREFIX = '[actionHud]';
+const log = (...args) => console.log(LOG_PREFIX, ...args);
 
 const getRotationMagnitude = (label) => {
   const value = `${label ?? ''}`.trim().toUpperCase();
@@ -50,6 +46,7 @@ export const createActionHud = ({
   if (!root || !movementHand || !abilityHand || !activeSlot || !passiveSlot || !submitButton || !rotationWheel) {
     return {
       setCards: () => {},
+      setExhaustedCards: () => {},
       setHidden: () => {},
       setVisible: () => {},
       setLocked: () => {},
@@ -72,11 +69,14 @@ export const createActionHud = ({
       ability: null,
     },
     headerHeight: null,
+    lastVisible: null,
+    lastLocked: null,
   };
 
   const wheel = buildRotationWheel(rotationWheel, (rotation) => {
     if (state.locked) return;
     state.selectedRotation = rotation;
+    log('rotation', rotation);
     updateSubmitState();
   });
 
@@ -141,6 +141,7 @@ export const createActionHud = ({
     }
     state.slots[slotName] = null;
     updateSlotState(slotName);
+    log('slot-clear', { slotName, cardId });
   };
 
   const updateRotationRestriction = () => {
@@ -191,6 +192,7 @@ export const createActionHud = ({
     updateSlotState(slotName);
     updateRotationRestriction();
     updateSubmitState();
+    log('slot-assign', { slotName, cardId });
   };
 
   const returnCardToHand = (cardId) => {
@@ -206,6 +208,7 @@ export const createActionHud = ({
       clearSlot('passive');
     }
     updateSubmitState();
+    log('return-to-hand', { cardId });
   };
 
   const chooseSlotForCard = (card) => {
@@ -411,15 +414,32 @@ export const createActionHud = ({
     if (options.exhaustedCardIds) {
       setExhaustedCards(options.exhaustedCardIds);
     }
+    log('set-cards', {
+      movement: movementList.length,
+      ability: abilityList.length,
+      exhausted: options.exhaustedCardIds ? options.exhaustedCardIds.length : 0,
+    });
     requestAnimationFrame(() => fitAllCardText(root));
   };
 
   const setExhaustedCards = (cardIds) => {
     const next = new Set(Array.isArray(cardIds) ? cardIds : [...(cardIds || [])]);
+    const sameSize = next.size === state.exhaustedCards.size;
+    let isSame = sameSize;
+    if (sameSize) {
+      for (const id of next) {
+        if (!state.exhaustedCards.has(id)) {
+          isSame = false;
+          break;
+        }
+      }
+    }
+    if (isSame) return;
     state.exhaustedCards = next;
     state.cardsById.forEach((card) => {
       setCardExhausted(card, next.has(card.id));
     });
+    log('set-exhausted', { count: next.size });
   };
 
   const setVisible = (visible) => {
@@ -428,11 +448,16 @@ export const createActionHud = ({
     root.hidden = state.hidden;
     state.cardsById.forEach((card) => setCardDraggable(card, !state.locked && state.turnActive));
     updateSubmitState();
+    if (state.lastVisible !== state.turnActive) {
+      log('visible', state.turnActive);
+      state.lastVisible = state.turnActive;
+    }
   };
 
   const setHidden = (hidden) => {
     state.hidden = Boolean(hidden);
     root.hidden = state.hidden;
+    log('hidden', state.hidden);
   };
 
   const setLocked = (locked) => {
@@ -440,6 +465,10 @@ export const createActionHud = ({
     root.classList.toggle('is-locked', state.locked);
     state.cardsById.forEach((card) => setCardDraggable(card, !state.locked && state.turnActive));
     updateSubmitState();
+    if (state.lastLocked !== state.locked) {
+      log('locked', state.locked);
+      state.lastLocked = state.locked;
+    }
   };
 
   const clearSelection = () => {
@@ -454,12 +483,24 @@ export const createActionHud = ({
 
   submitButton.addEventListener('click', () => {
     const activeCard = getActiveCard();
+    const passiveCard = getPassiveCard();
+    const rotation = state.selectedRotation;
     const hasActionList = Array.isArray(activeCard?.actions) && activeCard.actions.length > 0;
-    if (!activeCard || !hasActionList || !isRotationAllowed(state.selectedRotation) || !getPassiveCard()) return;
-    const actionList = buildActionSet(activeCard.actions, state.selectedRotation, activeCard.priority);
+    if (!activeCard || !passiveCard || !hasActionList || !isRotationAllowed(rotation)) return;
+    log('submit', {
+      activeCardId: activeCard.id,
+      passiveCardId: passiveCard.id,
+      rotation,
+      activeActions: activeCard.actions?.length ?? 0,
+    });
     if (onSubmit) {
-      const passiveCard = getPassiveCard();
-      void onSubmit({ actionList, activeCard, passiveCard });
+      void onSubmit({
+        activeCardId: activeCard.id,
+        passiveCardId: passiveCard.id,
+        rotation,
+        activeCard,
+        passiveCard,
+      });
     }
   });
 

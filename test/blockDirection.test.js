@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { executeBeats } = require('../dist/game/execute.js');
 
-const buildEntry = (username, action, priority, position, facing) => ({
+const buildEntry = (username, action, priority, position, facing, attackDamage = 0, attackKbf = 0) => ({
   username,
   action,
   rotation: '',
@@ -11,6 +11,8 @@ const buildEntry = (username, action, priority, position, facing) => ({
   location: { q: position.q, r: position.r },
   facing,
   calculated: false,
+  attackDamage,
+  attackKbf,
 });
 
 test('block stops attacks coming from the facing side', () => {
@@ -22,7 +24,7 @@ test('block stops attacks coming from the facing side', () => {
   const beats = [
     [
       buildEntry('blocker', 'b', 99, characters[0].position, characters[0].facing),
-      buildEntry('attacker', 'a', 90, characters[1].position, characters[1].facing),
+      buildEntry('attacker', 'a', 90, characters[1].position, characters[1].facing, 3, 1),
     ],
   ];
 
@@ -43,7 +45,7 @@ test('block does not protect against attacks from the opposite side', () => {
   const beats = [
     [
       buildEntry('blocker', 'b', 99, characters[0].position, characters[0].facing),
-      buildEntry('attacker', 'a', 90, characters[1].position, characters[1].facing),
+      buildEntry('attacker', 'a', 90, characters[1].position, characters[1].facing, 3, 1),
     ],
   ];
 

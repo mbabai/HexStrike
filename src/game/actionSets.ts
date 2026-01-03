@@ -1,51 +1,44 @@
-import { ActionSetItem, BeatEntry, CharacterState } from '../types';
+import { ActionListItem, BeatEntry, PublicCharacter } from '../types';
 
 const DEFAULT_ACTION = 'E';
+const LOG_PREFIX = '[actionSets]';
 
 const cloneLocation = (location?: { q: number; r: number }) =>
   location ? { q: location.q, r: location.r } : { q: 0, r: 0 };
 
-const normalizeFacing = (facing: unknown, fallback: number) => {
+const normalizeFacing = (facing: number | string | undefined, fallback: number) => {
   if (typeof facing === 'number' && Number.isFinite(facing)) return facing;
   const parsed = typeof facing === 'string' ? Number(facing) : NaN;
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const findEntryForUser = (beat: BeatEntry, targetUsername: string, targetUserId: string) =>
-  beat.find((entry) => entry.username === targetUsername || entry.username === targetUserId);
-
-const normalizeBeatEntry = (entry: BeatEntry[number], characters: CharacterState[]) => {
-  const character = characters.find(
-    (candidate) => candidate.username === entry.username || candidate.userId === entry.username,
-  );
-  const damage = typeof entry.damage === 'number' ? entry.damage : 0;
-  const priority = typeof entry.priority === 'number' ? entry.priority : 0;
-  const location = cloneLocation(entry.location ?? character?.position);
-  const facing = normalizeFacing(entry.facing, character?.facing ?? 0);
-  const rotation =
-    typeof entry.rotation === 'string' || typeof entry.rotation === 'number' ? `${entry.rotation}` : '';
-  const calculated = Boolean(entry.calculated);
-  return {
-    ...entry,
-    action: entry.action || DEFAULT_ACTION,
-    rotation,
-    priority,
-    damage,
-    location,
-    facing,
-    calculated,
-  };
+const matchesEntryForCharacter = (entry: BeatEntry, character: PublicCharacter) => {
+  const key = entry.username ?? entry.userId ?? entry.userID;
+  return key === character.username || key === character.userId;
 };
 
-const sortBeatEntries = (beat: BeatEntry, characters: CharacterState[]) => {
+const findEntryForUser = (beat: BeatEntry[], target: PublicCharacter) =>
+  beat.find((entry) => matchesEntryForCharacter(entry, target));
+
+const cloneEntry = (entry: BeatEntry): BeatEntry => {
+  const next: BeatEntry = { ...entry };
+  if (entry.location) {
+    next.location = cloneLocation(entry.location);
+  }
+  return next;
+};
+
+const sortBeatEntries = (beat: BeatEntry[], characters: PublicCharacter[]) => {
   const order = new Map<string, number>();
   characters.forEach((character, index) => {
     order.set(character.username, index);
     order.set(character.userId, index);
   });
   beat.sort((a, b) => {
-    const indexA = order.get(a.username);
-    const indexB = order.get(b.username);
+    const keyA = a.username ?? a.userId ?? a.userID ?? '';
+    const keyB = b.username ?? b.userId ?? b.userID ?? '';
+    const indexA = order.get(keyA);
+    const indexB = order.get(keyB);
     const scoreA = typeof indexA === 'number' ? indexA : Number.MAX_SAFE_INTEGER;
     const scoreB = typeof indexB === 'number' ? indexB : Number.MAX_SAFE_INTEGER;
     return scoreA - scoreB;
@@ -53,15 +46,17 @@ const sortBeatEntries = (beat: BeatEntry, characters: CharacterState[]) => {
 };
 
 const buildTargetEntry = (
-  target: CharacterState,
+  target: PublicCharacter,
   action: string,
   rotation: string,
   priority: number,
-  interaction: ActionSetItem['interaction'],
+  interaction: ActionListItem['interaction'],
+  attackDamage: number | undefined,
+  attackKbf: number | undefined,
   seed: { damage: number; location: { q: number; r: number }; facing: number },
-) => {
-  const entry: BeatEntry[number] = {
-    username: target.username,
+): BeatEntry => {
+  const entry: BeatEntry = {
+    username: target.username ?? target.userId,
     action,
     rotation,
     priority,
@@ -73,24 +68,40 @@ const buildTargetEntry = (
   if (interaction) {
     entry.interaction = interaction;
   }
+  if (Number.isFinite(attackDamage)) {
+    entry.attackDamage = attackDamage;
+  }
+  if (Number.isFinite(attackKbf)) {
+    entry.attackKbf = attackKbf;
+  }
   return entry;
 };
 
 export const applyActionSetToBeats = (
-  beats: BeatEntry[],
-  characters: CharacterState[],
+  beats: BeatEntry[][],
+  characters: PublicCharacter[],
   targetUserId: string,
-  actionList: ActionSetItem[],
-): BeatEntry[] => {
+  actionList: ActionListItem[],
+  play: unknown[] = [],
+): BeatEntry[][] => {
   const target = characters.find((character) => character.userId === targetUserId);
-  if (!target || !actionList.length) return beats;
+  if (!target || !actionList.length) {
+    console.log(LOG_PREFIX, 'skip', {
+      targetUserId,
+      hasTarget: Boolean(target),
+      actionCount: actionList.length,
+      beatsLength: beats.length,
+    });
+    return beats;
+  }
 
-  const updated = beats.map((beat) => beat.map((entry) => normalizeBeatEntry(entry, characters)));
+  const updated = beats.map((beat) => beat.map((entry) => cloneEntry(entry)));
+  const beforeLength = updated.length;
   let startIndex = updated.length;
-  let lastTargetEntry: BeatEntry[number] | undefined;
+  let lastTargetEntry: BeatEntry | undefined;
 
   for (let i = 0; i < updated.length; i += 1) {
-    const entry = findEntryForUser(updated[i], target.username, target.userId);
+    const entry = findEntryForUser(updated[i], target);
     if (!entry) {
       startIndex = i;
       break;
@@ -108,17 +119,15 @@ export const applyActionSetToBeats = (
     facing: normalizeFacing(lastTargetEntry?.facing, target.facing ?? 0),
   };
 
-  const actions = actionList.map((item, index) => {
-    const actionItem: ActionSetItem = {
-      action: item.action,
-      rotation: index === 0 ? item.rotation : '',
-      priority: item.priority,
-    };
-    if (item.interaction) {
-      actionItem.interaction = item.interaction;
-    }
-    return actionItem;
-  });
+  const actions = actionList.map((item, index) => ({
+    action: item.action,
+    rotation: index === 0 ? item.rotation : '',
+    priority: item.priority,
+    interaction: item.interaction,
+    attackDamage: item.damage,
+    attackKbf: item.kbf,
+  }));
+  const lastIndex = startIndex + actions.length - 1;
 
   const ensureBeat = (index: number) => {
     while (updated.length <= index) {
@@ -130,8 +139,10 @@ export const applyActionSetToBeats = (
     const index = startIndex + offset;
     ensureBeat(index);
     const beat = updated[index];
-    const entry = findEntryForUser(beat, target.username, target.userId);
+    const entry = findEntryForUser(beat, target);
+    let primaryEntry: BeatEntry | null = null;
     if (entry) {
+      entry.username = target.username ?? target.userId;
       entry.action = actionItem.action;
       entry.rotation = actionItem.rotation;
       entry.priority = actionItem.priority;
@@ -140,36 +151,76 @@ export const applyActionSetToBeats = (
       } else if ('interaction' in entry) {
         delete entry.interaction;
       }
+      if (Number.isFinite(actionItem.attackDamage)) {
+        entry.attackDamage = actionItem.attackDamage;
+      }
+      if (Number.isFinite(actionItem.attackKbf)) {
+        entry.attackKbf = actionItem.attackKbf;
+      }
       entry.damage = seed.damage;
       entry.location = cloneLocation(seed.location);
       entry.facing = seed.facing;
       entry.calculated = false;
+      primaryEntry = entry;
     } else {
-      beat.push(
-        buildTargetEntry(
-          target,
-          actionItem.action,
-          actionItem.rotation,
-          actionItem.priority,
-          actionItem.interaction,
-          seed,
-        ),
+      const nextEntry = buildTargetEntry(
+        target,
+        actionItem.action,
+        actionItem.rotation,
+        actionItem.priority,
+        actionItem.interaction,
+        actionItem.attackDamage,
+        actionItem.attackKbf,
+        seed,
       );
+      beat.push(nextEntry);
+      primaryEntry = nextEntry;
     }
+
+    if (primaryEntry) {
+      for (let i = beat.length - 1; i >= 0; i -= 1) {
+        const candidate = beat[i];
+        if (candidate === primaryEntry) continue;
+        if (matchesEntryForCharacter(candidate, target)) {
+          beat.splice(i, 1);
+        }
+      }
+    }
+
     if (beat.length > 1) {
       sortBeatEntries(beat, characters);
     }
+
+    if (offset === 0 && play.length) {
+      const primaryEntry = findEntryForUser(beat, target);
+      if (primaryEntry) {
+        primaryEntry.play = play.slice();
+      }
+    }
   });
 
-  const lastIndex = startIndex + actions.length - 1;
+  let removedCount = 0;
   for (let i = lastIndex + 1; i < updated.length; i += 1) {
     const beat = updated[i];
     if (!beat.length) continue;
-    const filtered = beat.filter((entry) => entry.username !== target.username && entry.username !== target.userId);
+    const filtered = beat.filter((entry) => !matchesEntryForCharacter(entry, target));
     if (filtered.length !== beat.length) {
       updated[i] = filtered;
+      removedCount += beat.length - filtered.length;
     }
   }
+
+  const afterLength = updated.length;
+  console.log(LOG_PREFIX, 'apply', {
+    targetUserId,
+    startIndex,
+    lastIndex,
+    beforeLength,
+    afterLength,
+    removedCount,
+    actionCount: actions.length,
+    actions: actions.map((item) => item.action),
+  });
 
   return updated;
 };

@@ -1,44 +1,28 @@
-import { CharacterState, GameState, HexCoord } from '../types';
 import { getCharacterName } from './characters';
-import { join } from 'path';
-import { pathToFileURL } from 'url';
+import { buildDefaultLandHexes, getTerrain } from './hexGrid';
+import { CharacterId, GameStateDoc } from '../types';
 
-type SharedHexModule = {
-  LAND_HEXES: HexCoord[];
-};
-
-let sharedHexPromise: Promise<SharedHexModule> | null = null;
-const dynamicImport = new Function('specifier', 'return import(specifier);') as (
-  specifier: string,
-) => Promise<SharedHexModule>;
-
-const loadSharedHex = () => {
-  if (!sharedHexPromise) {
-    const moduleUrl = pathToFileURL(join(process.cwd(), 'public', 'shared', 'hex.mjs')).href;
-    sharedHexPromise = dynamicImport(moduleUrl);
-  }
-  return sharedHexPromise;
-};
-
-const STARTING_CHARACTERS: Array<Omit<CharacterState, 'userId' | 'username' | 'characterId' | 'characterName'>> = [
+const STARTING_CHARACTERS = [
   { position: { q: 2, r: 0 }, facing: 0 },
   { position: { q: -2, r: 0 }, facing: 180 },
 ];
+
 const DEFAULT_BEAT_COUNT = 1;
 const DEFAULT_ACTION = 'E';
 
 export const createInitialGameState = async (
-  players: Array<{ userId: string; username: string; characterId: CharacterState['characterId'] }> = [],
-): Promise<GameState> => {
-  const { LAND_HEXES } = await loadSharedHex();
+  players: Array<{ userId: string; username: string; characterId: CharacterId }> = [],
+): Promise<GameStateDoc> => {
   const roster = players.slice(0, STARTING_CHARACTERS.length);
   const characters = roster.map((player, index) => ({
     userId: player.userId,
     username: player.username,
     characterId: player.characterId,
     characterName: getCharacterName(player.characterId),
-    ...STARTING_CHARACTERS[index],
+    position: { ...STARTING_CHARACTERS[index].position },
+    facing: STARTING_CHARACTERS[index].facing,
   }));
+  const land = buildDefaultLandHexes();
   const beats = Array.from({ length: characters.length ? DEFAULT_BEAT_COUNT : 0 }, () =>
     characters.map((character) => ({
       username: character.username,
@@ -47,17 +31,21 @@ export const createInitialGameState = async (
       priority: 0,
       damage: 0,
       location: { q: character.position.q, r: character.position.r },
+      terrain: getTerrain(character.position),
       facing: character.facing,
       calculated: false,
     })),
   );
+
   return {
     public: {
-      land: LAND_HEXES.map((tile) => ({ q: tile.q, r: tile.r })),
+      land,
       beats,
+      timeline: beats,
       characters,
       pendingActions: undefined,
       customInteractions: [],
+      matchOutcome: undefined,
     },
     secret: {},
   };

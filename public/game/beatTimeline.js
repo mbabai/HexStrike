@@ -2,17 +2,28 @@ const DEFAULT_ACTION = 'E';
 
 export const getBeatEntryForCharacter = (beat, character) => {
   if (!Array.isArray(beat) || !character) return null;
-  const username = character.username;
-  const userId = character.userId;
-  return beat.find((entry) => {
-    if (!entry || typeof entry !== 'object') return false;
-    const key = entry.username ?? entry.userId ?? entry.userID;
-    return key === username || key === userId;
-  }) || null;
+  const lookupKeys = new Set([character.username, character.userId].filter(Boolean));
+  return (
+    beat.find((entry) => {
+      if (!entry || typeof entry !== 'object') return false;
+      const key = entry.username ?? entry.userId ?? entry.userID;
+      return lookupKeys.has(key);
+    }) ?? null
+  );
+};
+
+export const getLastEntryForCharacter = (beats, character, uptoIndex = beats.length - 1) => {
+  if (!Array.isArray(beats) || !beats.length || !character) return null;
+  const lastIndex = Math.min(uptoIndex, beats.length - 1);
+  for (let i = lastIndex; i >= 0; i -= 1) {
+    const entry = getBeatEntryForCharacter(beats[i], character);
+    if (entry) return entry;
+  }
+  return null;
 };
 
 export const getCharacterFirstEIndex = (beats, character) => {
-  if (!Array.isArray(beats) || !beats.length || !character) return 0;
+  if (!Array.isArray(beats) || !beats.length) return 0;
   for (let i = 0; i < beats.length; i += 1) {
     const entry = getBeatEntryForCharacter(beats[i], character);
     if (!entry || entry.action === DEFAULT_ACTION) return i;
@@ -20,40 +31,33 @@ export const getCharacterFirstEIndex = (beats, character) => {
   return Math.max(0, beats.length - 1);
 };
 
-export const getTimelineMaxIndex = (beats, characters) => {
-  if (!Array.isArray(beats) || !beats.length || !Array.isArray(characters) || !characters.length) {
-    return 0;
-  }
-  let maxIndex = beats.length - 1;
+export const getTimelineEarliestEIndex = (beats, characters) => {
+  if (!Array.isArray(beats) || !beats.length || !Array.isArray(characters) || !characters.length) return 0;
+  let earliest = beats.length - 1;
   characters.forEach((character) => {
     const firstE = getCharacterFirstEIndex(beats, character);
-    if (firstE < maxIndex) maxIndex = firstE;
+    if (firstE < earliest) earliest = firstE;
   });
-  return Math.max(0, maxIndex);
+  return Math.max(0, earliest);
+};
+
+export const getCharactersAtEarliestE = (beats, characters) => {
+  const earliest = getTimelineEarliestEIndex(beats, characters);
+  return (characters ?? []).filter((character) => getCharacterFirstEIndex(beats, character) === earliest);
 };
 
 export const getEarliestPendingInteractionIndex = (interactions) => {
   if (!Array.isArray(interactions) || !interactions.length) return null;
-  let earliest = null;
-  interactions.forEach((interaction) => {
-    if (!interaction || interaction.status !== 'pending') return;
-    const beatIndex = Number(interaction.beatIndex);
-    if (!Number.isFinite(beatIndex)) return;
-    if (earliest === null || beatIndex < earliest) earliest = beatIndex;
-  });
-  return earliest;
+  const pending = interactions
+    .filter((interaction) => interaction?.status === 'pending' && Number.isFinite(interaction?.beatIndex))
+    .map((interaction) => interaction.beatIndex);
+  if (!pending.length) return null;
+  return Math.min(...pending);
 };
 
-export const getTimelineStopIndex = (beats, characters, interactions) => {
-  const earliestE = getTimelineMaxIndex(beats, characters);
-  const earliestInteraction = getEarliestPendingInteractionIndex(interactions);
-  if (earliestInteraction === null) return earliestE;
-  return Math.min(earliestE, earliestInteraction);
-};
-
-export const isCharacterAtEarliestE = (beats, characters, character) => {
-  if (!character) return false;
-  const earliest = getTimelineMaxIndex(beats, characters);
-  const firstE = getCharacterFirstEIndex(beats, character);
-  return firstE === earliest;
+export const getTimelineStopIndex = (beats, characters, interactions = []) => {
+  const earliestE = getTimelineEarliestEIndex(beats, characters);
+  const pendingIndex = getEarliestPendingInteractionIndex(interactions);
+  if (pendingIndex === null) return earliestE;
+  return Math.min(earliestE, pendingIndex);
 };

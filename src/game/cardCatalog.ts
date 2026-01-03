@@ -1,37 +1,13 @@
 import { readFile } from 'fs';
 import { join } from 'path';
-
-export type CardType = 'movement' | 'ability';
-
-export interface CardDefinition {
-  id: string;
-  name: string;
-  type: CardType;
-  priority: number;
-  actions: string[];
-  rotations: string;
-  damage: number;
-  kbf: number;
-  activeText?: string;
-  passiveText?: string;
-}
-
-export interface DeckDefinition {
-  movement: string[];
-  ability: string[];
-}
-
-export interface CardCatalog {
-  movement: CardDefinition[];
-  ability: CardDefinition[];
-  decks: DeckDefinition[];
-  cardsById: Map<string, CardDefinition>;
-}
+import { CardCatalog, CardDefinition, CardType, DeckDefinition } from '../types';
 
 const CARD_DATA_PATH = join(process.cwd(), 'public', 'cards', 'cards.json');
+
 let catalogPromise: Promise<CardCatalog> | null = null;
-const readFileUtf8 = (path: string) =>
-  new Promise<string>((resolve, reject) => {
+
+const readFileUtf8 = (path: string): Promise<string> =>
+  new Promise((resolve, reject) => {
     readFile(path, (err, data) => {
       if (err) {
         reject(err);
@@ -42,7 +18,7 @@ const readFileUtf8 = (path: string) =>
     });
   });
 
-const normalizeCard = (card: any, type: CardType, index: number): CardDefinition => {
+const normalizeCard = (card: unknown, type: CardType, index: number): CardDefinition => {
   if (!card || typeof card !== 'object') {
     return {
       id: `${type}-${index}`,
@@ -55,29 +31,31 @@ const normalizeCard = (card: any, type: CardType, index: number): CardDefinition
       kbf: 0,
     };
   }
-  const id = typeof card.id === 'string' && card.id.trim() ? card.id.trim() : `${type}-${index}`;
-  const name = typeof card.name === 'string' && card.name.trim() ? card.name.trim() : id;
-  const actions = Array.isArray(card.actions)
-    ? card.actions.map((action: unknown) => `${action ?? ''}`.trim()).filter(Boolean)
+  const raw = card as Record<string, unknown>;
+  const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim() : `${type}-${index}`;
+  const name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : id;
+  const actions = Array.isArray(raw.actions)
+    ? raw.actions.map((action) => `${action ?? ''}`.trim()).filter(Boolean)
     : [];
-  const rotations = typeof card.rotations === 'string' && card.rotations.trim() ? card.rotations.trim() : '*';
-  const priority = Number.isFinite(card.priority) ? card.priority : 0;
-  const damage = Number.isFinite(card.damage) ? card.damage : 0;
-  const kbf = Number.isFinite(card.kbf) ? card.kbf : 0;
-  const activeText = typeof card.activeText === 'string' ? card.activeText : undefined;
-  const passiveText = typeof card.passiveText === 'string' ? card.passiveText : undefined;
+  const rotations = typeof raw.rotations === 'string' && raw.rotations.trim() ? raw.rotations.trim() : '*';
+  const priority = Number.isFinite(raw.priority) ? Number(raw.priority) : 0;
+  const damage = Number.isFinite(raw.damage) ? Number(raw.damage) : 0;
+  const kbf = Number.isFinite(raw.kbf) ? Number(raw.kbf) : 0;
+  const activeText = typeof raw.activeText === 'string' ? raw.activeText : undefined;
+  const passiveText = typeof raw.passiveText === 'string' ? raw.passiveText : undefined;
   return { id, name, type, priority, actions, rotations, damage, kbf, activeText, passiveText };
 };
 
-const normalizeDeck = (deck: any, index: number): DeckDefinition => {
+const normalizeDeck = (deck: unknown): DeckDefinition => {
   if (!deck || typeof deck !== 'object') {
     return { movement: [], ability: [] };
   }
-  const movement = Array.isArray(deck.movement)
-    ? deck.movement.map((cardId: unknown) => `${cardId ?? ''}`.trim()).filter(Boolean)
+  const raw = deck as Record<string, unknown>;
+  const movement = Array.isArray(raw.movement)
+    ? raw.movement.map((cardId) => `${cardId ?? ''}`.trim()).filter(Boolean)
     : [];
-  const ability = Array.isArray(deck.ability)
-    ? deck.ability.map((cardId: unknown) => `${cardId ?? ''}`.trim()).filter(Boolean)
+  const ability = Array.isArray(raw.ability)
+    ? raw.ability.map((cardId) => `${cardId ?? ''}`.trim()).filter(Boolean)
     : [];
   if (!movement.length && !ability.length) {
     return { movement: [], ability: [] };
@@ -100,7 +78,7 @@ export const loadCardCatalog = async (): Promise<CardCatalog> => {
       return {
         movement: movementCards,
         ability: abilityCards,
-        decks: decks.map((deck, index) => normalizeDeck(deck, index)),
+        decks: decks.map((deck) => normalizeDeck(deck)),
         cardsById,
       };
     });

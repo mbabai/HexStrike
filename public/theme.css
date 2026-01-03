@@ -1103,9 +1103,9 @@ small {
   inset: 0;
   display: grid;
   place-items: center;
-  background: var(--color-panel-veil);
+  background: transparent;
   z-index: 8;
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .interaction-overlay[hidden] {

@@ -123,3 +123,80 @@ test('resolveLandRefreshes skips refresh off land', async () => {
   assert.equal(offLandState.abilityHand.length, 3);
   assert.equal(offLandState.lastRefreshIndex, null);
 });
+
+test('resolveLandRefreshes uses beat location over character position', async () => {
+  const catalog = await loadCardCatalog();
+  const deck = buildSampleDeck(catalog);
+  const movementCardId = deck.movement[0];
+  const abilityCardId = deck.ability[0];
+  const character = {
+    userId: 'player-1',
+    username: 'Player 1',
+    characterId: 'murelious',
+    characterName: 'Murelious',
+    position: { q: 0, r: 0 },
+    facing: 0,
+  };
+  const beats = [
+    [
+      {
+        username: 'Player 1',
+        action: 'E',
+        rotation: '',
+        priority: 0,
+        damage: 0,
+        location: { q: 5, r: 0 },
+        facing: 0,
+        calculated: false,
+      },
+    ],
+  ];
+  const deckState = createDeckState(deck);
+  applyCardUse(deckState, { movementCardId, abilityCardId });
+  resolveLandRefreshes(new Map([['player-1', deckState]]), beats, [character], [{ q: 0, r: 0 }]);
+  assert.equal(deckState.exhaustedMovementIds.has(movementCardId), true);
+  assert.equal(deckState.abilityHand.length, 3);
+  assert.equal(deckState.lastRefreshIndex, null);
+});
+
+test('resolveLandRefreshes skips refresh while pending actions at earliest beat', async () => {
+  const catalog = await loadCardCatalog();
+  const deck = buildSampleDeck(catalog);
+  const movementCardId = deck.movement[0];
+  const abilityCardId = deck.ability[0];
+  const character = {
+    userId: 'player-1',
+    username: 'Player 1',
+    characterId: 'murelious',
+    characterName: 'Murelious',
+    position: { q: 0, r: 0 },
+    facing: 0,
+  };
+  const beats = [
+    [
+      {
+        username: 'Player 1',
+        action: 'E',
+        rotation: '',
+        priority: 0,
+        damage: 0,
+        location: { q: 0, r: 0 },
+        facing: 0,
+        calculated: false,
+      },
+    ],
+  ];
+  const deckState = createDeckState(deck);
+  applyCardUse(deckState, { movementCardId, abilityCardId });
+  resolveLandRefreshes(
+    new Map([['player-1', deckState]]),
+    beats,
+    [character],
+    [{ q: 0, r: 0 }],
+    [],
+    { beatIndex: 0, requiredUserIds: ['player-1'], submittedUserIds: ['player-1'] },
+  );
+  assert.equal(deckState.exhaustedMovementIds.has(movementCardId), true);
+  assert.equal(deckState.abilityHand.length, 3);
+  assert.equal(deckState.lastRefreshIndex, null);
+});

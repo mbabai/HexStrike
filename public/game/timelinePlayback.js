@@ -1,8 +1,8 @@
+import { getLastEntryForCharacter } from './beatTimeline.js';
+
 const DEFAULT_ACTION = 'E';
 const WAIT_ACTION = 'W';
 const DAMAGE_ICON_ACTION = 'DamageIcon';
-const ATTACK_DAMAGE = 3;
-const KNOCKBACK_FACTOR = 2;
 const KNOCKBACK_DIVISOR = 10;
 const ACTION_DURATION_MS = 1200;
 const THROW_DISTANCE = 2;
@@ -260,8 +260,12 @@ const buildPath = (origin, steps, facing) => {
   return { positions, destination: current, lastStep };
 };
 
-const getKnockbackDistance = (damage) =>
-  Math.max(1, Math.floor((damage * KNOCKBACK_FACTOR) / KNOCKBACK_DIVISOR));
+const getKnockbackDistance = (damage, kbf) => {
+  if (!Number.isFinite(damage) || !Number.isFinite(kbf)) return 0;
+  if (kbf <= 0) return 0;
+  if (kbf === 1) return 1;
+  return Math.max(1, Math.floor((Math.max(0, damage) * kbf) / KNOCKBACK_DIVISOR));
+};
 
 const getKnockbackDirection = (origin, destination, lastStep) => {
   if (lastStep) return { q: lastStep.q, r: lastStep.r };
@@ -280,22 +284,20 @@ const getResolvedDirectionIndex = (interaction) => {
   return rounded;
 };
 
-const getEntryForCharacter = (beat, character) => {
-  if (!Array.isArray(beat) || !character) return null;
-  return beat.find((entry) => {
-    if (!entry || typeof entry !== 'object') return false;
-    return entry.username === character.username || entry.username === character.userId;
-  }) || null;
-};
-
-const buildBaseState = (beat, characters) => {
+const buildBaseState = (beats, beatIndex, characters) => {
+  const lookupIndex = Number.isFinite(beatIndex) ? beatIndex - 1 : (beats?.length ?? 0) - 1;
   return characters.map((character) => {
-    const entry = getEntryForCharacter(beat, character);
+    const entry = lookupIndex >= 0 ? getLastEntryForCharacter(beats, character, lookupIndex) : null;
     return {
       ...character,
       position: entry?.location ?? { q: character.position.q, r: character.position.r },
       facing: Number.isFinite(entry?.facing) ? entry.facing : normalizeDegrees(character.facing ?? 0),
-      damage: typeof entry?.damage === 'number' ? entry.damage : 0,
+      damage:
+        typeof entry?.damage === 'number'
+          ? entry.damage
+          : typeof character.damage === 'number'
+            ? character.damage
+            : 0,
     };
   });
 };
@@ -361,6 +363,8 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex) 
     const origin = { q: actorState.position.q, r: actorState.position.r };
     const rotationDelta = parseRotationDegrees(entry.rotation ?? '');
     actorState.facing = normalizeDegrees(actorState.facing + rotationDelta);
+    const entryDamage = Number.isFinite(entry?.attackDamage) ? entry.attackDamage : 0;
+    const entryKbf = Number.isFinite(entry?.attackKbf) ? entry.attackKbf : 0;
 
     const effects = [];
     const damageChanges = [];
@@ -415,22 +419,23 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex) 
         blockMap.get(targetKey)?.has(directionIndex);
 
       if (token.type === 'a' || token.type === 'c') {
-        if (targetId && isBlocked && directionIndex != null) {
+        const isThrow = entry.interaction?.type === 'throw';
+        const blocked = isBlocked && !isThrow;
+        if (targetId && blocked && directionIndex != null) {
           blockHits.push({ coord: { q: destination.q, r: destination.r }, directionIndex });
         }
-        if (targetId && !isBlocked) {
+        if (targetId && !blocked) {
           const targetState = state.get(targetId);
           if (targetState) {
             const fromPosition = { q: targetState.position.q, r: targetState.position.r };
-            const isThrow = entry.interaction?.type === 'throw';
             if (isThrow) {
               const interactionId = buildInteractionId(beatIndex, actorId, targetId);
               const interaction = interactionById.get(interactionId);
               const resolvedDirection = getResolvedDirectionIndex(interaction);
               const knockbackPath = [{ q: targetState.position.q, r: targetState.position.r }];
               if (interaction?.status === 'resolved' && resolvedDirection != null) {
-                targetState.damage += ATTACK_DAMAGE;
-                damageChanges.push({ targetId, delta: ATTACK_DAMAGE });
+                targetState.damage += entryDamage;
+                damageChanges.push({ targetId, delta: entryDamage });
                 const knockbackDirection = AXIAL_DIRECTIONS[resolvedDirection];
                 let finalPosition = { ...targetState.position };
                 if (knockbackDirection && THROW_DISTANCE > 0) {
@@ -439,10 +444,13 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex) 
                       q: finalPosition.q + knockbackDirection.q,
                       r: finalPosition.r + knockbackDirection.r,
                     };
-                    const occupant = occupancy.get(coordKey(candidate));
-                    if (occupant && occupant !== targetId) break;
                     finalPosition = candidate;
                     knockbackPath.push({ q: finalPosition.q, r: finalPosition.r });
+                  }
+                  const landingOccupant = occupancy.get(coordKey(finalPosition));
+                  if (landingOccupant && landingOccupant !== targetId) {
+                    finalPosition = { ...targetState.position };
+                    knockbackPath.splice(1);
                   }
                 }
                 if (!sameCoord(finalPosition, targetState.position)) {
@@ -474,10 +482,10 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex) 
               }
               return;
             }
-            targetState.damage += ATTACK_DAMAGE;
-            damageChanges.push({ targetId, delta: ATTACK_DAMAGE });
+            targetState.damage += entryDamage;
+            damageChanges.push({ targetId, delta: entryDamage });
             const knockbackDirection = getKnockbackDirection(origin, destination, lastStep);
-            const knockbackDistance = getKnockbackDistance(targetState.damage);
+            const knockbackDistance = getKnockbackDistance(targetState.damage, entryKbf);
             let finalPosition = { ...targetState.position };
             const knockbackPath = [{ q: targetState.position.q, r: targetState.position.r }];
             if (knockbackDirection && knockbackDistance > 0) {
@@ -611,8 +619,7 @@ export const createTimelinePlayback = () => {
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
     const beat = beats[beatIndex] ?? [];
-    const priorBeat = beatIndex > 0 ? beats[beatIndex - 1] : null;
-    const baseState = buildBaseState(priorBeat, characters);
+    const baseState = buildBaseState(beats, beatIndex, characters);
 
     if (!isBeatCalculated(beat)) {
       playback = null;
@@ -687,6 +694,13 @@ export const createTimelinePlayback = () => {
       renderCharacters = applyStep(renderCharacters, steps[i]);
     }
 
+    const baseDamageById = new Map();
+    renderCharacters.forEach((character) => {
+      const baseDamage = typeof character.damage === 'number' ? character.damage : 0;
+      baseDamageById.set(character.userId, baseDamage);
+      if (character.username) baseDamageById.set(character.username, baseDamage);
+    });
+
     const currentStep = steps[stepIndex];
     if (currentStep && stepProgress > 0) {
       renderCharacters = applyStep(renderCharacters, {
@@ -731,13 +745,18 @@ export const createTimelinePlayback = () => {
       renderCharacters[index] = next;
     };
 
-    const buildDamagePreview = (changes) => {
+    const buildDamagePreview = (changes, baseDamageLookup) => {
       const preview = new Map();
       (changes ?? []).forEach((change) => {
         const index = characterIndex.get(change.targetId);
         if (index == null) return;
         const current = renderCharacters[index];
-        const base = typeof current.damage === 'number' ? current.damage : 0;
+        const baseValue = baseDamageLookup?.get(change.targetId);
+        const base = Number.isFinite(baseValue)
+          ? baseValue
+          : typeof current.damage === 'number'
+            ? current.damage
+            : 0;
         const existing = preview.get(change.targetId) ?? base;
         preview.set(change.targetId, existing + change.delta);
       });
@@ -799,12 +818,12 @@ export const createTimelinePlayback = () => {
         });
       }
 
-      if (isHitWindow && currentStep.damageChanges?.length && !damagePreviewByStep.has(stepIndex)) {
-        damagePreviewByStep.set(stepIndex, buildDamagePreview(currentStep.damageChanges));
+      if (isHitWindow && currentStep.damageChanges?.length && stepProgress < 1 && !damagePreviewByStep.has(stepIndex)) {
+        damagePreviewByStep.set(stepIndex, buildDamagePreview(currentStep.damageChanges, baseDamageById));
       }
     }
 
-    const previewedDamage = damagePreviewByStep.get(stepIndex);
+    const previewedDamage = stepProgress < 1 ? damagePreviewByStep.get(stepIndex) : null;
     if (previewedDamage?.size) {
       previewedDamage.forEach((damageValue, targetId) => {
         const index = characterIndex.get(targetId);

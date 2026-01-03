@@ -14,6 +14,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - UI action HUD uses movement/ability cards from `public/cards/cards.json`, random/selected deck hand selection in `public/game/cards.js`, and drag/drop wiring in `public/game/actionHud.js`.
 - Action HUD hands are always rendered in a stacked spread, with turn-only slots/rotation and icon-driven card badges.
 - UI match-end rule checks are centralized in `public/game/matchEndRules.js` to keep game-over logic separate from controller wiring.
+- Server match outcomes are evaluated in `src/game/matchEndRules.ts` and stored on `state.public.matchOutcome`.
 - Front-end animation: `public/game/timelinePlayback.js` builds beat-by-beat scenes (characters + effects) consumed by `public/game/renderer.js`.
 - UI portrait badges (name capsules) are drawn with `public/game/portraitBadges.js`; local player accents use `--color-player-accent`.
 - Timeline controls: play/pause is rendered in the center time slot and auto-advance steps when the current beat playback completes.
@@ -40,9 +41,10 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 ## Realtime and client interactions (current)
 - SSE message envelope: `{ type, payload, recipient }`.
 - Message types currently emitted: `connected`, `queueChanged`, `match:created`, `game:update`, `match:ended`.
-- REST endpoints live under `/api/v1/lobby`, `/api/v1/match`, `/api/v1/history`, and `/api/v1/game/interaction`.
+- REST endpoints live under `/api/v1/lobby`, `/api/v1/match`, `/api/v1/history`, and `/api/v1/game/interaction` (plus `/api/v1/match/:id/exit` for per-player leave).
 - `game:update` payloads may include `pendingActions` in public state when concurrent players are submitting action sets.
 - `game:update` payloads may include `customInteractions` (pending/resolved) that pause the timeline until resolved.
+- `game:update` payloads may include `matchOutcome` once the server declares a winner/loser.
 
 ## Persistence and operations (current)
 - `MemoryDb` in `src/persistence/memoryDb.ts` is the only persistence layer and resets on restart.
@@ -74,6 +76,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 
 ## Gotchas (current)
 - Beat entries include `damage`, `location`, and `priority` fields; tests should assert full beat payloads, not just `username`/`action`.
+- Beat entries include `terrain` (`land`/`abyss`) derived from `location` + `public.land`; refresh/abyss logic should prefer this flag.
 - Action-set insertion is per player: replace that player's first open slot (missing entry or `E`), fill empty beats in place, and avoid shifting other players' beats.
 - Action-set rotations only apply to the first action entry; subsequent actions must use a blank rotation to keep timelines aligned.
 - Action-set submissions must include `activeCardId`, `passiveCardId`, and `rotation`; the server rebuilds the action list from the card catalog and rejects unavailable or exhausted cards.
@@ -93,6 +96,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Deck selection cards use `--action-card-scale` and `--deck-selection-hover-lift` in `public/theme.css`; keep the hover lift padding in sync so elevated cards are not clipped.
 - Action icon column placement is controlled by `--action-card-actions-top` in `public/theme.css`; adjust that single value to keep the top icon aligned without colliding with the border.
 - Keep beat arrays ordered by character roster when mutating to prevent UI rows from swapping entries.
+- Do not synthesize missing beat entries just to fill the timeline; missing entries count as `E` and prevent trailing-E spam.
 - Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
 - Timeline gold highlight uses the earliest `E` beat across all players, not the currently viewed beat.
 - Timeline play/pause replaces the center beat label; hit detection is a circular button in `public/game/timeIndicatorView.js` and auto-advance only steps after playback reports completion.
@@ -103,9 +107,15 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Keep `getDirectionIndex` logic in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized so visuals match server resolution.
 - Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.
 - Server-side deck state is tracked per game (in memory); refreshes resolve only when the earliest `E` is on land (gated by `lastRefreshIndex`), clearing movement exhaustion and drawing up to max hand size.
+- Land refresh checks should use the last known beat location at/ before the earliest `E`; avoid `public.characters` positions or you will refresh on abyss.
+- Land refresh should be keyed only by `lastRefreshIndex` + earliest `E` beat; skip refresh entirely while `pendingActions.beatIndex` matches the earliest `E`.
 - If a hit or custom interaction rewrites a player timeline forward, clamp that player's pending refresh beat to their current first `E` or it will block subsequent action submissions.
-- Knockback distance uses `max(1, floor((damage * KNOCKBACK_FACTOR) / KNOCKBACK_DIVISOR))`, and on hit the victim's timeline is rewritten from that beat with `DamageIcon`s plus a trailing `E`.
+- Knockback distance uses accumulated damage after the hit plus card KBF: `KBF=0 -> 0`, `KBF=1 -> 1`, `KBF>1 -> max(1, floor((damage * KBF) / 10))`; on hit the victim's timeline is rewritten from that beat with `DamageIcon`s plus a trailing `E` (no stun window when KBF=0).
+- Attack damage/KBF are taken from the active card and stored on beat entries (`attackDamage`, `attackKbf`); both server and client resolution read from those fields.
+- Match outcomes live in `public.matchOutcome`: distance loss uses the earliest beat where a character is more than 4 hexes from land, places `Death` on the next beat (clearing later entries for that character), and no-cards abyss loss only triggers at the earliest `E` for that player.
+- The Game Over Continue button calls `/api/v1/match/:id/exit` and only removes the local player from the match; the other player stays in-game until they exit or the match is completed.
 - When knockback has already been applied, re-execution must not erase actions placed after the trailing `E`; only the damage-icon window is authoritative.
+- `executeBeats` seeds from `public.characters` (start-of-timeline); do not seed from beat 0 entries because beats store end-of-beat locations and will drift on re-exec.
 - Node test runner reads from `dist`; run `npm run build` (or `tsc`) before `node --test test` when working on TS source.
 - Timeline row separators must render before portrait rings so the local player highlight is visually on top.
 - Board damage capsules are offset outside the ring and drawn without clipping so they sit over the border.
@@ -113,7 +123,8 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Timeline playback timing is tuned in `public/game/timelinePlayback.js` via `ACTION_DURATION_MS` plus swipe/hit/knockback windows; adjust there before changing renderer effects.
 - Trails are drawn as tapered polygons (sharp edges) in `public/game/renderer.js` instead of stroked lines; keep this in mind if changing trail caps or widths.
 - Board portraits render in greyscale when the beat action is `DamageIcon`/`knockbackIcon`; keep the renderer's action tag matching server output.
-- Damage previews during hit shakes are drawn via `displayDamage` on render characters to avoid double-counting at step end.
+- Timeline playback base state should come from the last beat entry at/ before the selected beat; do not use `public.characters` or scrubbing will drift.
+- Damage previews during hit shakes are drawn via `displayDamage` using pre-step damage to avoid double-counting when the step completes.
 - Map panning/zooming is bound to the game area and must ignore UI elements like action cards, slots, or rotation controls; update `PAN_BLOCK_SELECTORS` in `public/game/controls.js` when adding new HUD controls.
 - Find Game is disabled until a deck is selected; the selected deck ID is stored in cookies and its `characterId` plus movement/ability lists are sent with `/api/v1/lobby/join`.
 

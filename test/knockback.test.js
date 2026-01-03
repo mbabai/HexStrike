@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { executeBeats } = require('../dist/game/execute.js');
 
-const buildEntry = (username, action, priority, position, facing) => ({
+const buildEntry = (username, action, priority, position, facing, attackDamage = 0, attackKbf = 0) => ({
   username,
   action,
   rotation: '',
@@ -11,6 +11,8 @@ const buildEntry = (username, action, priority, position, facing) => ({
   location: { q: position.q, r: position.r },
   facing,
   calculated: false,
+  attackDamage,
+  attackKbf,
 });
 
 test('hit applies knockback, clears timeline, and inserts damage icons', () => {
@@ -21,7 +23,7 @@ test('hit applies knockback, clears timeline, and inserts damage icons', () => {
 
   const beats = [
     [
-      buildEntry('attacker', 'a-a', 90, characters[0].position, characters[0].facing),
+      buildEntry('attacker', 'a', 90, characters[0].position, characters[0].facing, 6, 2),
       buildEntry('target', 'm', 10, characters[1].position, characters[1].facing),
     ],
     [
@@ -42,7 +44,7 @@ test('hit applies knockback, clears timeline, and inserts damage icons', () => {
 
   assert.ok(target0, 'target entry should exist at beat 0');
   assert.equal(target0.action, 'DamageIcon');
-  assert.equal(target0.damage, 3);
+  assert.equal(target0.damage, 6);
   assert.deepEqual(target0.location, { q: 1, r: 0 });
 
   assert.ok(target1, 'target entry should exist at beat 1');
@@ -60,7 +62,7 @@ test('knockback re-execution preserves actions added after trailing E', () => {
 
   const beats = [
     [
-      buildEntry('attacker', 'a-a', 90, characters[0].position, characters[0].facing),
+      buildEntry('attacker', 'a', 90, characters[0].position, characters[0].facing, 6, 2),
       buildEntry('target', 'DamageIcon', 10, characters[1].position, characters[1].facing),
     ],
     [

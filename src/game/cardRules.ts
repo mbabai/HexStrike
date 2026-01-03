@@ -1,45 +1,26 @@
-import { ActionSetItem, BeatEntry, CharacterState, CustomInteraction, HexCoord } from '../types';
-import { CardCatalog, CardDefinition, CardType, DeckDefinition } from './cardCatalog';
-import { getCharacterFirstEIndex, getTimelineEarliestEIndex } from './beatTimeline';
+import {
+  ActionListItem,
+  ActionSubmission,
+  ActionValidationResult,
+  CardCatalog,
+  CardUse,
+  CardValidationError,
+  DeckDefinition,
+  DeckState,
+  PlayerCardState,
+  PublicCharacter,
+  BeatEntry,
+  HexCoord,
+  CustomInteraction,
+  PendingActions,
+} from '../types';
+import { getCharacterFirstEIndex, getCharacterLocationAtIndex, getTimelineEarliestEIndex } from './beatTimeline';
 
 const ROTATION_LABELS = ['0', 'R1', 'R2', '3', 'L2', 'L1'];
 const MAX_HAND_SIZE = 4;
 
-interface CardUse {
-  movementCardId: string;
-  abilityCardId: string;
-}
-
-export interface PlayerDeckState {
-  movement: string[];
-  abilityHand: string[];
-  abilityDeck: string[];
-  exhaustedMovementIds: Set<string>;
-  lastRefreshIndex: number | null;
-}
-
-export interface DeckParseResult {
-  deck: DeckDefinition | null;
-  errors: Array<{ code: string; message: string }>;
-}
-
-export interface ActionValidationSuccess {
-  ok: true;
-  actionList: ActionSetItem[];
-  movementCardId: string;
-  abilityCardId: string;
-}
-
-export interface ActionValidationFailure {
-  ok: false;
-  error: { code: string; message: string };
-}
-
-export type ActionValidationResult = ActionValidationSuccess | ActionValidationFailure;
-
-export const isActionValidationFailure = (
-  result: ActionValidationResult,
-): result is ActionValidationFailure => !result.ok;
+export const isActionValidationFailure = (result: ActionValidationResult): result is { ok: false; error: CardValidationError } =>
+  !result.ok;
 
 const normalizeCardId = (value: unknown): string | null => {
   if (typeof value === 'string') {
@@ -59,7 +40,7 @@ const normalizeRotationLabel = (value: unknown): string => {
   return '';
 };
 
-const getRotationMagnitude = (label: string | null): number | null => {
+const getRotationMagnitude = (label: string): number | null => {
   const value = `${label ?? ''}`.trim().toUpperCase();
   if (value === '0') return 0;
   if (value === '3') return 3;
@@ -70,7 +51,7 @@ const getRotationMagnitude = (label: string | null): number | null => {
   return null;
 };
 
-const buildAllowedRotationSet = (restriction: string) => {
+const buildAllowedRotationSet = (restriction: string | undefined): Set<string> | null => {
   const trimmed = `${restriction ?? ''}`.trim();
   if (!trimmed || trimmed === '*') return null;
   const [minRaw, maxRaw] = trimmed.split('-');
@@ -88,14 +69,14 @@ const buildAllowedRotationSet = (restriction: string) => {
   return allowed;
 };
 
-const isRotationAllowed = (rotation: string, card: CardDefinition) => {
+const isRotationAllowed = (rotation: string, card: { rotations: string }): boolean => {
   if (!rotation) return false;
   if (!ROTATION_LABELS.includes(rotation)) return false;
   const allowed = buildAllowedRotationSet(card.rotations);
   return !allowed || allowed.has(rotation);
 };
 
-const buildCoordKey = (coord: HexCoord | null | undefined): string | null => {
+const buildCoordKey = (coord: HexCoord | undefined): string | null => {
   if (!coord) return null;
   const q = Number(coord.q);
   const r = Number(coord.r);
@@ -103,7 +84,7 @@ const buildCoordKey = (coord: HexCoord | null | undefined): string | null => {
   return `${Math.round(q)},${Math.round(r)}`;
 };
 
-const isCoordOnLand = (location: HexCoord | null | undefined, land: HexCoord[]): boolean => {
+const isCoordOnLand = (location: HexCoord | undefined, land: HexCoord[]): boolean => {
   if (!location || !Array.isArray(land) || !land.length) return false;
   const key = buildCoordKey(location);
   if (!key) return false;
@@ -119,7 +100,7 @@ const normalizeActionToken = (token: string) => {
   return trimmed;
 };
 
-const actionHasAttackToken = (action: string) => {
+const actionHasAttackToken = (action: string): boolean => {
   if (!action) return false;
   return action
     .split('-')
@@ -131,15 +112,19 @@ const actionHasAttackToken = (action: string) => {
     });
 };
 
-const hasThrowInteraction = (text?: string) => {
+const hasThrowInteraction = (text: string | undefined): boolean => {
   if (!text) return false;
   return /\{i\}\s*:\s*throw\b/i.test(text);
 };
 
-const getEntryForCharacter = (beat: BeatEntry, character: CharacterState) =>
-  beat.find((entry) => entry.username === character.username || entry.username === character.userId) ?? null;
+const getEntryForCharacter = (beat: BeatEntry[], character: PublicCharacter): BeatEntry | null =>
+  beat.find((entry) => {
+    if (!entry) return false;
+    const key = entry.username ?? entry.userId ?? entry.userID;
+    return key === character.username || key === character.userId;
+  }) ?? null;
 
-const drawAbilityCards = (deckState: PlayerDeckState) => {
+const drawAbilityCards = (deckState: DeckState) => {
   while (deckState.abilityHand.length < MAX_HAND_SIZE && deckState.abilityDeck.length) {
     const next = deckState.abilityDeck.shift();
     if (next) deckState.abilityHand.push(next);
@@ -149,9 +134,9 @@ const drawAbilityCards = (deckState: PlayerDeckState) => {
 const normalizeDeckList = (
   raw: unknown,
   catalog: CardCatalog,
-  type: CardType,
-  errors: Array<{ code: string; message: string }>,
-) => {
+  type: 'movement' | 'ability',
+  errors: CardValidationError[],
+): string[] => {
   const items = Array.isArray(raw) ? raw : [];
   const seen = new Set<string>();
   const ids: string[] = [];
@@ -177,13 +162,17 @@ const normalizeDeckList = (
   return ids;
 };
 
-export const parseDeckDefinition = (deck: unknown, catalog: CardCatalog): DeckParseResult => {
-  const errors: Array<{ code: string; message: string }> = [];
+export const parseDeckDefinition = (
+  deck: unknown,
+  catalog: CardCatalog,
+): { deck: DeckDefinition | null; errors: CardValidationError[] } => {
+  const errors: CardValidationError[] = [];
   if (!deck || typeof deck !== 'object') {
     return { deck: null, errors: [{ code: 'missing-deck', message: 'Deck payload is missing.' }] };
   }
-  const movement = normalizeDeckList((deck as DeckDefinition).movement, catalog, 'movement', errors);
-  const ability = normalizeDeckList((deck as DeckDefinition).ability, catalog, 'ability', errors);
+  const raw = deck as Record<string, unknown>;
+  const movement = normalizeDeckList(raw.movement, catalog, 'movement', errors);
+  const ability = normalizeDeckList(raw.ability, catalog, 'ability', errors);
   if (!movement.length) {
     errors.push({ code: 'missing-movement', message: 'Deck has no movement cards.' });
   }
@@ -198,7 +187,7 @@ export const buildDefaultDeckDefinition = (catalog: CardCatalog): DeckDefinition
   ability: catalog.ability.map((card) => card.id),
 });
 
-export const createDeckState = (deck: DeckDefinition): PlayerDeckState => {
+export const createDeckState = (deck: DeckDefinition): DeckState => {
   const movement = Array.isArray(deck.movement) ? deck.movement.map((id) => `${id}`) : [];
   const ability = Array.isArray(deck.ability) ? deck.ability.map((id) => `${id}`) : [];
   const abilityHand = ability.slice(0, MAX_HAND_SIZE);
@@ -209,6 +198,8 @@ export const createDeckState = (deck: DeckDefinition): PlayerDeckState => {
     abilityDeck,
     exhaustedMovementIds: new Set(),
     lastRefreshIndex: null,
+    activeCardId: null,
+    passiveCardId: null,
   };
 };
 
@@ -222,12 +213,13 @@ export const getRefreshOffset = (actions: string[]): number | null => {
 };
 
 export const validateActionSubmission = (
-  submission: { activeCardId?: unknown; passiveCardId?: unknown; rotation?: unknown },
-  deckState: PlayerDeckState,
+  submission: ActionSubmission,
+  deckState: DeckState,
   catalog: CardCatalog,
 ): ActionValidationResult => {
   const activeCardId = normalizeCardId(submission.activeCardId);
   const passiveCardId = normalizeCardId(submission.passiveCardId);
+
   if (!activeCardId || !passiveCardId) {
     return { ok: false, error: { code: 'missing-card', message: 'Active and passive card IDs are required.' } };
   }
@@ -242,6 +234,7 @@ export const validateActionSubmission = (
   if (activeCard.type === passiveCard.type) {
     return { ok: false, error: { code: 'invalid-card-pair', message: 'Active/passive cards must be different types.' } };
   }
+
   const movementCardId = activeCard.type === 'movement' ? activeCard.id : passiveCard.id;
   const abilityCardId = activeCard.type === 'ability' ? activeCard.id : passiveCard.id;
   if (!deckState.movement.includes(movementCardId)) {
@@ -261,21 +254,27 @@ export const validateActionSubmission = (
   if (!isRotationAllowed(rotation, activeCard)) {
     return { ok: false, error: { code: 'rotation-invalid', message: 'Rotation is not allowed for this card.' } };
   }
-
   if (!activeCard.actions.length) {
     return { ok: false, error: { code: 'no-action-list', message: 'Active card has no actions.' } };
   }
+
   const supportsThrow = hasThrowInteraction(activeCard.activeText);
-  const actionList: ActionSetItem[] = activeCard.actions.map((action, index) => ({
+  const attackDamage = Number.isFinite(activeCard.damage) ? activeCard.damage : 0;
+  const attackKbf = Number.isFinite(activeCard.kbf) ? activeCard.kbf : 0;
+  const actionList: ActionListItem[] = activeCard.actions.map((action, index) => ({
     action,
     rotation: index === 0 ? rotation : '',
     priority: activeCard.priority,
     interaction: supportsThrow && actionHasAttackToken(action) ? { type: 'throw' } : undefined,
+    damage: attackDamage,
+    kbf: attackKbf,
   }));
+
   const refreshOffset = getRefreshOffset(activeCard.actions);
   if (refreshOffset === null) {
     return { ok: false, error: { code: 'no-refresh', message: 'Active card has no refresh step.' } };
   }
+
   return {
     ok: true,
     actionList,
@@ -284,10 +283,9 @@ export const validateActionSubmission = (
   };
 };
 
-export const applyCardUse = (
-  deckState: PlayerDeckState,
-  cardUse: CardUse,
-): { ok: boolean; error?: { code: string; message: string } } => {
+export const applyCardUse = (deckState: DeckState, cardUse: CardUse): { ok: true } | { ok: false; error: CardValidationError } => {
+  deckState.activeCardId = cardUse.activeCardId ?? deckState.activeCardId ?? null;
+  deckState.passiveCardId = cardUse.passiveCardId ?? deckState.passiveCardId ?? null;
   deckState.exhaustedMovementIds.add(cardUse.movementCardId);
   const abilityIndex = deckState.abilityHand.indexOf(cardUse.abilityCardId);
   if (abilityIndex !== -1) {
@@ -298,17 +296,30 @@ export const applyCardUse = (
   return { ok: true };
 };
 
+export const buildPlayerCardState = (deckState: DeckState): PlayerCardState => ({
+  deck: [...deckState.abilityDeck],
+  movementHand: [...deckState.movement],
+  abilityHand: [...deckState.abilityHand],
+  activeCardId: deckState.activeCardId ?? null,
+  passiveCardId: deckState.passiveCardId ?? null,
+  discardPile: Array.from(deckState.exhaustedMovementIds),
+  lastRefreshIndex: deckState.lastRefreshIndex ?? null,
+});
+
 export const resolveLandRefreshes = (
-  deckStates: Map<string, PlayerDeckState>,
-  beats: BeatEntry[],
-  characters: CharacterState[],
+  deckStates: Map<string, DeckState>,
+  beats: BeatEntry[][],
+  characters: PublicCharacter[],
   land: HexCoord[],
   interactions: CustomInteraction[] = [],
-) => {
+  pendingActions?: PendingActions,
+): void => {
   if (!deckStates.size) return;
   if (interactions.some((interaction) => interaction.status === 'pending')) return;
+
   const earliestIndex = getTimelineEarliestEIndex(beats, characters);
-  const characterById = new Map<string, CharacterState>();
+  if (pendingActions && pendingActions.beatIndex === earliestIndex) return;
+  const characterById = new Map<string, PublicCharacter>();
   characters.forEach((character) => {
     characterById.set(character.userId, character);
     characterById.set(character.username, character);
@@ -321,11 +332,12 @@ export const resolveLandRefreshes = (
     if (firstEIndex !== earliestIndex) return;
     if (deckState.lastRefreshIndex === firstEIndex) return;
     const beat = beats[firstEIndex];
-    if (!beat) return;
-    const entry = getEntryForCharacter(beat, character);
-    if (!entry || entry.action !== 'E') return;
-    const location = entry.location ?? character.position;
-    const onLand = isCoordOnLand(location, land);
+    const entry = beat ? getEntryForCharacter(beat, character) : null;
+    if (entry && entry.action !== 'E') return;
+    const location = getCharacterLocationAtIndex(beats, character, firstEIndex);
+    if (!location) return;
+    const terrain = entry?.terrain;
+    const onLand = terrain === 'land' ? true : terrain === 'abyss' ? false : isCoordOnLand(location, land);
     if (!onLand) return;
     deckState.exhaustedMovementIds.clear();
     drawAbilityCards(deckState);

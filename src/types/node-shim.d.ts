@@ -11,8 +11,12 @@ declare module 'http' {
     end(data?: any): void;
     write(chunk: any): void;
   }
+  export interface Server extends EventEmitter {
+    listen(port: number, cb?: () => void): void;
+    on(event: string, listener: (...args: any[]) => void): this;
+  }
   export type RequestListener = (req: IncomingMessage, res: ServerResponse) => void;
-  export function createServer(listener: RequestListener): { listen(port: number, cb?: () => void): void };
+  export function createServer(listener: RequestListener): Server;
 }
 
 declare module 'url' {
@@ -30,6 +34,11 @@ declare module 'fs' {
 
 declare module 'crypto' {
   export function randomUUID(): string;
+  export interface Hash {
+    update(data: string | Uint8Array): Hash;
+    digest(encoding: 'base64' | 'hex' | 'binary'): string;
+  }
+  export function createHash(algorithm: string): Hash;
 }
 
 declare module 'events' {
@@ -47,3 +56,16 @@ declare var process: {
   env: Record<string, string | undefined>;
   cwd(): string;
 };
+
+declare class Buffer extends Uint8Array {
+  static from(data: string | ArrayBuffer | Uint8Array | number[], encoding?: string): Buffer;
+  static alloc(size: number): Buffer;
+  static concat(list: Uint8Array[], totalLength?: number): Buffer;
+  readUInt8(offset: number): number;
+  readUInt16BE(offset: number): number;
+  readUInt32BE(offset: number): number;
+  writeUInt16BE(value: number, offset: number): number;
+  writeUInt32BE(value: number, offset: number): number;
+  slice(start?: number, end?: number): Buffer;
+  toString(encoding?: string): string;
+}
