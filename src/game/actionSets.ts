@@ -28,6 +28,7 @@ const cloneEntry = (entry: BeatEntry): BeatEntry => {
   return next;
 };
 
+
 const sortBeatEntries = (beat: BeatEntry[], characters: PublicCharacter[]) => {
   const order = new Map<string, number>();
   characters.forEach((character, index) => {
@@ -53,6 +54,7 @@ const buildTargetEntry = (
   interaction: ActionListItem['interaction'],
   attackDamage: number | undefined,
   attackKbf: number | undefined,
+  cardId: string | undefined,
   seed: { damage: number; location: { q: number; r: number }; facing: number },
 ): BeatEntry => {
   const entry: BeatEntry = {
@@ -73,6 +75,9 @@ const buildTargetEntry = (
   }
   if (Number.isFinite(attackKbf)) {
     entry.attackKbf = attackKbf;
+  }
+  if (cardId) {
+    entry.cardId = cardId;
   }
   return entry;
 };
@@ -126,6 +131,8 @@ export const applyActionSetToBeats = (
     interaction: item.interaction,
     attackDamage: item.damage,
     attackKbf: item.kbf,
+    comboStarter: index === 0 ? item.comboStarter : undefined,
+    cardId: item.cardId,
   }));
   const lastIndex = startIndex + actions.length - 1;
 
@@ -151,6 +158,19 @@ export const applyActionSetToBeats = (
       } else if ('interaction' in entry) {
         delete entry.interaction;
       }
+      if ('comboSkipped' in entry) {
+        delete entry.comboSkipped;
+      }
+      if (actionItem.comboStarter) {
+        entry.comboStarter = true;
+      } else if ('comboStarter' in entry) {
+        delete entry.comboStarter;
+      }
+      if (actionItem.cardId) {
+        entry.cardId = actionItem.cardId;
+      } else if ('cardId' in entry) {
+        delete entry.cardId;
+      }
       if (Number.isFinite(actionItem.attackDamage)) {
         entry.attackDamage = actionItem.attackDamage;
       }
@@ -171,8 +191,12 @@ export const applyActionSetToBeats = (
         actionItem.interaction,
         actionItem.attackDamage,
         actionItem.attackKbf,
+        actionItem.cardId,
         seed,
       );
+      if (actionItem.comboStarter) {
+        nextEntry.comboStarter = true;
+      }
       beat.push(nextEntry);
       primaryEntry = nextEntry;
     }

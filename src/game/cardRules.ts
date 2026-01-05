@@ -268,6 +268,7 @@ export const validateActionSubmission = (
     interaction: supportsThrow && actionHasAttackToken(action) ? { type: 'throw' } : undefined,
     damage: attackDamage,
     kbf: attackKbf,
+    cardId: activeCard.id,
   }));
 
   const refreshOffset = getRefreshOffset(activeCard.actions);
@@ -319,6 +320,16 @@ export const resolveLandRefreshes = (
 
   const earliestIndex = getTimelineEarliestEIndex(beats, characters);
   if (pendingActions && pendingActions.beatIndex === earliestIndex) return;
+  const comboContinueByUser = new Map<string, number>();
+  interactions.forEach((interaction) => {
+    if (interaction.type !== 'combo' || interaction.status !== 'resolved') return;
+    if (!interaction.resolution?.continue) return;
+    const actorId = interaction.actorUserId;
+    if (!actorId) return;
+    const beatIndex = Number.isFinite(interaction.beatIndex) ? Math.round(interaction.beatIndex) : null;
+    if (beatIndex == null) return;
+    comboContinueByUser.set(actorId, beatIndex);
+  });
   const characterById = new Map<string, PublicCharacter>();
   characters.forEach((character) => {
     characterById.set(character.userId, character);
@@ -330,6 +341,7 @@ export const resolveLandRefreshes = (
     if (!character) return;
     const firstEIndex = getCharacterFirstEIndex(beats, character);
     if (firstEIndex !== earliestIndex) return;
+    if (comboContinueByUser.get(userId) === firstEIndex) return;
     if (deckState.lastRefreshIndex === firstEIndex) return;
     const beat = beats[firstEIndex];
     const entry = beat ? getEntryForCharacter(beat, character) : null;

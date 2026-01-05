@@ -1172,6 +1172,33 @@ small {
   }
 }
 
+.combo-modal {
+  width: min(360px, 90vw);
+  display: grid;
+  gap: 10px;
+  text-align: center;
+  pointer-events: auto;
+  padding: 22px 24px;
+}
+
+.combo-modal-eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 11px;
+  color: var(--color-subtle);
+}
+
+.combo-modal-copy {
+  margin: 0;
+  color: var(--color-subtle);
+  font-size: 0.95rem;
+}
+
+.combo-modal-actions {
+  justify-content: center;
+}
+
 .game-over-overlay {
   inset: auto;
   bottom: 30px;
@@ -1606,6 +1633,12 @@ small {
   z-index: 1;
 }
 
+.action-hud.is-combo .action-card.is-combo-eligible::after {
+  border-color: var(--color-damage);
+  box-shadow: 0 0 0 1px rgba(211, 75, 66, 0.4), 0 0 14px rgba(211, 75, 66, 0.7);
+  animation: comboPulse 1.1s ease-in-out infinite;
+}
+
 .action-card[data-card-type='movement'] {
   --action-card-inner-bg: linear-gradient(165deg, rgba(255, 255, 255, 0.08), transparent 65%), var(--color-card-movement);
 }
@@ -1652,6 +1685,16 @@ small {
   cursor: default;
   opacity: 0.65;
   filter: grayscale(0.3);
+}
+
+@keyframes comboPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(211, 75, 66, 0.35), 0 0 10px rgba(211, 75, 66, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 2px rgba(211, 75, 66, 0.6), 0 0 18px rgba(211, 75, 66, 0.85);
+  }
 }
 
 .action-card-header {

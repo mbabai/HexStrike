@@ -39,6 +39,7 @@ const buildPendingActionList = (card, rotation) => {
     interaction: supportsThrow && actionHasAttackToken(action) ? { type: 'throw' } : undefined,
     damage,
     kbf,
+    cardId: card?.id ?? null,
   }));
 };
 

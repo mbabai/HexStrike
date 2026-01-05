@@ -181,6 +181,15 @@
           <button class="throw-arrow" type="button" data-dir="4" aria-label="Throw direction 5"></button>
           <button class="throw-arrow" type="button" data-dir="5" aria-label="Throw direction 6"></button>
         </div>
+        <div id="comboModal" class="combo-modal panel" role="dialog" aria-modal="true" aria-labelledby="comboModalTitle" hidden>
+          <p class="combo-modal-eyebrow">Combo</p>
+          <h2 id="comboModalTitle">Continue Combo?</h2>
+          <p class="combo-modal-copy">Your hit opens a combo window. Continue with another combo card?</p>
+          <div class="section-actions combo-modal-actions">
+            <button id="comboDecline" class="btn btn-ghost" type="button">No</button>
+            <button id="comboAccept" class="btn btn-primary" type="button">Yes</button>
+          </div>
+        </div>
       </div>
     </section>
 

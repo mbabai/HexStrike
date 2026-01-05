@@ -105,11 +105,15 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Timeline play/pause replaces the center beat label; hit detection is a circular button in `public/game/timeIndicatorView.js` and auto-advance only steps after playback reports completion.
 - Timeline tooltips for X1/X2/i are derived from `{X1}/{X2}/{i}` fragments in card `activeText`, and tooltip matching relies on the action list starting at the beat with a rotation marker; keep action lists and rotations in sync.
 - Rotation restrictions like `0-2` are interpreted as rotation magnitude (both left/right labels plus `0`/`3` where applicable), not directional ranges.
+- Rotations resolve in a pre-action phase; apply them even if the actor's action is skipped/disabled, and keep `src/game/execute.ts` + `public/game/timelinePlayback.js` in sync.
 - When multiple players share the earliest `E`, the server batches action sets in `pendingActions` and reveals them simultaneously once all required players submit; timeline rings blink red for players still needed.
 - Pending action previews on the timeline are client-side only: build the local player's preview from the submitted active card action list, render it as a faded pulsing overlay only on that player's `E` slots while waiting, and clear it once `pendingActions` no longer includes a local submission.
 - Direction indexing for blocks/attacks must ignore reverse vectors (only forward, positive steps); otherwise block walls flip away from facing.
 - Keep `getDirectionIndex` logic in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized so visuals match server resolution.
 - Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.
+- Combo prompts pause on the `Co` beat before any action/E resolution, and choosing to continue skips land refresh/draw for that player at that beat.
+- Combo continuation is tied to a specific active card (`cardId` on action list/beat entry); only hits from that card can open the combo prompt.
+- Skipped combos keep the `Co` symbol on the timeline and are marked with `comboSkipped` for UI greying; do not replace with `W`.
 - Server-side deck state is tracked per game (in memory); refreshes resolve only when the earliest `E` is on land (gated by `lastRefreshIndex`), clearing movement exhaustion and drawing up to max hand size.
 - Land refresh checks should use the last known beat location at/ before the earliest `E`; avoid `public.characters` positions or you will refresh on abyss.
 - Land refresh should be keyed only by `lastRefreshIndex` + earliest `E` beat; skip refresh entirely while `pendingActions.beatIndex` matches the earliest `E`.
@@ -142,3 +146,4 @@ When the user says "let's wrap this up" or something along those lines, execute 
 - Add/remove/update the gotchas into the AGENTS.md file graph so that we don't run into similar errors in the future. 
 - Update the AGENTS.md file with any other relevant information to better understand the codebase. 
 - Add any required tests (if needed).
+- Update the Documentation map files as needed. 

@@ -50,6 +50,7 @@ export const createActionHud = ({
       setHidden: () => {},
       setVisible: () => {},
       setLocked: () => {},
+      setComboMode: () => {},
       clearSelection: () => {},
     };
   }
@@ -62,6 +63,8 @@ export const createActionHud = ({
     locked: false,
     turnActive: false,
     draggingCardId: null,
+    comboMode: false,
+    comboEligibleIds: new Set(),
     exhaustedCards: new Set(),
     hidden: false,
     hoveredCards: {
@@ -109,6 +112,14 @@ export const createActionHud = ({
     const slot = slotName === 'active' ? activeSlot : passiveSlot;
     const isOccupied = Boolean(state.slots[slotName]);
     slot.classList.toggle('is-occupied', isOccupied);
+  };
+
+  const updateComboEligibility = () => {
+    state.cardsById.forEach((card) => {
+      if (!card?.element) return;
+      const isEligible = state.comboMode && state.comboEligibleIds.has(card.id);
+      card.element.classList.toggle('is-combo-eligible', isEligible);
+    });
   };
 
   const setCardExhausted = (card, exhausted) => {
@@ -160,11 +171,13 @@ export const createActionHud = ({
     const activeCard = getActiveCard();
     const passiveCard = getPassiveCard();
     const hasActionList = Array.isArray(activeCard?.actions) && activeCard.actions.length > 0;
+    const comboValid = !state.comboMode || (activeCard && state.comboEligibleIds.has(activeCard.id));
     const canSubmit =
       state.turnActive &&
       !state.locked &&
       Boolean(activeCard && passiveCard) &&
       hasActionList &&
+      comboValid &&
       isRotationAllowed(state.selectedRotation);
     submitButton.hidden = !canSubmit;
     submitButton.disabled = !canSubmit;
@@ -174,6 +187,10 @@ export const createActionHud = ({
     if (state.locked) return;
     const card = getCard(cardId);
     if (!card || card.exhausted) return;
+    if (slotName === 'active' && state.comboMode && !state.comboEligibleIds.has(cardId)) {
+      returnCardToHand(cardId);
+      return;
+    }
     clearHoverForCard(cardId);
     const otherSlot = slotName === 'active' ? 'passive' : 'active';
     const otherCard = getCard(state.slots[otherSlot]);
@@ -419,6 +436,7 @@ export const createActionHud = ({
       ability: abilityList.length,
       exhausted: options.exhaustedCardIds ? options.exhaustedCardIds.length : 0,
     });
+    updateComboEligibility();
     requestAnimationFrame(() => fitAllCardText(root));
   };
 
@@ -458,6 +476,27 @@ export const createActionHud = ({
     state.hidden = Boolean(hidden);
     root.hidden = state.hidden;
     log('hidden', state.hidden);
+  };
+
+  const setComboMode = (enabled, eligibleIds = []) => {
+    state.comboMode = Boolean(enabled);
+    const nextEligible = new Set();
+    if (eligibleIds instanceof Set) {
+      eligibleIds.forEach((id) => nextEligible.add(id));
+    } else if (Array.isArray(eligibleIds)) {
+      eligibleIds.forEach((id) => nextEligible.add(id));
+    } else if (eligibleIds && typeof eligibleIds[Symbol.iterator] === 'function') {
+      for (const id of eligibleIds) {
+        nextEligible.add(id);
+      }
+    }
+    state.comboEligibleIds = nextEligible;
+    root.classList.toggle('is-combo', state.comboMode);
+    updateComboEligibility();
+    if (state.comboMode && state.slots.active && !state.comboEligibleIds.has(state.slots.active)) {
+      returnCardToHand(state.slots.active);
+    }
+    updateSubmitState();
   };
 
   const setLocked = (locked) => {
@@ -517,6 +556,7 @@ export const createActionHud = ({
     setHidden,
     setVisible,
     setLocked,
+    setComboMode,
     clearSelection,
   };
 };

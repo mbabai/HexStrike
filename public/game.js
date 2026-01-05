@@ -21,8 +21,35 @@ import { getOrCreateUserId } from './storage.js';
 const HOLD_INITIAL_DELAY = 320;
 const HOLD_REPEAT_DELAY = 90;
 const LOG_PREFIX = '[hexstrike]';
+const COMBO_ACTION = 'CO';
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const normalizeActionLabel = (value) => {
+  const trimmed = `${value ?? ''}`.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+};
+
+const cardHasCombo = (card) =>
+  Array.isArray(card?.actions) && card.actions.some((action) => normalizeActionLabel(action).toUpperCase() === COMBO_ACTION);
+
+const hasComboEntryForInteraction = (interaction, beats) => {
+  if (!interaction || interaction.type !== 'combo') return false;
+  const beatIndex = Number.isFinite(interaction.beatIndex) ? Math.round(interaction.beatIndex) : null;
+  if (beatIndex === null || beatIndex < 0) return false;
+  const beat = beats?.[beatIndex];
+  if (!Array.isArray(beat)) return false;
+  const entry = beat.find((beatEntry) => {
+    const key = beatEntry?.username ?? beatEntry?.userId ?? beatEntry?.userID;
+    return key === interaction.actorUserId;
+  });
+  if (!entry) return false;
+  return normalizeActionLabel(entry.action).toUpperCase() === COMBO_ACTION;
+};
 
 const buildCardLookup = (catalog) => {
   const lookup = new Map();
@@ -160,6 +187,9 @@ export const initGame = () => {
   const interactionOverlay = document.getElementById('interactionOverlay');
   const throwModal = document.getElementById('throwModal');
   const throwButtons = throwModal ? Array.from(throwModal.querySelectorAll('.throw-arrow')) : [];
+  const comboModal = document.getElementById('comboModal');
+  const comboAccept = document.getElementById('comboAccept');
+  const comboDecline = document.getElementById('comboDecline');
   const gameOverOverlay = document.getElementById('gameOverOverlay');
   const gameOverMessage = document.getElementById('gameOverMessage');
   const gameOverDone = document.getElementById('gameOverDone');
@@ -181,8 +211,11 @@ export const initGame = () => {
   let lastHudStateKey = null;
   let interactionSubmitInFlight = false;
   let pendingInteractionId = null;
+  let pendingInteractionType = null;
   let gameOverInFlight = false;
   let didInitTimelinePosition = false;
+  let lastComboKey = null;
+  let lastComboRequired = false;
   const pendingActionPreview = createPendingActionPreview();
 
   const getMaxIndex = () => {
@@ -210,13 +243,31 @@ export const initGame = () => {
     });
   };
 
-  const getPendingThrowInteraction = () => {
+  const setComboButtonsEnabled = (enabled) => {
+    [comboAccept, comboDecline].forEach((button) => {
+      if (!button) return;
+      button.disabled = !enabled;
+      button.classList.toggle('is-disabled', !enabled);
+    });
+  };
+
+  const getPendingInteractionForUser = () => {
     const interactions = gameState?.state?.public?.customInteractions ?? [];
-    return (
-      interactions.find(
-        (interaction) => interaction?.status === 'pending' && interaction?.type === 'throw',
-      ) ?? null
+    const beats = gameState?.state?.public?.beats ?? [];
+    const pending = interactions.filter(
+      (interaction) => interaction?.status === 'pending' && interaction?.actorUserId === localUserId,
     );
+    const filtered = pending.filter(
+      (interaction) => interaction?.type !== 'combo' || hasComboEntryForInteraction(interaction, beats),
+    );
+    if (!filtered.length) return null;
+    filtered.sort((a, b) => (a?.beatIndex ?? 0) - (b?.beatIndex ?? 0));
+    return filtered[0] ?? null;
+  };
+
+  const getPendingThrowInteraction = () => {
+    const pending = getPendingInteractionForUser();
+    return pending?.type === 'throw' ? pending : null;
   };
 
   const getThrowAnchor = (pending) => {
@@ -273,33 +324,58 @@ export const initGame = () => {
   };
 
   const refreshInteractionOverlay = () => {
-    if (!interactionOverlay || !throwModal) return;
+    if (!interactionOverlay) return;
     const outcome = getMatchOutcome(gameState?.state?.public);
     if (outcome) {
       interactionOverlay.hidden = true;
       interactionOverlay.setAttribute('aria-hidden', 'true');
       pendingInteractionId = null;
+      pendingInteractionType = null;
       interactionSubmitInFlight = false;
       setThrowButtonsEnabled(false);
+      setComboButtonsEnabled(false);
+      if (throwModal) throwModal.hidden = true;
+      if (comboModal) comboModal.hidden = true;
       return;
     }
-    const pending = getPendingThrowInteraction();
-    const isActor = pending?.actorUserId === localUserId;
-    const shouldShow = Boolean(pending && isActor && gameState?.id);
+    const pending = getPendingInteractionForUser();
+    const shouldShow = Boolean(pending && gameState?.id);
     interactionOverlay.hidden = !shouldShow;
     interactionOverlay.setAttribute('aria-hidden', (!shouldShow).toString());
     if (!shouldShow) {
       pendingInteractionId = null;
+      pendingInteractionType = null;
       interactionSubmitInFlight = false;
       setThrowButtonsEnabled(false);
+      setComboButtonsEnabled(false);
+      if (throwModal) throwModal.hidden = true;
+      if (comboModal) comboModal.hidden = true;
       return;
     }
-    if (pendingInteractionId !== pending.id) {
+    if (pendingInteractionId !== pending.id || pendingInteractionType !== pending.type) {
       interactionSubmitInFlight = false;
     }
     pendingInteractionId = pending.id;
-    setThrowButtonsEnabled(!interactionSubmitInFlight);
-    applyThrowLayout(pending);
+    pendingInteractionType = pending.type;
+    if (pending.type === 'throw') {
+      if (throwModal) throwModal.hidden = false;
+      if (comboModal) comboModal.hidden = true;
+      setThrowButtonsEnabled(!interactionSubmitInFlight);
+      setComboButtonsEnabled(false);
+      applyThrowLayout(pending);
+      return;
+    }
+    if (pending.type === 'combo') {
+      if (comboModal) comboModal.hidden = false;
+      if (throwModal) throwModal.hidden = true;
+      setComboButtonsEnabled(!interactionSubmitInFlight);
+      setThrowButtonsEnabled(false);
+      return;
+    }
+    if (throwModal) throwModal.hidden = true;
+    if (comboModal) comboModal.hidden = true;
+    setThrowButtonsEnabled(false);
+    setComboButtonsEnabled(false);
   };
 
   const gameOverView = createGameOverView({
@@ -391,8 +467,43 @@ export const initGame = () => {
       }
     }
     const isTurn = isLocalAtBat && isAtEarliest && !hasPendingInteraction;
+    const localCharacter = characters.find((candidate) => candidate.userId === localUserId);
+    const localFirstE = localCharacter ? getCharacterFirstEIndex(beats, localCharacter) : null;
+    const comboInteraction =
+      localFirstE !== null
+        ? interactions.find(
+            (interaction) =>
+              interaction?.status === 'resolved' &&
+              interaction?.type === 'combo' &&
+              interaction?.actorUserId === localUserId &&
+              interaction?.beatIndex === localFirstE &&
+              Boolean(interaction?.resolution?.continue),
+          )
+        : null;
+    const comboRequired = Boolean(comboInteraction && isTurn);
+    const comboEligibleIds = new Set();
+    if (comboRequired) {
+      const exhaustedSet = new Set(exhaustedIds);
+      movementCards.forEach((card) => {
+        if (!card || exhaustedSet.has(card.id)) return;
+        if (cardHasCombo(card)) comboEligibleIds.add(card.id);
+      });
+      abilityCards.forEach((card) => {
+        if (!card) return;
+        if (cardHasCombo(card)) comboEligibleIds.add(card.id);
+      });
+    }
     actionHud.setVisible(isTurn);
     actionHud.setLocked(locked);
+    const comboKey = comboRequired ? `on:${Array.from(comboEligibleIds).join(',')}` : 'off';
+    if (comboKey !== lastComboKey) {
+      if (comboRequired && !lastComboRequired) {
+        actionHud.clearSelection();
+      }
+      actionHud.setComboMode(comboRequired, comboEligibleIds);
+      lastComboKey = comboKey;
+      lastComboRequired = comboRequired;
+    }
     const hudStateKey = `${isTurn}|${locked}|${earliestIndex}|${timeIndicatorViewModel.value}`;
     if (hudStateKey !== lastHudStateKey) {
       console.log(`${LOG_PREFIX} hud`, {
@@ -467,6 +578,7 @@ export const initGame = () => {
 
   const handleThrowSubmit = async (directionIndex) => {
     if (!gameState?.id || !pendingInteractionId || interactionSubmitInFlight) return;
+    if (pendingInteractionType && pendingInteractionType !== 'throw') return;
     if (getMatchOutcome(gameState?.state?.public)) return;
     if (!Number.isFinite(directionIndex) || directionIndex < 0 || directionIndex > 5) return;
     interactionSubmitInFlight = true;
@@ -505,6 +617,53 @@ export const initGame = () => {
     } catch (err) {
       console.error('Failed to resolve throw', err);
       const message = err instanceof Error ? err.message : 'Failed to resolve throw.';
+      window.alert(message);
+    } finally {
+      interactionSubmitInFlight = false;
+      refreshInteractionOverlay();
+    }
+  };
+
+  const handleComboSubmit = async (continueCombo) => {
+    if (!gameState?.id || !pendingInteractionId || interactionSubmitInFlight) return;
+    if (pendingInteractionType !== 'combo') return;
+    if (getMatchOutcome(gameState?.state?.public)) return;
+    interactionSubmitInFlight = true;
+    setComboButtonsEnabled(false);
+    console.log(`${LOG_PREFIX} interaction:submit`, {
+      userId: localUserId,
+      gameId: gameState.id,
+      interactionId: pendingInteractionId,
+      continueCombo,
+    });
+    try {
+      const response = await fetch('/api/v1/game/interaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: localUserId,
+          gameId: gameState.id,
+          interactionId: pendingInteractionId,
+          continueCombo: Boolean(continueCombo),
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = payload?.error ? `${payload.error}` : 'Failed to resolve combo.';
+        console.warn(`${LOG_PREFIX} interaction:rejected`, {
+          status: response.status,
+          error: payload?.error,
+          code: payload?.code,
+        });
+        throw new Error(message);
+      }
+      console.log(`${LOG_PREFIX} interaction:ack`, {
+        status: response.status,
+        interactionId: pendingInteractionId,
+      });
+    } catch (err) {
+      console.error('Failed to resolve combo', err);
+      const message = err instanceof Error ? err.message : 'Failed to resolve combo.';
       window.alert(message);
     } finally {
       interactionSubmitInFlight = false;
@@ -557,12 +716,23 @@ export const initGame = () => {
 
   applyThrowLayout(null);
   setThrowButtonsEnabled(false);
+  setComboButtonsEnabled(false);
   throwButtons.forEach((button) => {
     button.addEventListener('click', () => {
       const index = Number(button.dataset.dir);
       handleThrowSubmit(index);
     });
   });
+  if (comboAccept) {
+    comboAccept.addEventListener('click', () => {
+      void handleComboSubmit(true);
+    });
+  }
+  if (comboDecline) {
+    comboDecline.addEventListener('click', () => {
+      void handleComboSubmit(false);
+    });
+  }
 
   const clampTimeline = () => {
     timeIndicatorViewModel.setValue(timeIndicatorViewModel.value);
@@ -592,13 +762,17 @@ export const initGame = () => {
     lastHudKey = null;
     lastTurnActive = false;
     pendingInteractionId = null;
+    pendingInteractionType = null;
     interactionSubmitInFlight = false;
     gameOverInFlight = false;
     didInitTimelinePosition = false;
     pendingActionPreview.clear();
+    lastComboKey = null;
+    lastComboRequired = false;
     if (actionHud) {
       actionHud.clearSelection();
       actionHud.setCards([], []);
+      actionHud.setComboMode(false, []);
       actionHud.setHidden(true);
     }
     if (interactionOverlay) {

@@ -10,6 +10,8 @@ const PAN_BLOCK_SELECTORS = [
   '.rotation-wheel',
   '.rotation-selector',
   '.throw-arrow',
+  '.interaction-overlay',
+  '.combo-modal',
 ];
 
 const isEventWithinRoot = (event, root) => {

@@ -4,6 +4,7 @@ import { DEFAULT_LAND_HEXES } from './hexGrid';
 const DEFAULT_ACTION = 'E';
 const LOG_PREFIX = '[execute]';
 const WAIT_ACTION = 'W';
+const COMBO_ACTION = 'CO';
 const DAMAGE_ICON_ACTION = 'DamageIcon';
 const KNOCKBACK_DIVISOR = 10;
 const THROW_DISTANCE = 2;
@@ -133,10 +134,23 @@ const parsePath = (path: string) => {
   return steps.length ? steps : [{ dir: 'F', distance: 1 }];
 };
 
-const isWaitAction = (action: string) => {
-  const trimmed = action.trim().toUpperCase();
-  return !trimmed || trimmed === WAIT_ACTION || trimmed === DAMAGE_ICON_ACTION.toUpperCase();
+const normalizeActionLabel = (action: string) => {
+  const trimmed = `${action ?? ''}`.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
 };
+
+const isWaitAction = (action: string) => {
+  const trimmed = `${action ?? ''}`.trim();
+  if (!trimmed) return true;
+  const label = normalizeActionLabel(trimmed).toUpperCase();
+  return label === WAIT_ACTION || label === DAMAGE_ICON_ACTION.toUpperCase() || label === COMBO_ACTION;
+};
+
+const isComboAction = (action: string) => normalizeActionLabel(action).toUpperCase() === COMBO_ACTION;
 
 const normalizeActionToken = (token: string) => {
   const trimmed = token.trim();
@@ -266,8 +280,10 @@ export const executeBeatsWithInteractions = (
   characters: PublicCharacter[],
   interactions: CustomInteraction[] = [],
   land: HexCoord[] = DEFAULT_LAND_HEXES,
+  comboAvailability?: Map<string, boolean>,
 ): { beats: BeatEntry[][]; characters: PublicCharacter[]; lastCalculated: number; interactions: CustomInteraction[] } => {
   const landTiles = Array.isArray(land) && land.length ? land : DEFAULT_LAND_HEXES;
+  const comboAvailabilityByUser = comboAvailability ?? new Map<string, boolean>();
   const resolveTerrain = (position: { q: number; r: number }) =>
     (isCoordOnLand(position, landTiles) ? 'land' : 'abyss') as 'land' | 'abyss';
   const userLookup = new Map<string, string>();
@@ -459,6 +475,74 @@ export const executeBeatsWithInteractions = (
     }
   };
 
+  const clearCharacterEntriesAfter = (character: PublicCharacter, startIndex: number) => {
+    for (let i = startIndex + 1; i < normalizedBeats.length; i += 1) {
+      const beat = normalizedBeats[i];
+      if (!beat?.length) continue;
+      const filtered = beat.filter((entry) => !matchesEntryForCharacter(entry, character));
+      if (filtered.length !== beat.length) {
+        normalizedBeats[i] = filtered;
+      }
+    }
+  };
+
+  updatedInteractions.forEach((interaction) => {
+    if (interaction.type !== 'combo' || interaction.status !== 'resolved') return;
+    if (!Number.isFinite(interaction.beatIndex)) return;
+    const actorId = interaction.actorUserId;
+    const character = actorId ? characterById.get(actorId) : undefined;
+    if (!character) return;
+    const beatIndex = Math.max(0, Math.round(interaction.beatIndex));
+    ensureBeatIndex(beatIndex);
+    const beat = normalizedBeats[beatIndex];
+    const entry = beat ? findEntryForCharacter(beat, character) : null;
+    const shouldContinue = Boolean(interaction.resolution?.continue);
+    if (entry) {
+      if (shouldContinue) {
+        entry.action = DEFAULT_ACTION;
+        entry.rotation = '';
+        entry.priority = 0;
+        if ('comboSkipped' in entry) {
+          delete entry.comboSkipped;
+        }
+      } else {
+        if (!isComboAction(entry.action ?? '')) {
+          entry.action = 'Co';
+        }
+        entry.comboSkipped = true;
+      }
+      if ('comboStarter' in entry) {
+        delete entry.comboStarter;
+      }
+    }
+    if (shouldContinue) {
+      clearCharacterEntriesAfter(character, beatIndex);
+    }
+  });
+
+  const comboStates = new Map<string, { coIndex: number; hit: boolean; cardId: string | null }>();
+  const lastActionByUser = new Map<string, string>();
+
+  const findNextComboIndex = (character: PublicCharacter, startIndex: number) => {
+    for (let i = startIndex; i < normalizedBeats.length; i += 1) {
+      const beat = normalizedBeats[i];
+      const entry = beat ? findEntryForCharacter(beat, character) : null;
+      if (!entry || entry.action === DEFAULT_ACTION) return null;
+      if (isComboAction(entry.action)) return i;
+    }
+    return null;
+  };
+
+  const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
+    entries.forEach((entry, actorId) => {
+      const rotationDelta = parseRotationDegrees(entry.rotation ?? '');
+      if (!rotationDelta) return;
+      const actorState = state.get(actorId);
+      if (!actorState) return;
+      actorState.facing = normalizeDegrees(actorState.facing + rotationDelta);
+    });
+  };
+
   for (let index = 0; index < normalizedBeats.length; index += 1) {
     if (haltIndex != null && index > haltIndex) {
       for (let j = index; j < normalizedBeats.length; j += 1) {
@@ -495,6 +579,62 @@ export const executeBeatsWithInteractions = (
         });
       }
     });
+
+    characters.forEach((character) => {
+      const actorId = character.userId;
+      const entry = entriesByUser.get(actorId);
+      const action = entry?.action ?? DEFAULT_ACTION;
+      const previous = lastActionByUser.get(actorId) ?? DEFAULT_ACTION;
+      if (action === DEFAULT_ACTION) {
+        comboStates.delete(actorId);
+      } else if (previous === DEFAULT_ACTION && !comboStates.has(actorId)) {
+        const coIndex = findNextComboIndex(character, index);
+        if (coIndex != null) {
+          comboStates.set(actorId, { coIndex, hit: false, cardId: entry?.cardId ?? null });
+        }
+      }
+      lastActionByUser.set(actorId, action);
+    });
+
+    let comboPause = false;
+    entriesByUser.forEach((entry, actorId) => {
+      if (!isComboAction(entry.action ?? '')) return;
+      const comboState = comboStates.get(actorId);
+      if (!comboState || comboState.coIndex !== index || !comboState.hit) return;
+      if (comboState.cardId && comboState.cardId !== entry.cardId) return;
+      if (!comboAvailabilityByUser.get(actorId)) return;
+      if ('comboSkipped' in entry) {
+        delete entry.comboSkipped;
+      }
+      const interactionId = buildInteractionId('combo', index, actorId, actorId);
+      const existing = interactionById.get(interactionId);
+      if (!existing) {
+        const created: CustomInteraction = {
+          id: interactionId,
+          type: 'combo',
+          beatIndex: index,
+          actorUserId: actorId,
+          targetUserId: actorId,
+          status: 'pending',
+          resolution: undefined,
+        };
+        updatedInteractions.push(created);
+        interactionById.set(interactionId, created);
+      }
+      if (haltIndex == null || index < haltIndex) {
+        haltIndex = index;
+      }
+      comboStates.delete(actorId);
+      comboPause = true;
+    });
+
+    if (comboPause) {
+      for (let j = index; j < normalizedBeats.length; j += 1) {
+        applyStateToBeat(normalizedBeats[j], false);
+      }
+      break;
+    }
+
     const allReady = characters.every((character) => {
       const entry = entriesByUser.get(character.userId);
       return entry && entry.action !== DEFAULT_ACTION;
@@ -519,6 +659,7 @@ export const executeBeatsWithInteractions = (
       }
       break;
     }
+    applyRotationPhase(entriesByUser);
     const occupancy = new Map<string, string>();
     state.forEach((value, userId) => {
       occupancy.set(coordKey(value.position), userId);
@@ -542,9 +683,48 @@ export const executeBeatsWithInteractions = (
       if (disabledActors.has(actorId)) return;
       const actorState = state.get(actorId);
       if (!actorState) return;
+      const comboState = comboStates.get(actorId);
       const origin = { q: actorState.position.q, r: actorState.position.r };
-      const rotationDelta = parseRotationDegrees(entry.rotation ?? '');
-      actorState.facing = normalizeDegrees(actorState.facing + rotationDelta);
+      if (isComboAction(entry.action ?? '')) {
+        const comboIndex = comboState?.coIndex ?? null;
+        const cardMatches = !comboState?.cardId || comboState.cardId === entry.cardId;
+        const canCombo =
+          comboIndex === index &&
+          cardMatches &&
+          Boolean(comboState?.hit) &&
+          Boolean(comboAvailabilityByUser.get(actorId));
+        if (!canCombo) {
+          if (!isComboAction(entry.action ?? '')) {
+            entry.action = 'Co';
+          }
+          entry.comboSkipped = true;
+          comboStates.delete(actorId);
+          return;
+        }
+        if ('comboSkipped' in entry) {
+          delete entry.comboSkipped;
+        }
+        const interactionId = buildInteractionId('combo', index, actorId, actorId);
+        const existing = interactionById.get(interactionId);
+        if (!existing) {
+          const created: CustomInteraction = {
+            id: interactionId,
+            type: 'combo',
+            beatIndex: index,
+            actorUserId: actorId,
+            targetUserId: actorId,
+            status: 'pending',
+            resolution: undefined,
+          };
+          updatedInteractions.push(created);
+          interactionById.set(interactionId, created);
+        }
+        if (haltIndex == null || index < haltIndex) {
+          haltIndex = index;
+        }
+        comboStates.delete(actorId);
+        return;
+      }
       const tokens = parseActionTokens(entry.action ?? '');
       const entryDamage = Number.isFinite(entry.attackDamage) ? entry.attackDamage : 0;
       const entryKbf = Number.isFinite(entry.attackKbf) ? entry.attackKbf : 0;
@@ -572,6 +752,10 @@ export const executeBeatsWithInteractions = (
 
         if (token.type === 'a' || token.type === 'c') {
           const isThrow = entry.interaction?.type === 'throw';
+          const comboCardMatches = !comboState?.cardId || comboState.cardId === entry.cardId;
+          if (comboState && comboCardMatches && targetId && (!isBlocked || isThrow)) {
+            comboState.hit = true;
+          }
           if (targetId && (!isBlocked || isThrow)) {
             const targetState = state.get(targetId);
             if (targetState) {

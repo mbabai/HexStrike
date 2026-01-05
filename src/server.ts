@@ -29,6 +29,7 @@ import {
 import {
   ActionListItem,
   BeatEntry,
+  CardCatalog,
   CharacterId,
   DeckDefinition,
   DeckState,
@@ -61,6 +62,56 @@ interface ActionSetResponse {
 
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const LOG_PREFIX = '[hexstrike]';
+const COMBO_ACTION = 'CO';
+
+const normalizeActionLabel = (value: unknown): string => {
+  const trimmed = `${value ?? ''}`.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+};
+
+const isComboAction = (value: unknown): boolean => normalizeActionLabel(value).toUpperCase() === COMBO_ACTION;
+
+const cardHasCombo = (card: { actions?: unknown[] } | undefined | null): boolean =>
+  Array.isArray(card?.actions) && card.actions.some((action) => isComboAction(action));
+
+const buildComboAvailability = (deckStates: Map<string, DeckState>, catalog: CardCatalog) => {
+  const availability = new Map<string, boolean>();
+  deckStates.forEach((deckState, userId) => {
+    const movementAvailable = deckState.movement.filter((id) => !deckState.exhaustedMovementIds.has(id));
+    const abilityAvailable = deckState.abilityHand.slice();
+    const hasCombo = [...movementAvailable, ...abilityAvailable].some((id) => cardHasCombo(catalog.cardsById.get(id)));
+    availability.set(userId, hasCombo);
+  });
+  return availability;
+};
+
+const findComboContinuation = (
+  interactions: Array<{
+    id?: string;
+    type?: string;
+    status?: string;
+    actorUserId?: string;
+    beatIndex?: number;
+    resolution?: { continue?: boolean };
+  }>,
+  userId: string,
+  beatIndex: number,
+) =>
+  interactions.find(
+    (interaction) =>
+      interaction?.type === 'combo' &&
+      interaction?.status === 'resolved' &&
+      interaction?.actorUserId === userId &&
+      interaction?.beatIndex === beatIndex &&
+      Boolean((interaction as { resolution?: { continue?: boolean } }).resolution?.continue),
+  ) ?? null;
+
+const withComboStarter = (actionList: ActionListItem[]) =>
+  actionList.map((item, index) => (index === 0 ? { ...item, comboStarter: true } : { ...item }));
 
 const getEntryForCharacter = (beat: BeatEntry[] | undefined, character: { userId: string; username?: string }) => {
   if (!Array.isArray(beat)) return undefined;
@@ -712,7 +763,7 @@ export function buildServer(port: number) {
       console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'not-in-game' });
       return { ok: false, status: 403, error: 'User not in game' };
     }
-    const interactions = game.state?.public?.customInteractions ?? [];
+    let interactions = game.state?.public?.customInteractions ?? [];
     const hasPendingInteractions = interactions.some((interaction) => interaction.status === 'pending');
     if (hasPendingInteractions) {
       console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'pending-interaction' });
@@ -738,6 +789,8 @@ export function buildServer(port: number) {
     const earliestIndex = getTimelineEarliestEIndex(beats, characters);
     const atBatCharacters = getCharactersAtEarliestE(beats, characters);
     const atBatUserIds = Array.from(new Set(atBatCharacters.map((candidate) => candidate.userId).filter(Boolean)));
+    const comboInteraction = findComboContinuation(interactions, userId, earliestIndex);
+    const comboRequired = Boolean(comboInteraction);
     const match = await db.findMatch(game.matchId);
     const catalog = await loadCardCatalog();
     const deckStates = await ensureDeckStatesForGame(game, match);
@@ -758,10 +811,23 @@ export function buildServer(port: number) {
         });
         return { ok: false, status: 400, error: validation.error.message, code: validation.error.code };
       }
+      if (comboRequired) {
+        const activeCard = catalog.cardsById.get(activeCardId ?? '');
+        if (!cardHasCombo(activeCard)) {
+          console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'combo-required' });
+          return {
+            ok: false,
+            status: 409,
+            error: 'Action set rejected: active card must include a Co step for combo follow-up',
+            code: 'combo-required',
+          };
+        }
+      }
+      const actionList = comboRequired ? withComboStarter(validation.actionList) : validation.actionList;
       console.log(`${LOG_PREFIX} action:set actionList`, {
         userId,
         gameId,
-        actionList: validation.actionList.map((item) => ({
+        actionList: actionList.map((item) => ({
           action: item.action,
           rotation: item.rotation,
           priority: item.priority,
@@ -779,6 +845,10 @@ export function buildServer(port: number) {
         console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: error.code, error });
         return { ok: false, status: 409, error: error.message, code: error.code };
       }
+      if (comboInteraction) {
+        interactions = interactions.filter((item) => item.id !== comboInteraction.id);
+        game.state.public.customInteractions = interactions;
+      }
       pendingActionSets.delete(game.id);
       game.state.public.pendingActions = undefined;
       const actionPlay = {
@@ -787,8 +857,9 @@ export function buildServer(port: number) {
         passiveCardId: passiveCardId ?? null,
         rotation: rotation ?? '',
       };
-      const updatedBeats = applyActionSetToBeats(beats, characters, userId, validation.actionList, [actionPlay]);
-      const executed = executeBeatsWithInteractions(updatedBeats, characters, interactions, land);
+      const updatedBeats = applyActionSetToBeats(beats, characters, userId, actionList, [actionPlay]);
+      const comboAvailability = buildComboAvailability(deckStates, catalog);
+      const executed = executeBeatsWithInteractions(updatedBeats, characters, interactions, land, comboAvailability);
       game.state.public.beats = executed.beats;
       game.state.public.timeline = executed.beats;
       game.state.public.characters = executed.characters;
@@ -830,10 +901,23 @@ export function buildServer(port: number) {
       });
       return { ok: false, status: 400, error: validation.error.message, code: validation.error.code };
     }
+    if (comboRequired) {
+      const activeCard = catalog.cardsById.get(activeCardId ?? '');
+      if (!cardHasCombo(activeCard)) {
+        console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'combo-required' });
+        return {
+          ok: false,
+          status: 409,
+          error: 'Action set rejected: active card must include a Co step for combo follow-up',
+          code: 'combo-required',
+        };
+      }
+    }
+    const actionList = comboRequired ? withComboStarter(validation.actionList) : validation.actionList;
     console.log(`${LOG_PREFIX} action:set actionList`, {
       userId,
       gameId,
-      actionList: validation.actionList.map((item) => ({
+      actionList: actionList.map((item) => ({
         action: item.action,
         rotation: item.rotation,
         priority: item.priority,
@@ -851,13 +935,17 @@ export function buildServer(port: number) {
       console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: error.code, error });
       return { ok: false, status: 409, error: error.message, code: error.code };
     }
+    if (comboInteraction) {
+      interactions = interactions.filter((item) => item.id !== comboInteraction.id);
+      game.state.public.customInteractions = interactions;
+    }
     const actionPlay = {
       type: 'action-set',
       activeCardId: activeCardId ?? null,
       passiveCardId: passiveCardId ?? null,
       rotation: rotation ?? '',
     };
-    batch.submitted.set(userId, { actionList: validation.actionList, play: [actionPlay] });
+    batch.submitted.set(userId, { actionList, play: [actionPlay] });
     game.state.public.pendingActions = {
       beatIndex: batch.beatIndex,
       requiredUserIds: [...batch.requiredUserIds],
@@ -882,7 +970,8 @@ export function buildServer(port: number) {
         updatedBeats = applyActionSetToBeats(updatedBeats, characters, requiredId, submission.actionList, submission.play);
       }
     });
-    const executed = executeBeatsWithInteractions(updatedBeats, characters, interactions, land);
+    const comboAvailability = buildComboAvailability(deckStates, catalog);
+    const executed = executeBeatsWithInteractions(updatedBeats, characters, interactions, land, comboAvailability);
     game.state.public.beats = executed.beats;
     game.state.public.timeline = executed.beats;
     game.state.public.characters = executed.characters;
@@ -938,26 +1027,49 @@ export function buildServer(port: number) {
       console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'not-authorized' });
       return { ok: false, status: 403, error: 'User is not authorized to resolve this interaction' };
     }
-    if (interaction.type !== 'throw') {
+    const beats = game.state?.public?.beats ?? game.state?.public?.timeline ?? [];
+    const land = game.state?.public?.land ?? [];
+    const match = await db.findMatch(game.matchId);
+    const deckStates = await ensureDeckStatesForGame(game, match);
+    const catalog = await loadCardCatalog();
+    const comboAvailability = buildComboAvailability(deckStates, catalog);
+
+    if (interaction.type === 'throw') {
+      const resolvedDirection = Number(directionIndex);
+      if (!Number.isFinite(resolvedDirection) || resolvedDirection < 0 || resolvedDirection > 5) {
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'invalid-direction' });
+        return { ok: false, status: 400, error: 'Invalid throw direction' };
+      }
+      interaction.status = 'resolved';
+      interaction.resolution = { directionIndex: Math.round(resolvedDirection) };
+    } else if (interaction.type === 'combo') {
+      const rawContinue = (body as { continueCombo?: unknown; comboContinue?: unknown })?.continueCombo;
+      const altContinue = (body as { comboContinue?: unknown })?.comboContinue;
+      const fallbackContinue = (body as { continue?: unknown })?.continue;
+      const resolvedContinue =
+        typeof rawContinue === 'boolean'
+          ? rawContinue
+          : typeof altContinue === 'boolean'
+            ? altContinue
+            : typeof fallbackContinue === 'boolean'
+              ? fallbackContinue
+              : null;
+      if (resolvedContinue === null) {
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'invalid-combo-choice' });
+        return { ok: false, status: 400, error: 'Invalid combo choice' };
+      }
+      interaction.status = 'resolved';
+      interaction.resolution = { continue: resolvedContinue };
+    } else {
       console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'unsupported-type' });
       return { ok: false, status: 400, error: 'Unsupported interaction type' };
     }
-    const resolvedDirection = Number(directionIndex);
-    if (!Number.isFinite(resolvedDirection) || resolvedDirection < 0 || resolvedDirection > 5) {
-      console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'invalid-direction' });
-      return { ok: false, status: 400, error: 'Invalid throw direction' };
-    }
-    interaction.status = 'resolved';
-    interaction.resolution = { directionIndex: Math.round(resolvedDirection) };
-    const beats = game.state?.public?.beats ?? game.state?.public?.timeline ?? [];
-    const land = game.state?.public?.land ?? [];
-    const executed = executeBeatsWithInteractions(beats, characters, interactions, land);
+
+    const executed = executeBeatsWithInteractions(beats, characters, interactions, land, comboAvailability);
     game.state.public.beats = executed.beats;
     game.state.public.timeline = executed.beats;
     game.state.public.characters = executed.characters;
     game.state.public.customInteractions = executed.interactions;
-    const match = await db.findMatch(game.matchId);
-    const deckStates = await ensureDeckStatesForGame(game, match);
     resolveLandRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
     applyMatchOutcome(game, deckStates);
     console.log(`${LOG_PREFIX} interaction:resolve post`, {

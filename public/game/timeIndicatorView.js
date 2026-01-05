@@ -6,6 +6,7 @@ const DEFAULT_BORDER_SIZE = { width: 640, height: 64 };
 const DEFAULT_ACTION = 'E';
 const ACTION_ICON_FALLBACK = 'empty';
 const EMPHASIS_ICON_KEY = 'i';
+const COMBO_ICON_KEY = 'Co';
 const VISIBLE_BEAT_RADIUS = 6;
 const TIMELINE_OFFSETS = Array.from({ length: VISIBLE_BEAT_RADIUS * 2 + 1 }, (_, index) => index - VISIBLE_BEAT_RADIUS);
 const actionArt = new Map();
@@ -17,6 +18,7 @@ const PREVIEW_PULSE_MS = 1400;
 const PREVIEW_ALPHA = 0.5;
 const PREVIEW_SCALE_AMPLITUDE = 0.06;
 const PLAY_BUTTON_MIN_SIZE = 22;
+const COMBO_SKIPPED_ALPHA = 0.35;
 
 const getActionArt = (action) => {
   const key = action || ACTION_ICON_FALLBACK;
@@ -357,17 +359,24 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       const token = parseActionToken(action);
       const image = getActionArt(token.label);
       if (!image || !image.complete || image.naturalWidth === 0) return;
+      const comboSkipped = entry?.comboSkipped && token.label === COMBO_ICON_KEY;
       const xPos = rowCenterX + offset * rowSpacing;
       const drawScale = usePreview ? previewScale : 1;
       const drawSize = iconSize * drawScale;
       const imageX = xPos - drawSize / 2;
       const imageY = rowCenterY - drawSize / 2;
       const shouldFade = fadeAfterIndex !== null && beatIndex > fadeAfterIndex;
-      const alpha = (shouldFade ? 0.28 : 1) * (usePreview ? PREVIEW_ALPHA : 1);
+      const alpha =
+        (shouldFade ? 0.28 : 1) *
+        (usePreview ? PREVIEW_ALPHA : 1) *
+        (comboSkipped ? COMBO_SKIPPED_ALPHA : 1);
       const restoreAfter = alpha !== 1;
       if (restoreAfter) {
         ctx.save();
         ctx.globalAlpha = alpha;
+      }
+      if (comboSkipped) {
+        ctx.filter = 'grayscale(1)';
       }
       const emphasisImage = token.emphasized ? getActionArt(EMPHASIS_ICON_KEY) : null;
       if (token.emphasized && emphasisImage && emphasisImage.complete && emphasisImage.naturalWidth > 0) {
@@ -382,6 +391,16 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
         );
       } else {
         ctx.drawImage(image, imageX, imageY, drawSize, drawSize);
+      }
+      if (entry?.comboStarter) {
+        const comboBadge = getActionArt(COMBO_ICON_KEY);
+        if (comboBadge && comboBadge.complete && comboBadge.naturalWidth > 0) {
+          const comboSize = drawSize * 0.36;
+          const comboPadding = drawSize * 0.04;
+          const comboX = imageX + comboPadding;
+          const comboY = imageY + drawSize - comboSize - comboPadding;
+          ctx.drawImage(comboBadge, comboX, comboY, comboSize, comboSize);
+        }
       }
       const actionLabel = token.label;
       if (

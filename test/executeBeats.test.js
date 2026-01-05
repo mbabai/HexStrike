@@ -2,15 +2,17 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { executeBeats } = require('../dist/game/execute.js');
 
-const buildEntry = (username, action, priority, position, facing) => ({
+const buildEntry = (username, action, priority, position, facing, rotation = '', attackDamage = 0, attackKbf = 0) => ({
   username,
   action,
-  rotation: '',
+  rotation,
   priority,
   damage: 0,
   location: { q: position.q, r: position.r },
   facing,
   calculated: false,
+  attackDamage,
+  attackKbf,
 });
 
 test('executeBeats does not inject placeholder entries for missing characters', () => {
@@ -31,4 +33,54 @@ test('executeBeats does not inject placeholder entries for missing characters', 
   assert.equal(beat0.length, 1);
   assert.ok(beat0.find((entry) => entry.username === 'alpha'));
   assert.equal(beat0.some((entry) => entry.username === 'beta'), false);
+});
+
+test('executeBeats applies rotations before action resolution even when disabled', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', '1a', 20, characters[0].position, characters[0].facing, '', 2, 0),
+      buildEntry('beta', '1m', 0, characters[1].position, characters[1].facing, 'R1', 0, 0),
+    ],
+  ];
+
+  const result = executeBeats(beats, characters);
+  const beat0 = result.beats[0] || [];
+  const betaEntry = beat0.find((entry) => entry.username === 'beta');
+
+  assert.ok(betaEntry);
+  assert.equal(betaEntry.location.q, 1);
+  assert.equal(betaEntry.location.r, 0);
+  assert.equal(betaEntry.facing, 240);
+});
+
+test('executeBeats skips combo choice on missed attacks and keeps Co symbol', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 3, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', '1a', 20, characters[0].position, characters[0].facing, '', 2, 0),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'Co', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  const result = executeBeats(beats, characters);
+  const beat1 = result.beats[1] || [];
+  const alphaEntry = beat1.find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.action, 'Co');
+  assert.equal(alphaEntry.comboSkipped, true);
+  assert.equal(result.interactions.some((interaction) => interaction.type === 'combo'), false);
 });

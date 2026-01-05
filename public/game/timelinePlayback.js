@@ -2,6 +2,7 @@ import { getLastEntryForCharacter } from './beatTimeline.js';
 
 const DEFAULT_ACTION = 'E';
 const WAIT_ACTION = 'W';
+const COMBO_ACTION = 'CO';
 const DAMAGE_ICON_ACTION = 'DamageIcon';
 const KNOCKBACK_DIVISOR = 10;
 const ACTION_DURATION_MS = 1200;
@@ -217,7 +218,15 @@ const parsePath = (path) => {
 
 const isWaitAction = (action) => {
   const trimmed = `${action ?? ''}`.trim().toUpperCase();
-  return !trimmed || trimmed === WAIT_ACTION || trimmed === DAMAGE_ICON_ACTION.toUpperCase();
+  if (!trimmed) return true;
+  if (trimmed === WAIT_ACTION || trimmed === DAMAGE_ICON_ACTION.toUpperCase() || trimmed === COMBO_ACTION) {
+    return true;
+  }
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    const label = trimmed.slice(1, -1).trim();
+    return label === COMBO_ACTION;
+  }
+  return false;
 };
 
 const normalizeActionToken = (token) => {
@@ -242,6 +251,18 @@ const parseActionTokens = (action) => {
       return { type, steps: parsePath(path) };
     })
     .filter((token) => token.type);
+};
+
+const applyRotationPhase = (entries, state, userLookup) => {
+  entries.forEach((entry) => {
+    const actorId = userLookup.get(entry.username);
+    if (!actorId) return;
+    const actorState = state.get(actorId);
+    if (!actorState) return;
+    const rotationDelta = parseRotationDegrees(entry.rotation ?? '');
+    if (!rotationDelta) return;
+    actorState.facing = normalizeDegrees(actorState.facing + rotationDelta);
+  });
 };
 
 const buildPath = (origin, steps, facing) => {
@@ -353,6 +374,8 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex) 
   const steps = [];
   const persistentEffects = [];
 
+  applyRotationPhase(ordered, state, userLookup);
+
   ordered.forEach((entry) => {
     const actorId = userLookup.get(entry.username);
     if (!actorId) return;
@@ -361,8 +384,6 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex) 
     if (!actorState) return;
 
     const origin = { q: actorState.position.q, r: actorState.position.r };
-    const rotationDelta = parseRotationDegrees(entry.rotation ?? '');
-    actorState.facing = normalizeDegrees(actorState.facing + rotationDelta);
     const entryDamage = Number.isFinite(entry?.attackDamage) ? entry.attackDamage : 0;
     const entryKbf = Number.isFinite(entry?.attackKbf) ? entry.attackKbf : 0;
 

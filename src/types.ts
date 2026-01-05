@@ -139,6 +139,8 @@ export interface ActionListItem {
   interaction?: BeatInteraction;
   damage?: number;
   kbf?: number;
+  comboStarter?: boolean;
+  cardId?: string;
 }
 
 export interface ActionSubmission {
@@ -189,6 +191,9 @@ export interface BeatEntry {
   triggers?: string[];
   play?: unknown[];
   status?: string;
+  comboStarter?: boolean;
+  comboSkipped?: boolean;
+  cardId?: string;
 }
 
 export interface PendingActions {
@@ -204,7 +209,7 @@ export interface CustomInteraction {
   actorUserId: string;
   targetUserId: string;
   status: 'pending' | 'resolved';
-  resolution?: { directionIndex?: number; [key: string]: unknown };
+  resolution?: { directionIndex?: number; continue?: boolean; [key: string]: unknown };
 }
 
 export interface MatchOutcome {
