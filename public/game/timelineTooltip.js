@@ -40,18 +40,21 @@ const parseSymbolInstructions = (text) => {
 };
 
 const buildCardMetadata = (catalog) => {
-  const cards = [];
+  const list = [];
+  const byId = new Map();
+  const addCard = (card) => {
+    if (!card?.id) return;
+    const enriched = { ...card, symbolText: parseSymbolInstructions(card.activeText) };
+    list.push(enriched);
+    byId.set(card.id, enriched);
+  };
   if (Array.isArray(catalog?.movement)) {
-    catalog.movement.forEach((card) => {
-      cards.push({ ...card, symbolText: parseSymbolInstructions(card.activeText) });
-    });
+    catalog.movement.forEach(addCard);
   }
   if (Array.isArray(catalog?.ability)) {
-    catalog.ability.forEach((card) => {
-      cards.push({ ...card, symbolText: parseSymbolInstructions(card.activeText) });
-    });
+    catalog.ability.forEach(addCard);
   }
-  return cards;
+  return { list, byId };
 };
 
 const findActionSetStartIndex = (beats, character, beatIndex) => {
@@ -114,10 +117,21 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
   tooltip.hidden = true;
   const text = document.createElement('div');
   text.className = 'timeline-tooltip-text';
+  const title = document.createElement('div');
+  title.className = 'timeline-tooltip-title';
+  const instruction = document.createElement('div');
+  instruction.className = 'timeline-tooltip-instruction';
+  const divider = document.createElement('div');
+  divider.className = 'timeline-tooltip-divider';
+  const passive = document.createElement('div');
+  passive.className = 'timeline-tooltip-passive';
+  const passiveText = document.createElement('div');
+  passiveText.className = 'timeline-tooltip-passive-text';
+  text.append(title, instruction, divider, passive, passiveText);
   tooltip.appendChild(text);
   gameArea.appendChild(tooltip);
 
-  let cardMetadata = [];
+  let cardMetadata = { list: [], byId: new Map() };
   let gameState = null;
   let lastTooltipKey = null;
 
@@ -151,7 +165,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
   };
 
   const update = (event) => {
-    if (!gameState || !cardMetadata.length) {
+    if (!gameState || !cardMetadata.list.length) {
       hide();
       return;
     }
@@ -173,15 +187,59 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       return;
     }
     const beats = gameState?.state?.public?.beats ?? [];
-    const card = findCardForTimelineEntry(beats, target.character, target.beatIndex, target.entry?.priority, cardMetadata);
-    const instruction = card?.symbolText?.get(target.symbol) ?? '';
-    if (!instruction) {
+    const entry = target.entry;
+    const activeCardId = entry?.cardId ? `${entry.cardId}` : null;
+    const passiveCardId = entry?.passiveCardId ? `${entry.passiveCardId}` : null;
+    let activeCard = activeCardId ? cardMetadata.byId.get(activeCardId) : null;
+    if (!activeCard) {
+      activeCard = findCardForTimelineEntry(
+        beats,
+        target.character,
+        target.beatIndex,
+        entry?.priority,
+        cardMetadata.list,
+      );
+    }
+    const passiveCard = passiveCardId ? cardMetadata.byId.get(passiveCardId) : null;
+    const activeName = activeCard?.name ?? '';
+    const passiveName = passiveCard?.name ?? '';
+    const instructionText = activeCard?.symbolText?.get(target.symbol) ?? '';
+    const instructionLine = instructionText ? `{${target.symbol}}: ${instructionText}` : '';
+    const passiveTextValue = passiveCard?.passiveText ?? '';
+    if (!activeName && !passiveName && !instructionLine && !passiveTextValue) {
       hide();
       return;
     }
-    const key = `${target.character.userId ?? target.character.username}:${target.beatIndex}:${target.symbol}:${instruction}`;
+    const key = [
+      target.character.userId ?? target.character.username,
+      target.beatIndex,
+      target.symbol,
+      activeCardId ?? 'none',
+      passiveCardId ?? 'none',
+      instructionLine,
+      passiveTextValue,
+    ].join(':');
     if (key !== lastTooltipKey) {
-      appendInlineText(text, instruction);
+      title.textContent = activeName;
+      title.hidden = !activeName;
+      if (instructionLine) {
+        instruction.hidden = false;
+        appendInlineText(instruction, instructionLine);
+      } else {
+        instruction.hidden = true;
+        instruction.textContent = '';
+      }
+      const showDivider = Boolean(passiveName || passiveTextValue);
+      divider.hidden = !showDivider;
+      passive.textContent = passiveName;
+      passive.hidden = !passiveName;
+      if (passiveTextValue) {
+        passiveText.hidden = false;
+        appendInlineText(passiveText, passiveTextValue);
+      } else {
+        passiveText.hidden = true;
+        passiveText.textContent = '';
+      }
       lastTooltipKey = key;
     }
     tooltip.hidden = false;

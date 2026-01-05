@@ -7,6 +7,7 @@ const DEFAULT_ACTION = 'E';
 const ACTION_ICON_FALLBACK = 'empty';
 const EMPHASIS_ICON_KEY = 'i';
 const COMBO_ICON_KEY = 'Co';
+const KNOCKBACK_ICON_KEY = 'KnockBackIcon';
 const VISIBLE_BEAT_RADIUS = 6;
 const TIMELINE_OFFSETS = Array.from({ length: VISIBLE_BEAT_RADIUS * 2 + 1 }, (_, index) => index - VISIBLE_BEAT_RADIUS);
 const actionArt = new Map();
@@ -19,6 +20,9 @@ const PREVIEW_ALPHA = 0.5;
 const PREVIEW_SCALE_AMPLITUDE = 0.06;
 const PLAY_BUTTON_MIN_SIZE = 22;
 const COMBO_SKIPPED_ALPHA = 0.35;
+const KNOCKBACK_BADGE_OUTSET = 0.25;
+const DAMAGE_BADGE_OUTSET = 0.22;
+const BADGE_NUDGE_X = 5;
 
 const getActionArt = (action) => {
   const key = action || ACTION_ICON_FALLBACK;
@@ -48,6 +52,26 @@ const parseActionToken = (raw) => {
     return { label: label || ACTION_ICON_FALLBACK, emphasized: true };
   }
   return { label: trimmed, emphasized: false };
+};
+
+const getHitSummary = (entry) => {
+  const consequences = Array.isArray(entry?.consequences) ? entry.consequences : [];
+  if (!consequences.length) return null;
+  let hasHit = false;
+  let damageDelta = 0;
+  let knockbackDistance = 0;
+  consequences.forEach((consequence) => {
+    if (!consequence || consequence.type !== 'hit') return;
+    hasHit = true;
+    const delta = Number.isFinite(consequence.damageDelta) ? Math.round(consequence.damageDelta) : 0;
+    const distance = Number.isFinite(consequence.knockbackDistance)
+      ? Math.max(0, Math.round(consequence.knockbackDistance))
+      : 0;
+    damageDelta += delta;
+    knockbackDistance += distance;
+  });
+  if (!hasHit) return null;
+  return { damageDelta, knockbackDistance };
 };
 
 const matchesPreviewUser = (preview, character) => {
@@ -206,7 +230,7 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
       if (!entry) continue;
       const token = parseActionToken(entry.action ?? '');
       const symbol = token.emphasized ? EMPHASIS_ICON_KEY : token.label;
-      if (!(token.emphasized || symbol === 'X1' || symbol === 'X2')) continue;
+      if (token.label === ACTION_ICON_FALLBACK) continue;
       const xPos = rowCenterX + offset * spacing;
       const bounds = {
         x: xPos - iconSize / 2,
@@ -402,6 +426,11 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
           ctx.drawImage(comboBadge, comboX, comboY, comboSize, comboSize);
         }
       }
+      const hitSummary = getHitSummary(entry);
+      if (hitSummary) {
+        drawKnockbackBadge(ctx, imageX, imageY, drawSize, hitSummary.knockbackDistance, theme);
+        drawDamageDeltaBadge(ctx, imageX, imageY, drawSize, hitSummary.damageDelta, theme);
+      }
       const actionLabel = token.label;
       if (
         actionLabel &&
@@ -561,6 +590,54 @@ const drawPriorityBadge = (ctx, x, y, size, priority, theme) => {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(`${priority}`, centerX, centerY + radius * 0.05);
+  ctx.restore();
+};
+
+const drawKnockbackBadge = (ctx, x, y, size, distance, theme) => {
+  if (!Number.isFinite(distance)) return;
+  const icon = getActionArt(KNOCKBACK_ICON_KEY);
+  if (!icon || !icon.complete || icon.naturalWidth === 0) return;
+  const badgeSize = Math.max(14, size * 0.5);
+  const padding = Math.max(4, size * 0.08);
+  const offsetOut = size * KNOCKBACK_BADGE_OUTSET;
+  const badgeX = x + size - badgeSize - padding + offsetOut + BADGE_NUDGE_X;
+  const badgeY = y + padding - offsetOut;
+  ctx.drawImage(icon, badgeX, badgeY, badgeSize, badgeSize);
+
+  ctx.save();
+  ctx.fillStyle = theme.damageText || '#ffffff';
+  ctx.font = `700 ${Math.max(9, badgeSize * 0.4)}px ${theme.fontBody}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const label = `${Math.max(0, Math.round(distance))}`;
+  ctx.fillText(label, badgeX + badgeSize / 2, badgeY + badgeSize / 2 + badgeSize * 0.05);
+  ctx.restore();
+};
+
+const drawDamageDeltaBadge = (ctx, x, y, size, delta, theme) => {
+  if (!Number.isFinite(delta)) return;
+  const safeDelta = Math.round(delta);
+  const badgeSize = Math.max(10, size * 0.34);
+  const padding = Math.max(4, size * 0.08);
+  const width = Math.max(18, size * 0.42);
+  const height = Math.max(12, size * 0.2);
+  const offsetOut = size * DAMAGE_BADGE_OUTSET;
+  const badgeX = x + size - width - padding + offsetOut + BADGE_NUDGE_X;
+  const badgeY = y + padding + badgeSize + padding - offsetOut;
+  const fill =
+    safeDelta < 0 ? theme.actionMove || '#33d06b' : theme.damage || theme.actionAttack || '#d34b42';
+  const textColor = theme.damageText || '#ffffff';
+
+  ctx.save();
+  ctx.fillStyle = fill;
+  drawRoundedRect(ctx, badgeX, badgeY, width, height, height / 2);
+  ctx.fill();
+  ctx.fillStyle = textColor;
+  ctx.font = `700 ${Math.max(9, height * 0.6)}px ${theme.fontBody}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const label = `${safeDelta}`;
+  ctx.fillText(label, badgeX + width / 2, badgeY + height / 2 + height * 0.05);
   ctx.restore();
 };
 

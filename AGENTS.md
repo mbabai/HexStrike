@@ -103,7 +103,8 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
 - Timeline gold highlight uses the earliest `E` beat across all players, not the currently viewed beat.
 - Timeline play/pause replaces the center beat label; hit detection is a circular button in `public/game/timeIndicatorView.js` and auto-advance only steps after playback reports completion.
-- Timeline tooltips for X1/X2/i are derived from `{X1}/{X2}/{i}` fragments in card `activeText`, and tooltip matching relies on the action list starting at the beat with a rotation marker; keep action lists and rotations in sync.
+- Timeline tooltips use `cardId`/`passiveCardId` on beat entries for active/passive names; symbol instructions still come from `{X1}/{X2}/{i}` fragments in `activeText`.
+- Hit rewrites clear `cardId`/`passiveCardId` on `DamageIcon`/forced `E` entries so tooltips only describe actions that actually resolved.
 - Rotation restrictions like `0-2` are interpreted as rotation magnitude (both left/right labels plus `0`/`3` where applicable), not directional ranges.
 - Rotations resolve in a pre-action phase; apply them even if the actor's action is skipped/disabled, and keep `src/game/execute.ts` + `public/game/timelinePlayback.js` in sync.
 - When multiple players share the earliest `E`, the server batches action sets in `pendingActions` and reveals them simultaneously once all required players submit; timeline rings blink red for players still needed.
@@ -113,12 +114,15 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.
 - Combo prompts pause on the `Co` beat before any action/E resolution, and choosing to continue skips land refresh/draw for that player at that beat.
 - Combo continuation is tied to a specific active card (`cardId` on action list/beat entry); only hits from that card can open the combo prompt.
+- Throw interactions are tagged from card text (`throw` keyword in active/passive text); combo prompts only open on non-throw hits.
 - Skipped combos keep the `Co` symbol on the timeline and are marked with `comboSkipped` for UI greying; do not replace with `W`.
 - Server-side deck state is tracked per game (in memory); refreshes resolve only when the earliest `E` is on land (gated by `lastRefreshIndex`), clearing movement exhaustion and drawing up to max hand size.
 - Land refresh checks should use the last known beat location at/ before the earliest `E`; avoid `public.characters` positions or you will refresh on abyss.
 - Land refresh should be keyed only by `lastRefreshIndex` + earliest `E` beat; skip refresh entirely while `pendingActions.beatIndex` matches the earliest `E`.
 - If a hit or custom interaction rewrites a player timeline forward, clamp that player's pending refresh beat to their current first `E` or it will block subsequent action submissions.
-- Knockback distance uses accumulated damage after the hit plus card KBF: `KBF=0 -> 0`, `KBF=1 -> 1`, `KBF>1 -> max(1, floor((damage * KBF) / 10))`; on hit the victim's timeline is rewritten from that beat with `DamageIcon`s plus a trailing `E` (no stun window when KBF=0).
+- Knockback distance uses accumulated damage after the hit plus card KBF: `KBF=0 -> 0`, `KBF=1 -> 1`, `KBF>1 -> max(1, floor((damage * KBF) / 10))`; hits record `BeatEntry.consequences` with damage delta + actual knocked steps and only rewrite the timeline starting on the next beat if the target already acted.
+- Damage/knockback overlays on the timeline come from `BeatEntry.consequences`, not accumulated `damage`.
+- Timeline hit badge placement is tuned via `KNOCKBACK_BADGE_OUTSET`, `DAMAGE_BADGE_OUTSET`, and `BADGE_NUDGE_X` in `public/game/timeIndicatorView.js`.
 - Attack damage/KBF are taken from the active card and stored on beat entries (`attackDamage`, `attackKbf`); both server and client resolution read from those fields.
 - Match outcomes live in `public.matchOutcome`: distance loss uses the earliest beat where a character is more than 4 hexes from land, places `Death` on the next beat (clearing later entries for that character), and no-cards abyss loss only triggers at the earliest `E` for that player.
 - The Game Over Continue button calls `/api/v1/match/:id/exit` and only removes the local player from the match; the other player stays in-game until they exit or the match is completed.
@@ -131,7 +135,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Timeline playback timing is tuned in `public/game/timelinePlayback.js` via `ACTION_DURATION_MS` plus swipe/hit/knockback windows; adjust there before changing renderer effects.
 - Trails are drawn as tapered polygons (sharp edges) in `public/game/renderer.js` instead of stroked lines; keep this in mind if changing trail caps or widths.
 - Board portraits render in greyscale when the beat action is `DamageIcon`/`knockbackIcon`; keep the renderer's action tag matching server output.
-- Timeline playback base state should come from the last beat entry at/ before the selected beat; do not use `public.characters` or scrubbing will drift.
+- Timeline playback base state should come from the last calculated beat entry at/ before the selected beat; do not fall back to uncalculated entries or `public.characters` or scrubbing will drift.
 - Damage previews during hit shakes are drawn via `displayDamage` using pre-step damage to avoid double-counting when the step completes.
 - Map panning/zooming is bound to the game area and must ignore UI elements like action cards, slots, or rotation controls; update `PAN_BLOCK_SELECTORS` in `public/game/controls.js` when adding new HUD controls.
 - Find Game is disabled until a deck is selected; the selected deck ID is stored in cookies and its `characterId` plus movement/ability lists are sent with `/api/v1/lobby/join`.

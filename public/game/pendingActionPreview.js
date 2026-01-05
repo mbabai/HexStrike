@@ -21,16 +21,19 @@ const actionHasAttackToken = (action) => {
 
 const hasThrowInteraction = (text) => {
   if (!text) return false;
-  return /\{i\}\s*:\s*throw\b/i.test(text);
+  return /\bthrow\b/i.test(text);
 };
 
-const buildPendingActionList = (card, rotation) => {
-  const actions = Array.isArray(card?.actions) ? card.actions : [];
+const buildPendingActionList = (activeCard, passiveCard, rotation) => {
+  const actions = Array.isArray(activeCard?.actions) ? activeCard.actions : [];
   if (!actions.length) return [];
-  const priority = Number.isFinite(card?.priority) ? card.priority : 0;
-  const damage = Number.isFinite(card?.damage) ? card.damage : 0;
-  const kbf = Number.isFinite(card?.kbf) ? card.kbf : 0;
-  const supportsThrow = hasThrowInteraction(card?.activeText);
+  const priority = Number.isFinite(activeCard?.priority) ? activeCard.priority : 0;
+  const damage = Number.isFinite(activeCard?.damage) ? activeCard.damage : 0;
+  const kbf = Number.isFinite(activeCard?.kbf) ? activeCard.kbf : 0;
+  const supportsThrow =
+    hasThrowInteraction(activeCard?.activeText) ||
+    hasThrowInteraction(activeCard?.passiveText) ||
+    hasThrowInteraction(passiveCard?.passiveText);
   const rotationLabel = `${rotation ?? ''}`.trim();
   return actions.map((action, index) => ({
     action,
@@ -39,7 +42,8 @@ const buildPendingActionList = (card, rotation) => {
     interaction: supportsThrow && actionHasAttackToken(action) ? { type: 'throw' } : undefined,
     damage,
     kbf,
-    cardId: card?.id ?? null,
+    cardId: activeCard?.id ?? null,
+    passiveCardId: passiveCard?.id ?? null,
   }));
 };
 
@@ -53,8 +57,8 @@ const hasPendingBatch = (pending) => Boolean(pending && Array.isArray(pending.re
 export const createPendingActionPreview = () => {
   let actionList = null;
 
-  const setFromCard = (card, rotation) => {
-    const nextList = buildPendingActionList(card, rotation);
+  const setFromCard = (activeCard, passiveCard, rotation) => {
+    const nextList = buildPendingActionList(activeCard, passiveCard, rotation);
     actionList = nextList.length ? nextList : null;
   };
 

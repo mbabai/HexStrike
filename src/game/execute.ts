@@ -297,6 +297,13 @@ export const executeBeatsWithInteractions = (
     rosterOrder.set(character.username, index);
   });
   const normalizedBeats = beats.map((beat) => beat.map((entry) => ({ ...entry })));
+  normalizedBeats.forEach((beat) => {
+    beat.forEach((entry) => {
+      if (entry && entry.consequences) {
+        delete entry.consequences;
+      }
+    });
+  });
   const state = new Map<string, { position: { q: number; r: number }; damage: number; facing: number }>();
   characters.forEach((character) => {
     state.set(character.userId, {
@@ -378,6 +385,43 @@ export const executeBeatsWithInteractions = (
     entry.calculated = calculated;
   };
 
+  const getOrCreateEntryForCharacter = (
+    beatIndex: number,
+    character: PublicCharacter,
+    stateSnapshot: { position: { q: number; r: number }; damage: number; facing: number },
+  ): BeatEntry => {
+    ensureBeatIndex(beatIndex);
+    const beat = normalizedBeats[beatIndex];
+    const existing = findEntryForCharacter(beat, character);
+    if (existing) return existing;
+    const next = buildEntryForCharacter(
+      character,
+      stateSnapshot,
+      { action: DEFAULT_ACTION, rotation: '', priority: 0 } as BeatEntry,
+      false,
+      resolveTerrain(stateSnapshot.position),
+    );
+    beat.push(next);
+    return next;
+  };
+
+  const recordHitConsequence = (
+    targetId: string,
+    beatIndex: number,
+    targetState: { position: { q: number; r: number }; damage: number; facing: number },
+    damageDelta: number,
+    knockbackDistance: number,
+  ) => {
+    const character = characterById.get(targetId);
+    if (!character) return;
+    const delta = Number.isFinite(damageDelta) ? Math.round(damageDelta) : 0;
+    const distance = Number.isFinite(knockbackDistance) ? Math.max(0, Math.round(knockbackDistance)) : 0;
+    const entry = getOrCreateEntryForCharacter(beatIndex, character, targetState);
+    const list = Array.isArray(entry.consequences) ? entry.consequences : [];
+    list.push({ type: 'hit', damageDelta: delta, knockbackDistance: distance });
+    entry.consequences = list;
+  };
+
   const upsertBeatEntry = (
     beat: BeatEntry[],
     character: PublicCharacter,
@@ -390,6 +434,18 @@ export const executeBeatsWithInteractions = (
       entry.action = action;
       entry.rotation = '';
       entry.priority = 0;
+      if ('cardId' in entry) {
+        delete entry.cardId;
+      }
+      if ('passiveCardId' in entry) {
+        delete entry.passiveCardId;
+      }
+      if ('comboStarter' in entry) {
+        delete entry.comboStarter;
+      }
+      if ('comboSkipped' in entry) {
+        delete entry.comboSkipped;
+      }
       applyStateSnapshotToEntry(entry, stateSnapshot, false);
       return entry;
     }
@@ -409,17 +465,19 @@ export const executeBeatsWithInteractions = (
     beatIndex: number,
     targetState: { position: { q: number; r: number }; damage: number; facing: number },
     knockbackOverride?: number,
+    preserveAction = false,
   ) => {
     const character = characterById.get(targetId);
     if (!character) return;
+    const startIndex = preserveAction ? beatIndex + 1 : beatIndex;
     const knockbackDistance = Number.isFinite(knockbackOverride)
       ? Math.max(0, Math.round(knockbackOverride as number))
       : getKnockbackDistance(targetState.damage, 1);
     const damageIcons = knockbackDistance + 1;
-    const computedEndIndex = beatIndex + damageIcons;
+    const computedEndIndex = startIndex + damageIcons;
     const getAppliedWindowEnd = () => {
       let lastApplied: number | null = null;
-      for (let i = beatIndex; i < normalizedBeats.length; i += 1) {
+      for (let i = startIndex; i < normalizedBeats.length; i += 1) {
         const beat = normalizedBeats[i];
         if (!beat) break;
         const entry = findEntryForCharacter(beat, character);
@@ -446,7 +504,7 @@ export const executeBeatsWithInteractions = (
         damageIcons,
       });
     }
-    for (let i = beatIndex; i <= endIndex; i += 1) {
+    for (let i = startIndex; i <= endIndex; i += 1) {
       const beat = normalizedBeats[i];
       if (!beat) continue;
       if (i < endIndex) {
@@ -520,7 +578,7 @@ export const executeBeatsWithInteractions = (
     }
   });
 
-  const comboStates = new Map<string, { coIndex: number; hit: boolean; cardId: string | null }>();
+  const comboStates = new Map<string, { coIndex: number; hit: boolean; cardId: string }>();
   const lastActionByUser = new Map<string, string>();
 
   const findNextComboIndex = (character: PublicCharacter, startIndex: number) => {
@@ -528,7 +586,11 @@ export const executeBeatsWithInteractions = (
       const beat = normalizedBeats[i];
       const entry = beat ? findEntryForCharacter(beat, character) : null;
       if (!entry || entry.action === DEFAULT_ACTION) return null;
-      if (isComboAction(entry.action)) return i;
+      if (isComboAction(entry.action)) {
+        const cardId = entry.cardId ? `${entry.cardId}` : '';
+        if (!cardId) return null;
+        return { index: i, cardId };
+      }
     }
     return null;
   };
@@ -588,9 +650,9 @@ export const executeBeatsWithInteractions = (
       if (action === DEFAULT_ACTION) {
         comboStates.delete(actorId);
       } else if (previous === DEFAULT_ACTION && !comboStates.has(actorId)) {
-        const coIndex = findNextComboIndex(character, index);
-        if (coIndex != null) {
-          comboStates.set(actorId, { coIndex, hit: false, cardId: entry?.cardId ?? null });
+        const nextCombo = findNextComboIndex(character, index);
+        if (nextCombo) {
+          comboStates.set(actorId, { coIndex: nextCombo.index, hit: false, cardId: nextCombo.cardId });
         }
       }
       lastActionByUser.set(actorId, action);
@@ -601,7 +663,7 @@ export const executeBeatsWithInteractions = (
       if (!isComboAction(entry.action ?? '')) return;
       const comboState = comboStates.get(actorId);
       if (!comboState || comboState.coIndex !== index || !comboState.hit) return;
-      if (comboState.cardId && comboState.cardId !== entry.cardId) return;
+      if (comboState.cardId !== entry.cardId) return;
       if (!comboAvailabilityByUser.get(actorId)) return;
       if ('comboSkipped' in entry) {
         delete entry.comboSkipped;
@@ -666,6 +728,7 @@ export const executeBeatsWithInteractions = (
     });
     const blockMap = new Map<string, Set<number>>();
     const disabledActors = new Set<string>();
+    const executedActors = new Set<string>();
     const ordered = beat
       .slice()
       .sort((a, b) => {
@@ -685,9 +748,10 @@ export const executeBeatsWithInteractions = (
       if (!actorState) return;
       const comboState = comboStates.get(actorId);
       const origin = { q: actorState.position.q, r: actorState.position.r };
+
       if (isComboAction(entry.action ?? '')) {
         const comboIndex = comboState?.coIndex ?? null;
-        const cardMatches = !comboState?.cardId || comboState.cardId === entry.cardId;
+        const cardMatches = comboState?.cardId === entry.cardId;
         const canCombo =
           comboIndex === index &&
           cardMatches &&
@@ -725,9 +789,11 @@ export const executeBeatsWithInteractions = (
         comboStates.delete(actorId);
         return;
       }
+
       const tokens = parseActionTokens(entry.action ?? '');
       const entryDamage = Number.isFinite(entry.attackDamage) ? entry.attackDamage : 0;
       const entryKbf = Number.isFinite(entry.attackKbf) ? entry.attackKbf : 0;
+
       tokens.forEach((token) => {
         const { positions, destination, lastStep } = buildPath(origin, token.steps, actorState.facing);
         const targetKey = coordKey(destination);
@@ -752,13 +818,17 @@ export const executeBeatsWithInteractions = (
 
         if (token.type === 'a' || token.type === 'c') {
           const isThrow = entry.interaction?.type === 'throw';
-          const comboCardMatches = !comboState?.cardId || comboState.cardId === entry.cardId;
-          if (comboState && comboCardMatches && targetId && (!isBlocked || isThrow)) {
+          const comboCardMatches = comboState?.cardId === entry.cardId;
+          if (comboState && comboCardMatches && targetId && !isBlocked && !isThrow) {
             comboState.hit = true;
           }
           if (targetId && (!isBlocked || isThrow)) {
             const targetState = state.get(targetId);
             if (targetState) {
+              const targetCharacter = characterById.get(targetId);
+              const targetEntry = targetCharacter ? findEntryForCharacter(beat, targetCharacter) : null;
+              const preserveAction =
+                executedActors.has(targetId) && (targetEntry?.action ?? DEFAULT_ACTION) !== DAMAGE_ICON_ACTION;
               if (isThrow) {
                 const interactionId = buildInteractionId('throw', index, actorId, targetId);
                 const existing = interactionById.get(interactionId);
@@ -788,7 +858,8 @@ export const executeBeatsWithInteractions = (
                       occupancy.set(coordKey(targetState.position), targetId);
                     }
                   }
-                  applyHitTimeline(targetId, index, targetState, knockedSteps);
+                  applyHitTimeline(targetId, index, targetState, knockedSteps, preserveAction);
+                  recordHitConsequence(targetId, index, targetState, entryDamage, knockedSteps);
                   disabledActors.add(targetId);
                 } else {
                   if (!existing) {
@@ -825,17 +896,18 @@ export const executeBeatsWithInteractions = (
                     if (occupant && occupant !== targetId) break;
                     finalPosition = candidate;
                     knockedSteps += 1;
-                    }
-                    if (!sameCoord(finalPosition, targetState.position)) {
-                      occupancy.delete(coordKey(targetState.position));
-                      targetState.position = { q: finalPosition.q, r: finalPosition.r };
-                      occupancy.set(coordKey(targetState.position), targetId);
-                    }
                   }
+                  if (!sameCoord(finalPosition, targetState.position)) {
+                    occupancy.delete(coordKey(targetState.position));
+                    targetState.position = { q: finalPosition.q, r: finalPosition.r };
+                    occupancy.set(coordKey(targetState.position), targetId);
+                  }
+                }
                 const shouldStun = entryKbf === 1 || (entryKbf > 1 && knockbackDistance > 0);
                 if (shouldStun) {
-                  applyHitTimeline(targetId, index, targetState, knockedSteps);
+                  applyHitTimeline(targetId, index, targetState, knockedSteps, preserveAction);
                 }
+                recordHitConsequence(targetId, index, targetState, entryDamage, knockedSteps);
                 disabledActors.add(targetId);
               }
             }
@@ -867,6 +939,8 @@ export const executeBeatsWithInteractions = (
           }
         }
       });
+
+      executedActors.add(actorId);
     });
 
     applyStateToBeat(beat, true);

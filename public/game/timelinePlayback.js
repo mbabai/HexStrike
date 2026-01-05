@@ -1,5 +1,3 @@
-import { getLastEntryForCharacter } from './beatTimeline.js';
-
 const DEFAULT_ACTION = 'E';
 const WAIT_ACTION = 'W';
 const COMBO_ACTION = 'CO';
@@ -305,10 +303,32 @@ const getResolvedDirectionIndex = (interaction) => {
   return rounded;
 };
 
+const getBeatEntryForCharacter = (beat, character) => {
+  if (!Array.isArray(beat) || !character) return null;
+  const lookupKeys = new Set([character.username, character.userId].filter(Boolean));
+  return (
+    beat.find((entry) => {
+      if (!entry || typeof entry !== 'object') return false;
+      const key = entry.username ?? entry.userId ?? entry.userID;
+      return lookupKeys.has(key);
+    }) ?? null
+  );
+};
+
+const getLastCalculatedEntryForCharacter = (beats, character, uptoIndex) => {
+  if (!Array.isArray(beats) || !beats.length || !character) return null;
+  const lastIndex = Math.min(uptoIndex, beats.length - 1);
+  for (let i = lastIndex; i >= 0; i -= 1) {
+    const entry = getBeatEntryForCharacter(beats[i], character);
+    if (entry && entry.calculated) return entry;
+  }
+  return null;
+};
+
 const buildBaseState = (beats, beatIndex, characters) => {
   const lookupIndex = Number.isFinite(beatIndex) ? beatIndex - 1 : (beats?.length ?? 0) - 1;
   return characters.map((character) => {
-    const entry = lookupIndex >= 0 ? getLastEntryForCharacter(beats, character, lookupIndex) : null;
+    const entry = lookupIndex >= 0 ? getLastCalculatedEntryForCharacter(beats, character, lookupIndex) : null;
     return {
       ...character,
       position: entry?.location ?? { q: character.position.q, r: character.position.r },

@@ -529,7 +529,7 @@ export const initGame = () => {
     actionSubmitInFlight = true;
     if (actionHud) actionHud.setLocked(true);
     const previewCard = activeCard ?? cardLookup.get(activeCardId);
-    pendingActionPreview.setFromCard(previewCard, rotation);
+    pendingActionPreview.setFromCard(previewCard, cardLookup.get(passiveCardId), rotation);
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
     console.log(`${LOG_PREFIX} action:set submit`, {

@@ -55,6 +55,7 @@ const buildTargetEntry = (
   attackDamage: number | undefined,
   attackKbf: number | undefined,
   cardId: string | undefined,
+  passiveCardId: string | undefined,
   seed: { damage: number; location: { q: number; r: number }; facing: number },
 ): BeatEntry => {
   const entry: BeatEntry = {
@@ -78,6 +79,9 @@ const buildTargetEntry = (
   }
   if (cardId) {
     entry.cardId = cardId;
+  }
+  if (passiveCardId) {
+    entry.passiveCardId = passiveCardId;
   }
   return entry;
 };
@@ -133,6 +137,7 @@ export const applyActionSetToBeats = (
     attackKbf: item.kbf,
     comboStarter: index === 0 ? item.comboStarter : undefined,
     cardId: item.cardId,
+    passiveCardId: item.passiveCardId,
   }));
   const lastIndex = startIndex + actions.length - 1;
 
@@ -171,6 +176,11 @@ export const applyActionSetToBeats = (
       } else if ('cardId' in entry) {
         delete entry.cardId;
       }
+      if (actionItem.passiveCardId) {
+        entry.passiveCardId = actionItem.passiveCardId;
+      } else if ('passiveCardId' in entry) {
+        delete entry.passiveCardId;
+      }
       if (Number.isFinite(actionItem.attackDamage)) {
         entry.attackDamage = actionItem.attackDamage;
       }
@@ -192,6 +202,7 @@ export const applyActionSetToBeats = (
         actionItem.attackDamage,
         actionItem.attackKbf,
         actionItem.cardId,
+        actionItem.passiveCardId,
         seed,
       );
       if (actionItem.comboStarter) {

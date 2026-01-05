@@ -114,7 +114,7 @@ const actionHasAttackToken = (action: string): boolean => {
 
 const hasThrowInteraction = (text: string | undefined): boolean => {
   if (!text) return false;
-  return /\{i\}\s*:\s*throw\b/i.test(text);
+  return /\bthrow\b/i.test(text);
 };
 
 const getEntryForCharacter = (beat: BeatEntry[], character: PublicCharacter): BeatEntry | null =>
@@ -258,7 +258,10 @@ export const validateActionSubmission = (
     return { ok: false, error: { code: 'no-action-list', message: 'Active card has no actions.' } };
   }
 
-  const supportsThrow = hasThrowInteraction(activeCard.activeText);
+  const supportsThrow =
+    hasThrowInteraction(activeCard.activeText) ||
+    hasThrowInteraction(activeCard.passiveText) ||
+    hasThrowInteraction(passiveCard.passiveText);
   const attackDamage = Number.isFinite(activeCard.damage) ? activeCard.damage : 0;
   const attackKbf = Number.isFinite(activeCard.kbf) ? activeCard.kbf : 0;
   const actionList: ActionListItem[] = activeCard.actions.map((action, index) => ({
@@ -269,6 +272,7 @@ export const validateActionSubmission = (
     damage: attackDamage,
     kbf: attackKbf,
     cardId: activeCard.id,
+    passiveCardId: passiveCard.id,
   }));
 
   const refreshOffset = getRefreshOffset(activeCard.actions);

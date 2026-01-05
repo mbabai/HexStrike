@@ -84,3 +84,56 @@ test('executeBeats skips combo choice on missed attacks and keeps Co symbol', ()
   assert.equal(alphaEntry.comboSkipped, true);
   assert.equal(result.interactions.some((interaction) => interaction.type === 'combo'), false);
 });
+
+test('executeBeats does not open combo on throw hits', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', '[a]', 20, characters[0].position, characters[0].facing, '', 2, 0),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'Co', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  beats[0][0].interaction = { type: 'throw' };
+  beats[0][0].cardId = 'throw-card';
+  beats[1][0].cardId = 'throw-card';
+
+  const result = executeBeats(beats, characters);
+  assert.equal(result.interactions.some((interaction) => interaction.type === 'combo'), false);
+});
+
+test('executeBeats preserves action when hit after acting and records consequences', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'W', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', '1a', 5, characters[1].position, characters[1].facing, '', 2, 1),
+    ],
+  ];
+
+  const result = executeBeats(beats, characters);
+  const beat0 = result.beats[0] || [];
+  const alphaEntry = beat0.find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.action, 'W');
+  assert.ok(Array.isArray(alphaEntry.consequences));
+  assert.deepEqual(alphaEntry.consequences[0], { type: 'hit', damageDelta: 2, knockbackDistance: 1 });
+
+  const beat1 = result.beats[1] || [];
+  const alphaBeat1 = beat1.find((entry) => entry.username === 'alpha');
+  assert.ok(alphaBeat1);
+  assert.equal(alphaBeat1.action, 'DamageIcon');
+});

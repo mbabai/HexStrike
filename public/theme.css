@@ -2103,6 +2103,33 @@ small {
   display: block;
 }
 
+.timeline-tooltip-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.timeline-tooltip-instruction {
+  margin-bottom: 6px;
+}
+
+.timeline-tooltip-divider {
+  height: 1px;
+  margin: 6px 0;
+  background: var(--color-divider);
+  opacity: 0.7;
+}
+
+.timeline-tooltip-passive {
+  font-style: italic;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.timeline-tooltip-passive-text {
+  display: block;
+}
+
 @media (max-width: 640px) {
   .action-hud {
     width: min(520px, 94vw);

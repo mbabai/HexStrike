@@ -141,6 +141,7 @@ export interface ActionListItem {
   kbf?: number;
   comboStarter?: boolean;
   cardId?: string;
+  passiveCardId?: string;
 }
 
 export interface ActionSubmission {
@@ -194,6 +195,12 @@ export interface BeatEntry {
   comboStarter?: boolean;
   comboSkipped?: boolean;
   cardId?: string;
+  passiveCardId?: string;
+  consequences?: Array<{
+    type: 'hit';
+    damageDelta: number;
+    knockbackDistance: number;
+  }>;
 }
 
 export interface PendingActions {
