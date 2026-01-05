@@ -38,6 +38,28 @@ test('validateActionSubmission enforces hand and movement exhaustion', async () 
   }
 });
 
+test('validateActionSubmission ignores grappling hook throw keyword', async () => {
+  const catalog = await loadCardCatalog();
+  const grapplingHook = catalog.cardsById.get('grappling-hook');
+  assert.ok(grapplingHook);
+  const nonThrowAbility = catalog.ability.find((card) => {
+    const text = `${card?.activeText ?? ''} ${card?.passiveText ?? ''}`;
+    return !/\bthrow\b/i.test(text);
+  });
+  assert.ok(nonThrowAbility);
+  const deckState = createDeckState({ movement: [grapplingHook.id], ability: [nonThrowAbility.id] });
+  const result = validateActionSubmission(
+    { activeCardId: grapplingHook.id, passiveCardId: nonThrowAbility.id, rotation: '0' },
+    deckState,
+    catalog,
+  );
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    const hasThrowInteraction = result.actionList.some((item) => item.interaction?.type === 'throw');
+    assert.equal(hasThrowInteraction, false);
+  }
+});
+
 test('applyCardUse removes ability card and exhausts movement', async () => {
   const catalog = await loadCardCatalog();
   const deck = buildSampleDeck(catalog);

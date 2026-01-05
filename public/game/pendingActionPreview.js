@@ -19,8 +19,11 @@ const actionHasAttackToken = (action) => {
     });
 };
 
-const hasThrowInteraction = (text) => {
+const THROW_IGNORED_CARD_IDS = new Set(['grappling-hook']);
+
+const hasThrowInteraction = (cardId, text) => {
   if (!text) return false;
+  if (cardId && THROW_IGNORED_CARD_IDS.has(cardId)) return false;
   return /\bthrow\b/i.test(text);
 };
 
@@ -31,9 +34,10 @@ const buildPendingActionList = (activeCard, passiveCard, rotation) => {
   const damage = Number.isFinite(activeCard?.damage) ? activeCard.damage : 0;
   const kbf = Number.isFinite(activeCard?.kbf) ? activeCard.kbf : 0;
   const supportsThrow =
-    hasThrowInteraction(activeCard?.activeText) ||
-    hasThrowInteraction(activeCard?.passiveText) ||
-    hasThrowInteraction(passiveCard?.passiveText);
+    hasThrowInteraction(activeCard?.id, activeCard?.activeText) ||
+    hasThrowInteraction(activeCard?.id, activeCard?.passiveText) ||
+    hasThrowInteraction(passiveCard?.id, passiveCard?.activeText) ||
+    hasThrowInteraction(passiveCard?.id, passiveCard?.passiveText);
   const rotationLabel = `${rotation ?? ''}`.trim();
   return actions.map((action, index) => ({
     action,

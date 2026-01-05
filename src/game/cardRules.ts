@@ -112,8 +112,11 @@ const actionHasAttackToken = (action: string): boolean => {
     });
 };
 
-const hasThrowInteraction = (text: string | undefined): boolean => {
+const THROW_IGNORED_CARD_IDS = new Set(['grappling-hook']);
+
+const hasThrowInteraction = (cardId: string | undefined, text: string | undefined): boolean => {
   if (!text) return false;
+  if (cardId && THROW_IGNORED_CARD_IDS.has(cardId)) return false;
   return /\bthrow\b/i.test(text);
 };
 
@@ -259,9 +262,10 @@ export const validateActionSubmission = (
   }
 
   const supportsThrow =
-    hasThrowInteraction(activeCard.activeText) ||
-    hasThrowInteraction(activeCard.passiveText) ||
-    hasThrowInteraction(passiveCard.passiveText);
+    hasThrowInteraction(activeCard.id, activeCard.activeText) ||
+    hasThrowInteraction(activeCard.id, activeCard.passiveText) ||
+    hasThrowInteraction(passiveCard.id, passiveCard.activeText) ||
+    hasThrowInteraction(passiveCard.id, passiveCard.passiveText);
   const attackDamage = Number.isFinite(activeCard.damage) ? activeCard.damage : 0;
   const attackKbf = Number.isFinite(activeCard.kbf) ? activeCard.kbf : 0;
   const actionList: ActionListItem[] = activeCard.actions.map((action, index) => ({

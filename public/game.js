@@ -37,15 +37,28 @@ const normalizeActionLabel = (value) => {
 const cardHasCombo = (card) =>
   Array.isArray(card?.actions) && card.actions.some((action) => normalizeActionLabel(action).toUpperCase() === COMBO_ACTION);
 
-const hasComboEntryForInteraction = (interaction, beats) => {
+const buildActorKeys = (interaction, characters) => {
+  const keys = new Set();
+  const actorId = interaction?.actorUserId;
+  if (actorId) keys.add(actorId);
+  const actor = Array.isArray(characters)
+    ? characters.find((character) => character.userId === actorId || character.username === actorId)
+    : null;
+  if (actor?.userId) keys.add(actor.userId);
+  if (actor?.username) keys.add(actor.username);
+  return keys;
+};
+
+const hasComboEntryForInteraction = (interaction, beats, characters) => {
   if (!interaction || interaction.type !== 'combo') return false;
   const beatIndex = Number.isFinite(interaction.beatIndex) ? Math.round(interaction.beatIndex) : null;
   if (beatIndex === null || beatIndex < 0) return false;
   const beat = beats?.[beatIndex];
   if (!Array.isArray(beat)) return false;
+  const actorKeys = buildActorKeys(interaction, characters);
   const entry = beat.find((beatEntry) => {
     const key = beatEntry?.username ?? beatEntry?.userId ?? beatEntry?.userID;
-    return key === interaction.actorUserId;
+    return actorKeys.has(key);
   });
   if (!entry) return false;
   return normalizeActionLabel(entry.action).toUpperCase() === COMBO_ACTION;
@@ -254,11 +267,12 @@ export const initGame = () => {
   const getPendingInteractionForUser = () => {
     const interactions = gameState?.state?.public?.customInteractions ?? [];
     const beats = gameState?.state?.public?.beats ?? [];
+    const characters = gameState?.state?.public?.characters ?? [];
     const pending = interactions.filter(
       (interaction) => interaction?.status === 'pending' && interaction?.actorUserId === localUserId,
     );
     const filtered = pending.filter(
-      (interaction) => interaction?.type !== 'combo' || hasComboEntryForInteraction(interaction, beats),
+      (interaction) => interaction?.type !== 'combo' || hasComboEntryForInteraction(interaction, beats, characters),
     );
     if (!filtered.length) return null;
     filtered.sort((a, b) => (a?.beatIndex ?? 0) - (b?.beatIndex ?? 0));

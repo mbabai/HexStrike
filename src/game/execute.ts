@@ -578,7 +578,7 @@ export const executeBeatsWithInteractions = (
     }
   });
 
-  const comboStates = new Map<string, { coIndex: number; hit: boolean; cardId: string }>();
+  const comboStates = new Map<string, { coIndex: number; hit: boolean; cardId: string; throwInteraction: boolean }>();
   const lastActionByUser = new Map<string, string>();
 
   const findNextComboIndex = (character: PublicCharacter, startIndex: number) => {
@@ -652,7 +652,12 @@ export const executeBeatsWithInteractions = (
       } else if (previous === DEFAULT_ACTION && !comboStates.has(actorId)) {
         const nextCombo = findNextComboIndex(character, index);
         if (nextCombo) {
-          comboStates.set(actorId, { coIndex: nextCombo.index, hit: false, cardId: nextCombo.cardId });
+          comboStates.set(actorId, {
+            coIndex: nextCombo.index,
+            hit: false,
+            cardId: nextCombo.cardId,
+            throwInteraction: false,
+          });
         }
       }
       lastActionByUser.set(actorId, action);
@@ -662,6 +667,10 @@ export const executeBeatsWithInteractions = (
     entriesByUser.forEach((entry, actorId) => {
       if (!isComboAction(entry.action ?? '')) return;
       const comboState = comboStates.get(actorId);
+      if (comboState?.throwInteraction) {
+        comboStates.delete(actorId);
+        return;
+      }
       if (!comboState || comboState.coIndex !== index || !comboState.hit) return;
       if (comboState.cardId !== entry.cardId) return;
       if (!comboAvailabilityByUser.get(actorId)) return;
@@ -747,6 +756,9 @@ export const executeBeatsWithInteractions = (
       const actorState = state.get(actorId);
       if (!actorState) return;
       const comboState = comboStates.get(actorId);
+      if (comboState && entry.interaction?.type === 'throw') {
+        comboState.throwInteraction = true;
+      }
       const origin = { q: actorState.position.q, r: actorState.position.r };
 
       if (isComboAction(entry.action ?? '')) {
@@ -756,7 +768,8 @@ export const executeBeatsWithInteractions = (
           comboIndex === index &&
           cardMatches &&
           Boolean(comboState?.hit) &&
-          Boolean(comboAvailabilityByUser.get(actorId));
+          Boolean(comboAvailabilityByUser.get(actorId)) &&
+          !comboState?.throwInteraction;
         if (!canCombo) {
           if (!isComboAction(entry.action ?? '')) {
             entry.action = 'Co';
