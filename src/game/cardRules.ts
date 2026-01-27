@@ -112,12 +112,26 @@ const actionHasAttackToken = (action: string): boolean => {
     });
 };
 
+const THROW_KEYWORD_REGEX = /\bthrow\b/i;
 const THROW_IGNORED_CARD_IDS = new Set(['grappling-hook']);
+const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
+const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
 
-const hasThrowInteraction = (cardId: string | undefined, text: string | undefined): boolean => {
-  if (!text) return false;
+const hasThrowKeyword = (text: string | undefined): boolean => Boolean(text && THROW_KEYWORD_REGEX.test(text));
+
+const cardHasThrowKeyword = (
+  card: { id?: string; activeText?: string; passiveText?: string } | undefined,
+  role: 'active' | 'passive',
+): boolean => {
+  if (!card) return false;
+  const cardId = card.id;
   if (cardId && THROW_IGNORED_CARD_IDS.has(cardId)) return false;
-  return /\bthrow\b/i.test(text);
+  if (role === 'active' && cardId && ACTIVE_THROW_CARD_IDS.has(cardId)) return true;
+  if (role === 'passive' && cardId && PASSIVE_THROW_CARD_IDS.has(cardId)) return true;
+  if (role === 'active') {
+    return hasThrowKeyword(card.activeText) || hasThrowKeyword(card.passiveText);
+  }
+  return hasThrowKeyword(card.passiveText);
 };
 
 const getEntryForCharacter = (beat: BeatEntry[], character: PublicCharacter): BeatEntry | null =>
@@ -261,11 +275,7 @@ export const validateActionSubmission = (
     return { ok: false, error: { code: 'no-action-list', message: 'Active card has no actions.' } };
   }
 
-  const supportsThrow =
-    hasThrowInteraction(activeCard.id, activeCard.activeText) ||
-    hasThrowInteraction(activeCard.id, activeCard.passiveText) ||
-    hasThrowInteraction(passiveCard.id, passiveCard.activeText) ||
-    hasThrowInteraction(passiveCard.id, passiveCard.passiveText);
+  const supportsThrow = cardHasThrowKeyword(activeCard, 'active') || cardHasThrowKeyword(passiveCard, 'passive');
   const attackDamage = Number.isFinite(activeCard.damage) ? activeCard.damage : 0;
   const attackKbf = Number.isFinite(activeCard.kbf) ? activeCard.kbf : 0;
   const actionList: ActionListItem[] = activeCard.actions.map((action, index) => ({

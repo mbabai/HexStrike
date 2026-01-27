@@ -60,6 +60,88 @@ test('validateActionSubmission ignores grappling hook throw keyword', async () =
   }
 });
 
+test('validateActionSubmission ignores passive card activeText for throw detection', () => {
+  const movementCard = {
+    id: 'move-attack',
+    name: 'Move Attack',
+    type: 'movement',
+    priority: 10,
+    actions: ['a', 'E'],
+    rotations: '*',
+    damage: 1,
+    kbf: 0,
+  };
+  const passiveAbility = {
+    id: 'passive-throw',
+    name: 'Passive Throw',
+    type: 'ability',
+    priority: 10,
+    actions: ['W', 'E'],
+    rotations: '*',
+    damage: 0,
+    kbf: 0,
+    activeText: 'Throw',
+  };
+  const catalog = {
+    movement: [movementCard],
+    ability: [passiveAbility],
+    decks: [],
+    cardsById: new Map([
+      [movementCard.id, movementCard],
+      [passiveAbility.id, passiveAbility],
+    ]),
+  };
+  const deckState = createDeckState({ movement: [movementCard.id], ability: [passiveAbility.id] });
+  const result = validateActionSubmission(
+    { activeCardId: movementCard.id, passiveCardId: passiveAbility.id, rotation: '0' },
+    deckState,
+    catalog,
+  );
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    const hasThrowInteraction = result.actionList.some((item) => item.interaction?.type === 'throw');
+    assert.equal(hasThrowInteraction, false);
+  }
+});
+
+test('validateActionSubmission marks throws from passive throw text', async () => {
+  const catalog = await loadCardCatalog();
+  const leap = catalog.cardsById.get('leap');
+  const jab = catalog.cardsById.get('jab');
+  assert.ok(leap);
+  assert.ok(jab);
+  const deckState = createDeckState({ movement: [leap.id], ability: [jab.id] });
+  const result = validateActionSubmission(
+    { activeCardId: jab.id, passiveCardId: leap.id, rotation: '0' },
+    deckState,
+    catalog,
+  );
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    const hasThrowInteraction = result.actionList.some((item) => item.interaction?.type === 'throw');
+    assert.equal(hasThrowInteraction, true);
+  }
+});
+
+test('validateActionSubmission marks throws from active throw text', async () => {
+  const catalog = await loadCardCatalog();
+  const hipThrow = catalog.cardsById.get('hip-throw');
+  const step = catalog.cardsById.get('step');
+  assert.ok(hipThrow);
+  assert.ok(step);
+  const deckState = createDeckState({ movement: [step.id], ability: [hipThrow.id] });
+  const result = validateActionSubmission(
+    { activeCardId: hipThrow.id, passiveCardId: step.id, rotation: '0' },
+    deckState,
+    catalog,
+  );
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    const hasThrowInteraction = result.actionList.some((item) => item.interaction?.type === 'throw');
+    assert.equal(hasThrowInteraction, true);
+  }
+});
+
 test('applyCardUse removes ability card and exhausts movement', async () => {
   const catalog = await loadCardCatalog();
   const deck = buildSampleDeck(catalog);

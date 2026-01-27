@@ -8,6 +8,9 @@ const COMBO_ACTION = 'CO';
 const DAMAGE_ICON_ACTION = 'DamageIcon';
 const KNOCKBACK_DIVISOR = 10;
 const THROW_DISTANCE = 2;
+// Keep in sync with cardRules/pendingActionPreview throw detection.
+const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
+const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
 
 const LOCAL_DIRECTIONS = {
   F: { q: 1, r: 0 },
@@ -222,6 +225,14 @@ const getResolvedDirectionIndex = (interaction: CustomInteraction | undefined) =
 };
 
 const resolveEntryKey = (entry: BeatEntry) => entry.username ?? entry.userId ?? entry.userID ?? '';
+
+const isEntryThrow = (entry: BeatEntry | null | undefined) => {
+  if (!entry) return false;
+  if (entry.interaction?.type === 'throw') return true;
+  if (entry.cardId && ACTIVE_THROW_CARD_IDS.has(entry.cardId)) return true;
+  if (entry.passiveCardId && PASSIVE_THROW_CARD_IDS.has(entry.passiveCardId)) return true;
+  return false;
+};
 
 const matchesEntryForCharacter = (entry: BeatEntry, character: PublicCharacter) => {
   const key = resolveEntryKey(entry);
@@ -756,7 +767,7 @@ export const executeBeatsWithInteractions = (
       const actorState = state.get(actorId);
       if (!actorState) return;
       const comboState = comboStates.get(actorId);
-      if (comboState && entry.interaction?.type === 'throw') {
+      if (comboState && isEntryThrow(entry)) {
         comboState.throwInteraction = true;
       }
       const origin = { q: actorState.position.q, r: actorState.position.r };
@@ -830,7 +841,7 @@ export const executeBeatsWithInteractions = (
         const isBlocked = directionIndex != null && blockMap.get(targetKey)?.has(directionIndex);
 
         if (token.type === 'a' || token.type === 'c') {
-          const isThrow = entry.interaction?.type === 'throw';
+          const isThrow = isEntryThrow(entry);
           const comboCardMatches = comboState?.cardId === entry.cardId;
           if (comboState && comboCardMatches && targetId && !isBlocked && !isThrow) {
             comboState.hit = true;

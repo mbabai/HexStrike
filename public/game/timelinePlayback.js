@@ -5,6 +5,9 @@ const DAMAGE_ICON_ACTION = 'DamageIcon';
 const KNOCKBACK_DIVISOR = 10;
 const ACTION_DURATION_MS = 1200;
 const THROW_DISTANCE = 2;
+// Keep in sync with server-side throw detection.
+const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
+const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
 
 const HIT_WINDOW_START = 0.18;
 const HIT_WINDOW_END = 0.32;
@@ -155,6 +158,14 @@ const applyFacingToVector = (vector, facing) => rotateAxial(vector, getFacingRot
 const coordKey = (coord) => `${coord.q},${coord.r}`;
 
 const sameCoord = (a, b) => a.q === b.q && a.r === b.r;
+
+const isEntryThrow = (entry) => {
+  if (!entry) return false;
+  if (entry.interaction?.type === 'throw') return true;
+  if (entry.cardId && ACTIVE_THROW_CARD_IDS.has(entry.cardId)) return true;
+  if (entry.passiveCardId && PASSIVE_THROW_CARD_IDS.has(entry.passiveCardId)) return true;
+  return false;
+};
 
 const isForwardScale = (value) => Number.isFinite(value) && Math.round(value) === value && value > 0;
 
@@ -460,7 +471,7 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex) 
         blockMap.get(targetKey)?.has(directionIndex);
 
       if (token.type === 'a' || token.type === 'c') {
-        const isThrow = entry.interaction?.type === 'throw';
+        const isThrow = isEntryThrow(entry);
         const blocked = isBlocked && !isThrow;
         if (targetId && blocked && directionIndex != null) {
           blockHits.push({ coord: { q: destination.q, r: destination.r }, directionIndex });

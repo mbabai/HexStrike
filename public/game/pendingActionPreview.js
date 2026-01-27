@@ -19,12 +19,23 @@ const actionHasAttackToken = (action) => {
     });
 };
 
+const THROW_KEYWORD_REGEX = /\bthrow\b/i;
 const THROW_IGNORED_CARD_IDS = new Set(['grappling-hook']);
+const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
+const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
 
-const hasThrowInteraction = (cardId, text) => {
-  if (!text) return false;
+const hasThrowKeyword = (text) => Boolean(text && THROW_KEYWORD_REGEX.test(text));
+
+const cardHasThrowKeyword = (card, role) => {
+  if (!card) return false;
+  const cardId = card.id;
   if (cardId && THROW_IGNORED_CARD_IDS.has(cardId)) return false;
-  return /\bthrow\b/i.test(text);
+  if (role === 'active' && cardId && ACTIVE_THROW_CARD_IDS.has(cardId)) return true;
+  if (role === 'passive' && cardId && PASSIVE_THROW_CARD_IDS.has(cardId)) return true;
+  if (role === 'active') {
+    return hasThrowKeyword(card.activeText) || hasThrowKeyword(card.passiveText);
+  }
+  return hasThrowKeyword(card.passiveText);
 };
 
 const buildPendingActionList = (activeCard, passiveCard, rotation) => {
@@ -33,11 +44,7 @@ const buildPendingActionList = (activeCard, passiveCard, rotation) => {
   const priority = Number.isFinite(activeCard?.priority) ? activeCard.priority : 0;
   const damage = Number.isFinite(activeCard?.damage) ? activeCard.damage : 0;
   const kbf = Number.isFinite(activeCard?.kbf) ? activeCard.kbf : 0;
-  const supportsThrow =
-    hasThrowInteraction(activeCard?.id, activeCard?.activeText) ||
-    hasThrowInteraction(activeCard?.id, activeCard?.passiveText) ||
-    hasThrowInteraction(passiveCard?.id, passiveCard?.activeText) ||
-    hasThrowInteraction(passiveCard?.id, passiveCard?.passiveText);
+  const supportsThrow = cardHasThrowKeyword(activeCard, 'active') || cardHasThrowKeyword(passiveCard, 'passive');
   const rotationLabel = `${rotation ?? ''}`.trim();
   return actions.map((action, index) => ({
     action,
