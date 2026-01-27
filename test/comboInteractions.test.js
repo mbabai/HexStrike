@@ -196,3 +196,60 @@ test('combo cards open combo interactions on hit and suppress them when throw is
     }
   }
 });
+
+test('combo prompts are suppressed when the Co entry is tagged as throw even if the attack entry lacks throw metadata', () => {
+  const actor = {
+    userId: ACTOR_ID,
+    username: ACTOR_ID,
+    characterId: 'murelious',
+    characterName: 'Alpha',
+    position: { q: 0, r: 0 },
+    facing: 180,
+  };
+  const target = {
+    userId: TARGET_ID,
+    username: TARGET_ID,
+    characterId: 'murelious',
+    characterName: 'Beta',
+    position: { q: 1, r: 0 },
+    facing: 180,
+  };
+
+  const beats = [
+    [
+      buildBeatEntry(actor.username, '[a]', '', 20, actor.position, actor.facing, { cardId: 'combo-card' }),
+      buildBeatEntry(target.username, 'W', '', 0, target.position, target.facing),
+    ],
+    [
+      buildBeatEntry(actor.username, 'Co', '', 0, actor.position, actor.facing, {
+        cardId: 'combo-card',
+        passiveCardId: 'leap',
+      }),
+      buildBeatEntry(target.username, 'W', '', 0, target.position, target.facing),
+    ],
+  ];
+
+  const comboAvailability = new Map([[ACTOR_ID, true]]);
+  const result = executeBeatsWithInteractions(beats, [actor, target], [], undefined, comboAvailability);
+  const hasCombo = result.interactions.some((interaction) => interaction.type === 'combo');
+  assert.equal(hasCombo, false);
+  const coEntry = result.beats?.[1]?.find((entry) => entry.username === ACTOR_ID);
+  assert.ok(coEntry);
+  assert.equal(coEntry.comboSkipped, true);
+});
+
+test('non-combo throw cards do not open combo interactions', async () => {
+  const catalog = await loadCardCatalog();
+  const hipThrow = catalog.cardsById.get('hip-throw');
+  const backflip = catalog.cardsById.get('backflip');
+  assert.ok(hipThrow, 'Expected hip-throw to exist');
+  assert.ok(backflip, 'Expected backflip to exist');
+
+  const actionList = buildActionList(catalog, hipThrow.id, backflip.id);
+  const comboAvailability = new Map([[ACTOR_ID, true]]);
+  const result = runSimulation(actionList, { q: 1, r: 0 }, comboAvailability);
+  const hasCombo = result.interactions.some((interaction) => interaction.type === 'combo');
+  const hasThrow = result.interactions.some((interaction) => interaction.type === 'throw');
+  assert.equal(hasCombo, false);
+  assert.equal(hasThrow, true);
+});

@@ -256,6 +256,13 @@ export const initGame = () => {
     });
   };
 
+  const setModalVisibility = (modal, visible) => {
+    if (!modal) return;
+    const isVisible = Boolean(visible);
+    modal.hidden = !isVisible;
+    modal.style.display = isVisible ? '' : 'none';
+  };
+
   const setComboButtonsEnabled = (enabled) => {
     [comboAccept, comboDecline].forEach((button) => {
       if (!button) return;
@@ -271,6 +278,12 @@ export const initGame = () => {
     const pending = interactions.filter(
       (interaction) => interaction?.status === 'pending' && interaction?.actorUserId === localUserId,
     );
+    if (!pending.length) return null;
+    const pendingThrows = pending.filter((interaction) => interaction?.type === 'throw');
+    if (pendingThrows.length) {
+      pendingThrows.sort((a, b) => (a?.beatIndex ?? 0) - (b?.beatIndex ?? 0));
+      return pendingThrows[0] ?? null;
+    }
     const filtered = pending.filter(
       (interaction) => interaction?.type !== 'combo' || hasComboEntryForInteraction(interaction, beats, characters),
     );
@@ -348,8 +361,8 @@ export const initGame = () => {
       interactionSubmitInFlight = false;
       setThrowButtonsEnabled(false);
       setComboButtonsEnabled(false);
-      if (throwModal) throwModal.hidden = true;
-      if (comboModal) comboModal.hidden = true;
+      setModalVisibility(throwModal, false);
+      setModalVisibility(comboModal, false);
       return;
     }
     const pending = getPendingInteractionForUser();
@@ -362,8 +375,8 @@ export const initGame = () => {
       interactionSubmitInFlight = false;
       setThrowButtonsEnabled(false);
       setComboButtonsEnabled(false);
-      if (throwModal) throwModal.hidden = true;
-      if (comboModal) comboModal.hidden = true;
+      setModalVisibility(throwModal, false);
+      setModalVisibility(comboModal, false);
       return;
     }
     if (pendingInteractionId !== pending.id || pendingInteractionType !== pending.type) {
@@ -372,22 +385,22 @@ export const initGame = () => {
     pendingInteractionId = pending.id;
     pendingInteractionType = pending.type;
     if (pending.type === 'throw') {
-      if (throwModal) throwModal.hidden = false;
-      if (comboModal) comboModal.hidden = true;
+      setModalVisibility(throwModal, true);
+      setModalVisibility(comboModal, false);
       setThrowButtonsEnabled(!interactionSubmitInFlight);
       setComboButtonsEnabled(false);
       applyThrowLayout(pending);
       return;
     }
     if (pending.type === 'combo') {
-      if (comboModal) comboModal.hidden = false;
-      if (throwModal) throwModal.hidden = true;
+      setModalVisibility(comboModal, true);
+      setModalVisibility(throwModal, false);
       setComboButtonsEnabled(!interactionSubmitInFlight);
       setThrowButtonsEnabled(false);
       return;
     }
-    if (throwModal) throwModal.hidden = true;
-    if (comboModal) comboModal.hidden = true;
+    setModalVisibility(throwModal, false);
+    setModalVisibility(comboModal, false);
     setThrowButtonsEnabled(false);
     setComboButtonsEnabled(false);
   };

@@ -676,6 +676,9 @@ export const executeBeatsWithInteractions = (
     entriesByUser.forEach((entry, actorId) => {
       if (!isComboAction(entry.action ?? '')) return;
       const comboState = comboStates.get(actorId);
+      if (comboState && isEntryThrow(entry)) {
+        comboState.throwInteraction = true;
+      }
       if (comboState?.throwInteraction) {
         comboStates.delete(actorId);
         return;
