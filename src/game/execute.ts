@@ -443,7 +443,6 @@ export const executeBeatsWithInteractions = (
     if (entry) {
       entry.username = character.username ?? character.userId;
       entry.action = action;
-      entry.rotation = '';
       entry.priority = 0;
       if ('cardId' in entry) {
         delete entry.cardId;
@@ -569,7 +568,6 @@ export const executeBeatsWithInteractions = (
     if (entry) {
       if (shouldContinue) {
         entry.action = DEFAULT_ACTION;
-        entry.rotation = '';
         entry.priority = 0;
         if ('comboSkipped' in entry) {
           delete entry.comboSkipped;

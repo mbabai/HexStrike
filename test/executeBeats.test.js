@@ -137,3 +137,26 @@ test('executeBeats preserves action when hit after acting and records consequenc
   assert.ok(alphaBeat1);
   assert.equal(alphaBeat1.action, 'DamageIcon');
 });
+
+test('executeBeats preserves rotations when hit overrides the action', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', '1a', 20, characters[0].position, characters[0].facing, '', 2, 1),
+      buildEntry('beta', '1m', 0, characters[1].position, characters[1].facing, 'R1', 0, 0),
+    ],
+  ];
+
+  const result = executeBeats(beats, characters);
+  const beat0 = result.beats[0] || [];
+  const betaEntry = beat0.find((entry) => entry.username === 'beta');
+
+  assert.ok(betaEntry);
+  assert.equal(betaEntry.action, 'DamageIcon');
+  assert.equal(betaEntry.rotation, 'R1');
+  assert.equal(betaEntry.facing, 240);
+});
