@@ -59,6 +59,19 @@ export const getTimelineEarliestEIndex = (beats: BeatEntry[][], characters: Publ
   return Math.max(0, earliest);
 };
 
+export const getTimelineResolvedIndex = (beats: BeatEntry[][]): number => {
+  if (!Array.isArray(beats) || !beats.length) return -1;
+  let lastResolved = -1;
+  for (let i = 0; i < beats.length; i += 1) {
+    const beat = beats[i];
+    if (!Array.isArray(beat) || !beat.length) break;
+    const allCalculated = beat.every((entry) => Boolean(entry?.calculated));
+    if (!allCalculated) break;
+    lastResolved = i;
+  }
+  return lastResolved;
+};
+
 export const isCharacterAtEarliestE = (
   beats: BeatEntry[][],
   characters: PublicCharacter[],

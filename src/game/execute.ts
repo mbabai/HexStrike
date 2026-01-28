@@ -1,4 +1,5 @@
 import { BeatEntry, CustomInteraction, HexCoord, PublicCharacter } from '../types';
+import { getTimelineResolvedIndex } from './beatTimeline';
 import { DEFAULT_LAND_HEXES } from './hexGrid';
 
 const DEFAULT_ACTION = 'E';
@@ -295,6 +296,8 @@ export const executeBeatsWithInteractions = (
 ): { beats: BeatEntry[][]; characters: PublicCharacter[]; lastCalculated: number; interactions: CustomInteraction[] } => {
   const landTiles = Array.isArray(land) && land.length ? land : DEFAULT_LAND_HEXES;
   const comboAvailabilityByUser = comboAvailability ?? new Map<string, boolean>();
+  const resolvedIndex = getTimelineResolvedIndex(beats);
+  const isHistoryIndex = (index: number) => resolvedIndex >= 0 && index <= resolvedIndex;
   const resolveTerrain = (position: { q: number; r: number }) =>
     (isCoordOnLand(position, landTiles) ? 'land' : 'abyss') as 'land' | 'abyss';
   const userLookup = new Map<string, string>();
@@ -604,6 +607,30 @@ export const executeBeatsWithInteractions = (
     return null;
   };
 
+  const ensureComboStateForHit = (
+    actorId: string,
+    character: PublicCharacter | undefined,
+    cardId: string,
+    startIndex: number,
+  ) => {
+    if (!character || !cardId) return null;
+    const existing = comboStates.get(actorId);
+    if (existing) {
+      return existing.cardId === cardId ? existing : null;
+    }
+    const nextCombo = findNextComboIndex(character, startIndex);
+    if (!nextCombo || nextCombo.cardId !== cardId) return null;
+    if (isHistoryIndex(nextCombo.index)) return null;
+    const created = {
+      coIndex: nextCombo.index,
+      hit: false,
+      cardId: nextCombo.cardId,
+      throwInteraction: false,
+    };
+    comboStates.set(actorId, created);
+    return created;
+  };
+
   const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
     entries.forEach((entry, actorId) => {
       const rotationDelta = parseRotationDegrees(entry.rotation ?? '');
@@ -656,9 +683,10 @@ export const executeBeatsWithInteractions = (
       const entry = entriesByUser.get(actorId);
       const action = entry?.action ?? DEFAULT_ACTION;
       const previous = lastActionByUser.get(actorId) ?? DEFAULT_ACTION;
+      const comboStart = previous === DEFAULT_ACTION || Boolean(entry?.comboStarter);
       if (action === DEFAULT_ACTION) {
         comboStates.delete(actorId);
-      } else if (previous === DEFAULT_ACTION && !comboStates.has(actorId)) {
+      } else if (comboStart && !comboStates.has(actorId)) {
         const nextCombo = findNextComboIndex(character, index);
         if (nextCombo) {
           comboStates.set(actorId, {
@@ -685,10 +713,11 @@ export const executeBeatsWithInteractions = (
       }
       if (!comboState || comboState.coIndex !== index || !comboState.hit) return;
       if (comboState.cardId !== entry.cardId) return;
-      if (!comboAvailabilityByUser.get(actorId)) return;
-      if ('comboSkipped' in entry) {
-        delete entry.comboSkipped;
+      if (entry.comboSkipped || isHistoryIndex(index)) {
+        comboStates.delete(actorId);
+        return;
       }
+      if (!comboAvailabilityByUser.get(actorId)) return;
       const interactionId = buildInteractionId('combo', index, actorId, actorId);
       const existing = interactionById.get(interactionId);
       if (!existing) {
@@ -774,6 +803,10 @@ export const executeBeatsWithInteractions = (
       const origin = { q: actorState.position.q, r: actorState.position.r };
 
       if (isComboAction(entry.action ?? '')) {
+        if (entry.comboSkipped || isHistoryIndex(index)) {
+          comboStates.delete(actorId);
+          return;
+        }
         const comboIndex = comboState?.coIndex ?? null;
         const cardMatches = comboState?.cardId === entry.cardId;
         const canCombo =
@@ -789,9 +822,6 @@ export const executeBeatsWithInteractions = (
           entry.comboSkipped = true;
           comboStates.delete(actorId);
           return;
-        }
-        if ('comboSkipped' in entry) {
-          delete entry.comboSkipped;
         }
         const interactionId = buildInteractionId('combo', index, actorId, actorId);
         const existing = interactionById.get(interactionId);
@@ -843,9 +873,15 @@ export const executeBeatsWithInteractions = (
 
         if (token.type === 'a' || token.type === 'c') {
           const isThrow = isEntryThrow(entry);
-          const comboCardMatches = comboState?.cardId === entry.cardId;
-          if (comboState && comboCardMatches && targetId && !isBlocked && !isThrow) {
-            comboState.hit = true;
+          const comboCardId = entry.cardId ? `${entry.cardId}` : '';
+          let activeComboState = comboState;
+          if (!isThrow && targetId && !isBlocked) {
+            if (!activeComboState || activeComboState.cardId !== comboCardId) {
+              activeComboState = ensureComboStateForHit(actorId, characterById.get(actorId), comboCardId, index);
+            }
+            if (activeComboState && activeComboState.cardId === comboCardId) {
+              activeComboState.hit = true;
+            }
           }
           if (targetId && (!isBlocked || isThrow)) {
             const targetState = state.get(targetId);

@@ -253,3 +253,103 @@ test('non-combo throw cards do not open combo interactions', async () => {
   assert.equal(hasCombo, false);
   assert.equal(hasThrow, true);
 });
+
+test('combo prompts do not reopen after being skipped in history', () => {
+  const actor = {
+    userId: ACTOR_ID,
+    username: ACTOR_ID,
+    characterId: 'murelious',
+    characterName: 'Alpha',
+    position: { q: 0, r: 0 },
+    facing: 180,
+  };
+  const target = {
+    userId: TARGET_ID,
+    username: TARGET_ID,
+    characterId: 'murelious',
+    characterName: 'Beta',
+    position: { q: 1, r: 0 },
+    facing: 180,
+  };
+  const beats = [
+    [
+      buildBeatEntry(actor.username, '1a', '', 20, actor.position, actor.facing, {
+        cardId: 'combo-card',
+        attackDamage: 2,
+        attackKbf: 0,
+      }),
+      buildBeatEntry(target.username, 'W', '', 0, target.position, target.facing),
+    ],
+    [
+      buildBeatEntry(actor.username, 'Co', '', 0, actor.position, actor.facing, { cardId: 'combo-card' }),
+      buildBeatEntry(target.username, 'W', '', 0, target.position, target.facing),
+    ],
+  ];
+
+  const first = executeBeatsWithInteractions(beats, [actor, target], [], undefined, new Map([[ACTOR_ID, false]]));
+  const firstCombo = first.interactions.some((interaction) => interaction.type === 'combo');
+  assert.equal(firstCombo, false);
+  const firstCoEntry = first.beats?.[1]?.find((entry) => entry.username === ACTOR_ID);
+  assert.ok(firstCoEntry);
+  assert.equal(firstCoEntry.comboSkipped, true);
+
+  const second = executeBeatsWithInteractions(
+    first.beats,
+    [actor, target],
+    [],
+    undefined,
+    new Map([[ACTOR_ID, true]]),
+  );
+  const secondCombo = second.interactions.filter(
+    (interaction) => interaction.type === 'combo' && interaction.status === 'pending',
+  );
+  assert.equal(secondCombo.length, 0);
+  const secondCoEntry = second.beats?.[1]?.find((entry) => entry.username === ACTOR_ID);
+  assert.ok(secondCoEntry);
+  assert.equal(secondCoEntry.comboSkipped, true);
+});
+
+test('combo follow-ups trigger even when starting after a non-E beat', () => {
+  const actor = {
+    userId: ACTOR_ID,
+    username: ACTOR_ID,
+    characterId: 'murelious',
+    characterName: 'Alpha',
+    position: { q: 0, r: 0 },
+    facing: 180,
+  };
+  const target = {
+    userId: TARGET_ID,
+    username: TARGET_ID,
+    characterId: 'murelious',
+    characterName: 'Beta',
+    position: { q: 1, r: 0 },
+    facing: 180,
+  };
+  const beats = [
+    [
+      buildBeatEntry(actor.username, 'W', '', 10, actor.position, actor.facing),
+      buildBeatEntry(target.username, 'W', '', 0, target.position, target.facing),
+    ],
+    [
+      buildBeatEntry(actor.username, 'c', '', 20, actor.position, actor.facing, {
+        cardId: 'chase',
+        comboStarter: true,
+        attackDamage: 2,
+        attackKbf: 0,
+      }),
+      buildBeatEntry(target.username, 'W', '', 0, target.position, target.facing),
+    ],
+    [
+      buildBeatEntry(actor.username, 'Co', '', 0, actor.position, actor.facing, { cardId: 'chase' }),
+      buildBeatEntry(target.username, 'W', '', 0, target.position, target.facing),
+    ],
+  ];
+
+  const comboAvailability = new Map([[ACTOR_ID, true]]);
+  const result = executeBeatsWithInteractions(beats, [actor, target], [], undefined, comboAvailability);
+  const hasCombo = result.interactions.some(
+    (interaction) => interaction.type === 'combo' && interaction.status === 'pending',
+  );
+  assert.equal(hasCombo, true);
+});

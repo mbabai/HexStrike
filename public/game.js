@@ -12,6 +12,7 @@ import {
   getCharacterFirstEIndex,
   getCharactersAtEarliestE,
   getTimelineEarliestEIndex,
+  getTimelineResolvedIndex,
   getTimelineStopIndex,
 } from './game/beatTimeline.js';
 import { loadCardCatalog } from './shared/cardCatalog.js';
@@ -275,9 +276,13 @@ export const initGame = () => {
     const interactions = gameState?.state?.public?.customInteractions ?? [];
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
-    const pending = interactions.filter(
-      (interaction) => interaction?.status === 'pending' && interaction?.actorUserId === localUserId,
-    );
+    const resolvedIndex = getTimelineResolvedIndex(beats);
+    const pending = interactions.filter((interaction) => {
+      if (interaction?.status !== 'pending' || interaction?.actorUserId !== localUserId) return false;
+      const beatIndex = Number.isFinite(interaction?.beatIndex) ? Math.round(interaction.beatIndex) : null;
+      if (beatIndex != null && resolvedIndex >= 0 && beatIndex <= resolvedIndex) return false;
+      return true;
+    });
     if (!pending.length) return null;
     const pendingThrows = pending.filter((interaction) => interaction?.type === 'throw');
     if (pendingThrows.length) {

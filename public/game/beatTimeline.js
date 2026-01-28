@@ -41,6 +41,19 @@ export const getTimelineEarliestEIndex = (beats, characters) => {
   return Math.max(0, earliest);
 };
 
+export const getTimelineResolvedIndex = (beats) => {
+  if (!Array.isArray(beats) || !beats.length) return -1;
+  let lastResolved = -1;
+  for (let i = 0; i < beats.length; i += 1) {
+    const beat = beats[i];
+    if (!Array.isArray(beat) || !beat.length) break;
+    const allCalculated = beat.every((entry) => entry && entry.calculated);
+    if (!allCalculated) break;
+    lastResolved = i;
+  }
+  return lastResolved;
+};
+
 export const getCharactersAtEarliestE = (beats, characters) => {
   const earliest = getTimelineEarliestEIndex(beats, characters);
   return (characters ?? []).filter((character) => getCharacterFirstEIndex(beats, character) === earliest);
@@ -57,7 +70,11 @@ export const getEarliestPendingInteractionIndex = (interactions) => {
 
 export const getTimelineStopIndex = (beats, characters, interactions = []) => {
   const earliestE = getTimelineEarliestEIndex(beats, characters);
-  const pendingIndex = getEarliestPendingInteractionIndex(interactions);
+  const resolvedIndex = getTimelineResolvedIndex(beats);
+  let pendingIndex = getEarliestPendingInteractionIndex(interactions);
+  if (pendingIndex !== null && resolvedIndex >= 0 && pendingIndex <= resolvedIndex) {
+    pendingIndex = null;
+  }
   if (pendingIndex === null) return earliestE;
   return Math.min(earliestE, pendingIndex);
 };
