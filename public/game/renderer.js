@@ -271,6 +271,26 @@ const getNearestLand = (location, land) => {
   return best ? { tile: best, distance: bestDistance } : null;
 };
 
+const ABYSS_BORDER_MAX_DISTANCE = 6;
+
+const getLandDistance = (location, land, cache) => {
+  if (!location) return Infinity;
+  const key = `${location.q},${location.r}`;
+  if (cache?.has(key)) return cache.get(key);
+  const nearest = getNearestLand(location, land);
+  const distance = nearest?.distance ?? Infinity;
+  if (cache) {
+    cache.set(key, distance);
+  }
+  return distance;
+};
+
+const getAbyssBorderWidth = (distance, baseWidth) => {
+  if (!Number.isFinite(distance)) return baseWidth;
+  const scale = clamp(1 - distance / ABYSS_BORDER_MAX_DISTANCE, 0, 1);
+  return baseWidth * scale;
+};
+
 const buildAbyssPathLabels = (characters, land) => {
   const labels = new Map();
   if (!Array.isArray(characters) || !characters.length) return labels;
@@ -618,6 +638,8 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     const size = getHexSize(viewport.width, config.hexSizeFactor);
     const bounds = getWorldBounds(viewport, viewState);
     const { rMin, rMax } = getRowRange(bounds, size, config.gridPadding);
+    const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
+    const landDistanceCache = new Map();
 
     clear();
 
@@ -632,17 +654,43 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
 
     ctx.fillStyle = theme.abyssFill;
     ctx.strokeStyle = theme.abyssStroke;
-    ctx.lineWidth = Math.max(0.6, size * 0.06);
+    const baseAbyssLineWidth = Math.max(0.6, size * 0.06);
+    ctx.lineCap = 'round';
 
     for (let r = rMin; r <= rMax; r += 1) {
       const { qMin, qMax } = getColumnRange(bounds, size, config.gridPadding, r);
       for (let q = qMin; q <= qMax; q += 1) {
         const { x, y } = axialToPixel(q, r, size);
-        drawHex(ctx, x, y, size);
+        drawHexPath(ctx, x, y, size);
+        ctx.fill();
+        if (!land.length) {
+          ctx.lineWidth = baseAbyssLineWidth;
+          ctx.stroke();
+          continue;
+        }
+        const corners = getHexCorners(x, y, size);
+        const coord = { q, r };
+        const distanceHere = getLandDistance(coord, land, landDistanceCache);
+        for (let i = 0; i < 6; i += 1) {
+          const start = corners[i];
+          const end = corners[(i + 1) % 6];
+          const neighbor = {
+            q: q + AXIAL_DIRECTIONS[i].q,
+            r: r + AXIAL_DIRECTIONS[i].r,
+          };
+          const distanceNeighbor = getLandDistance(neighbor, land, landDistanceCache);
+          const edgeDistance = Math.min(distanceHere, distanceNeighbor);
+          const edgeWidth = getAbyssBorderWidth(edgeDistance, baseAbyssLineWidth);
+          if (edgeWidth <= 0.01) continue;
+          ctx.lineWidth = edgeWidth;
+          ctx.beginPath();
+          ctx.moveTo(start.x, start.y);
+          ctx.lineTo(end.x, end.y);
+          ctx.stroke();
+        }
       }
     }
 
-    const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
     if (!land.length) {
       drawTimeIndicator(ctx, viewport, theme, timeIndicatorViewModel, gameState, localUserId, pendingPreview);
       return;

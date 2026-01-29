@@ -83,6 +83,8 @@ export const buildRotationWheel = (container, onSelect) => {
   centerText.setAttribute('y', `${center.y}`);
   centerText.setAttribute('text-anchor', 'middle');
   centerText.setAttribute('dominant-baseline', 'middle');
+  centerText.setAttribute('textLength', `${innerRadius * 1.25}`);
+  centerText.setAttribute('lengthAdjust', 'spacingAndGlyphs');
   centerText.textContent = 'rotation';
 
   centerGroup.appendChild(centerCircle);
