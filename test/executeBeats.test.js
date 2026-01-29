@@ -160,3 +160,47 @@ test('executeBeats preserves rotations when hit overrides the action', () => {
   assert.equal(betaEntry.rotation, 'R1');
   assert.equal(betaEntry.facing, 240);
 });
+
+test('executeBeats stops multi-step movement before occupied hexes', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 2, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', '3m', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  const result = executeBeats(beats, characters);
+  const beat0 = result.beats[0] || [];
+  const alphaEntry = beat0.find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.location.q, 1);
+  assert.equal(alphaEntry.location.r, 0);
+});
+
+test('executeBeats stops multi-step charges before occupied hexes', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 2, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', '3c', 20, characters[0].position, characters[0].facing, '', 0, 0),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  const result = executeBeats(beats, characters);
+  const beat0 = result.beats[0] || [];
+  const alphaEntry = beat0.find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.location.q, 1);
+  assert.equal(alphaEntry.location.r, 0);
+});
