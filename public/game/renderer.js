@@ -273,22 +273,40 @@ const getNearestLand = (location, land) => {
 
 const ABYSS_BORDER_MAX_DISTANCE = 6;
 
-const getLandDistance = (location, land, cache) => {
-  if (!location) return Infinity;
+const getLandInfo = (location, land, cache) => {
+  if (!location) return { distance: Infinity, nearest: null };
   const key = `${location.q},${location.r}`;
   if (cache?.has(key)) return cache.get(key);
   const nearest = getNearestLand(location, land);
-  const distance = nearest?.distance ?? Infinity;
+  const info = {
+    distance: nearest?.distance ?? Infinity,
+    nearest: nearest?.tile ?? null,
+  };
   if (cache) {
-    cache.set(key, distance);
+    cache.set(key, info);
   }
-  return distance;
+  return info;
 };
 
-const getAbyssBorderWidth = (distance, baseWidth) => {
-  if (!Number.isFinite(distance)) return baseWidth;
+const isTopBottomBoundary = (coord, landInfo) => {
+  const nearest = landInfo?.nearest;
+  if (!coord || !nearest) return false;
+  const delta = axialToCube({ q: coord.q - nearest.q, r: coord.r - nearest.r });
+  const absX = Math.abs(delta.x);
+  const absY = Math.abs(delta.y);
+  const absZ = Math.abs(delta.z);
+  return absZ >= absX && absZ >= absY;
+};
+
+const getAbyssBorderMetrics = (distance, baseWidth, minWidth) => {
+  if (!Number.isFinite(distance)) return { width: baseWidth, alpha: 1 };
   const scale = clamp(1 - distance / ABYSS_BORDER_MAX_DISTANCE, 0, 1);
-  return baseWidth * scale;
+  const smooth = scale * scale * (3 - 2 * scale);
+  const visibility = Math.pow(smooth, 0.6);
+  const fallbackMin = baseWidth * 0.12;
+  const safeMin = Number.isFinite(minWidth) ? Math.max(minWidth, fallbackMin) : fallbackMin;
+  const width = Math.max(safeMin, baseWidth * smooth);
+  return { width, alpha: visibility };
 };
 
 const buildAbyssPathLabels = (characters, land) => {
@@ -639,7 +657,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     const bounds = getWorldBounds(viewport, viewState);
     const { rMin, rMax } = getRowRange(bounds, size, config.gridPadding);
     const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
-    const landDistanceCache = new Map();
+    const landInfoCache = new Map();
 
     clear();
 
@@ -655,6 +673,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     ctx.fillStyle = theme.abyssFill;
     ctx.strokeStyle = theme.abyssStroke;
     const baseAbyssLineWidth = Math.max(0.6, size * 0.06);
+    const minAbyssLineWidth = Math.max(baseAbyssLineWidth * 0.2, 1 / (viewport.dpr * viewState.scale));
     ctx.lineCap = 'round';
 
     for (let r = rMin; r <= rMax; r += 1) {
@@ -670,7 +689,9 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
         }
         const corners = getHexCorners(x, y, size);
         const coord = { q, r };
-        const distanceHere = getLandDistance(coord, land, landDistanceCache);
+        const hereInfo = getLandInfo(coord, land, landInfoCache);
+        const distanceHere = hereInfo.distance;
+        const isTopBottomSide = isTopBottomBoundary(coord, hereInfo);
         for (let i = 0; i < 6; i += 1) {
           const start = corners[i];
           const end = corners[(i + 1) % 6];
@@ -678,11 +699,34 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
             q: q + AXIAL_DIRECTIONS[i].q,
             r: r + AXIAL_DIRECTIONS[i].r,
           };
-          const distanceNeighbor = getLandDistance(neighbor, land, landDistanceCache);
-          const edgeDistance = Math.min(distanceHere, distanceNeighbor);
-          const edgeWidth = getAbyssBorderWidth(edgeDistance, baseAbyssLineWidth);
-          if (edgeWidth <= 0.01) continue;
-          ctx.lineWidth = edgeWidth;
+          const neighborInfo = getLandInfo(neighbor, land, landInfoCache);
+          const distanceNeighbor = neighborInfo.distance;
+          const distanceMin = Math.min(distanceHere, distanceNeighbor);
+          const distanceMax = Math.max(distanceHere, distanceNeighbor);
+          const isVerticalEdge = i === 0 || i === 3;
+          const isOuterBoundary =
+            distanceMax >= ABYSS_BORDER_MAX_DISTANCE && distanceMin < ABYSS_BORDER_MAX_DISTANCE;
+          // Fade outer boundary slants only on the top/bottom so sides keep full hexes.
+          const suppressSlants = isOuterBoundary && !isVerticalEdge && isTopBottomSide;
+          const edgeDistance = suppressSlants ? distanceMax : distanceMin;
+          let edgeMetrics = getAbyssBorderMetrics(
+            edgeDistance,
+            baseAbyssLineWidth,
+            minAbyssLineWidth,
+          );
+          if (
+            isVerticalEdge &&
+            distanceMin < ABYSS_BORDER_MAX_DISTANCE &&
+            distanceMax >= ABYSS_BORDER_MAX_DISTANCE
+          ) {
+            const minAlpha = clamp(minAbyssLineWidth / baseAbyssLineWidth, 0.08, 0.25);
+            if (edgeMetrics.alpha < minAlpha) {
+              edgeMetrics = { ...edgeMetrics, alpha: minAlpha };
+            }
+          }
+          if (edgeMetrics.alpha <= 0.001) continue;
+          ctx.lineWidth = edgeMetrics.width;
+          ctx.strokeStyle = withAlpha(theme.abyssStroke, edgeMetrics.alpha);
           ctx.beginPath();
           ctx.moveTo(start.x, start.y);
           ctx.lineTo(end.x, end.y);
