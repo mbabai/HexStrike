@@ -78,6 +78,7 @@
   --action-card-actions-left-base: 6;
   --action-card-action-width-base: 34;
   --action-card-scale: 1;
+  --action-card-text-scale: 2.5;
   --action-card-width: calc(var(--action-card-base-width) * var(--action-card-scale));
   --action-card-height: calc(var(--action-card-base-height) * var(--action-card-scale));
   --action-card-border-width: calc(7px * var(--action-card-scale));
@@ -1546,11 +1547,13 @@ small {
   inset: 12px;
   z-index: 6;
   pointer-events: none;
-  --action-card-scale: 0.67;
+  --action-card-scale-base: 0.67;
+  --action-card-scale: var(--action-card-scale-base);
   --action-card-title-scale: 2.7;
   --action-card-title-top: calc(-8px * var(--action-card-scale));
   --action-card-title-height: calc(29px * var(--action-card-scale) * var(--action-card-title-scale));
-  --action-hand-width: min(70vw, 920px);
+  --action-hand-width-base: min(70vw, 920px);
+  --action-hand-width: var(--action-hand-width-base);
   --action-hand-height: calc(var(--action-card-height) * 1.05);
   --action-hand-fan-gap-factor: 0.32;
   --action-hand-fan-lift-factor: 0.18;
@@ -1562,6 +1565,9 @@ small {
   --action-hand-hover-padding: calc(var(--action-card-height) * 0.5);
   --action-hand-offscreen: 0.3;
   --action-panel-width: min(230px, 28vw);
+  --action-center-right: 18px;
+  --action-hand-modal-gap: 18px;
+  --action-hand-right: calc(var(--action-panel-width) + var(--action-center-right) + var(--action-hand-modal-gap));
 }
 
 .action-hud[hidden] {
@@ -1598,15 +1604,18 @@ small {
   display: block;
   overflow: visible;
   pointer-events: auto;
-  left: calc(50% - var(--action-hand-width) / 2);
+  left: auto;
+  right: var(--action-hand-right);
 }
 
 .action-hand-movement {
-  left: calc(50% - var(--action-hand-width) / 2);
+  left: auto;
+  right: var(--action-hand-right);
 }
 
 .action-hand-ability {
-  left: calc(50% - var(--action-hand-width) / 2);
+  left: auto;
+  right: var(--action-hand-right);
 }
 
 .action-card {
@@ -1819,7 +1828,7 @@ small {
 }
 
 .action-card-priority-value {
-  font-size: calc(9px * var(--action-card-scale));
+  font-size: calc(9px * var(--action-card-scale) * var(--action-card-text-scale, 1));
   font-weight: 700;
   color: #1b1b1b;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
@@ -1880,7 +1889,7 @@ small {
   justify-content: flex-start;
   text-align: left;
   color: var(--color-card-textbox-text);
-  font-size: calc(9px * var(--action-card-scale));
+  font-size: calc(9px * var(--action-card-scale) * var(--action-card-text-scale, 1));
   line-height: 1;
   font-weight: 400;
   overflow: hidden;
@@ -1892,7 +1901,7 @@ small {
 }
 
 .action-card-surface-row.is-passive {
-  font-size: calc(8px * var(--action-card-scale));
+  font-size: calc(8px * var(--action-card-scale) * var(--action-card-text-scale, 1));
 }
 
 .action-card-surface-row + .action-card-surface-row {
@@ -1928,7 +1937,7 @@ small {
   display: grid;
   place-items: center;
   color: #ffffff;
-  font-size: calc(9px * var(--action-card-scale));
+  font-size: calc(9px * var(--action-card-scale) * var(--action-card-text-scale, 1));
   font-weight: 700;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
 }
@@ -1961,7 +1970,7 @@ small {
 
 .action-center {
   position: absolute;
-  right: 18px;
+  right: var(--action-center-right);
   bottom: calc(var(--action-hand-height) * 0.08);
   display: grid;
   justify-items: center;
@@ -2254,22 +2263,25 @@ small {
 
 @media (max-width: 640px) {
   .action-hud {
-    --action-hand-width: min(88vw, 360px);
+    --action-hand-width-base: min(88vw, 360px);
     --action-hand-fan-gap-factor: 0.24;
     --action-hand-card-scale: 0.7;
     --action-panel-width: min(180px, 40vw);
+    --action-center-right: 10px;
+    --action-hand-modal-gap: 12px;
   }
 
   .action-hand-movement {
-    left: calc(50% - var(--action-hand-width) / 2);
+    left: auto;
+    right: var(--action-hand-right);
   }
 
   .action-hand-ability {
-    left: calc(50% - var(--action-hand-width) / 2);
+    left: auto;
+    right: var(--action-hand-right);
   }
 
   .action-center {
-    right: 10px;
     bottom: calc(var(--action-hand-height) * 0.12);
   }
 

@@ -132,7 +132,24 @@ const fitTextToRow = (row) => {
   }
 };
 
+const fitTitleToHeader = (title) => {
+  if (!title || !title.textContent.trim()) return;
+  title.style.fontSize = '';
+  const titleWidth = title.clientWidth;
+  if (!titleWidth) return;
+  let size = Number.parseFloat(getComputedStyle(title).fontSize) || 10;
+  const scaleValue = getCardScale(title);
+  const minSize = 6 * scaleValue;
+  let safety = 0;
+  while (title.scrollWidth > titleWidth && size > minSize && safety < 32) {
+    size = Math.max(minSize, size - 0.5);
+    title.style.fontSize = `${size}px`;
+    safety += 1;
+  }
+};
+
 export const fitAllCardText = (root = document) => {
+  root.querySelectorAll('.action-card-title').forEach((title) => fitTitleToHeader(title));
   root.querySelectorAll('.action-card-surface-row').forEach((row) => fitTextToRow(row));
 };
 

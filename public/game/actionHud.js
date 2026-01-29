@@ -293,11 +293,90 @@ export const createActionHud = ({
   const LERP_DURATION_MS = 220;
   const DEAL_DURATION_MS = 260;
   const FLIP_REVEAL_DELAY_MS = 80;
+  const actionCenter = rotationWheel?.closest?.('.action-center') ?? null;
+  const MIN_ACTION_CARD_SCALE = 0.3;
+  const SCALE_SAFETY = 1.06;
 
   const getHandCardsInOrder = () => {
     const movementCards = Array.from(movementHand.querySelectorAll('.action-card'));
     const abilityCards = Array.from(abilityHand.querySelectorAll('.action-card'));
     return [...movementCards, ...abilityCards];
+  };
+
+  const isRectValid = (rect) => rect && rect.width > 0 && rect.height > 0;
+
+  const getCssNumber = (styles, name, fallback) => {
+    const raw = styles.getPropertyValue(name);
+    const value = Number.parseFloat(raw);
+    return Number.isFinite(value) ? value : fallback;
+  };
+
+  const measureHandBounds = (cards) => {
+    if (!cards?.length) return null;
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    cards.forEach((card) => {
+      const rect = card?.getBoundingClientRect?.();
+      if (!isRectValid(rect)) return;
+      minX = Math.min(minX, rect.left);
+      maxX = Math.max(maxX, rect.right);
+    });
+    if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return null;
+    return { minX, maxX };
+  };
+
+  const updateResponsiveSizing = (cards = null, cardCountOverride = null) => {
+    if (typeof window === 'undefined') return;
+    const rootRect = root.getBoundingClientRect();
+    if (!isRectValid(rootRect)) return;
+    const styles = getComputedStyle(root);
+    const baseScale = getCssNumber(styles, '--action-card-scale-base', getCssNumber(styles, '--action-card-scale', 0.67));
+    const handWidthBase = getCssNumber(styles, '--action-hand-width-base', getCssNumber(styles, '--action-hand-width', 0));
+    const handCardScale = getCssNumber(styles, '--action-hand-card-scale', 0.7);
+    const fanGapFactor = getCssNumber(styles, '--action-hand-fan-gap-factor', 0.32);
+    const baseCardWidth = getCssNumber(styles, '--action-card-base-width', 240);
+    const gap = getCssNumber(styles, '--action-hand-modal-gap', 18);
+    const actionCenterRect = actionCenter?.getBoundingClientRect?.();
+    const modalRect = rotationWheel?.getBoundingClientRect?.();
+    const boundaryRect = isRectValid(modalRect) ? modalRect : actionCenterRect;
+    const rightEdge = boundaryRect ? boundaryRect.left - gap : rootRect.right - gap;
+    const maxHandWidth = Math.max(0, rightEdge - rootRect.left);
+    const baseHandWidth = handWidthBase > 0 ? handWidthBase : maxHandWidth;
+    const targetHandWidth = Math.max(0, Math.min(baseHandWidth, maxHandWidth));
+    if (boundaryRect && Number.isFinite(boundaryRect.left)) {
+      const handRight = Math.max(0, rootRect.right - boundaryRect.left + gap);
+      root.style.setProperty('--action-hand-right', `${handRight}px`);
+    }
+    if (Number.isFinite(targetHandWidth)) {
+      root.style.setProperty('--action-hand-width', `${targetHandWidth}px`);
+    }
+    const cardCount = Math.max(1, cardCountOverride ?? cards?.length ?? getHandCardsInOrder().length ?? 1);
+    const spanFactor = handCardScale + Math.max(0, cardCount - 1) * fanGapFactor;
+    const targetWidth = Number.isFinite(targetHandWidth) ? targetHandWidth : baseHandWidth || rootRect.width;
+    if (!targetWidth || !spanFactor || !baseCardWidth) {
+      root.style.setProperty('--action-card-scale', `${Math.max(MIN_ACTION_CARD_SCALE, baseScale)}`);
+      return;
+    }
+    const desiredScale = targetWidth / (baseCardWidth * spanFactor * SCALE_SAFETY);
+    let nextScale = Math.max(MIN_ACTION_CARD_SCALE, Math.min(baseScale, desiredScale));
+    root.style.setProperty('--action-card-scale', nextScale.toFixed(3));
+
+    const measuredCards = cards ?? getHandCardsInOrder();
+    if (!measuredCards.length) return;
+    const availableWidth = Math.max(0, rightEdge - rootRect.left);
+    if (!availableWidth) return;
+    for (let i = 0; i < 3; i += 1) {
+      const bounds = measureHandBounds(measuredCards);
+      if (!bounds) break;
+      if (bounds.minX >= rootRect.left && bounds.maxX <= rightEdge) break;
+      const actualWidth = bounds.maxX - bounds.minX;
+      if (!actualWidth) break;
+      const ratio = availableWidth / actualWidth;
+      const adjustedScale = Math.max(MIN_ACTION_CARD_SCALE, Math.min(nextScale, nextScale * ratio * 0.98));
+      if (Math.abs(adjustedScale - nextScale) < 0.001) break;
+      nextScale = adjustedScale;
+      root.style.setProperty('--action-card-scale', nextScale.toFixed(3));
+    }
   };
 
   const applyFanLayout = (cards) => {
@@ -320,10 +399,22 @@ export const createActionHud = ({
   };
 
   const refreshHandLayouts = () => {
-    applyFanLayout(getHandCardsInOrder());
+    const cards = getHandCardsInOrder();
+    updateResponsiveSizing(cards, cards.length);
+    applyFanLayout(cards);
+    updateResponsiveSizing(cards, cards.length);
   };
-
-  const isRectValid = (rect) => rect && rect.width > 0 && rect.height > 0;
+  const scheduleLayoutRefresh = (() => {
+    let raf = null;
+    return () => {
+      if (typeof window === 'undefined') return;
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        refreshHandLayouts();
+      });
+    };
+  })();
 
   const animateGhostBetween = (ghost, fromRect, toRect, options = {}) => {
     const { duration = LERP_DURATION_MS, easing = 'cubic-bezier(0.22, 0.61, 0.36, 1)', removeOnFinish = true, onComplete } =
@@ -948,6 +1039,9 @@ export const createActionHud = ({
     root.hidden = state.hidden;
     state.cardsById.forEach((card) => setCardDraggable(card, !state.locked && state.turnActive));
     updateSubmitState();
+    if (state.turnActive) {
+      scheduleLayoutRefresh();
+    }
     if (state.lastVisible !== state.turnActive) {
       log('visible', state.turnActive);
       state.lastVisible = state.turnActive;
@@ -1043,6 +1137,21 @@ export const createActionHud = ({
   bindSlot(activeSlot, 'active');
   bindSlot(passiveSlot, 'passive');
   bindHands();
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', scheduleLayoutRefresh);
+  }
+  if (typeof ResizeObserver !== 'undefined') {
+    const resizeObserver = new ResizeObserver(() => {
+      scheduleLayoutRefresh();
+    });
+    resizeObserver.observe(root);
+    if (actionCenter) {
+      resizeObserver.observe(actionCenter);
+    }
+    if (rotationWheel) {
+      resizeObserver.observe(rotationWheel);
+    }
+  }
   updateRotationRestriction();
   updateSubmitState();
 
