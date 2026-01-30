@@ -9,3 +9,7 @@
   - `selected`: player-selected rotation (start of action set).
   - `forced`: card-text rotation applied at a symbol anchor (for example, `{i}`).
 - Consumers that need the start of an action set (timeline tooltips) should prefer `rotationSource === 'selected'`, falling back to non-empty `rotation` when missing (legacy data).
+
+## Conditional throw + charge
+- `cardStartTerrain` is stamped on beat entries during execution to capture the terrain at the start of the action set.
+- Grappling Hook: the `{i}` (bracketed) charge step stops at the first land tile or target in front, and its throw interaction only applies when `cardStartTerrain === 'land'`.

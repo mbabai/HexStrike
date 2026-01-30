@@ -12,6 +12,7 @@ const THROW_DISTANCE = 2;
 // Keep in sync with cardRules/pendingActionPreview throw detection.
 const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
 const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
+const GRAPPLING_HOOK_CARD_ID = 'grappling-hook';
 
 const LOCAL_DIRECTIONS = {
   F: { q: 1, r: 0 },
@@ -147,6 +148,11 @@ const normalizeActionLabel = (action: string) => {
   return trimmed;
 };
 
+const isBracketedAction = (action: string) => {
+  const trimmed = `${action ?? ''}`.trim();
+  return Boolean(trimmed) && trimmed.startsWith('[') && trimmed.endsWith(']');
+};
+
 const isWaitAction = (action: string) => {
   const trimmed = `${action ?? ''}`.trim();
   if (!trimmed) return true;
@@ -196,6 +202,36 @@ const buildPath = (origin: { q: number; r: number }, steps: Array<{ dir: string;
   return { positions, destination: current, lastStep };
 };
 
+const buildGrapplingHookPath = (
+  origin: { q: number; r: number },
+  steps: Array<{ dir: string; distance: number }>,
+  facing: number,
+  land: HexCoord[],
+  occupancy: Map<string, string>,
+  actorId: string,
+) => {
+  const positions: Array<{ q: number; r: number }> = [];
+  let current = { ...origin };
+  let lastStep: { q: number; r: number } | null = null;
+  for (const step of steps) {
+    const base = LOCAL_DIRECTIONS[step.dir as keyof typeof LOCAL_DIRECTIONS] ?? LOCAL_DIRECTIONS.F;
+    const direction = applyFacingToVector(base, facing);
+    lastStep = direction;
+    for (let i = 0; i < step.distance; i += 1) {
+      current = { q: current.q + direction.q, r: current.r + direction.r };
+      positions.push({ ...current });
+      const occupant = occupancy.get(coordKey(current));
+      if ((occupant && occupant !== actorId) || isCoordOnLand(current, land)) {
+        return { positions, destination: { ...current }, lastStep };
+      }
+    }
+  }
+  if (!positions.length) {
+    return { positions, destination: { ...origin }, lastStep };
+  }
+  return { positions, destination: { ...positions[positions.length - 1] }, lastStep };
+};
+
 const getKnockbackDistance = (damage: number, kbf: number) => {
   if (!Number.isFinite(damage) || !Number.isFinite(kbf)) return 0;
   if (kbf <= 0) return 0;
@@ -230,6 +266,7 @@ const resolveEntryKey = (entry: BeatEntry) => entry.username ?? entry.userId ?? 
 const isEntryThrow = (entry: BeatEntry | null | undefined) => {
   if (!entry) return false;
   if (entry.interaction?.type === 'throw') return true;
+  if (entry.cardId === GRAPPLING_HOOK_CARD_ID && entry.cardStartTerrain === 'land') return true;
   if (entry.cardId && ACTIVE_THROW_CARD_IDS.has(entry.cardId)) return true;
   if (entry.passiveCardId && PASSIVE_THROW_CARD_IDS.has(entry.passiveCardId)) return true;
   return false;
@@ -592,6 +629,7 @@ export const executeBeatsWithInteractions = (
 
   const comboStates = new Map<string, { coIndex: number; hit: boolean; cardId: string; throwInteraction: boolean }>();
   const lastActionByUser = new Map<string, string>();
+  const cardStartTerrainByUser = new Map<string, 'land' | 'abyss'>();
 
   const findNextComboIndex = (character: PublicCharacter, startIndex: number) => {
     for (let i = startIndex; i < normalizedBeats.length; i += 1) {
@@ -686,15 +724,35 @@ export const executeBeatsWithInteractions = (
       const comboStart = previous === DEFAULT_ACTION || Boolean(entry?.comboStarter);
       if (action === DEFAULT_ACTION) {
         comboStates.delete(actorId);
-      } else if (comboStart && !comboStates.has(actorId)) {
-        const nextCombo = findNextComboIndex(character, index);
-        if (nextCombo) {
-          comboStates.set(actorId, {
-            coIndex: nextCombo.index,
-            hit: false,
-            cardId: nextCombo.cardId,
-            throwInteraction: false,
-          });
+        cardStartTerrainByUser.delete(actorId);
+        if (entry && 'cardStartTerrain' in entry) {
+          delete entry.cardStartTerrain;
+        }
+      } else {
+        if (comboStart || !cardStartTerrainByUser.has(actorId)) {
+          const actorState = state.get(actorId);
+          if (actorState) {
+            cardStartTerrainByUser.set(actorId, resolveTerrain(actorState.position));
+          }
+        }
+        const startTerrain = cardStartTerrainByUser.get(actorId);
+        if (entry) {
+          if (startTerrain) {
+            entry.cardStartTerrain = startTerrain;
+          } else if ('cardStartTerrain' in entry) {
+            delete entry.cardStartTerrain;
+          }
+        }
+        if (comboStart && !comboStates.has(actorId)) {
+          const nextCombo = findNextComboIndex(character, index);
+          if (nextCombo) {
+            comboStates.set(actorId, {
+              coIndex: nextCombo.index,
+              hit: false,
+              cardId: nextCombo.cardId,
+              throwInteraction: false,
+            });
+          }
         }
       }
       lastActionByUser.set(actorId, action);
@@ -850,7 +908,11 @@ export const executeBeatsWithInteractions = (
       const entryKbf = Number.isFinite(entry.attackKbf) ? entry.attackKbf : 0;
 
       tokens.forEach((token) => {
-        const { positions, destination, lastStep } = buildPath(origin, token.steps, actorState.facing);
+        const isGrapplingHookCharge =
+          entry.cardId === GRAPPLING_HOOK_CARD_ID && token.type === 'c' && isBracketedAction(entry.action ?? '');
+        const { positions, destination, lastStep } = isGrapplingHookCharge
+          ? buildGrapplingHookPath(origin, token.steps, actorState.facing, landTiles, occupancy, actorId)
+          : buildPath(origin, token.steps, actorState.facing);
         const targetKey = coordKey(destination);
         const targetId = occupancy.get(targetKey);
         const delta = { q: origin.q - destination.q, r: origin.r - destination.r };

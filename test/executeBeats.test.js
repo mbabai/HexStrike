@@ -110,6 +110,70 @@ test('executeBeats does not open combo on throw hits', () => {
   assert.equal(result.interactions.some((interaction) => interaction.type === 'combo'), false);
 });
 
+test('executeBeats treats Grappling Hook as a throw only when starting on land', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', '[3c]', 20, characters[0].position, characters[0].facing, '', 1, 0),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  beats[0][0].cardId = 'grappling-hook';
+
+  const result = executeBeats(beats, characters);
+
+  assert.ok(result.interactions.some((interaction) => interaction.type === 'throw'));
+});
+
+test('executeBeats keeps Grappling Hook as a normal hit when starting on abyss', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: -4, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: -3, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', '[3c]', 20, characters[0].position, characters[0].facing, '', 1, 0),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  beats[0][0].cardId = 'grappling-hook';
+
+  const result = executeBeats(beats, characters);
+
+  assert.equal(result.interactions.some((interaction) => interaction.type === 'throw'), false);
+});
+
+test('executeBeats clamps Grappling Hook charge to the first land tile ahead', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: -4, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 3, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', '[3c]', 20, characters[0].position, characters[0].facing, '', 0, 0),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  beats[0][0].cardId = 'grappling-hook';
+
+  const result = executeBeats(beats, characters);
+  const beat0 = result.beats[0] || [];
+  const alphaEntry = beat0.find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.location.q, -2);
+  assert.equal(alphaEntry.location.r, 0);
+});
+
 test('executeBeats preserves action when hit after acting and records consequences', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },

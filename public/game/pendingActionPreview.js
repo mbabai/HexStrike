@@ -22,6 +22,7 @@ const actionHasAttackToken = (action) => {
 };
 
 const THROW_KEYWORD_REGEX = /\bthrow\b/i;
+// Conditional throw logic (ex: grappling hook) is resolved during execution.
 const THROW_IGNORED_CARD_IDS = new Set(['grappling-hook']);
 const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
 const PASSIVE_THROW_CARD_IDS = new Set(['leap']);

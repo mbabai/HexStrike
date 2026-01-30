@@ -1,3 +1,5 @@
+import { LAND_HEXES } from '../shared/hex.mjs';
+
 const DEFAULT_ACTION = 'E';
 const WAIT_ACTION = 'W';
 const COMBO_ACTION = 'CO';
@@ -8,6 +10,7 @@ const THROW_DISTANCE = 2;
 // Keep in sync with server-side throw detection.
 const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
 const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
+const GRAPPLING_HOOK_CARD_ID = 'grappling-hook';
 
 const HIT_WINDOW_START = 0.18;
 const HIT_WINDOW_END = 0.32;
@@ -159,9 +162,21 @@ const coordKey = (coord) => `${coord.q},${coord.r}`;
 
 const sameCoord = (a, b) => a.q === b.q && a.r === b.r;
 
+const isCoordOnLand = (coord, land) => {
+  if (!coord || !Array.isArray(land) || !land.length) return false;
+  const key = coordKey(coord);
+  return land.some((tile) => coordKey(tile) === key);
+};
+
+const isBracketedAction = (action) => {
+  const trimmed = `${action ?? ''}`.trim();
+  return Boolean(trimmed) && trimmed.startsWith('[') && trimmed.endsWith(']');
+};
+
 const isEntryThrow = (entry) => {
   if (!entry) return false;
   if (entry.interaction?.type === 'throw') return true;
+  if (entry.cardId === GRAPPLING_HOOK_CARD_ID && entry.cardStartTerrain === 'land') return true;
   if (entry.cardId && ACTIVE_THROW_CARD_IDS.has(entry.cardId)) return true;
   if (entry.passiveCardId && PASSIVE_THROW_CARD_IDS.has(entry.passiveCardId)) return true;
   return false;
@@ -290,6 +305,29 @@ const buildPath = (origin, steps, facing) => {
   return { positions, destination: current, lastStep };
 };
 
+const buildGrapplingHookPath = (origin, steps, facing, land, occupancy, actorId) => {
+  const positions = [];
+  let current = { ...origin };
+  let lastStep = null;
+  for (const step of steps) {
+    const base = LOCAL_DIRECTIONS[step.dir] ?? LOCAL_DIRECTIONS.F;
+    const direction = applyFacingToVector(base, facing);
+    lastStep = direction;
+    for (let i = 0; i < step.distance; i += 1) {
+      current = { q: current.q + direction.q, r: current.r + direction.r };
+      positions.push({ ...current });
+      const occupant = occupancy.get(coordKey(current));
+      if ((occupant && occupant !== actorId) || isCoordOnLand(current, land)) {
+        return { positions, destination: { ...current }, lastStep };
+      }
+    }
+  }
+  if (!positions.length) {
+    return { positions, destination: { ...origin }, lastStep };
+  }
+  return { positions, destination: { ...positions[positions.length - 1] }, lastStep };
+};
+
 const getKnockbackDistance = (damage, kbf) => {
   if (!Number.isFinite(damage) || !Number.isFinite(kbf)) return 0;
   if (kbf <= 0) return 0;
@@ -357,7 +395,7 @@ const buildBaseState = (beats, beatIndex, characters) => {
 const isBeatCalculated = (beat) =>
   Array.isArray(beat) && beat.length && beat.every((entry) => entry && entry.calculated);
 
-const buildActionSteps = (beat, characters, baseState, interactions, beatIndex) => {
+const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, land) => {
   const rosterOrder = new Map();
   characters.forEach((character, index) => {
     rosterOrder.set(character.userId, index);
@@ -376,6 +414,8 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex) 
       interactionById.set(interaction.id, interaction);
     }
   });
+
+  const landTiles = Array.isArray(land) && land.length ? land : LAND_HEXES;
 
   const state = new Map();
   const occupancy = new Map();
@@ -430,7 +470,11 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex) 
 
     const tokens = parseActionTokens(entry.action ?? '');
     tokens.forEach((token) => {
-      const { positions, destination, lastStep } = buildPath(origin, token.steps, actorState.facing);
+      const isGrapplingHookCharge =
+        entry.cardId === GRAPPLING_HOOK_CARD_ID && token.type === 'c' && isBracketedAction(entry.action ?? '');
+      const { positions, destination, lastStep } = isGrapplingHookCharge
+        ? buildGrapplingHookPath(origin, token.steps, actorState.facing, landTiles, occupancy, actorId)
+        : buildPath(origin, token.steps, actorState.facing);
       const targetKey = coordKey(destination);
       const targetId = occupancy.get(targetKey);
       const delta = { q: origin.q - destination.q, r: origin.r - destination.r };
@@ -687,12 +731,14 @@ export const createTimelinePlayback = () => {
     }
 
     const interactions = gameState?.state?.public?.customInteractions ?? [];
+    const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
     const { steps, persistentEffects } = buildActionSteps(
       beat,
       characters,
       baseState,
       interactions,
       beatIndex,
+      land,
     );
     const stepDuration = steps.length ? ACTION_DURATION_MS / steps.length : 0;
     playback = {

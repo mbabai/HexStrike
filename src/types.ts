@@ -188,6 +188,7 @@ export interface BeatEntry {
   damage: number;
   location: HexCoord;
   terrain?: 'land' | 'abyss';
+  cardStartTerrain?: 'land' | 'abyss';
   facing: number;
   calculated: boolean;
   interaction?: BeatInteraction;

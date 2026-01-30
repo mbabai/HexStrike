@@ -120,9 +120,11 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.
 - Combo prompts pause on the `Co` beat before any action/E resolution, and choosing to continue skips land refresh/draw for that player at that beat.
 - Combo continuation is tied to a specific active card (`cardId` on action list/beat entry); only hits from that card can open the combo prompt.
-- Throw interactions are tagged from card text (`throw` keyword in the active card’s active/passive text and the passive card’s passive text only); combo prompts only open on non-throw hits.
+- Throw interactions are tagged from card text (`throw` keyword in the active card's active/passive text and the passive card's passive text only); combo prompts only open on non-throw hits.
 - The combo modal is filtered to the actor's beat entry by userId/username; keep interaction actor resolution aligned with roster identifiers.
 - Cards can opt out of throw keyword detection by id (e.g., `grappling-hook`).
+- Grappling Hook uses `cardStartTerrain` to gate its conditional throw (throw only if the action set started on land), and its `{i}` bracketed charge stops at the first land tile or target in front.
+- Pending throw interactions must surface the throw modal even if the beat is already resolved; don't filter throws by resolved index in the UI selector.
 - Skipped combos keep the `Co` symbol on the timeline and are marked with `comboSkipped` for UI greying; do not replace with `W`.
 - Server-side deck state is tracked per game (in memory); refreshes resolve only when the earliest `E` is on land (gated by `lastRefreshIndex`), clearing movement exhaustion and drawing up to max hand size.
 - Land refresh checks should use the last known beat location at/ before the earliest `E`; avoid `public.characters` positions or you will refresh on abyss.
