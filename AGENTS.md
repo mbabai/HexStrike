@@ -135,6 +135,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Board damage capsules are offset outside the ring and drawn without clipping so they sit over the border.
 - Name capsule sizing is centralized in `public/game/portraitBadges.js`; pass config overrides for board vs timeline to keep consistency.
 - Timeline playback timing is tuned in `public/game/timelinePlayback.js` via `ACTION_DURATION_MS` plus swipe/hit/knockback windows; adjust there before changing renderer effects.
+- Abyss grid borders are rendered via `drawAbyssGrid` in `public/game/abyssRendering.mjs`; keep `minLineWidth = max(baseLineWidth * 0.2, 1 / (dpr * scale))` to avoid vanishing outlines at high zoom.
 - Trails are drawn as tapered polygons (sharp edges) in `public/game/renderer.js` instead of stroked lines; keep this in mind if changing trail caps or widths.
 - Board portraits render in greyscale when the beat action is `DamageIcon`/`knockbackIcon`; keep the renderer's action tag matching server output.
 - Timeline playback base state should come from the last calculated beat entry at/ before the selected beat; do not fall back to uncalculated entries or `public.characters` or scrubbing will drift.
