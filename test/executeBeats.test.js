@@ -174,6 +174,30 @@ test('executeBeats clamps Grappling Hook charge to the first land tile ahead', (
   assert.equal(alphaEntry.location.r, 0);
 });
 
+test('executeBeats flips targets for Grappling Hook passive hits', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'a', 20, characters[0].position, characters[0].facing, '', 2, 1),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  beats[0][0].passiveCardId = 'grappling-hook';
+
+  const result = executeBeats(beats, characters);
+  const beat0 = result.beats[0] || [];
+  const betaEntry = beat0.find((entry) => entry.username === 'beta');
+
+  assert.ok(betaEntry);
+  assert.equal(betaEntry.location.q, -2);
+  assert.equal(betaEntry.location.r, 0);
+});
+
 test('executeBeats preserves action when hit after acting and records consequences', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },

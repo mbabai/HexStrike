@@ -342,6 +342,32 @@ const getKnockbackDirection = (origin, destination, lastStep) => {
   return directionIndex == null ? null : AXIAL_DIRECTIONS[directionIndex];
 };
 
+const invertDirection = (direction) => (direction ? { q: -direction.q, r: -direction.r } : null);
+
+const applyGrapplingHookPassiveFlip = (enabled, origin, attackDirection, targetState, occupancy, targetId) => {
+  if (!enabled || !attackDirection) {
+    return { knockbackDirection: attackDirection, flipPosition: null };
+  }
+  const grapplingDirection = invertDirection(attackDirection);
+  if (!grapplingDirection) {
+    return { knockbackDirection: attackDirection, flipPosition: null };
+  }
+  const flipPosition = {
+    q: origin.q + grapplingDirection.q,
+    r: origin.r + grapplingDirection.r,
+  };
+  const occupant = occupancy.get(coordKey(flipPosition));
+  if (!occupant || occupant === targetId) {
+    if (!sameCoord(flipPosition, targetState.position)) {
+      occupancy.delete(coordKey(targetState.position));
+      targetState.position = { q: flipPosition.q, r: flipPosition.r };
+      occupancy.set(coordKey(targetState.position), targetId);
+      return { knockbackDirection: grapplingDirection, flipPosition: { q: flipPosition.q, r: flipPosition.r } };
+    }
+  }
+  return { knockbackDirection: grapplingDirection, flipPosition: null };
+};
+
 const buildInteractionId = (beatIndex, actorId, targetId) => `throw:${beatIndex}:${actorId}:${targetId}`;
 
 const getResolvedDirectionIndex = (interaction) => {
@@ -457,6 +483,7 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
     const origin = { q: actorState.position.q, r: actorState.position.r };
     const entryDamage = Number.isFinite(entry?.attackDamage) ? entry.attackDamage : 0;
     const entryKbf = Number.isFinite(entry?.attackKbf) ? entry.attackKbf : 0;
+    const hasGrapplingHookPassive = entry?.passiveCardId === GRAPPLING_HOOK_CARD_ID;
 
     const effects = [];
     const damageChanges = [];
@@ -580,10 +607,22 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
             }
             targetState.damage += entryDamage;
             damageChanges.push({ targetId, delta: entryDamage });
-            const knockbackDirection = getKnockbackDirection(origin, destination, lastStep);
+            const usesGrapplingHookPassive = hasGrapplingHookPassive && token.type === 'a';
+            const attackDirection = getKnockbackDirection(origin, destination, lastStep);
             const knockbackDistance = getKnockbackDistance(targetState.damage, entryKbf);
-            let finalPosition = { ...targetState.position };
             const knockbackPath = [{ q: targetState.position.q, r: targetState.position.r }];
+            const { knockbackDirection, flipPosition } = applyGrapplingHookPassiveFlip(
+              usesGrapplingHookPassive,
+              origin,
+              attackDirection,
+              targetState,
+              occupancy,
+              targetId,
+            );
+            if (flipPosition) {
+              knockbackPath.push({ q: flipPosition.q, r: flipPosition.r });
+            }
+            let finalPosition = { ...targetState.position };
             if (knockbackDirection && knockbackDistance > 0) {
               for (let step = 0; step < knockbackDistance; step += 1) {
                 const candidate = {
@@ -600,6 +639,8 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
               occupancy.delete(coordKey(targetState.position));
               targetState.position = { q: finalPosition.q, r: finalPosition.r };
               occupancy.set(coordKey(targetState.position), targetId);
+            }
+            if (!sameCoord(targetState.position, fromPosition)) {
               positionChanges.push({
                 targetId,
                 position: { q: targetState.position.q, r: targetState.position.r },
@@ -610,7 +651,7 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
             hitTargets.push({
               targetId,
               from: { q: fromPosition.q, r: fromPosition.r },
-              to: { q: finalPosition.q, r: finalPosition.r },
+              to: { q: targetState.position.q, r: targetState.position.r },
               path: knockbackPath,
             });
             disabledActors.add(targetId);

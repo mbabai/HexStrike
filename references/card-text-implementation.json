@@ -19,7 +19,7 @@
                                 },
                      "grappling-hook":  {
                                             "active":  true,
-                                            "passive":  false
+                                            "passive":  true
                                         },
                      "jump":  {
                                   "active":  false,

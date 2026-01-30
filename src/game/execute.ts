@@ -250,6 +250,40 @@ const getKnockbackDirection = (
   return directionIndex == null ? null : AXIAL_DIRECTIONS[directionIndex];
 };
 
+const invertDirection = (direction: { q: number; r: number } | null) =>
+  direction ? { q: -direction.q, r: -direction.r } : null;
+
+const applyGrapplingHookPassiveFlip = (
+  enabled: boolean,
+  origin: { q: number; r: number },
+  attackDirection: { q: number; r: number } | null,
+  targetState: { position: { q: number; r: number } },
+  occupancy: Map<string, string>,
+  targetId: string,
+) => {
+  if (!enabled || !attackDirection) {
+    return { knockbackDirection: attackDirection, flipped: false };
+  }
+  const grapplingDirection = invertDirection(attackDirection);
+  if (!grapplingDirection) {
+    return { knockbackDirection: attackDirection, flipped: false };
+  }
+  const flipPosition = {
+    q: origin.q + grapplingDirection.q,
+    r: origin.r + grapplingDirection.r,
+  };
+  const occupant = occupancy.get(coordKey(flipPosition));
+  if (!occupant || occupant === targetId) {
+    if (!sameCoord(flipPosition, targetState.position)) {
+      occupancy.delete(coordKey(targetState.position));
+      targetState.position = { q: flipPosition.q, r: flipPosition.r };
+      occupancy.set(coordKey(targetState.position), targetId);
+      return { knockbackDirection: grapplingDirection, flipped: true };
+    }
+  }
+  return { knockbackDirection: grapplingDirection, flipped: false };
+};
+
 const buildInteractionId = (type: string, beatIndex: number, actorId: string, targetId: string) =>
   `${type}:${beatIndex}:${actorId}:${targetId}`;
 
@@ -906,6 +940,7 @@ export const executeBeatsWithInteractions = (
       const tokens = parseActionTokens(entry.action ?? '');
       const entryDamage = Number.isFinite(entry.attackDamage) ? entry.attackDamage : 0;
       const entryKbf = Number.isFinite(entry.attackKbf) ? entry.attackKbf : 0;
+      const hasGrapplingHookPassive = entry.passiveCardId === GRAPPLING_HOOK_CARD_ID;
 
       tokens.forEach((token) => {
         const isGrapplingHookCharge =
@@ -1005,7 +1040,16 @@ export const executeBeatsWithInteractions = (
                 }
               } else {
                 targetState.damage += entryDamage;
-                const knockbackDirection = getKnockbackDirection(origin, destination, lastStep);
+                const usesGrapplingHookPassive = hasGrapplingHookPassive && token.type === 'a';
+                const attackDirection = getKnockbackDirection(origin, destination, lastStep);
+                const { knockbackDirection } = applyGrapplingHookPassiveFlip(
+                  usesGrapplingHookPassive,
+                  origin,
+                  attackDirection,
+                  targetState,
+                  occupancy,
+                  targetId,
+                );
                 const knockbackDistance = getKnockbackDistance(targetState.damage, entryKbf);
                 let knockedSteps = 0;
                 if (knockbackDirection && knockbackDistance > 0) {

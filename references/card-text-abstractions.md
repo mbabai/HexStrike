@@ -17,7 +17,8 @@
 ## Passive movement effects
 - Fleche passive: remove the final `{W}` from the active ability action list when an attack token appears before it.
 - Ninja Roll passive: only `{a}` (or `[a]`) becomes `{a-La-Ra}`; other attack tokens are unchanged. Halve damage/KBF (rounded down) on the affected step.
-- In code: `applyPassiveMovementCardText` in `src/game/cardText/passiveMovement.ts` and `public/game/cardText/passiveMovement.js`.
+- Grappling Hook passive: when an `{a}` lands, flip the target to the opposite side of the attacker and knock them further in that direction (execution + playback).
+- In code: Fleche/Ninja Roll are in `applyPassiveMovementCardText` (`src/game/cardText/passiveMovement.ts` and `public/game/cardText/passiveMovement.js`); Grappling Hook passive is handled in `src/game/execute.ts` + `public/game/timelinePlayback.js`.
 
 ## Action list transforms
 - Card text that modifies the action list (add/remove/replace) should use the shared helpers in
