@@ -8,32 +8,41 @@ const normalizeSymbolText = (text) => {
   return raw.replace(/^\s*[:\-]\s*/, '').trim();
 };
 
+const splitParagraphs = (text) => {
+  const raw = `${text ?? ''}`;
+  if (!raw.trim()) return [];
+  return raw.split(/\r?\n\s*\r?\n/g).filter((paragraph) => paragraph.trim());
+};
+
 const parseSymbolInstructions = (text) => {
   const map = new Map();
-  const raw = `${text ?? ''}`;
-  if (!raw.trim()) return map;
+  const paragraphs = splitParagraphs(text);
+  if (!paragraphs.length) return map;
   const pattern = /\{(X1|X2|i)\}/g;
-  let match = pattern.exec(raw);
-  if (!match) return map;
-  let lastSymbol = null;
-  let lastIndex = 0;
-  while (match) {
+  for (const paragraph of paragraphs) {
+    pattern.lastIndex = 0;
+    let match = pattern.exec(paragraph);
+    if (!match) continue;
+    let lastSymbol = null;
+    let lastIndex = 0;
+    while (match) {
+      if (lastSymbol) {
+        const segment = paragraph.slice(lastIndex, match.index);
+        const cleaned = normalizeSymbolText(segment);
+        if (cleaned) {
+          map.set(lastSymbol, cleaned);
+        }
+      }
+      lastSymbol = match[1];
+      lastIndex = pattern.lastIndex;
+      match = pattern.exec(paragraph);
+    }
     if (lastSymbol) {
-      const segment = raw.slice(lastIndex, match.index);
+      const segment = paragraph.slice(lastIndex);
       const cleaned = normalizeSymbolText(segment);
       if (cleaned) {
         map.set(lastSymbol, cleaned);
       }
-    }
-    lastSymbol = match[1];
-    lastIndex = pattern.lastIndex;
-    match = pattern.exec(raw);
-  }
-  if (lastSymbol) {
-    const segment = raw.slice(lastIndex);
-    const cleaned = normalizeSymbolText(segment);
-    if (cleaned) {
-      map.set(lastSymbol, cleaned);
     }
   }
   return map;

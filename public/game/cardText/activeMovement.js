@@ -1,7 +1,4 @@
-const isBracketedAction = (action) => {
-  const trimmed = `${action ?? ''}`.trim();
-  return Boolean(trimmed) && trimmed.startsWith('[') && trimmed.endsWith(']');
-};
+import { isBracketedAction, patchActionEntry, updateActionEntries } from './actionListTransforms.js';
 
 const getBracketedActionIndices = (actions) => {
   const indices = [];
@@ -30,17 +27,11 @@ const getOppositeRotation = (rotationLabel) => {
 
 const applyRotationAtIndices = (actionList, indices, rotation, rotationSource) => {
   if (!rotation || !indices.length) return actionList;
-  let changed = false;
-  const next = actionList.map((item) => ({ ...item }));
-  indices.forEach((index) => {
-    const entry = next[index];
-    if (!entry) return;
-    if (entry.rotation && entry.rotation !== rotation) return;
-    entry.rotation = rotation;
-    entry.rotationSource = rotationSource;
-    changed = true;
+  return updateActionEntries(actionList, indices, (entry) => {
+    if (!entry) return entry;
+    if (entry.rotation && entry.rotation !== rotation) return entry;
+    return patchActionEntry(entry, { rotation, rotationSource });
   });
-  return changed ? next : actionList;
 };
 
 const applyNinjaRollActiveText = (actionList, card, rotationLabel) => {

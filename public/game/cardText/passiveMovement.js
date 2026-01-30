@@ -1,21 +1,13 @@
+import {
+  actionHasAttackToken,
+  isBracketedAction,
+  mapActionList,
+  normalizeActionToken,
+  patchActionEntry,
+  removeActionAtIndex,
+} from './actionListTransforms.js';
+
 const WAIT_ACTION = 'W';
-
-const normalizeActionToken = (token) => {
-  const trimmed = `${token ?? ''}`.trim();
-  if (!trimmed) return '';
-  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-    return trimmed.slice(1, -1).trim();
-  }
-  return trimmed;
-};
-
-const actionHasAttackToken = (action) => {
-  if (!action) return false;
-  return action
-    .split('-')
-    .map((token) => normalizeActionToken(token).toLowerCase())
-    .some((token) => token.includes('a'));
-};
 
 const getLastWaitIndex = (actionList) => {
   for (let index = actionList.length - 1; index >= 0; index -= 1) {
@@ -33,10 +25,27 @@ const applyFlechePassiveText = (actionList, activeCard) => {
   const lastWaitIndex = getLastWaitIndex(actionList);
   if (lastWaitIndex == null) return actionList;
   if (!hasAttackBeforeIndex(actionList, lastWaitIndex)) return actionList;
-  return actionList.filter((_, index) => index !== lastWaitIndex);
+  return removeActionAtIndex(actionList, lastWaitIndex);
 };
 
-const PASSIVE_MOVEMENT_EFFECTS = new Map([['fleche', applyFlechePassiveText]]);
+const applyNinjaRollPassiveText = (actionList, activeCard) => {
+  if (activeCard?.type !== 'ability') return actionList;
+  return mapActionList(actionList, (entry) => {
+    const normalized = normalizeActionToken(entry.action).toLowerCase();
+    if (normalized !== 'a') return entry;
+    const bracketed = isBracketedAction(entry.action);
+    return patchActionEntry(entry, {
+      action: bracketed ? '[a-La-Ra]' : 'a-La-Ra',
+      damage: Number.isFinite(entry.damage) ? Math.floor(entry.damage / 2) : 0,
+      kbf: Number.isFinite(entry.kbf) ? Math.floor(entry.kbf / 2) : 0,
+    });
+  });
+};
+
+const PASSIVE_MOVEMENT_EFFECTS = new Map([
+  ['fleche', applyFlechePassiveText],
+  ['ninja-roll', applyNinjaRollPassiveText],
+]);
 
 export const applyPassiveMovementCardText = (actionList, activeCard, passiveCard, _rotationLabel) => {
   if (!passiveCard || passiveCard.type !== 'movement') return actionList;

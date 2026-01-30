@@ -174,6 +174,75 @@ test('validateActionSubmission applies ninja roll opposite rotation at {i}', asy
   }
 });
 
+test('validateActionSubmission applies ninja roll passive to broaden attacks and halve damage', async () => {
+  const catalog = await loadCardCatalog();
+  const ninjaRoll = catalog.cardsById.get('ninja-roll');
+  const balestraLunge = catalog.cardsById.get('balestra-lunge');
+  assert.ok(ninjaRoll);
+  assert.ok(balestraLunge);
+  const deckState = createDeckState({ movement: [ninjaRoll.id], ability: [balestraLunge.id] });
+  const result = validateActionSubmission(
+    { activeCardId: balestraLunge.id, passiveCardId: ninjaRoll.id, rotation: '0' },
+    deckState,
+    catalog,
+  );
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    const attackIndex = balestraLunge.actions.findIndex((action) => `${action}`.trim().toLowerCase() === 'a');
+    assert.ok(attackIndex >= 0);
+    const entry = result.actionList[attackIndex];
+    assert.equal(entry.action, 'a-La-Ra');
+    assert.equal(entry.damage, Math.floor(balestraLunge.damage / 2));
+    assert.equal(entry.kbf, Math.floor(balestraLunge.kbf / 2));
+  }
+});
+
+test('validateActionSubmission leaves non-exact attacks unchanged for ninja roll passive', async () => {
+  const catalog = await loadCardCatalog();
+  const ninjaRoll = catalog.cardsById.get('ninja-roll');
+  const longThrust = catalog.cardsById.get('long-thrust');
+  assert.ok(ninjaRoll);
+  assert.ok(longThrust);
+  const deckState = createDeckState({ movement: [ninjaRoll.id], ability: [longThrust.id] });
+  const result = validateActionSubmission(
+    { activeCardId: longThrust.id, passiveCardId: ninjaRoll.id, rotation: '0' },
+    deckState,
+    catalog,
+  );
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    const attackIndex = longThrust.actions.findIndex((action) => `${action}`.trim().toLowerCase() === 'a-2a');
+    assert.ok(attackIndex >= 0);
+    const entry = result.actionList[attackIndex];
+    assert.equal(entry.action, 'a-2a');
+    assert.equal(entry.damage, longThrust.damage);
+    assert.equal(entry.kbf, longThrust.kbf);
+  }
+});
+
+test('validateActionSubmission applies ninja roll passive to bracketed single attacks', async () => {
+  const catalog = await loadCardCatalog();
+  const ninjaRoll = catalog.cardsById.get('ninja-roll');
+  const downSlash = catalog.cardsById.get('down-slash');
+  assert.ok(ninjaRoll);
+  assert.ok(downSlash);
+  const deckState = createDeckState({ movement: [ninjaRoll.id], ability: [downSlash.id] });
+  const result = validateActionSubmission(
+    { activeCardId: downSlash.id, passiveCardId: ninjaRoll.id, rotation: '0' },
+    deckState,
+    catalog,
+  );
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    const attackIndex = downSlash.actions.findIndex((action) => `${action}`.trim().toLowerCase() === '[a]');
+    assert.ok(attackIndex >= 0);
+    const entry = result.actionList[attackIndex];
+    assert.equal(entry.action, '[a-La-Ra]');
+    assert.equal(entry.damage, Math.floor(downSlash.damage / 2));
+    assert.equal(entry.kbf, Math.floor(downSlash.kbf / 2));
+  }
+});
+
 test('validateActionSubmission applies fleche passive to skip final wait after attacks', async () => {
   const catalog = await loadCardCatalog();
   const fleche = catalog.cardsById.get('fleche');

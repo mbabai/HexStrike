@@ -16,4 +16,9 @@
 
 ## Passive movement effects
 - Fleche passive: remove the final `{W}` from the active ability action list when an attack token appears before it.
+- Ninja Roll passive: only `{a}` (or `[a]`) becomes `{a-La-Ra}`; other attack tokens are unchanged. Halve damage/KBF (rounded down) on the affected step.
 - In code: `applyPassiveMovementCardText` in `src/game/cardText/passiveMovement.ts` and `public/game/cardText/passiveMovement.js`.
+
+## Action list transforms
+- Card text that modifies the action list (add/remove/replace) should use the shared helpers in
+  `src/game/cardText/actionListTransforms.ts` and `public/game/cardText/actionListTransforms.js` to keep behavior precise and mirrored.

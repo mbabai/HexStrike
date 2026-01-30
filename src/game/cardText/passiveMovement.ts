@@ -1,23 +1,14 @@
 import { ActionListItem, CardDefinition } from '../../types';
+import {
+  actionHasAttackToken,
+  isBracketedAction,
+  mapActionList,
+  normalizeActionToken,
+  patchActionEntry,
+  removeActionAtIndex,
+} from './actionListTransforms';
 
 const WAIT_ACTION = 'W';
-
-const normalizeActionToken = (token: string): string => {
-  const trimmed = `${token ?? ''}`.trim();
-  if (!trimmed) return '';
-  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-    return trimmed.slice(1, -1).trim();
-  }
-  return trimmed;
-};
-
-const actionHasAttackToken = (action: string): boolean => {
-  if (!action) return false;
-  return action
-    .split('-')
-    .map((token) => normalizeActionToken(token).toLowerCase())
-    .some((token) => token.includes('a'));
-};
 
 const getLastWaitIndex = (actionList: ActionListItem[]): number | null => {
   for (let index = actionList.length - 1; index >= 0; index -= 1) {
@@ -35,12 +26,32 @@ const applyFlechePassiveText = (actionList: ActionListItem[], activeCard: CardDe
   const lastWaitIndex = getLastWaitIndex(actionList);
   if (lastWaitIndex == null) return actionList;
   if (!hasAttackBeforeIndex(actionList, lastWaitIndex)) return actionList;
-  return actionList.filter((_, index) => index !== lastWaitIndex);
+  return removeActionAtIndex(actionList, lastWaitIndex);
+};
+
+const applyNinjaRollPassiveText = (
+  actionList: ActionListItem[],
+  activeCard: CardDefinition | undefined,
+): ActionListItem[] => {
+  if (activeCard?.type !== 'ability') return actionList;
+  return mapActionList(actionList, (entry) => {
+    const normalized = normalizeActionToken(entry.action).toLowerCase();
+    if (normalized !== 'a') return entry;
+    const bracketed = isBracketedAction(entry.action);
+    return patchActionEntry(entry, {
+      action: bracketed ? '[a-La-Ra]' : 'a-La-Ra',
+      damage: Number.isFinite(entry.damage) ? Math.floor(entry.damage / 2) : 0,
+      kbf: Number.isFinite(entry.kbf) ? Math.floor(entry.kbf / 2) : 0,
+    });
+  });
 };
 
 type PassiveMovementEffect = (actionList: ActionListItem[], activeCard: CardDefinition | undefined) => ActionListItem[];
 
-const PASSIVE_MOVEMENT_EFFECTS = new Map<string, PassiveMovementEffect>([['fleche', applyFlechePassiveText]]);
+const PASSIVE_MOVEMENT_EFFECTS = new Map<string, PassiveMovementEffect>([
+  ['fleche', applyFlechePassiveText],
+  ['ninja-roll', applyNinjaRollPassiveText],
+]);
 
 export const applyPassiveMovementCardText = (
   actionList: ActionListItem[],

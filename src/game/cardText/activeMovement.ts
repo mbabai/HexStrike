@@ -1,11 +1,7 @@
 import { ActionListItem, CardDefinition } from '../../types';
+import { isBracketedAction, patchActionEntry, updateActionEntries } from './actionListTransforms';
 
 type RotationSource = ActionListItem['rotationSource'];
-
-const isBracketedAction = (action: string): boolean => {
-  const trimmed = `${action ?? ''}`.trim();
-  return Boolean(trimmed) && trimmed.startsWith('[') && trimmed.endsWith(']');
-};
 
 const getBracketedActionIndices = (actions: string[]): number[] => {
   const indices: number[] = [];
@@ -39,17 +35,11 @@ const applyRotationAtIndices = (
   rotationSource: RotationSource,
 ): ActionListItem[] => {
   if (!rotation || !indices.length) return actionList;
-  let changed = false;
-  const next = actionList.map((item) => ({ ...item }));
-  indices.forEach((index) => {
-    const entry = next[index];
-    if (!entry) return;
-    if (entry.rotation && entry.rotation !== rotation) return;
-    entry.rotation = rotation;
-    entry.rotationSource = rotationSource;
-    changed = true;
+  return updateActionEntries(actionList, indices, (entry) => {
+    if (!entry) return entry;
+    if (entry.rotation && entry.rotation !== rotation) return entry;
+    return patchActionEntry(entry, { rotation, rotationSource });
   });
-  return changed ? next : actionList;
 };
 
 const applyNinjaRollActiveText = (
