@@ -7,6 +7,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - Server: dependency-light Node.js + TypeScript HTTP server in `src/server.ts` with REST endpoints and SSE (`GET /events`).
 - State: lobby queues (`quickplayQueue`, `rankedQueue`, `botQueue`) and in-memory match/game records via `src/state/lobby.ts` and `src/persistence/memoryDb.ts`; games now include starting characters assigned on queue join.
 - Server: action-set validation uses `src/game/cardCatalog.ts` + `src/game/cardRules.ts` to enforce deck/hand exhaustion, rotation limits, and refresh timing.
+- Server: hand management + draw/discard syncing lives in `src/game/handRules.ts` (movement hand derived from ability count).
 - UI: static assets in `public/` with ES module scripts (`public/menu.js`, `public/queue.js`, `public/storage.js`) and styling in `public/theme.css`.
 - UI: lobby deck library + deck builder (stored per-user in localStorage) in `public/decks.js` + `public/deckStore.js`; selected deck is saved in cookies and gates matchmaking.
 - UI: deck edit uses the same builder overlay as create; edit state is prefilled and saves back to the existing deck id.
@@ -86,8 +87,10 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Action-set rotations use the player-selected rotation only on the first action entry; later rotations are reserved for card-text injections and should set `rotationSource: 'forced'`.
 - Action-set submissions must include `activeCardId`, `passiveCardId`, and `rotation`; the server rebuilds the action list from the card catalog and rejects unavailable or exhausted cards.
 - Ability cards are never exhausted; on use they leave the hand immediately and are placed under the ability deck (client and server).
+- Movement hand size is derived from ability count (<=4 matches ability count, >4 caps at 4); use `syncMovementHand`/`getMovementHandIds` in `src/game/handRules.ts` instead of hand-counting on the client.
 - Movement exhaustion clears on any land `E` at the earliest timeline index; the refresh is keyed to the earliest `E`, not the client view index.
 - On land `E`, draw from the ability deck until reaching max hand size (`MAX_HAND_SIZE`, default 4).
+- Ability draw/discard helpers (`drawAbilityCards`, `discardAbilityCards`) always sync movement hand; avoid mutating `exhaustedMovementIds` directly when resolving card text.
 - Action HUD only shows when the timeline selector is on the earliest `E` across all players and the local player is at-bat; the HUD locks after submit until resolution.
 - Action HUD hands are always visible in the game view; only the slots and rotation wheel toggle with the `.is-turn` state.
 - Action HUD hover targeting is based on the hand column + header band (not card transforms); keep `--action-card-hover-shift` synced with the hover rail in `public/game/actionHud.js`.

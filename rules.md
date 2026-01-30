@@ -18,6 +18,14 @@ Win by forcing the opponent to lose. A player loses if either:
 3. Each player lays out their 4 movement cards as available.
 4. Each player draws the top 4 ability cards to form their hand; the remaining ability cards form the ability deck in deck order.
 
+## Hand management
+- Movement cards in hand follow the ability count:
+  - If you have 4 or fewer ability cards, your movement hand must match that count.
+  - If you have 5+ ability cards, your movement hand is capped at 4.
+- When you use a movement card while holding 5+ ability cards, it immediately returns to your hand.
+- "Draw X" means draw X ability cards, then (if you now have 4 or fewer ability cards) choose used movement cards to restore so the movement hand matches. If you already have 4+ ability cards/movement cards, skip the movement restore.
+- "Discard X" means choose X ability cards to discard. If that puts you at 3 or fewer ability cards, discard the same number of movement cards so the hands match.
+
 ## Timeline and beats
 - The game resolves in beats on a shared timeline.
 - Each beat has one entry per player. An empty entry is shown as E.

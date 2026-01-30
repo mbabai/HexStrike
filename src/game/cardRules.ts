@@ -15,13 +15,34 @@ import {
   PendingActions,
 } from '../types';
 import { getCharacterFirstEIndex, getCharacterLocationAtIndex, getTimelineEarliestEIndex } from './beatTimeline';
+import {
+  MAX_HAND_SIZE,
+  drawAbilityCards,
+  getMovementHandIds,
+  isMovementHandSyncFailure,
+  syncMovementHand,
+} from './handRules';
 import { applyActiveCardTextEffects, applyPassiveCardTextEffects } from './cardText';
 
 const ROTATION_LABELS = ['0', 'R1', 'R2', '3', 'L2', 'L1'];
-const MAX_HAND_SIZE = 4;
 
 export const isActionValidationFailure = (result: ActionValidationResult): result is { ok: false; error: CardValidationError } =>
   !result.ok;
+
+export {
+  MAX_HAND_SIZE,
+  drawAbilityCards,
+  discardAbilityCards,
+  getMovementHandIds,
+  getTargetMovementHandSize,
+  syncMovementHand,
+} from './handRules';
+export type {
+  AbilityDrawResult,
+  AbilityDiscardResult,
+  MovementHandSyncOptions,
+  MovementHandSyncResult,
+} from './handRules';
 
 const normalizeCardId = (value: unknown): string | null => {
   if (typeof value === 'string') {
@@ -142,13 +163,6 @@ const getEntryForCharacter = (beat: BeatEntry[], character: PublicCharacter): Be
     return key === character.username || key === character.userId;
   }) ?? null;
 
-const drawAbilityCards = (deckState: DeckState) => {
-  while (deckState.abilityHand.length < MAX_HAND_SIZE && deckState.abilityDeck.length) {
-    const next = deckState.abilityDeck.shift();
-    if (next) deckState.abilityHand.push(next);
-  }
-};
-
 const normalizeDeckList = (
   raw: unknown,
   catalog: CardCatalog,
@@ -210,7 +224,7 @@ export const createDeckState = (deck: DeckDefinition): DeckState => {
   const ability = Array.isArray(deck.ability) ? deck.ability.map((id) => `${id}`) : [];
   const abilityHand = ability.slice(0, MAX_HAND_SIZE);
   const abilityDeck = ability.slice(MAX_HAND_SIZE);
-  return {
+  const deckState: DeckState = {
     movement,
     abilityHand,
     abilityDeck,
@@ -219,6 +233,8 @@ export const createDeckState = (deck: DeckDefinition): DeckState => {
     activeCardId: null,
     passiveCardId: null,
   };
+  syncMovementHand(deckState, { mode: 'auto' });
+  return deckState;
 };
 
 export const getRefreshOffset = (actions: string[]): number | null => {
@@ -309,11 +325,20 @@ export const validateActionSubmission = (
 export const applyCardUse = (deckState: DeckState, cardUse: CardUse): { ok: true } | { ok: false; error: CardValidationError } => {
   deckState.activeCardId = cardUse.activeCardId ?? deckState.activeCardId ?? null;
   deckState.passiveCardId = cardUse.passiveCardId ?? deckState.passiveCardId ?? null;
-  deckState.exhaustedMovementIds.add(cardUse.movementCardId);
+  const abilityCountBeforeUse = deckState.abilityHand.length;
+  if (abilityCountBeforeUse >= MAX_HAND_SIZE + 1) {
+    deckState.exhaustedMovementIds.delete(cardUse.movementCardId);
+  } else {
+    deckState.exhaustedMovementIds.add(cardUse.movementCardId);
+  }
   const abilityIndex = deckState.abilityHand.indexOf(cardUse.abilityCardId);
   if (abilityIndex !== -1) {
     const [usedAbility] = deckState.abilityHand.splice(abilityIndex, 1);
     if (usedAbility) deckState.abilityDeck.push(usedAbility);
+  }
+  const movementResult = syncMovementHand(deckState, { mode: 'auto' });
+  if (isMovementHandSyncFailure(movementResult)) {
+    return { ok: false, error: movementResult.error };
   }
   deckState.lastRefreshIndex = null;
   return { ok: true };
@@ -321,7 +346,7 @@ export const applyCardUse = (deckState: DeckState, cardUse: CardUse): { ok: true
 
 export const buildPlayerCardState = (deckState: DeckState): PlayerCardState => ({
   deck: [...deckState.abilityDeck],
-  movementHand: [...deckState.movement],
+  movementHand: getMovementHandIds(deckState),
   abilityHand: [...deckState.abilityHand],
   activeCardId: deckState.activeCardId ?? null,
   passiveCardId: deckState.passiveCardId ?? null,
@@ -373,8 +398,11 @@ export const resolveLandRefreshes = (
     const terrain = entry?.terrain;
     const onLand = terrain === 'land' ? true : terrain === 'abyss' ? false : isCoordOnLand(location, land);
     if (!onLand) return;
-    deckState.exhaustedMovementIds.clear();
-    drawAbilityCards(deckState);
+    const drawCount = Math.max(0, MAX_HAND_SIZE - deckState.abilityHand.length);
+    const drawResult = drawAbilityCards(deckState, drawCount, { mode: 'auto' });
+    if (!drawResult.ok) {
+      return;
+    }
     deckState.lastRefreshIndex = firstEIndex;
   });
 };

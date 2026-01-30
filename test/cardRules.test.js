@@ -1,7 +1,14 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { loadCardCatalog } = require('../dist/game/cardCatalog.js');
-const { applyCardUse, createDeckState, resolveLandRefreshes, validateActionSubmission } = require('../dist/game/cardRules.js');
+const {
+  applyCardUse,
+  createDeckState,
+  discardAbilityCards,
+  drawAbilityCards,
+  resolveLandRefreshes,
+  validateActionSubmission,
+} = require('../dist/game/cardRules.js');
 
 const buildSampleDeck = (catalog) => ({
   movement: catalog.movement.slice(0, 4).map((card) => card.id),
@@ -328,4 +335,69 @@ test('resolveLandRefreshes skips refresh while pending actions at earliest beat'
   assert.equal(deckState.exhaustedMovementIds.has(movementCardId), true);
   assert.equal(deckState.abilityHand.length, 3);
   assert.equal(deckState.lastRefreshIndex, null);
+});
+
+test('applyCardUse returns movement to hand when ability count is 5+', async () => {
+  const catalog = await loadCardCatalog();
+  const deck = buildSampleDeck(catalog);
+  const deckState = createDeckState(deck);
+  const extraAbility = deckState.abilityDeck.shift();
+  assert.ok(extraAbility);
+  deckState.abilityHand.push(extraAbility);
+  assert.equal(deckState.abilityHand.length, 5);
+  const movementCardId = deck.movement[0];
+  const abilityCardId = deckState.abilityHand[0];
+
+  const result = applyCardUse(deckState, { movementCardId, abilityCardId });
+
+  assert.equal(result.ok, true);
+  assert.equal(deckState.exhaustedMovementIds.has(movementCardId), false);
+  assert.equal(deckState.abilityHand.length, 4);
+});
+
+test('drawAbilityCards restores movement to match ability hand', async () => {
+  const catalog = await loadCardCatalog();
+  const deck = buildSampleDeck(catalog);
+  const deckState = createDeckState(deck);
+  const movementCardId = deck.movement[0];
+  const abilityCardId = deck.ability[0];
+  applyCardUse(deckState, { movementCardId, abilityCardId });
+  assert.equal(deckState.exhaustedMovementIds.has(movementCardId), true);
+  assert.equal(deckState.abilityHand.length, 3);
+
+  const result = drawAbilityCards(deckState, 1, { mode: 'auto' });
+
+  assert.equal(result.ok, true);
+  assert.equal(deckState.abilityHand.length, 4);
+  assert.equal(deckState.exhaustedMovementIds.size, 0);
+});
+
+test('discardAbilityCards discards movement when ability count drops below 4', async () => {
+  const catalog = await loadCardCatalog();
+  const deck = buildSampleDeck(catalog);
+  const deckState = createDeckState(deck);
+  const discardIds = deckState.abilityHand.slice(0, 2);
+
+  const result = discardAbilityCards(deckState, discardIds, { mode: 'auto' });
+
+  assert.equal(result.ok, true);
+  assert.equal(deckState.abilityHand.length, 2);
+  const movementAvailable = deckState.movement.filter((id) => !deckState.exhaustedMovementIds.has(id)).length;
+  assert.equal(movementAvailable, deckState.abilityHand.length);
+});
+
+test('drawAbilityCards syncs movement even when no cards are drawn', async () => {
+  const catalog = await loadCardCatalog();
+  const deck = {
+    movement: catalog.movement.slice(0, 4).map((card) => card.id),
+    ability: catalog.ability.slice(0, 2).map((card) => card.id),
+  };
+  const deckState = createDeckState(deck);
+  deckState.exhaustedMovementIds.clear();
+
+  const result = drawAbilityCards(deckState, 0, { mode: 'auto' });
+
+  assert.equal(result.ok, true);
+  const movementAvailable = deckState.movement.filter((id) => !deckState.exhaustedMovementIds.has(id)).length;
+  assert.equal(movementAvailable, deckState.abilityHand.length);
 });
