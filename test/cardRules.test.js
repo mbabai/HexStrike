@@ -174,6 +174,56 @@ test('validateActionSubmission applies ninja roll opposite rotation at {i}', asy
   }
 });
 
+test('validateActionSubmission applies fleche passive to skip final wait after attacks', async () => {
+  const catalog = await loadCardCatalog();
+  const fleche = catalog.cardsById.get('fleche');
+  const aerialStrike = catalog.cardsById.get('aerial-strike');
+  assert.ok(fleche);
+  assert.ok(aerialStrike);
+  const deckState = createDeckState({ movement: [fleche.id], ability: [aerialStrike.id] });
+
+  const result = validateActionSubmission(
+    { activeCardId: aerialStrike.id, passiveCardId: fleche.id, rotation: '0' },
+    deckState,
+    catalog,
+  );
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    const baseActions = aerialStrike.actions.slice();
+    const lastWaitIndex = baseActions
+      .map((action) => `${action}`.trim().toUpperCase())
+      .lastIndexOf('W');
+    assert.ok(lastWaitIndex >= 0);
+    const expected = baseActions.filter((_, index) => index !== lastWaitIndex);
+    assert.deepEqual(
+      result.actionList.map((item) => item.action),
+      expected,
+    );
+  }
+});
+
+test('validateActionSubmission keeps final wait when fleche passive has no attack before it', async () => {
+  const catalog = await loadCardCatalog();
+  const fleche = catalog.cardsById.get('fleche');
+  const absorb = catalog.cardsById.get('absorb');
+  assert.ok(fleche);
+  assert.ok(absorb);
+  const deckState = createDeckState({ movement: [fleche.id], ability: [absorb.id] });
+
+  const result = validateActionSubmission(
+    { activeCardId: absorb.id, passiveCardId: fleche.id, rotation: '0' },
+    deckState,
+    catalog,
+  );
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.deepEqual(
+      result.actionList.map((item) => item.action),
+      absorb.actions,
+    );
+  }
+});
+
 test('applyCardUse removes ability card and exhausts movement', async () => {
   const catalog = await loadCardCatalog();
   const deck = buildSampleDeck(catalog);

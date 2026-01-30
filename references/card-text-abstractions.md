@@ -13,3 +13,7 @@
 ## Conditional throw + charge
 - `cardStartTerrain` is stamped on beat entries during execution to capture the terrain at the start of the action set.
 - Grappling Hook: the `{i}` (bracketed) charge step stops at the first land tile or target in front, and its throw interaction only applies when `cardStartTerrain === 'land'`.
+
+## Passive movement effects
+- Fleche passive: remove the final `{W}` from the active ability action list when an attack token appears before it.
+- In code: `applyPassiveMovementCardText` in `src/game/cardText/passiveMovement.ts` and `public/game/cardText/passiveMovement.js`.
