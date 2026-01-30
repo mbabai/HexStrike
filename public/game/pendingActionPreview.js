@@ -1,3 +1,5 @@
+import { applyActiveCardTextEffects, applyPassiveCardTextEffects } from './cardText/index.js';
+
 const normalizeActionToken = (token) => {
   const trimmed = `${token ?? ''}`.trim();
   if (!trimmed) return '';
@@ -46,9 +48,10 @@ const buildPendingActionList = (activeCard, passiveCard, rotation) => {
   const kbf = Number.isFinite(activeCard?.kbf) ? activeCard.kbf : 0;
   const supportsThrow = cardHasThrowKeyword(activeCard, 'active') || cardHasThrowKeyword(passiveCard, 'passive');
   const rotationLabel = `${rotation ?? ''}`.trim();
-  return actions.map((action, index) => ({
+  const baseActionList = actions.map((action, index) => ({
     action,
     rotation: index === 0 ? rotationLabel : '',
+    rotationSource: index === 0 && rotationLabel ? 'selected' : undefined,
     priority,
     interaction: supportsThrow && actionHasAttackToken(action) ? { type: 'throw' } : undefined,
     damage,
@@ -56,6 +59,8 @@ const buildPendingActionList = (activeCard, passiveCard, rotation) => {
     cardId: activeCard?.id ?? null,
     passiveCardId: passiveCard?.id ?? null,
   }));
+  const activeTextList = applyActiveCardTextEffects(baseActionList, activeCard, rotationLabel);
+  return applyPassiveCardTextEffects(activeTextList, activeCard, passiveCard, rotationLabel);
 };
 
 const isUserSubmitted = (pending, userId) => {

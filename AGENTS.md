@@ -28,6 +28,8 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - [architecture.md](architecture.md): system overview of server/client/data flow; use when onboarding, tracing state sync issues, or planning cross-cutting changes.
 - [rules.md](rules.md): player-facing rules; use to align gameplay changes, answer rules questions, or sanity-check rule coverage.
 - [docs/hex-grid.md](docs/hex-grid.md): hex coordinate system and land/abyss definitions; use when touching board math or terrain.
+- [references/card-text-abstractions.md](references/card-text-abstractions.md): inventory of card-text symbols/effects and their implementation anchors.
+- [references/card-text-implementation.json](references/card-text-implementation.json): active/passive card-text implementation tracker.
 - [plans/basic-lobby.md](plans/basic-lobby.md): historical lobby plan snapshot; reference for context on the initial lobby scope.
 - [plans/queue-matchmaking-game-area.md](plans/queue-matchmaking-game-area.md): historical plan for queue/matchmaking/game surface; reference when revisiting those areas.
 
@@ -81,7 +83,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Beat entries include `damage`, `location`, and `priority` fields; tests should assert full beat payloads, not just `username`/`action`.
 - Beat entries include `terrain` (`land`/`abyss`) derived from `location` + `public.land`; refresh/abyss logic should prefer this flag.
 - Action-set insertion is per player: replace that player's first open slot (missing entry or `E`), fill empty beats in place, and avoid shifting other players' beats.
-- Action-set rotations only apply to the first action entry; subsequent actions must use a blank rotation to keep timelines aligned.
+- Action-set rotations use the player-selected rotation only on the first action entry; later rotations are reserved for card-text injections and should set `rotationSource: 'forced'`.
 - Action-set submissions must include `activeCardId`, `passiveCardId`, and `rotation`; the server rebuilds the action list from the card catalog and rejects unavailable or exhausted cards.
 - Ability cards are never exhausted; on use they leave the hand immediately and are placed under the ability deck (client and server).
 - Movement exhaustion clears on any land `E` at the earliest timeline index; the refresh is keyed to the earliest `E`, not the client view index.
@@ -104,6 +106,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Timeline gold highlight uses the earliest `E` beat across all players, not the currently viewed beat.
 - Timeline play/pause replaces the center beat label; hit detection is a circular button in `public/game/timeIndicatorView.js` and auto-advance only steps after playback reports completion.
 - Timeline tooltips use `cardId`/`passiveCardId` on beat entries for active/passive names; symbol instructions still come from `{X1}/{X2}/{i}` fragments in `activeText`.
+- Timeline tooltip action-set start prefers `rotationSource: 'selected'` and falls back to non-empty `rotation` when the source flag is missing (legacy data).
 - Hit rewrites clear `cardId`/`passiveCardId` on `DamageIcon`/forced `E` entries so tooltips only describe actions that actually resolved.
 - Rotation restrictions like `0-2` are interpreted as rotation magnitude (both left/right labels plus `0`/`3` where applicable), not directional ranges.
 - Rotations resolve in a pre-action phase; apply them even if the actor's action is skipped/disabled, and keep `src/game/execute.ts` + `public/game/timelinePlayback.js` in sync.

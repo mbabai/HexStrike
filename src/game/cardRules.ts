@@ -15,6 +15,7 @@ import {
   PendingActions,
 } from '../types';
 import { getCharacterFirstEIndex, getCharacterLocationAtIndex, getTimelineEarliestEIndex } from './beatTimeline';
+import { applyActiveCardTextEffects, applyPassiveCardTextEffects } from './cardText';
 
 const ROTATION_LABELS = ['0', 'R1', 'R2', '3', 'L2', 'L1'];
 const MAX_HAND_SIZE = 4;
@@ -278,9 +279,10 @@ export const validateActionSubmission = (
   const supportsThrow = cardHasThrowKeyword(activeCard, 'active') || cardHasThrowKeyword(passiveCard, 'passive');
   const attackDamage = Number.isFinite(activeCard.damage) ? activeCard.damage : 0;
   const attackKbf = Number.isFinite(activeCard.kbf) ? activeCard.kbf : 0;
-  const actionList: ActionListItem[] = activeCard.actions.map((action, index) => ({
+  const baseActionList: ActionListItem[] = activeCard.actions.map((action, index) => ({
     action,
     rotation: index === 0 ? rotation : '',
+    rotationSource: index === 0 ? 'selected' : undefined,
     priority: activeCard.priority,
     interaction: supportsThrow && actionHasAttackToken(action) ? { type: 'throw' } : undefined,
     damage: attackDamage,
@@ -288,6 +290,8 @@ export const validateActionSubmission = (
     cardId: activeCard.id,
     passiveCardId: passiveCard.id,
   }));
+  const activeTextList = applyActiveCardTextEffects(baseActionList, activeCard, rotation);
+  const actionList = applyPassiveCardTextEffects(activeTextList, activeCard, passiveCard, rotation);
 
   const refreshOffset = getRefreshOffset(activeCard.actions);
   if (refreshOffset === null) {

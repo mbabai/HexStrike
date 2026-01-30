@@ -50,6 +50,7 @@ const buildTargetEntry = (
   target: PublicCharacter,
   action: string,
   rotation: string,
+  rotationSource: ActionListItem['rotationSource'],
   priority: number,
   interaction: ActionListItem['interaction'],
   attackDamage: number | undefined,
@@ -68,6 +69,9 @@ const buildTargetEntry = (
     facing: seed.facing,
     calculated: false,
   };
+  if (rotationSource) {
+    entry.rotationSource = rotationSource;
+  }
   if (interaction) {
     entry.interaction = interaction;
   }
@@ -130,7 +134,8 @@ export const applyActionSetToBeats = (
 
   const actions = actionList.map((item, index) => ({
     action: item.action,
-    rotation: index === 0 ? item.rotation : '',
+    rotation: item.rotation,
+    rotationSource: item.rotationSource,
     priority: item.priority,
     interaction: item.interaction,
     attackDamage: item.damage,
@@ -157,6 +162,11 @@ export const applyActionSetToBeats = (
       entry.username = target.username ?? target.userId;
       entry.action = actionItem.action;
       entry.rotation = actionItem.rotation;
+      if (actionItem.rotationSource) {
+        entry.rotationSource = actionItem.rotationSource;
+      } else if ('rotationSource' in entry) {
+        delete entry.rotationSource;
+      }
       entry.priority = actionItem.priority;
       if (actionItem.interaction) {
         entry.interaction = actionItem.interaction;
@@ -197,6 +207,7 @@ export const applyActionSetToBeats = (
         target,
         actionItem.action,
         actionItem.rotation,
+        actionItem.rotationSource,
         actionItem.priority,
         actionItem.interaction,
         actionItem.attackDamage,

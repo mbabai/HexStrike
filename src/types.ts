@@ -132,9 +132,12 @@ export interface CardValidationError {
   message: string;
 }
 
+export type RotationSource = 'selected' | 'forced';
+
 export interface ActionListItem {
   action: string;
   rotation: string;
+  rotationSource?: RotationSource;
   priority: number;
   interaction?: BeatInteraction;
   damage?: number;
@@ -180,6 +183,7 @@ export interface BeatEntry {
   userID?: string;
   action: string;
   rotation: string;
+  rotationSource?: RotationSource;
   priority: number;
   damage: number;
   location: HexCoord;

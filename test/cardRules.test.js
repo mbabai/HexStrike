@@ -142,6 +142,31 @@ test('validateActionSubmission marks throws from active throw text', async () =>
   }
 });
 
+test('validateActionSubmission applies ninja roll opposite rotation at {i}', async () => {
+  const catalog = await loadCardCatalog();
+  const ninjaRoll = catalog.cardsById.get('ninja-roll');
+  assert.ok(ninjaRoll);
+  const abilityCard = catalog.ability.find((card) => card && card.id);
+  assert.ok(abilityCard);
+  const deckState = createDeckState({ movement: [ninjaRoll.id], ability: [abilityCard.id] });
+  const result = validateActionSubmission(
+    { activeCardId: ninjaRoll.id, passiveCardId: abilityCard.id, rotation: 'R2' },
+    deckState,
+    catalog,
+  );
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    const bracketIndex = ninjaRoll.actions.findIndex((action) => `${action}`.trim().startsWith('['));
+    assert.ok(bracketIndex >= 0);
+    const baseEntry = result.actionList[0];
+    const bracketEntry = result.actionList[bracketIndex];
+    assert.equal(baseEntry.rotation, 'R2');
+    assert.equal(baseEntry.rotationSource, 'selected');
+    assert.equal(bracketEntry.rotation, 'L1');
+    assert.equal(bracketEntry.rotationSource, 'forced');
+  }
+});
+
 test('applyCardUse removes ability card and exhausts movement', async () => {
   const catalog = await loadCardCatalog();
   const deck = buildSampleDeck(catalog);

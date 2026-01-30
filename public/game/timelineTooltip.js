@@ -63,7 +63,9 @@ const findActionSetStartIndex = (beats, character, beatIndex) => {
     const entry = getBeatEntryForCharacter(beats[i], character);
     if (!entry) continue;
     const rotation = `${entry.rotation ?? ''}`.trim();
-    if (rotation) return i;
+    const rotationSource = `${entry.rotationSource ?? ''}`.trim();
+    if (rotationSource === 'selected') return i;
+    if (!rotationSource && rotation) return i;
   }
   return null;
 };
