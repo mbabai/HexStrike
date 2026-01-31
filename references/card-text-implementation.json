@@ -1,191 +1,191 @@
 {
-    "generatedAt":  "2026-01-30",
-    "movement":  {
-                     "advance":  {
-                                     "active":  false,
-                                     "passive":  false
-                                 },
-                     "backflip":  {
-                                      "active":  false,
-                                      "passive":  false
-                                  },
-                     "dash":  {
-                                  "active":  false,
-                                  "passive":  false
-                              },
-                     "fleche":  {
-                                    "active":  false,
-                                    "passive":  true
-                                },
-                     "grappling-hook":  {
-                                            "active":  true,
-                                            "passive":  true
-                                        },
-                     "jump":  {
-                                  "active":  false,
-                                  "passive":  false
-                              },
-                     "leap":  {
-                                  "active":  false,
-                                  "passive":  false
-                              },
-                     "ninja-roll":  {
-                                        "active":  true,
-                                        "passive":  false
-                                    },
-                     "step":  {
-                                  "active":  false,
-                                  "passive":  false
-                              }
-                 },
-    "ability":  {
-                    "absorb":  {
-                                   "active":  false,
-                                   "passive":  false
-                               },
-                    "aerial-strike":  {
-                                          "active":  false,
-                                          "passive":  false
-                                      },
-                    "balestra-lunge":  {
-                                           "active":  false,
-                                           "passive":  false
-                                       },
-                    "bow-shot":  {
-                                     "active":  false,
-                                     "passive":  false
-                                 },
-                    "burning-strike":  {
-                                           "active":  false,
-                                           "passive":  false
-                                       },
-                    "chase":  {
-                                  "active":  false,
-                                  "passive":  false
-                              },
-                    "counter-attack":  {
-                                           "active":  false,
-                                           "passive":  false
-                                       },
-                    "cross-slash":  {
-                                        "active":  false,
-                                        "passive":  false
-                                    },
-                    "double-daggers":  {
-                                           "active":  false,
-                                           "passive":  false
-                                       },
-                    "down-slash":  {
-                                       "active":  false,
-                                       "passive":  false
-                                   },
-                    "feint":  {
-                                  "active":  false,
-                                  "passive":  false
-                              },
-                    "flying-knee":  {
-                                        "active":  false,
-                                        "passive":  false
-                                    },
-                    "fumikomi":  {
-                                     "active":  false,
-                                     "passive":  false
-                                 },
-                    "gigantic-staff":  {
-                                           "active":  false,
-                                           "passive":  false
-                                       },
-                    "guard":  {
-                                  "active":  false,
-                                  "passive":  false
-                              },
-                    "hammer":  {
-                                   "active":  false,
-                                   "passive":  false
-                               },
-                    "haven":  {
-                                  "active":  false,
-                                  "passive":  false
-                              },
-                    "healing-harmony":  {
-                                            "active":  false,
-                                            "passive":  false
-                                        },
-                    "hip-throw":  {
-                                      "active":  false,
-                                      "passive":  false
-                                  },
-                    "iron-will":  {
-                                      "active":  false,
-                                      "passive":  false
-                                  },
-                    "jab":  {
-                                "active":  false,
-                                "passive":  false
-                            },
-                    "long-thrust":  {
-                                        "active":  false,
-                                        "passive":  false
-                                    },
-                    "parry":  {
-                                  "active":  false,
-                                  "passive":  false
-                              },
-                    "push-kick":  {
-                                      "active":  false,
-                                      "passive":  false
-                                  },
-                    "reflex-dodge":  {
-                                         "active":  false,
-                                         "passive":  false
-                                     },
-                    "rewind":  {
-                                   "active":  false,
-                                   "passive":  false
-                               },
-                    "sinking-shot":  {
-                                         "active":  false,
-                                         "passive":  false
-                                     },
-                    "smash-attack":  {
-                                         "active":  false,
-                                         "passive":  false
-                                     },
-                    "smoke-bomb":  {
-                                       "active":  false,
-                                       "passive":  false
-                                   },
-                    "spike":  {
-                                  "active":  false,
-                                  "passive":  false
-                              },
-                    "spinning-back-kick":  {
-                                               "active":  false,
-                                               "passive":  false
-                                           },
-                    "stab":  {
-                                 "active":  false,
-                                 "passive":  false
-                             },
-                    "sweeping-strike":  {
-                                            "active":  false,
-                                            "passive":  false
-                                        },
-                    "tackle":  {
-                                   "active":  false,
-                                   "passive":  false
-                               },
-                    "trip":  {
-                                 "active":  false,
-                                 "passive":  false
-                             },
-                    "vengeance":  {
-                                      "active":  false,
-                                      "passive":  false
-                                  },
-                    "whirlwind":  {
-                                      "active":  false,
-                                      "passive":  false
-                                  }
-                }
+    "generatedAt": "2026-01-30",
+    "movement": {
+        "advance": {
+            "active": false,
+            "passive": false
+        },
+        "backflip": {
+            "active": false,
+            "passive": false
+        },
+        "dash": {
+            "active": false,
+            "passive": false
+        },
+        "fleche": {
+            "active": false,
+            "passive": true
+        },
+        "grappling-hook": {
+            "active": true,
+            "passive": true
+        },
+        "jump": {
+            "active": false,
+            "passive": false
+        },
+        "leap": {
+            "active": false,
+            "passive": false
+        },
+        "ninja-roll": {
+            "active": true,
+            "passive": false
+        },
+        "step": {
+            "active": false,
+            "passive": false
+        }
+    },
+    "ability": {
+        "absorb": {
+            "active": false,
+            "passive": false
+        },
+        "aerial-strike": {
+            "active": false,
+            "passive": false
+        },
+        "balestra-lunge": {
+            "active": false,
+            "passive": false
+        },
+        "bow-shot": {
+            "active": false,
+            "passive": false
+        },
+        "burning-strike": {
+            "active": false,
+            "passive": false
+        },
+        "chase": {
+            "active": false,
+            "passive": false
+        },
+        "counter-attack": {
+            "active": false,
+            "passive": false
+        },
+        "cross-slash": {
+            "active": false,
+            "passive": false
+        },
+        "double-daggers": {
+            "active": false,
+            "passive": false
+        },
+        "down-slash": {
+            "active": true,
+            "passive": false
+        },
+        "feint": {
+            "active": false,
+            "passive": false
+        },
+        "flying-knee": {
+            "active": false,
+            "passive": false
+        },
+        "fumikomi": {
+            "active": false,
+            "passive": false
+        },
+        "gigantic-staff": {
+            "active": false,
+            "passive": false
+        },
+        "guard": {
+            "active": false,
+            "passive": false
+        },
+        "hammer": {
+            "active": false,
+            "passive": false
+        },
+        "haven": {
+            "active": false,
+            "passive": false
+        },
+        "healing-harmony": {
+            "active": false,
+            "passive": false
+        },
+        "hip-throw": {
+            "active": false,
+            "passive": false
+        },
+        "iron-will": {
+            "active": false,
+            "passive": false
+        },
+        "jab": {
+            "active": false,
+            "passive": false
+        },
+        "long-thrust": {
+            "active": false,
+            "passive": false
+        },
+        "parry": {
+            "active": false,
+            "passive": false
+        },
+        "push-kick": {
+            "active": false,
+            "passive": false
+        },
+        "reflex-dodge": {
+            "active": false,
+            "passive": false
+        },
+        "rewind": {
+            "active": false,
+            "passive": false
+        },
+        "sinking-shot": {
+            "active": false,
+            "passive": false
+        },
+        "smash-attack": {
+            "active": false,
+            "passive": false
+        },
+        "smoke-bomb": {
+            "active": false,
+            "passive": false
+        },
+        "spike": {
+            "active": true,
+            "passive": true
+        },
+        "spinning-back-kick": {
+            "active": false,
+            "passive": false
+        },
+        "stab": {
+            "active": false,
+            "passive": false
+        },
+        "sweeping-strike": {
+            "active": true,
+            "passive": true
+        },
+        "tackle": {
+            "active": false,
+            "passive": false
+        },
+        "trip": {
+            "active": true,
+            "passive": true
+        },
+        "vengeance": {
+            "active": false,
+            "passive": false
+        },
+        "whirlwind": {
+            "active": false,
+            "passive": false
+        }
+    }
 }

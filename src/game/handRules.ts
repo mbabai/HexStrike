@@ -64,6 +64,19 @@ export const getTargetMovementHandSize = (abilityCount: number): number => {
 export const getMovementHandIds = (deckState: DeckState): string[] =>
   deckState.movement.filter((id) => !deckState.exhaustedMovementIds.has(id));
 
+export const getDiscardRequirements = (
+  deckState: DeckState,
+  discardCount: number,
+): { abilityDiscardCount: number; movementDiscardCount: number } => {
+  const abilityCount = Array.isArray(deckState?.abilityHand) ? deckState.abilityHand.length : 0;
+  const abilityDiscardCount = Math.min(Math.max(0, Math.floor(discardCount || 0)), abilityCount);
+  const abilityAfter = abilityCount - abilityDiscardCount;
+  const targetMovementSize = getTargetMovementHandSize(abilityAfter);
+  const movementCount = getMovementHandIds(deckState).length;
+  const movementDiscardCount = Math.max(0, movementCount - targetMovementSize);
+  return { abilityDiscardCount, movementDiscardCount };
+};
+
 export const syncMovementHand = (
   deckState: DeckState,
   options: MovementHandSyncOptions = {},
@@ -144,6 +157,10 @@ export const syncMovementHand = (
 
 export const isMovementHandSyncFailure = (
   result: MovementHandSyncResult,
+): result is { ok: false; error: CardValidationError } => !result.ok;
+
+export const isAbilityDiscardFailure = (
+  result: AbilityDiscardResult,
 ): result is { ok: false; error: CardValidationError } => !result.ok;
 
 export const drawAbilityCards = (

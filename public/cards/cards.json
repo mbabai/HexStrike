@@ -850,6 +850,26 @@
         "spinning-back-kick",
         "spike"
       ]
+    },
+    {
+      "id": "discard-tester",
+      "name": "discard tester",
+      "characterId": "murelious",
+      "movement": ["step", "dash", "jump", "backflip"],
+      "ability": [
+        "down-slash",
+        "spike",
+        "sweeping-strike",
+        "trip",
+        "cross-slash",
+        "parry",
+        "feint",
+        "smoke-bomb",
+        "long-thrust",
+        "balestra-lunge",
+        "jab",
+        "counter-attack"
+      ]
     }
   ]
 }

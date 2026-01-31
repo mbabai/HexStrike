@@ -68,13 +68,22 @@ export const getEarliestPendingInteractionIndex = (interactions) => {
   return Math.min(...pending);
 };
 
-export const getTimelineStopIndex = (beats, characters, interactions = []) => {
+export const getTimelineStopIndex = (beats, characters, interactions = [], options = {}) => {
   const earliestE = getTimelineEarliestEIndex(beats, characters);
   const resolvedIndex = getTimelineResolvedIndex(beats);
-  let pendingIndex = getEarliestPendingInteractionIndex(interactions);
-  if (pendingIndex !== null && resolvedIndex >= 0 && pendingIndex <= resolvedIndex) {
-    pendingIndex = null;
+  const pending = (interactions ?? []).filter(
+    (interaction) => interaction?.status === 'pending' && Number.isFinite(interaction?.beatIndex),
+  );
+  const pendingIndex = pending.length ? Math.min(...pending.map((interaction) => interaction.beatIndex)) : null;
+  const alwaysStopTypes = new Set(options.alwaysStopTypes ?? ['throw', 'discard']);
+  const alwaysPending = pending.filter((interaction) => alwaysStopTypes.has(interaction?.type));
+  const alwaysPendingIndex = alwaysPending.length
+    ? Math.min(...alwaysPending.map((interaction) => interaction.beatIndex))
+    : null;
+  let effectivePending = pendingIndex;
+  if (effectivePending !== null && resolvedIndex >= 0 && effectivePending <= resolvedIndex) {
+    effectivePending = alwaysPendingIndex;
   }
-  if (pendingIndex === null) return earliestE;
-  return Math.min(earliestE, pendingIndex);
+  if (effectivePending === null) return earliestE;
+  return Math.min(earliestE, effectivePending);
 };

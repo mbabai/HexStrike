@@ -6,6 +6,7 @@ const {
   createDeckState,
   discardAbilityCards,
   drawAbilityCards,
+  isAbilityDiscardFailure,
   resolveLandRefreshes,
   validateActionSubmission,
 } = require('../dist/game/cardRules.js');
@@ -519,4 +520,19 @@ test('drawAbilityCards syncs movement even when no cards are drawn', async () =>
   assert.equal(result.ok, true);
   const movementAvailable = deckState.movement.filter((id) => !deckState.exhaustedMovementIds.has(id)).length;
   assert.equal(movementAvailable, deckState.abilityHand.length);
+});
+
+test('discardAbilityCards reports validation errors via guard', async () => {
+  const catalog = await loadCardCatalog();
+  const deck = buildSampleDeck(catalog);
+  const deckState = createDeckState(deck);
+  const invalidId = 'not-a-card';
+
+  const result = discardAbilityCards(deckState, [invalidId], { mode: 'strict' });
+
+  assert.equal(result.ok, false);
+  assert.equal(isAbilityDiscardFailure(result), true);
+  if (isAbilityDiscardFailure(result)) {
+    assert.equal(result.error.code, 'ability-not-in-hand');
+  }
 });

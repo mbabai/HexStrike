@@ -222,6 +222,9 @@ export interface CustomInteraction {
   targetUserId: string;
   status: 'pending' | 'resolved';
   resolution?: { directionIndex?: number; continue?: boolean; [key: string]: unknown };
+  discardCount?: number;
+  discardAbilityCount?: number;
+  discardMovementCount?: number;
 }
 
 export interface MatchOutcome {

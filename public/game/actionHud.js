@@ -291,8 +291,7 @@ export const createActionHud = ({
       ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
       : false;
   const LERP_DURATION_MS = 220;
-  const DEAL_DURATION_MS = 260;
-  const FLIP_REVEAL_DELAY_MS = 80;
+  const DEAL_DURATION_MS = 520;
   const actionCenter = rotationWheel?.closest?.('.action-center') ?? null;
   const MIN_ACTION_CARD_SCALE = 0.3;
   const SCALE_SAFETY = 1.06;
@@ -482,51 +481,59 @@ export const createActionHud = ({
     });
   };
 
-  const animateDealCard = (card, type) => {
-    if (!card?.element) return;
-    if (prefersReducedMotion) {
-      card.element.classList.remove('is-drawn');
-      return;
-    }
-    const targetRect = card.element.getBoundingClientRect();
-    if (!isRectValid(targetRect)) {
-      card.element.classList.remove('is-drawn');
-      return;
-    }
-    const drawGhost = document.createElement('div');
-    drawGhost.className = 'action-card-draw';
-    drawGhost.style.width = `${targetRect.width}px`;
-    drawGhost.style.height = `${targetRect.height}px`;
-    drawGhost.style.zIndex = '30';
-    const startX =
-      type === 'movement' ? -targetRect.width * 1.2 : window.innerWidth + targetRect.width * 1.2;
-    const startY = targetRect.top + targetRect.height * 0.1;
-    const fromRect = {
-      left: startX,
-      top: startY,
-      width: targetRect.width,
-      height: targetRect.height,
-    };
-    animateGhostBetween(drawGhost, fromRect, targetRect, {
-      duration: DEAL_DURATION_MS,
-      removeOnFinish: false,
-      onComplete: () => {
-        if (!drawGhost.isConnected) {
+  const animateDealCard = (card, type) =>
+    new Promise((resolve) => {
+      if (!card?.element) {
+        resolve();
+        return;
+      }
+      if (prefersReducedMotion) {
+        card.element.classList.remove('is-drawn');
+        resolve();
+        return;
+      }
+      const targetRect = card.element.getBoundingClientRect();
+      if (!isRectValid(targetRect)) {
+        card.element.classList.remove('is-drawn');
+        resolve();
+        return;
+      }
+      const computed = getComputedStyle(card.element);
+      const baseWidth = Number.parseFloat(computed.width);
+      const baseHeight = Number.parseFloat(computed.height);
+      const ghostWidth =
+        Number.isFinite(baseWidth) && baseWidth > 0 ? baseWidth : targetRect.width;
+      const ghostHeight =
+        Number.isFinite(baseHeight) && baseHeight > 0 ? baseHeight : targetRect.height;
+      const startX =
+        type === 'movement' ? -ghostWidth * 1.2 : window.innerWidth + ghostWidth * 1.2;
+      const startY = targetRect.top + targetRect.height * 0.1;
+      const fromRect = {
+        left: startX,
+        top: startY,
+        width: ghostWidth,
+        height: ghostHeight,
+      };
+      const drawGhost = createCardGhost(card.element);
+      drawGhost.classList.add('action-card-deal');
+      drawGhost.style.width = `${ghostWidth}px`;
+      drawGhost.style.height = `${ghostHeight}px`;
+      animateGhostBetween(drawGhost, fromRect, targetRect, {
+        duration: DEAL_DURATION_MS,
+        removeOnFinish: false,
+        onComplete: () => {
           card.element.classList.remove('is-drawn');
-          return;
-        }
-        drawGhost.classList.add('is-flipping');
-        window.setTimeout(() => {
-          card.element.classList.remove('is-drawn');
-        }, FLIP_REVEAL_DELAY_MS);
-        drawGhost.addEventListener(
-          'animationend',
-          () => {
-            if (drawGhost.remove) drawGhost.remove();
-          },
-          { once: true },
-        );
-      },
+          if (drawGhost.remove) drawGhost.remove();
+          resolve();
+        },
+      });
+    });
+
+  const animatePendingDeals = (pendingDeals) => {
+    if (!pendingDeals?.length) return;
+    let chain = Promise.resolve();
+    pendingDeals.forEach((card) => {
+      chain = chain.then(() => animateDealCard(card, card.type));
     });
   };
 
@@ -1005,7 +1012,7 @@ export const createActionHud = ({
     state.hasDealtCards = true;
     requestAnimationFrame(() => {
       refreshHandLayouts();
-      pendingDeals.forEach((card) => animateDealCard(card, card.type));
+      animatePendingDeals(pendingDeals);
       fitAllCardText(root);
       if (debugOverlay && debugOverlay.setEnabled) {
         debugOverlay.render(getHandCardsInOrder(), state.hoveredCardId);

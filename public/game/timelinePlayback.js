@@ -1,4 +1,5 @@
 import { LAND_HEXES } from '../shared/hex.mjs';
+import { shouldConvertKbfToDiscard } from './cardText/discardEffects.js';
 
 const DEFAULT_ACTION = 'E';
 const WAIT_ACTION = 'W';
@@ -272,7 +273,7 @@ const parseActionTokens = (action) => {
     .map((token) => {
       const type = token[token.length - 1]?.toLowerCase() ?? '';
       const path = token.slice(0, -1);
-      return { type, steps: parsePath(path) };
+      return { type, path, steps: parsePath(path) };
     })
     .filter((token) => token.type);
 };
@@ -426,6 +427,14 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
   characters.forEach((character, index) => {
     rosterOrder.set(character.userId, index);
     rosterOrder.set(character.username, index);
+  });
+
+  const characterById = new Map();
+  characters.forEach((character) => {
+    characterById.set(character.userId, character);
+    if (character.username) {
+      characterById.set(character.username, character);
+    }
   });
 
   const userLookup = new Map();
@@ -609,7 +618,8 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
             damageChanges.push({ targetId, delta: entryDamage });
             const usesGrapplingHookPassive = hasGrapplingHookPassive && token.type === 'a';
             const attackDirection = getKnockbackDirection(origin, destination, lastStep);
-            const knockbackDistance = getKnockbackDistance(targetState.damage, entryKbf);
+            const targetCharacter = characterById.get(targetId);
+            const targetEntry = targetCharacter ? getBeatEntryForCharacter(beat, targetCharacter) : null;
             const knockbackPath = [{ q: targetState.position.q, r: targetState.position.r }];
             const { knockbackDirection, flipPosition } = applyGrapplingHookPassiveFlip(
               usesGrapplingHookPassive,
@@ -619,6 +629,8 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
               occupancy,
               targetId,
             );
+            const baseKnockbackDistance = getKnockbackDistance(targetState.damage, entryKbf);
+            const knockbackDistance = shouldConvertKbfToDiscard(targetEntry) ? 0 : baseKnockbackDistance;
             if (flipPosition) {
               knockbackPath.push({ q: flipPosition.q, r: flipPosition.r });
             }

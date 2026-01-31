@@ -23,3 +23,10 @@
 ## Action list transforms
 - Card text that modifies the action list (add/remove/replace) should use the shared helpers in
   `src/game/cardText/actionListTransforms.ts` and `public/game/cardText/actionListTransforms.js` to keep behavior precise and mirrored.
+
+## Discard interactions
+- Discard effects queue a `customInteractions` entry of type `discard` with `discardCount`; the UI pauses on that beat and prompts the affected player to discard.
+- Discard selection follows hand-size rules: discard X ability cards, then discard movement cards to match the post-discard target size (see `getDiscardRequirements` in `src/game/handRules.ts`).
+- Spike passive grants discard immunity to opponent-driven discard effects while the action set is active.
+- Trip passive converts knockback distance into discard count (no knockback movement) but still uses the pre-conversion distance for stun checks.
+- Server mapping: `src/game/cardText/discardEffects.ts`; client mirror: `public/game/cardText/discardEffects.js`.

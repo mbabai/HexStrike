@@ -20,6 +20,7 @@ This document defines the single source of truth for HexStrike's browser UI styl
 - Game surface: use `.game-area` as the full-page canvas host, `.game-frame` as the clipping wrapper, and `.game-canvas` for the drawing surface; hex grid colors should read from `--color-game-surface`, `--color-hex-fill`, and `--color-hex-stroke`.
 - Rotation wheel: use `.rotation-selector` with `.rotation-wheel` for the donut control; `.rotation-wedge` handles segments, `.is-selected` applies the gold highlight, and `.is-disabled` greys out illegal rotations.
 - Action HUD: use `.action-hud` for the bottom-center action layout, `.action-hand` for card columns, `.action-card` for movement/ability cards, `.action-slot`/`.action-slot-drop` for active/passive slots, and `.action-hud.is-locked` for locked-in styling.
+- Discard prompt: use `.discard-modal` as a compact, centered prompt over the game area; discard selection reuses in-hand `.action-card` elements with `.is-discard-pending` (pulsing) and `.is-discard-selected` (greyed) states instead of rendering a separate hand.
 - Timeline tooltips: use `.timeline-tooltip` with a `.timeline-tooltip-text` child for hover callouts on timeline action icons (X1/X2/i), anchored inside `.game-area`.
 
 ## Backgrounds and mood

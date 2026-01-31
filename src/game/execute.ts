@@ -1,4 +1,12 @@
 import { BeatEntry, CustomInteraction, HexCoord, PublicCharacter } from '../types';
+import {
+  getActiveHitDiscardRule,
+  getPassiveBlockDiscardCount,
+  getPassiveStartDiscardCount,
+  isCenterAttackPath,
+  isDiscardImmune,
+  shouldConvertKbfToDiscard,
+} from './cardText/discardEffects';
 import { getTimelineResolvedIndex } from './beatTimeline';
 import { DEFAULT_LAND_HEXES } from './hexGrid';
 
@@ -181,7 +189,7 @@ const parseActionTokens = (action: string) => {
     .map((token) => {
       const type = token[token.length - 1]?.toLowerCase() ?? '';
       const path = token.slice(0, -1);
-      return { type, steps: parsePath(path) };
+      return { type, path, steps: parsePath(path) };
     })
     .filter((token) => token.type);
 };
@@ -703,15 +711,18 @@ export const executeBeatsWithInteractions = (
     return created;
   };
 
-  const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
-    entries.forEach((entry, actorId) => {
-      const rotationDelta = parseRotationDegrees(entry.rotation ?? '');
-      if (!rotationDelta) return;
-      const actorState = state.get(actorId);
-      if (!actorState) return;
-      actorState.facing = normalizeDegrees(actorState.facing + rotationDelta);
-    });
-  };
+const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
+  entries.forEach((entry, actorId) => {
+    const rotationDelta = parseRotationDegrees(entry.rotation ?? '');
+    if (!rotationDelta) return;
+    const actorState = state.get(actorId);
+    if (!actorState) return;
+    actorState.facing = normalizeDegrees(actorState.facing + rotationDelta);
+  });
+};
+
+  const isActionSetStart = (entry: BeatEntry) =>
+    entry.rotationSource === 'selected' || Boolean(entry.comboStarter);
 
   for (let index = 0; index < normalizedBeats.length; index += 1) {
     if (haltIndex != null && index > haltIndex) {
@@ -869,8 +880,26 @@ export const executeBeatsWithInteractions = (
       occupancy.set(coordKey(value.position), userId);
     });
     const blockMap = new Map<string, Set<number>>();
+    const discardQueue = new Map<string, number>();
     const disabledActors = new Set<string>();
     const executedActors = new Set<string>();
+    const queueDiscard = (
+      targetId: string,
+      count: number,
+      source: 'self' | 'opponent',
+      targetEntry?: BeatEntry | null,
+    ) => {
+      const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+      if (!safeCount) return;
+      const entryForImmunity =
+        targetEntry ??
+        (() => {
+          const targetCharacter = characterById.get(targetId);
+          return targetCharacter ? findEntryForCharacter(beat, targetCharacter) : null;
+        })();
+      if (source === 'opponent' && isDiscardImmune(entryForImmunity)) return;
+      discardQueue.set(targetId, (discardQueue.get(targetId) ?? 0) + safeCount);
+    };
     const ordered = beat
       .slice()
       .sort((a, b) => {
@@ -893,6 +922,11 @@ export const executeBeatsWithInteractions = (
         comboState.throwInteraction = true;
       }
       const origin = { q: actorState.position.q, r: actorState.position.r };
+
+      const startDiscard = getPassiveStartDiscardCount(entry.passiveCardId);
+      if (startDiscard && entry.action !== DEFAULT_ACTION && isActionSetStart(entry)) {
+        queueDiscard(actorId, startDiscard, 'self');
+      }
 
       if (isComboAction(entry.action ?? '')) {
         if (entry.comboSkipped || isHistoryIndex(index)) {
@@ -1039,6 +1073,14 @@ export const executeBeatsWithInteractions = (
                   }
                 }
               } else {
+                const discardRule = getActiveHitDiscardRule(entry.cardId);
+                if (discardRule && isBracketedAction(entry.action ?? '')) {
+                  const isCenter = !discardRule.centerOnly || isCenterAttackPath(token.path);
+                  if (isCenter) {
+                    queueDiscard(targetId, discardRule.count, 'opponent', targetEntry);
+                  }
+                }
+
                 targetState.damage += entryDamage;
                 const usesGrapplingHookPassive = hasGrapplingHookPassive && token.type === 'a';
                 const attackDirection = getKnockbackDirection(origin, destination, lastStep);
@@ -1050,7 +1092,12 @@ export const executeBeatsWithInteractions = (
                   occupancy,
                   targetId,
                 );
-                const knockbackDistance = getKnockbackDistance(targetState.damage, entryKbf);
+                const baseKnockbackDistance = getKnockbackDistance(targetState.damage, entryKbf);
+                const convertKbf = shouldConvertKbfToDiscard(targetEntry);
+                if (convertKbf && baseKnockbackDistance > 0) {
+                  queueDiscard(targetId, baseKnockbackDistance, 'self', targetEntry);
+                }
+                const knockbackDistance = convertKbf ? 0 : baseKnockbackDistance;
                 let knockedSteps = 0;
                 if (knockbackDirection && knockbackDistance > 0) {
                   let finalPosition = { ...targetState.position };
@@ -1070,7 +1117,7 @@ export const executeBeatsWithInteractions = (
                     occupancy.set(coordKey(targetState.position), targetId);
                   }
                 }
-                const shouldStun = entryKbf === 1 || (entryKbf > 1 && knockbackDistance > 0);
+                const shouldStun = entryKbf === 1 || (entryKbf > 1 && baseKnockbackDistance > 0);
                 if (shouldStun) {
                   applyHitTimeline(targetId, index, targetState, knockedSteps, preserveAction);
                 }
@@ -1083,13 +1130,23 @@ export const executeBeatsWithInteractions = (
 
         if (token.type === 'm' || token.type === 'c') {
           let finalPosition = origin;
+          let blockedBy: string | null = null;
           for (const stepPosition of positions) {
             const stepKey = coordKey(stepPosition);
             const occupant = occupancy.get(stepKey);
             if (occupant && occupant !== actorId) {
+              blockedBy = occupant;
               break;
             }
             finalPosition = stepPosition;
+          }
+          if (blockedBy) {
+            const blockDiscard = getPassiveBlockDiscardCount(entry.passiveCardId);
+            if (blockDiscard) {
+              const targetCharacter = characterById.get(blockedBy);
+              const targetEntry = targetCharacter ? findEntryForCharacter(beat, targetCharacter) : null;
+              queueDiscard(blockedBy, blockDiscard, 'opponent', targetEntry);
+            }
           }
           if (!sameCoord(finalPosition, actorState.position)) {
             occupancy.delete(coordKey(actorState.position));
@@ -1109,6 +1166,35 @@ export const executeBeatsWithInteractions = (
 
       executedActors.add(actorId);
     });
+
+    if (discardQueue.size) {
+      discardQueue.forEach((count, targetId) => {
+        if (!count) return;
+        if (isHistoryIndex(index)) return;
+        const interactionId = buildInteractionId('discard', index, targetId, targetId);
+        const existing = interactionById.get(interactionId);
+        if (existing) {
+          if (existing.status === 'pending' && existing.discardCount !== count) {
+            existing.discardCount = count;
+          }
+          return;
+        }
+        const created: CustomInteraction = {
+          id: interactionId,
+          type: 'discard',
+          beatIndex: index,
+          actorUserId: targetId,
+          targetUserId: targetId,
+          status: 'pending',
+          discardCount: count,
+        };
+        updatedInteractions.push(created);
+        interactionById.set(interactionId, created);
+        if (haltIndex == null || index < haltIndex) {
+          haltIndex = index;
+        }
+      });
+    }
 
     applyStateToBeat(beat, true);
     lastCalculated = index;

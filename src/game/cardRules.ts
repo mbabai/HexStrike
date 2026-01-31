@@ -33,6 +33,8 @@ export {
   MAX_HAND_SIZE,
   drawAbilityCards,
   discardAbilityCards,
+  isAbilityDiscardFailure,
+  getDiscardRequirements,
   getMovementHandIds,
   getTargetMovementHandSize,
   syncMovementHand,

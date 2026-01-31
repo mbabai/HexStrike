@@ -96,6 +96,8 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Ability draw/discard helpers (`drawAbilityCards`, `discardAbilityCards`) always sync movement hand; avoid mutating `exhaustedMovementIds` directly when resolving card text.
 - Action HUD only shows when the timeline selector is on the earliest `E` across all players and the local player is at-bat; the HUD locks after submit until resolution.
 - Action HUD hands are always visible in the game view; only the slots and rotation wheel toggle with the `.is-turn` state.
+- Discard interactions reuse the existing hand UI: `public/game/discardPrompt.mjs` applies `.is-discard-pending` (pulsing) and `.is-discard-selected` (grey) on in-hand `.action-card` elements instead of rendering a separate discard hand; keep the `.action-hud.is-locked` override in `public/theme.css` so greyscale remains visible while the HUD is locked.
+- Discard requirements are capped to current hand sizes; if required ≥ cards in hand for a type, the client auto-selects all and auto-submits the discard.
 - Action HUD hover targeting is based on the hand column + header band (not card transforms); keep `--action-card-hover-shift` synced with the hover rail in `public/game/actionHud.js`.
 - Action HUD card text uses `public/shared/cardRenderer.js`; call `fitAllCardText` after hand renders so active/passive text fits the surface rows.
 - Action HUD click selection: empty slots -> active; active filled + same type -> replace active; active filled + different type -> fill passive; both filled -> replace matching type slot; clicking a slotted card returns it to hand.

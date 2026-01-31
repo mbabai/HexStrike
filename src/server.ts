@@ -21,6 +21,9 @@ import {
   buildDefaultDeckDefinition,
   buildPlayerCardState,
   createDeckState,
+  discardAbilityCards,
+  isAbilityDiscardFailure,
+  getDiscardRequirements,
   isActionValidationFailure,
   parseDeckDefinition,
   resolveLandRefreshes,
@@ -38,6 +41,7 @@ import {
   PublicCharacter,
   QueueName,
 } from './types';
+import type { AbilityDiscardResult } from './game/cardRules';
 
 interface PendingActionBatch {
   beatIndex: number;
@@ -345,6 +349,21 @@ export function buildServer(port: number) {
     const playerCards = playerDeckState ? buildPlayerCardState(playerDeckState) : null;
     const publicState = game.state.public;
     const beats = publicState.beats ?? publicState.timeline ?? [];
+    const baseInteractions = Array.isArray(publicState.customInteractions) ? publicState.customInteractions : [];
+    const customInteractions = baseInteractions.map((interaction) => {
+      if (!interaction || typeof interaction !== 'object') return interaction;
+      if (interaction.type !== 'discard') return { ...interaction };
+      const next = { ...interaction };
+      if (interaction.actorUserId === userId && playerDeckState) {
+        const { abilityDiscardCount, movementDiscardCount } = getDiscardRequirements(
+          playerDeckState,
+          interaction.discardCount ?? 0,
+        );
+        next.discardAbilityCount = abilityDiscardCount;
+        next.discardMovementCount = movementDiscardCount;
+      }
+      return next;
+    });
     return {
       ...game,
       state: {
@@ -352,6 +371,7 @@ export function buildServer(port: number) {
           ...publicState,
           beats,
           timeline: beats,
+          customInteractions,
         },
         secret: game.state.secret,
         player: { cards: playerCards },
@@ -1060,6 +1080,49 @@ export function buildServer(port: number) {
       }
       interaction.status = 'resolved';
       interaction.resolution = { continue: resolvedContinue };
+    } else if (interaction.type === 'discard') {
+      const deckState = deckStates.get(userId);
+      if (!deckState) {
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'missing-deck-state' });
+        return { ok: false, status: 500, error: 'Missing deck state for player' };
+      }
+      const { abilityDiscardCount, movementDiscardCount } = getDiscardRequirements(
+        deckState,
+        interaction.discardCount ?? 0,
+      );
+      const abilityCardIds =
+        (body as { abilityCardIds?: unknown; abilityIds?: unknown; abilityCardIDs?: unknown })?.abilityCardIds ??
+        (body as { abilityIds?: unknown })?.abilityIds ??
+        (body as { abilityCardIDs?: unknown })?.abilityCardIDs ??
+        [];
+      const movementCardIds =
+        (body as { movementCardIds?: unknown; movementIds?: unknown; movementCardIDs?: unknown })?.movementCardIds ??
+        (body as { movementIds?: unknown })?.movementIds ??
+        (body as { movementCardIDs?: unknown })?.movementCardIDs ??
+        [];
+      const abilityList = Array.isArray(abilityCardIds) ? abilityCardIds : [];
+      const movementList = Array.isArray(movementCardIds) ? movementCardIds : [];
+      if (abilityDiscardCount !== abilityList.length) {
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'discard-count-mismatch' });
+        return { ok: false, status: 400, error: 'Incorrect number of ability cards selected for discard.' };
+      }
+      if (movementDiscardCount !== movementList.length) {
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'discard-count-mismatch' });
+        return { ok: false, status: 400, error: 'Incorrect number of movement cards selected for discard.' };
+      }
+      const discardResult: AbilityDiscardResult = discardAbilityCards(deckState, abilityList, {
+        discardMovementIds: movementList,
+        mode: 'strict',
+      });
+      if (isAbilityDiscardFailure(discardResult)) {
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: discardResult.error.code });
+        return { ok: false, status: 400, error: discardResult.error.message, code: discardResult.error.code };
+      }
+      interaction.status = 'resolved';
+      interaction.resolution = {
+        abilityCardIds: discardResult.discarded,
+        movementCardIds: discardResult.movement.discarded,
+      };
     } else {
       console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'unsupported-type' });
       return { ok: false, status: 400, error: 'Unsupported interaction type' };

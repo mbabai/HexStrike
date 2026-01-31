@@ -50,7 +50,7 @@ export const selectPendingInteraction = ({
   characters,
   localUserId,
   resolvedIndex,
-  alwaysAllowTypes = ['throw'],
+  alwaysAllowTypes = ['throw', 'discard'],
 }) => {
   const allowTypes = new Set(alwaysAllowTypes);
   const pending = (interactions ?? []).filter(

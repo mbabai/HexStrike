@@ -17,6 +17,7 @@ import {
   getTimelineStopIndex,
 } from './game/beatTimeline.js';
 import { loadCardCatalog } from './shared/cardCatalog.js';
+import { createDiscardPrompt } from './game/discardPrompt.mjs';
 import { AXIAL_DIRECTIONS, axialToPixel, getHexSize } from './shared/hex.mjs';
 import { getOrCreateUserId } from './storage.js';
 
@@ -24,6 +25,7 @@ const HOLD_INITIAL_DELAY = 320;
 const HOLD_REPEAT_DELAY = 90;
 const LOG_PREFIX = '[hexstrike]';
 const COMBO_ACTION = 'CO';
+const MAX_HAND_SIZE = 4;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -178,6 +180,8 @@ export const initGame = () => {
   const comboModal = document.getElementById('comboModal');
   const comboAccept = document.getElementById('comboAccept');
   const comboDecline = document.getElementById('comboDecline');
+  const discardModal = document.getElementById('discardModal');
+  const discardCopy = document.getElementById('discardModalCopy');
   const gameOverOverlay = document.getElementById('gameOverOverlay');
   const gameOverMessage = document.getElementById('gameOverMessage');
   const gameOverDone = document.getElementById('gameOverDone');
@@ -204,6 +208,7 @@ export const initGame = () => {
   let didInitTimelinePosition = false;
   let lastComboKey = null;
   let lastComboRequired = false;
+  let discardPrompt = null;
   const pendingActionPreview = createPendingActionPreview();
 
   const getMaxIndex = () => {
@@ -329,8 +334,10 @@ export const initGame = () => {
       interactionSubmitInFlight = false;
       setThrowButtonsEnabled(false);
       setComboButtonsEnabled(false);
+      discardPrompt?.sync();
       setModalVisibility(throwModal, false);
       setModalVisibility(comboModal, false);
+      setModalVisibility(discardModal, false);
       return;
     }
     const pending = getPendingInteractionForUser();
@@ -343,8 +350,10 @@ export const initGame = () => {
       interactionSubmitInFlight = false;
       setThrowButtonsEnabled(false);
       setComboButtonsEnabled(false);
+      discardPrompt?.sync();
       setModalVisibility(throwModal, false);
       setModalVisibility(comboModal, false);
+      setModalVisibility(discardModal, false);
       return;
     }
     if (pendingInteractionId !== pending.id || pendingInteractionType !== pending.type) {
@@ -352,25 +361,40 @@ export const initGame = () => {
     }
     pendingInteractionId = pending.id;
     pendingInteractionType = pending.type;
+    const playerCards = gameState?.state?.player?.cards ?? null;
     if (pending.type === 'throw') {
       setModalVisibility(throwModal, true);
       setModalVisibility(comboModal, false);
+      setModalVisibility(discardModal, false);
       setThrowButtonsEnabled(!interactionSubmitInFlight);
       setComboButtonsEnabled(false);
+      discardPrompt?.sync();
       applyThrowLayout(pending);
       return;
     }
     if (pending.type === 'combo') {
       setModalVisibility(comboModal, true);
       setModalVisibility(throwModal, false);
+      setModalVisibility(discardModal, false);
       setComboButtonsEnabled(!interactionSubmitInFlight);
       setThrowButtonsEnabled(false);
+      discardPrompt?.sync();
+      return;
+    }
+    if (pending.type === 'discard') {
+      setModalVisibility(throwModal, false);
+      setModalVisibility(comboModal, false);
+      setThrowButtonsEnabled(false);
+      setComboButtonsEnabled(false);
+      discardPrompt?.sync({ pending, playerCards, inFlight: interactionSubmitInFlight });
       return;
     }
     setModalVisibility(throwModal, false);
     setModalVisibility(comboModal, false);
+    setModalVisibility(discardModal, false);
     setThrowButtonsEnabled(false);
     setComboButtonsEnabled(false);
+    discardPrompt?.sync();
   };
 
   const gameOverView = createGameOverView({
@@ -666,6 +690,54 @@ export const initGame = () => {
     }
   };
 
+  const handleDiscardSubmit = async ({ abilityCardIds = [], movementCardIds = [] } = {}) => {
+    if (!gameState?.id || !pendingInteractionId || interactionSubmitInFlight) return;
+    if (pendingInteractionType !== 'discard') return;
+    if (getMatchOutcome(gameState?.state?.public)) return;
+    interactionSubmitInFlight = true;
+    console.log(`${LOG_PREFIX} interaction:submit`, {
+      userId: localUserId,
+      gameId: gameState.id,
+      interactionId: pendingInteractionId,
+      abilityCardIds,
+      movementCardIds,
+    });
+    try {
+      const response = await fetch('/api/v1/game/interaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: localUserId,
+          gameId: gameState.id,
+          interactionId: pendingInteractionId,
+          abilityCardIds,
+          movementCardIds,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = payload?.error ? `${payload.error}` : 'Failed to resolve discard.';
+        console.warn(`${LOG_PREFIX} interaction:rejected`, {
+          status: response.status,
+          error: payload?.error,
+          code: payload?.code,
+        });
+        throw new Error(message);
+      }
+      console.log(`${LOG_PREFIX} interaction:ack`, {
+        status: response.status,
+        interactionId: pendingInteractionId,
+      });
+    } catch (err) {
+      console.error('Failed to resolve discard', err);
+      const message = err instanceof Error ? err.message : 'Failed to resolve discard.';
+      window.alert(message);
+    } finally {
+      interactionSubmitInFlight = false;
+      refreshInteractionOverlay();
+    }
+  };
+
   const handleGameOverDone = async () => {
     const outcome = getMatchOutcome(gameState?.state?.public);
     if (!outcome || !gameState?.matchId || gameOverInFlight) return;
@@ -702,6 +774,16 @@ export const initGame = () => {
     rotationWheel,
     onSubmit: handleActionSubmit,
   });
+  discardPrompt = createDiscardPrompt({
+    movementHand,
+    abilityHand,
+    discardModal,
+    discardCopy,
+    maxHandSize: MAX_HAND_SIZE,
+    onSubmit: (payload) => {
+      void handleDiscardSubmit(payload);
+    },
+  });
   const tooltip = createTimelineTooltip({
     gameArea,
     canvas,
@@ -728,7 +810,6 @@ export const initGame = () => {
       void handleComboSubmit(false);
     });
   }
-
   const clampTimeline = () => {
     timeIndicatorViewModel.setValue(timeIndicatorViewModel.value);
     refreshActionHud();
@@ -764,6 +845,7 @@ export const initGame = () => {
     pendingActionPreview.clear();
     lastComboKey = null;
     lastComboRequired = false;
+    discardPrompt?.sync();
     if (actionHud) {
       actionHud.clearSelection();
       actionHud.setCards([], []);
