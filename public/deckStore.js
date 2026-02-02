@@ -59,10 +59,41 @@ const loadBaseDecks = async () => {
   return baseDecksPromise;
 };
 
+const mergeBaseDecks = (storedDecks, baseDecks) => {
+  if (!Array.isArray(storedDecks)) return baseDecks;
+  const baseById = new Map(baseDecks.map((deck) => [deck.id, deck]));
+  const seen = new Set();
+  const merged = storedDecks.map((deck) => {
+    if (baseById.has(deck.id)) {
+      seen.add(deck.id);
+      return { ...deck, isBase: true };
+    }
+    return deck;
+  });
+  baseDecks.forEach((deck) => {
+    if (!seen.has(deck.id)) {
+      merged.push(deck);
+    }
+  });
+  return merged;
+};
+
 export const loadUserDecks = async (userId = getOrCreateUserId()) => {
   const stored = readStoredDecks(userId);
-  if (stored !== null) return stored;
   const baseDecks = await loadBaseDecks();
+  if (stored !== null) {
+    const merged = mergeBaseDecks(stored, baseDecks);
+    if (merged.length !== stored.length) {
+      writeStoredDecks(userId, merged);
+      return merged;
+    }
+    const isBaseMismatch = merged.some((deck, index) => deck.isBase !== stored[index]?.isBase);
+    if (isBaseMismatch) {
+      writeStoredDecks(userId, merged);
+      return merged;
+    }
+    return stored;
+  }
   writeStoredDecks(userId, baseDecks);
   return baseDecks;
 };

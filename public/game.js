@@ -18,6 +18,7 @@ import {
 } from './game/beatTimeline.js';
 import { loadCardCatalog } from './shared/cardCatalog.js';
 import { createDiscardPrompt } from './game/discardPrompt.mjs';
+import { getDiscardCounts } from './game/discardUi.mjs';
 import { AXIAL_DIRECTIONS, axialToPixel, getHexSize } from './shared/hex.mjs';
 import { getOrCreateUserId } from './storage.js';
 
@@ -180,6 +181,10 @@ export const initGame = () => {
   const comboModal = document.getElementById('comboModal');
   const comboAccept = document.getElementById('comboAccept');
   const comboDecline = document.getElementById('comboDecline');
+  const burningStrikeModal = document.getElementById('burningStrikeModal');
+  const burningStrikeCopy = document.getElementById('burningStrikeCopy');
+  const burningStrikeAccept = document.getElementById('burningStrikeAccept');
+  const burningStrikeDecline = document.getElementById('burningStrikeDecline');
   const discardModal = document.getElementById('discardModal');
   const discardCopy = document.getElementById('discardModalCopy');
   const gameOverOverlay = document.getElementById('gameOverOverlay');
@@ -204,6 +209,9 @@ export const initGame = () => {
   let interactionSubmitInFlight = false;
   let pendingInteractionId = null;
   let pendingInteractionType = null;
+  let burningStrikeSelection = new Set();
+  let burningStrikeRequiredMovement = 0;
+  let lastBurningStrikeKey = null;
   let gameOverInFlight = false;
   let didInitTimelinePosition = false;
   let lastComboKey = null;
@@ -249,6 +257,85 @@ export const initGame = () => {
       button.disabled = !enabled;
       button.classList.toggle('is-disabled', !enabled);
     });
+  };
+
+  const setBurningStrikeButtonsEnabled = (enabled) => {
+    [burningStrikeAccept, burningStrikeDecline].forEach((button) => {
+      if (!button) return;
+      button.disabled = !enabled;
+      button.classList.toggle('is-disabled', !enabled);
+    });
+  };
+
+  const clearBurningStrikeHighlights = () => {
+    if (movementHand) {
+      movementHand.querySelectorAll('.action-card').forEach((card) => {
+        card.classList.remove('is-discard-selected', 'is-discard-pending');
+      });
+    }
+  };
+
+  const syncBurningStrikePrompt = ({ pending = null, playerCards = null, inFlight = false } = {}) => {
+    if (!burningStrikeModal || !burningStrikeCopy) return;
+    if (!pending || !playerCards) {
+      burningStrikeRequiredMovement = 0;
+      burningStrikeSelection.clear();
+      lastBurningStrikeKey = null;
+      clearBurningStrikeHighlights();
+      setModalVisibility(burningStrikeModal, false);
+      return;
+    }
+
+    const movementIds = Array.isArray(playerCards.movementHand) ? playerCards.movementHand : [];
+    const handKey = `${pending.id}|${movementIds.join(',')}`;
+    if (handKey !== lastBurningStrikeKey) {
+      burningStrikeSelection.clear();
+      lastBurningStrikeKey = handKey;
+    }
+
+    const counts = getDiscardCounts(
+      { discardCount: Number.isFinite(pending.discardCount) ? pending.discardCount : 1 },
+      playerCards,
+      MAX_HAND_SIZE,
+    );
+    burningStrikeRequiredMovement = counts.movement;
+
+    if (burningStrikeRequiredMovement && burningStrikeRequiredMovement >= movementIds.length) {
+      burningStrikeSelection = new Set(movementIds);
+    } else {
+      burningStrikeSelection.forEach((id) => {
+        if (!movementIds.includes(id)) {
+          burningStrikeSelection.delete(id);
+        }
+      });
+    }
+
+    const needsSelection = burningStrikeRequiredMovement > 0 && burningStrikeSelection.size < burningStrikeRequiredMovement;
+    const copy =
+      burningStrikeRequiredMovement > 0
+        ? `Discard Burning Strike and ${burningStrikeRequiredMovement} movement card${burningStrikeRequiredMovement === 1 ? '' : 's'} to place fire on attacked hexes.`
+        : 'Discard Burning Strike to place fire on attacked hexes.';
+    burningStrikeCopy.textContent = copy;
+
+    if (movementHand) {
+      movementHand.querySelectorAll('.action-card').forEach((card) => {
+        const cardId = card.dataset.cardId;
+        const isSelected = Boolean(cardId && burningStrikeSelection.has(cardId));
+        card.classList.toggle('is-discard-selected', !inFlight && isSelected);
+        card.classList.toggle('is-discard-pending', !inFlight && needsSelection && !isSelected);
+      });
+    }
+
+    setModalVisibility(burningStrikeModal, true);
+    const enableIgnite = !inFlight && !needsSelection;
+    if (burningStrikeAccept) {
+      burningStrikeAccept.disabled = !enableIgnite;
+      burningStrikeAccept.classList.toggle('is-disabled', !enableIgnite);
+    }
+    if (burningStrikeDecline) {
+      burningStrikeDecline.disabled = Boolean(inFlight);
+      burningStrikeDecline.classList.toggle('is-disabled', Boolean(inFlight));
+    }
   };
 
   const getPendingInteractionForUser = () => {
@@ -334,10 +421,13 @@ export const initGame = () => {
       interactionSubmitInFlight = false;
       setThrowButtonsEnabled(false);
       setComboButtonsEnabled(false);
+      setBurningStrikeButtonsEnabled(false);
       discardPrompt?.sync();
       setModalVisibility(throwModal, false);
       setModalVisibility(comboModal, false);
+      setModalVisibility(burningStrikeModal, false);
       setModalVisibility(discardModal, false);
+      syncBurningStrikePrompt();
       return;
     }
     const pending = getPendingInteractionForUser();
@@ -350,10 +440,13 @@ export const initGame = () => {
       interactionSubmitInFlight = false;
       setThrowButtonsEnabled(false);
       setComboButtonsEnabled(false);
+      setBurningStrikeButtonsEnabled(false);
       discardPrompt?.sync();
       setModalVisibility(throwModal, false);
       setModalVisibility(comboModal, false);
+      setModalVisibility(burningStrikeModal, false);
       setModalVisibility(discardModal, false);
+      syncBurningStrikePrompt();
       return;
     }
     if (pendingInteractionId !== pending.id || pendingInteractionType !== pending.type) {
@@ -365,36 +458,58 @@ export const initGame = () => {
     if (pending.type === 'throw') {
       setModalVisibility(throwModal, true);
       setModalVisibility(comboModal, false);
+      setModalVisibility(burningStrikeModal, false);
       setModalVisibility(discardModal, false);
       setThrowButtonsEnabled(!interactionSubmitInFlight);
       setComboButtonsEnabled(false);
+      setBurningStrikeButtonsEnabled(false);
       discardPrompt?.sync();
+      syncBurningStrikePrompt();
       applyThrowLayout(pending);
       return;
     }
     if (pending.type === 'combo') {
       setModalVisibility(comboModal, true);
       setModalVisibility(throwModal, false);
+      setModalVisibility(burningStrikeModal, false);
       setModalVisibility(discardModal, false);
       setComboButtonsEnabled(!interactionSubmitInFlight);
       setThrowButtonsEnabled(false);
+      setBurningStrikeButtonsEnabled(false);
       discardPrompt?.sync();
+      syncBurningStrikePrompt();
+      return;
+    }
+    if (pending.type === 'burning-strike') {
+      setModalVisibility(burningStrikeModal, true);
+      setModalVisibility(comboModal, false);
+      setModalVisibility(throwModal, false);
+      setModalVisibility(discardModal, false);
+      setThrowButtonsEnabled(false);
+      setComboButtonsEnabled(false);
+      discardPrompt?.sync();
+      syncBurningStrikePrompt({ pending, playerCards, inFlight: interactionSubmitInFlight });
       return;
     }
     if (pending.type === 'discard') {
       setModalVisibility(throwModal, false);
       setModalVisibility(comboModal, false);
+      setModalVisibility(burningStrikeModal, false);
       setThrowButtonsEnabled(false);
       setComboButtonsEnabled(false);
+      setBurningStrikeButtonsEnabled(false);
       discardPrompt?.sync({ pending, playerCards, inFlight: interactionSubmitInFlight });
       return;
     }
     setModalVisibility(throwModal, false);
     setModalVisibility(comboModal, false);
+    setModalVisibility(burningStrikeModal, false);
     setModalVisibility(discardModal, false);
     setThrowButtonsEnabled(false);
     setComboButtonsEnabled(false);
+    setBurningStrikeButtonsEnabled(false);
     discardPrompt?.sync();
+    syncBurningStrikePrompt();
   };
 
   const gameOverView = createGameOverView({
@@ -690,6 +805,56 @@ export const initGame = () => {
     }
   };
 
+  const handleBurningStrikeSubmit = async (ignite) => {
+    if (!gameState?.id || !pendingInteractionId || interactionSubmitInFlight) return;
+    if (pendingInteractionType !== 'burning-strike') return;
+    if (getMatchOutcome(gameState?.state?.public)) return;
+    interactionSubmitInFlight = true;
+    setBurningStrikeButtonsEnabled(false);
+    const movementCardIds = ignite ? Array.from(burningStrikeSelection) : [];
+    console.log(`${LOG_PREFIX} interaction:submit`, {
+      userId: localUserId,
+      gameId: gameState.id,
+      interactionId: pendingInteractionId,
+      ignite,
+      movementCardIds,
+    });
+    try {
+      const response = await fetch('/api/v1/game/interaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: localUserId,
+          gameId: gameState.id,
+          interactionId: pendingInteractionId,
+          ignite: Boolean(ignite),
+          movementCardIds,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = payload?.error ? `${payload.error}` : 'Failed to resolve Burning Strike.';
+        console.warn(`${LOG_PREFIX} interaction:rejected`, {
+          status: response.status,
+          error: payload?.error,
+          code: payload?.code,
+        });
+        throw new Error(message);
+      }
+      console.log(`${LOG_PREFIX} interaction:ack`, {
+        status: response.status,
+        interactionId: pendingInteractionId,
+      });
+    } catch (err) {
+      console.error('Failed to resolve Burning Strike', err);
+      const message = err instanceof Error ? err.message : 'Failed to resolve Burning Strike.';
+      window.alert(message);
+    } finally {
+      interactionSubmitInFlight = false;
+      refreshInteractionOverlay();
+    }
+  };
+
   const handleDiscardSubmit = async ({ abilityCardIds = [], movementCardIds = [] } = {}) => {
     if (!gameState?.id || !pendingInteractionId || interactionSubmitInFlight) return;
     if (pendingInteractionType !== 'discard') return;
@@ -784,6 +949,31 @@ export const initGame = () => {
       void handleDiscardSubmit(payload);
     },
   });
+  if (movementHand) {
+    movementHand.addEventListener(
+      'click',
+      (event) => {
+        if (pendingInteractionType !== 'burning-strike' || !pendingInteractionId) return;
+        if (interactionSubmitInFlight || burningStrikeRequiredMovement <= 0) return;
+        const target = event.target;
+        const cardElement = target?.closest ? target.closest('.action-card') : null;
+        if (!cardElement) return;
+        const cardId = cardElement.dataset.cardId;
+        if (!cardId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (burningStrikeSelection.has(cardId)) {
+          burningStrikeSelection.delete(cardId);
+        } else if (burningStrikeSelection.size < burningStrikeRequiredMovement) {
+          burningStrikeSelection.add(cardId);
+        }
+        const pending = getPendingInteractionForUser();
+        const playerCards = gameState?.state?.player?.cards ?? null;
+        syncBurningStrikePrompt({ pending, playerCards, inFlight: interactionSubmitInFlight });
+      },
+      true,
+    );
+  }
   const tooltip = createTimelineTooltip({
     gameArea,
     canvas,
@@ -794,6 +984,8 @@ export const initGame = () => {
   applyThrowLayout(null);
   setThrowButtonsEnabled(false);
   setComboButtonsEnabled(false);
+  setBurningStrikeButtonsEnabled(false);
+  syncBurningStrikePrompt();
   throwButtons.forEach((button) => {
     button.addEventListener('click', () => {
       const index = Number(button.dataset.dir);
@@ -808,6 +1000,16 @@ export const initGame = () => {
   if (comboDecline) {
     comboDecline.addEventListener('click', () => {
       void handleComboSubmit(false);
+    });
+  }
+  if (burningStrikeAccept) {
+    burningStrikeAccept.addEventListener('click', () => {
+      void handleBurningStrikeSubmit(true);
+    });
+  }
+  if (burningStrikeDecline) {
+    burningStrikeDecline.addEventListener('click', () => {
+      void handleBurningStrikeSubmit(false);
     });
   }
   const clampTimeline = () => {
@@ -840,6 +1042,9 @@ export const initGame = () => {
     pendingInteractionId = null;
     pendingInteractionType = null;
     interactionSubmitInFlight = false;
+    burningStrikeSelection = new Set();
+    burningStrikeRequiredMovement = 0;
+    lastBurningStrikeKey = null;
     gameOverInFlight = false;
     didInitTimelinePosition = false;
     pendingActionPreview.clear();

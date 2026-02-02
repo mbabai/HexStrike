@@ -43,6 +43,7 @@ export const createInitialGameState = async (
       beats,
       timeline: beats,
       characters,
+      boardTokens: [],
       pendingActions: undefined,
       customInteractions: [],
       matchOutcome: undefined,

@@ -20,6 +20,16 @@ export interface HexCoord {
   r: number;
 }
 
+export type BoardTokenType = 'fire-hex' | 'arrow';
+
+export interface BoardToken {
+  id: string;
+  type: BoardTokenType;
+  position: HexCoord;
+  facing: number;
+  ownerUserId?: string;
+}
+
 export interface Player {
   id: string;
   username: string;
@@ -225,6 +235,8 @@ export interface CustomInteraction {
   discardCount?: number;
   discardAbilityCount?: number;
   discardMovementCount?: number;
+  attackHexes?: HexCoord[];
+  abilityCardId?: string;
 }
 
 export interface MatchOutcome {
@@ -249,6 +261,7 @@ export interface GamePublicState {
   beats: BeatEntry[][];
   timeline?: BeatEntry[][];
   characters: PublicCharacter[];
+  boardTokens?: BoardToken[];
   pendingActions?: PendingActions;
   customInteractions: CustomInteraction[];
   matchOutcome?: MatchOutcome;

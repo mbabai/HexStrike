@@ -33,6 +33,11 @@ const getTheme = () => {
   };
 };
 
+const TOKEN_IMAGE_SOURCES = {
+  arrow: '/public/images/ArrowToken.png',
+  'fire-hex': '/public/images/FireHexToken.png',
+};
+
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 const normalizeActionTag = (action) =>
@@ -173,6 +178,42 @@ const drawDamageCapsule = (ctx, x, y, radius, damage, theme) => {
   ctx.textBaseline = 'middle';
   ctx.fillText(label, centerX, centerY + fontSize * 0.02);
   ctx.restore();
+};
+
+const drawBoardTokens = (ctx, tokens, size, theme, getTokenArt) => {
+  if (!Array.isArray(tokens) || !tokens.length) return;
+  const metrics = getCharacterTokenMetrics(size);
+  const ringColor = '#000000';
+  const hexWidth = size * Math.sqrt(3);
+  const hexHeight = size * 2;
+  tokens.forEach((token) => {
+    if (!token?.position) return;
+    const { x, y } = axialToPixel(token.position.q, token.position.r, size);
+    const image = getTokenArt(token.type);
+    if (token.type === 'fire-hex') {
+      ctx.save();
+      drawHexPath(ctx, x, y, size);
+      ctx.clip();
+      if (image && image.complete && image.naturalWidth > 0) {
+        ctx.drawImage(image, x - hexWidth / 2, y - hexHeight / 2, hexWidth, hexHeight);
+      } else {
+        ctx.fillStyle = theme.panelStrong || '#20303a';
+        ctx.fillRect(x - hexWidth / 2, y - hexHeight / 2, hexWidth, hexHeight);
+      }
+      ctx.restore();
+      ctx.save();
+      ctx.strokeStyle = ringColor;
+      ctx.lineWidth = Math.max(1, metrics.borderWidth);
+      drawHexPath(ctx, x, y, size);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+    drawCharacterPortrait(ctx, image, x, y, metrics.radius, theme.panelStrong);
+    drawCharacterRing(ctx, x, y, metrics.radius, metrics.borderWidth, ringColor);
+    const arrowPoints = getFacingArrowPoints(x, y, metrics, token.facing ?? 0);
+    drawFacingArrow(ctx, arrowPoints, ringColor);
+  });
 };
 
 const drawRoundedRect = (ctx, x, y, width, height, radius) => {
@@ -477,6 +518,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
   const theme = getTheme();
   const viewport = { width: 0, height: 0, dpr: window.devicePixelRatio || 1 };
   const characterArt = new Map();
+  const tokenArt = new Map();
 
   const getCharacterArt = (characterId) => {
     if (!characterId) return null;
@@ -486,6 +528,17 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     const image = new Image();
     image.src = src;
     characterArt.set(characterId, image);
+    return image;
+  };
+
+  const getTokenArt = (tokenType) => {
+    if (!tokenType) return null;
+    if (tokenArt.has(tokenType)) return tokenArt.get(tokenType);
+    const src = TOKEN_IMAGE_SOURCES[tokenType];
+    if (!src) return null;
+    const image = new Image();
+    image.src = src;
+    tokenArt.set(tokenType, image);
     return image;
   };
 
@@ -571,8 +624,10 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
 
     const renderCharacters = scene?.characters ?? gameState?.state?.public?.characters ?? [];
     const effects = scene?.effects ?? [];
+    const boardTokens = scene?.boardTokens ?? gameState?.state?.public?.boardTokens ?? [];
     const abyssLabels = buildAbyssPathLabels(renderCharacters, land);
     drawAbyssPathLabels(ctx, abyssLabels, size, theme);
+    drawBoardTokens(ctx, boardTokens, size, theme, getTokenArt);
     drawActionEffects(ctx, effects, size, theme);
 
     if (renderCharacters.length) {

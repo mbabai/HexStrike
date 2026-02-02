@@ -292,3 +292,84 @@ test('executeBeats stops multi-step charges before occupied hexes', () => {
   assert.equal(alphaEntry.location.q, 1);
   assert.equal(alphaEntry.location.r, 0);
 });
+
+test('executeBeats spawns a bow shot arrow on X1', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+  ];
+
+  const beats = [[buildEntry('alpha', 'X1', 20, characters[0].position, characters[0].facing)]];
+  beats[0][0].cardId = 'bow-shot';
+  beats[0][0].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters);
+  const tokens = result.boardTokens || [];
+
+  assert.equal(tokens.length, 1);
+  assert.equal(tokens[0].type, 'arrow');
+  assert.deepEqual(tokens[0].position, { q: 1, r: 0 });
+  assert.equal(tokens[0].facing, 180);
+});
+
+test('executeBeats moves bow shot arrows and applies damage on hit', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 2, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'X1', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+  beats[0][0].cardId = 'bow-shot';
+  beats[0][0].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters);
+  const beat1 = result.beats[1] || [];
+  const betaEntry = beat1.find((entry) => entry.username === 'beta');
+
+  assert.ok(betaEntry);
+  assert.equal(betaEntry.damage, 4);
+  assert.equal((result.boardTokens || []).length, 0);
+});
+
+test('executeBeats applies fire hex damage from board tokens', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+  ];
+
+  const beats = [[buildEntry('alpha', 'W', 20, characters[0].position, characters[0].facing)]];
+  const tokens = [
+    { id: 'fire:0', type: 'fire-hex', position: { q: 0, r: 0 }, facing: 0 },
+  ];
+
+  const result = executeBeats(beats, characters, undefined, tokens);
+  const beat0 = result.beats[0] || [];
+  const alphaEntry = beat0.find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.damage, 1);
+});
+
+test('executeBeats places burning strike fire hexes on bracketed attacks', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+  ];
+
+  const beats = [[buildEntry('alpha', '[a]', 20, characters[0].position, characters[0].facing, '', 0, 0)]];
+  beats[0][0].cardId = 'burning-strike';
+  beats[0][0].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters);
+  const tokens = result.boardTokens || [];
+
+  assert.equal(tokens.length, 1);
+  assert.equal(tokens[0].type, 'fire-hex');
+  assert.deepEqual(tokens[0].position, { q: 1, r: 0 });
+});

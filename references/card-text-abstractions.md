@@ -30,3 +30,9 @@
 - Spike passive grants discard immunity to opponent-driven discard effects while the action set is active.
 - Trip passive converts knockback distance into discard count (no knockback movement) but still uses the pre-conversion distance for stun checks.
 - Server mapping: `src/game/cardText/discardEffects.ts`; client mirror: `public/game/cardText/discardEffects.js`.
+
+## Board tokens
+- `boardTokens` live in `public.boardTokens` with types `fire-hex` and `arrow`.
+- Fire hex: persistent; deals 1 damage per beat to any character standing on the hex.
+- Arrow: advances 1 hex per beat (charge), deals 4 damage with KBF 1 on hit, and is removed on hit or when its distance to land is ≥ 5.
+- Rendering: tokens are drawn like character portraits (circle + facing triangle) with a black border in `public/game/renderer.js`.

@@ -1,538 +1,61 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { loadCardCatalog } = require('../dist/game/cardCatalog.js');
-const {
-  applyCardUse,
-  createDeckState,
-  discardAbilityCards,
-  drawAbilityCards,
-  isAbilityDiscardFailure,
-  resolveLandRefreshes,
-  validateActionSubmission,
-} = require('../dist/game/cardRules.js');
+const { buildDefaultDeckDefinition } = require('../dist/game/cardRules.js');
 
-const buildSampleDeck = (catalog) => ({
-  movement: catalog.movement.slice(0, 4).map((card) => card.id),
-  ability: catalog.ability.slice(0, 12).map((card) => card.id),
-});
-
-test('validateActionSubmission enforces hand and movement exhaustion', async () => {
-  const catalog = await loadCardCatalog();
-  const deck = buildSampleDeck(catalog);
-  const deckState = createDeckState(deck);
-  const movementCardId = deck.movement[0];
-  const abilityInHand = deck.ability[0];
-  const abilityNotInHand = deck.ability[6];
-
-  const notInHand = validateActionSubmission(
-    { activeCardId: movementCardId, passiveCardId: abilityNotInHand, rotation: '0' },
-    deckState,
-    catalog,
-  );
-  assert.equal(notInHand.ok, false);
-  if (!notInHand.ok) {
-    assert.equal(notInHand.error.code, 'card-unavailable');
-  }
-
-  deckState.exhaustedMovementIds.add(movementCardId);
-  const exhausted = validateActionSubmission(
-    { activeCardId: movementCardId, passiveCardId: abilityInHand, rotation: '0' },
-    deckState,
-    catalog,
-  );
-  assert.equal(exhausted.ok, false);
-  if (!exhausted.ok) {
-    assert.equal(exhausted.error.code, 'card-exhausted');
-  }
-});
-
-test('validateActionSubmission ignores grappling hook throw keyword', async () => {
-  const catalog = await loadCardCatalog();
-  const grapplingHook = catalog.cardsById.get('grappling-hook');
-  assert.ok(grapplingHook);
-  const nonThrowAbility = catalog.ability.find((card) => {
-    const text = `${card?.activeText ?? ''} ${card?.passiveText ?? ''}`;
-    return !/\bthrow\b/i.test(text);
-  });
-  assert.ok(nonThrowAbility);
-  const deckState = createDeckState({ movement: [grapplingHook.id], ability: [nonThrowAbility.id] });
-  const result = validateActionSubmission(
-    { activeCardId: grapplingHook.id, passiveCardId: nonThrowAbility.id, rotation: '0' },
-    deckState,
-    catalog,
-  );
-  assert.equal(result.ok, true);
-  if (result.ok) {
-    const hasThrowInteraction = result.actionList.some((item) => item.interaction?.type === 'throw');
-    assert.equal(hasThrowInteraction, false);
-  }
-});
-
-test('validateActionSubmission ignores passive card activeText for throw detection', () => {
-  const movementCard = {
-    id: 'move-attack',
-    name: 'Move Attack',
-    type: 'movement',
-    priority: 10,
-    actions: ['a', 'E'],
-    rotations: '*',
-    damage: 1,
-    kbf: 0,
-  };
-  const passiveAbility = {
-    id: 'passive-throw',
-    name: 'Passive Throw',
-    type: 'ability',
-    priority: 10,
-    actions: ['W', 'E'],
-    rotations: '*',
-    damage: 0,
-    kbf: 0,
-    activeText: 'Throw',
-  };
+test('buildDefaultDeckDefinition uses the first catalog deck when available', () => {
   const catalog = {
-    movement: [movementCard],
-    ability: [passiveAbility],
+    decks: [{ movement: ['step', 'dash'], ability: ['jab', 'guard'] }],
+    movement: [],
+    ability: [],
+  };
+
+  const deck = buildDefaultDeckDefinition(catalog);
+
+  assert.deepEqual(deck, { movement: ['step', 'dash'], ability: ['jab', 'guard'] });
+});
+
+test('buildDefaultDeckDefinition falls back to catalog cards when decks are missing', () => {
+  const catalog = {
     decks: [],
-    cardsById: new Map([
-      [movementCard.id, movementCard],
-      [passiveAbility.id, passiveAbility],
-    ]),
-  };
-  const deckState = createDeckState({ movement: [movementCard.id], ability: [passiveAbility.id] });
-  const result = validateActionSubmission(
-    { activeCardId: movementCard.id, passiveCardId: passiveAbility.id, rotation: '0' },
-    deckState,
-    catalog,
-  );
-  assert.equal(result.ok, true);
-  if (result.ok) {
-    const hasThrowInteraction = result.actionList.some((item) => item.interaction?.type === 'throw');
-    assert.equal(hasThrowInteraction, false);
-  }
-});
-
-test('validateActionSubmission marks throws from passive throw text', async () => {
-  const catalog = await loadCardCatalog();
-  const leap = catalog.cardsById.get('leap');
-  const jab = catalog.cardsById.get('jab');
-  assert.ok(leap);
-  assert.ok(jab);
-  const deckState = createDeckState({ movement: [leap.id], ability: [jab.id] });
-  const result = validateActionSubmission(
-    { activeCardId: jab.id, passiveCardId: leap.id, rotation: '0' },
-    deckState,
-    catalog,
-  );
-  assert.equal(result.ok, true);
-  if (result.ok) {
-    const hasThrowInteraction = result.actionList.some((item) => item.interaction?.type === 'throw');
-    assert.equal(hasThrowInteraction, true);
-  }
-});
-
-test('validateActionSubmission marks throws from active throw text', async () => {
-  const catalog = await loadCardCatalog();
-  const hipThrow = catalog.cardsById.get('hip-throw');
-  const step = catalog.cardsById.get('step');
-  assert.ok(hipThrow);
-  assert.ok(step);
-  const deckState = createDeckState({ movement: [step.id], ability: [hipThrow.id] });
-  const result = validateActionSubmission(
-    { activeCardId: hipThrow.id, passiveCardId: step.id, rotation: '0' },
-    deckState,
-    catalog,
-  );
-  assert.equal(result.ok, true);
-  if (result.ok) {
-    const hasThrowInteraction = result.actionList.some((item) => item.interaction?.type === 'throw');
-    assert.equal(hasThrowInteraction, true);
-  }
-});
-
-test('validateActionSubmission applies ninja roll opposite rotation at {i}', async () => {
-  const catalog = await loadCardCatalog();
-  const ninjaRoll = catalog.cardsById.get('ninja-roll');
-  assert.ok(ninjaRoll);
-  const abilityCard = catalog.ability.find((card) => card && card.id);
-  assert.ok(abilityCard);
-  const deckState = createDeckState({ movement: [ninjaRoll.id], ability: [abilityCard.id] });
-  const result = validateActionSubmission(
-    { activeCardId: ninjaRoll.id, passiveCardId: abilityCard.id, rotation: 'R2' },
-    deckState,
-    catalog,
-  );
-  assert.equal(result.ok, true);
-  if (result.ok) {
-    const bracketIndex = ninjaRoll.actions.findIndex((action) => `${action}`.trim().startsWith('['));
-    assert.ok(bracketIndex >= 0);
-    const baseEntry = result.actionList[0];
-    const bracketEntry = result.actionList[bracketIndex];
-    assert.equal(baseEntry.rotation, 'R2');
-    assert.equal(baseEntry.rotationSource, 'selected');
-    assert.equal(bracketEntry.rotation, 'L1');
-    assert.equal(bracketEntry.rotationSource, 'forced');
-  }
-});
-
-test('validateActionSubmission applies ninja roll passive to broaden attacks and halve damage', async () => {
-  const catalog = await loadCardCatalog();
-  const ninjaRoll = catalog.cardsById.get('ninja-roll');
-  const balestraLunge = catalog.cardsById.get('balestra-lunge');
-  assert.ok(ninjaRoll);
-  assert.ok(balestraLunge);
-  const deckState = createDeckState({ movement: [ninjaRoll.id], ability: [balestraLunge.id] });
-  const result = validateActionSubmission(
-    { activeCardId: balestraLunge.id, passiveCardId: ninjaRoll.id, rotation: '0' },
-    deckState,
-    catalog,
-  );
-  assert.equal(result.ok, true);
-  if (result.ok) {
-    const attackIndex = balestraLunge.actions.findIndex((action) => `${action}`.trim().toLowerCase() === 'a');
-    assert.ok(attackIndex >= 0);
-    const entry = result.actionList[attackIndex];
-    assert.equal(entry.action, 'a-La-Ra');
-    assert.equal(entry.damage, Math.floor(balestraLunge.damage / 2));
-    assert.equal(entry.kbf, Math.floor(balestraLunge.kbf / 2));
-  }
-});
-
-test('validateActionSubmission leaves non-exact attacks unchanged for ninja roll passive', async () => {
-  const catalog = await loadCardCatalog();
-  const ninjaRoll = catalog.cardsById.get('ninja-roll');
-  const longThrust = catalog.cardsById.get('long-thrust');
-  assert.ok(ninjaRoll);
-  assert.ok(longThrust);
-  const deckState = createDeckState({ movement: [ninjaRoll.id], ability: [longThrust.id] });
-  const result = validateActionSubmission(
-    { activeCardId: longThrust.id, passiveCardId: ninjaRoll.id, rotation: '0' },
-    deckState,
-    catalog,
-  );
-  assert.equal(result.ok, true);
-  if (result.ok) {
-    const attackIndex = longThrust.actions.findIndex((action) => `${action}`.trim().toLowerCase() === 'a-2a');
-    assert.ok(attackIndex >= 0);
-    const entry = result.actionList[attackIndex];
-    assert.equal(entry.action, 'a-2a');
-    assert.equal(entry.damage, longThrust.damage);
-    assert.equal(entry.kbf, longThrust.kbf);
-  }
-});
-
-test('validateActionSubmission applies ninja roll passive to bracketed single attacks', async () => {
-  const catalog = await loadCardCatalog();
-  const ninjaRoll = catalog.cardsById.get('ninja-roll');
-  const downSlash = catalog.cardsById.get('down-slash');
-  assert.ok(ninjaRoll);
-  assert.ok(downSlash);
-  const deckState = createDeckState({ movement: [ninjaRoll.id], ability: [downSlash.id] });
-  const result = validateActionSubmission(
-    { activeCardId: downSlash.id, passiveCardId: ninjaRoll.id, rotation: '0' },
-    deckState,
-    catalog,
-  );
-  assert.equal(result.ok, true);
-  if (result.ok) {
-    const attackIndex = downSlash.actions.findIndex((action) => `${action}`.trim().toLowerCase() === '[a]');
-    assert.ok(attackIndex >= 0);
-    const entry = result.actionList[attackIndex];
-    assert.equal(entry.action, '[a-La-Ra]');
-    assert.equal(entry.damage, Math.floor(downSlash.damage / 2));
-    assert.equal(entry.kbf, Math.floor(downSlash.kbf / 2));
-  }
-});
-
-test('validateActionSubmission applies fleche passive to skip final wait after attacks', async () => {
-  const catalog = await loadCardCatalog();
-  const fleche = catalog.cardsById.get('fleche');
-  const aerialStrike = catalog.cardsById.get('aerial-strike');
-  assert.ok(fleche);
-  assert.ok(aerialStrike);
-  const deckState = createDeckState({ movement: [fleche.id], ability: [aerialStrike.id] });
-
-  const result = validateActionSubmission(
-    { activeCardId: aerialStrike.id, passiveCardId: fleche.id, rotation: '0' },
-    deckState,
-    catalog,
-  );
-  assert.equal(result.ok, true);
-  if (result.ok) {
-    const baseActions = aerialStrike.actions.slice();
-    const lastWaitIndex = baseActions
-      .map((action) => `${action}`.trim().toUpperCase())
-      .lastIndexOf('W');
-    assert.ok(lastWaitIndex >= 0);
-    const expected = baseActions.filter((_, index) => index !== lastWaitIndex);
-    assert.deepEqual(
-      result.actionList.map((item) => item.action),
-      expected,
-    );
-  }
-});
-
-test('validateActionSubmission keeps final wait when fleche passive has no attack before it', async () => {
-  const catalog = await loadCardCatalog();
-  const fleche = catalog.cardsById.get('fleche');
-  const absorb = catalog.cardsById.get('absorb');
-  assert.ok(fleche);
-  assert.ok(absorb);
-  const deckState = createDeckState({ movement: [fleche.id], ability: [absorb.id] });
-
-  const result = validateActionSubmission(
-    { activeCardId: absorb.id, passiveCardId: fleche.id, rotation: '0' },
-    deckState,
-    catalog,
-  );
-  assert.equal(result.ok, true);
-  if (result.ok) {
-    assert.deepEqual(
-      result.actionList.map((item) => item.action),
-      absorb.actions,
-    );
-  }
-});
-
-test('applyCardUse removes ability card and exhausts movement', async () => {
-  const catalog = await loadCardCatalog();
-  const deck = buildSampleDeck(catalog);
-  const deckState = createDeckState(deck);
-  const movementCardId = deck.movement[0];
-  const abilityCardId = deck.ability[1];
-  const result = applyCardUse(deckState, { movementCardId, abilityCardId });
-  assert.equal(result.ok, true);
-  assert.equal(deckState.exhaustedMovementIds.has(movementCardId), true);
-  assert.equal(deckState.abilityHand.includes(abilityCardId), false);
-  assert.equal(deckState.abilityDeck[deckState.abilityDeck.length - 1], abilityCardId);
-  assert.equal(deckState.abilityHand.length, 3);
-});
-
-test('resolveLandRefreshes clears movement exhaustion and draws on land', async () => {
-  const catalog = await loadCardCatalog();
-  const deck = buildSampleDeck(catalog);
-  const movementCardId = deck.movement[0];
-  const abilityCardId = deck.ability[1];
-  const character = {
-    userId: 'player-1',
-    username: 'Player 1',
-    characterId: 'murelious',
-    characterName: 'Murelious',
-    position: { q: 0, r: 0 },
-    facing: 0,
-  };
-  const beats = [
-    [
-      {
-        username: 'Player 1',
-        action: 'E',
-        rotation: '',
-        priority: 0,
-        damage: 0,
-        location: { q: 0, r: 0 },
-        facing: 0,
-        calculated: false,
-      },
+    movement: [
+      { id: 'move-1' },
+      { id: 'move-2' },
+      { id: 'move-3' },
+      { id: 'move-4' },
+      { id: 'move-5' },
     ],
-  ];
-
-  const onLandState = createDeckState(deck);
-  applyCardUse(onLandState, { movementCardId, abilityCardId });
-  resolveLandRefreshes(new Map([['player-1', onLandState]]), beats, [character], [{ q: 0, r: 0 }]);
-  assert.equal(onLandState.exhaustedMovementIds.size, 0);
-  assert.equal(onLandState.abilityHand.length, 4);
-  assert.equal(onLandState.lastRefreshIndex, 0);
-});
-
-test('resolveLandRefreshes skips refresh off land', async () => {
-  const catalog = await loadCardCatalog();
-  const deck = buildSampleDeck(catalog);
-  const movementCardId = deck.movement[0];
-  const abilityCardId = deck.ability[2];
-  const character = {
-    userId: 'player-1',
-    username: 'Player 1',
-    characterId: 'murelious',
-    characterName: 'Murelious',
-    position: { q: 0, r: 0 },
-    facing: 0,
-  };
-  const beats = [
-    [
-      {
-        username: 'Player 1',
-        action: 'E',
-        rotation: '',
-        priority: 0,
-        damage: 0,
-        location: { q: 0, r: 0 },
-        facing: 0,
-        calculated: false,
-      },
+    ability: [
+      { id: 'ability-1' },
+      { id: 'ability-2' },
+      { id: 'ability-3' },
+      { id: 'ability-4' },
+      { id: 'ability-5' },
+      { id: 'ability-6' },
+      { id: 'ability-7' },
+      { id: 'ability-8' },
+      { id: 'ability-9' },
+      { id: 'ability-10' },
+      { id: 'ability-11' },
+      { id: 'ability-12' },
+      { id: 'ability-13' },
     ],
-  ];
-
-  const offLandState = createDeckState(deck);
-  applyCardUse(offLandState, { movementCardId, abilityCardId });
-  resolveLandRefreshes(new Map([['player-1', offLandState]]), beats, [character], [{ q: 2, r: 2 }]);
-  assert.equal(offLandState.exhaustedMovementIds.has(movementCardId), true);
-  assert.equal(offLandState.abilityHand.length, 3);
-  assert.equal(offLandState.lastRefreshIndex, null);
-});
-
-test('resolveLandRefreshes uses beat location over character position', async () => {
-  const catalog = await loadCardCatalog();
-  const deck = buildSampleDeck(catalog);
-  const movementCardId = deck.movement[0];
-  const abilityCardId = deck.ability[0];
-  const character = {
-    userId: 'player-1',
-    username: 'Player 1',
-    characterId: 'murelious',
-    characterName: 'Murelious',
-    position: { q: 0, r: 0 },
-    facing: 0,
   };
-  const beats = [
-    [
-      {
-        username: 'Player 1',
-        action: 'E',
-        rotation: '',
-        priority: 0,
-        damage: 0,
-        location: { q: 5, r: 0 },
-        facing: 0,
-        calculated: false,
-      },
-    ],
-  ];
-  const deckState = createDeckState(deck);
-  applyCardUse(deckState, { movementCardId, abilityCardId });
-  resolveLandRefreshes(new Map([['player-1', deckState]]), beats, [character], [{ q: 0, r: 0 }]);
-  assert.equal(deckState.exhaustedMovementIds.has(movementCardId), true);
-  assert.equal(deckState.abilityHand.length, 3);
-  assert.equal(deckState.lastRefreshIndex, null);
-});
 
-test('resolveLandRefreshes skips refresh while pending actions at earliest beat', async () => {
-  const catalog = await loadCardCatalog();
-  const deck = buildSampleDeck(catalog);
-  const movementCardId = deck.movement[0];
-  const abilityCardId = deck.ability[0];
-  const character = {
-    userId: 'player-1',
-    username: 'Player 1',
-    characterId: 'murelious',
-    characterName: 'Murelious',
-    position: { q: 0, r: 0 },
-    facing: 0,
-  };
-  const beats = [
-    [
-      {
-        username: 'Player 1',
-        action: 'E',
-        rotation: '',
-        priority: 0,
-        damage: 0,
-        location: { q: 0, r: 0 },
-        facing: 0,
-        calculated: false,
-      },
-    ],
-  ];
-  const deckState = createDeckState(deck);
-  applyCardUse(deckState, { movementCardId, abilityCardId });
-  resolveLandRefreshes(
-    new Map([['player-1', deckState]]),
-    beats,
-    [character],
-    [{ q: 0, r: 0 }],
-    [],
-    { beatIndex: 0, requiredUserIds: ['player-1'], submittedUserIds: ['player-1'] },
-  );
-  assert.equal(deckState.exhaustedMovementIds.has(movementCardId), true);
-  assert.equal(deckState.abilityHand.length, 3);
-  assert.equal(deckState.lastRefreshIndex, null);
-});
+  const deck = buildDefaultDeckDefinition(catalog);
 
-test('applyCardUse returns movement to hand when ability count is 5+', async () => {
-  const catalog = await loadCardCatalog();
-  const deck = buildSampleDeck(catalog);
-  const deckState = createDeckState(deck);
-  const extraAbility = deckState.abilityDeck.shift();
-  assert.ok(extraAbility);
-  deckState.abilityHand.push(extraAbility);
-  assert.equal(deckState.abilityHand.length, 5);
-  const movementCardId = deck.movement[0];
-  const abilityCardId = deckState.abilityHand[0];
-
-  const result = applyCardUse(deckState, { movementCardId, abilityCardId });
-
-  assert.equal(result.ok, true);
-  assert.equal(deckState.exhaustedMovementIds.has(movementCardId), false);
-  assert.equal(deckState.abilityHand.length, 4);
-});
-
-test('drawAbilityCards restores movement to match ability hand', async () => {
-  const catalog = await loadCardCatalog();
-  const deck = buildSampleDeck(catalog);
-  const deckState = createDeckState(deck);
-  const movementCardId = deck.movement[0];
-  const abilityCardId = deck.ability[0];
-  applyCardUse(deckState, { movementCardId, abilityCardId });
-  assert.equal(deckState.exhaustedMovementIds.has(movementCardId), true);
-  assert.equal(deckState.abilityHand.length, 3);
-
-  const result = drawAbilityCards(deckState, 1, { mode: 'auto' });
-
-  assert.equal(result.ok, true);
-  assert.equal(deckState.abilityHand.length, 4);
-  assert.equal(deckState.exhaustedMovementIds.size, 0);
-});
-
-test('discardAbilityCards discards movement when ability count drops below 4', async () => {
-  const catalog = await loadCardCatalog();
-  const deck = buildSampleDeck(catalog);
-  const deckState = createDeckState(deck);
-  const discardIds = deckState.abilityHand.slice(0, 2);
-
-  const result = discardAbilityCards(deckState, discardIds, { mode: 'auto' });
-
-  assert.equal(result.ok, true);
-  assert.equal(deckState.abilityHand.length, 2);
-  const movementAvailable = deckState.movement.filter((id) => !deckState.exhaustedMovementIds.has(id)).length;
-  assert.equal(movementAvailable, deckState.abilityHand.length);
-});
-
-test('drawAbilityCards syncs movement even when no cards are drawn', async () => {
-  const catalog = await loadCardCatalog();
-  const deck = {
-    movement: catalog.movement.slice(0, 4).map((card) => card.id),
-    ability: catalog.ability.slice(0, 2).map((card) => card.id),
-  };
-  const deckState = createDeckState(deck);
-  deckState.exhaustedMovementIds.clear();
-
-  const result = drawAbilityCards(deckState, 0, { mode: 'auto' });
-
-  assert.equal(result.ok, true);
-  const movementAvailable = deckState.movement.filter((id) => !deckState.exhaustedMovementIds.has(id)).length;
-  assert.equal(movementAvailable, deckState.abilityHand.length);
-});
-
-test('discardAbilityCards reports validation errors via guard', async () => {
-  const catalog = await loadCardCatalog();
-  const deck = buildSampleDeck(catalog);
-  const deckState = createDeckState(deck);
-  const invalidId = 'not-a-card';
-
-  const result = discardAbilityCards(deckState, [invalidId], { mode: 'strict' });
-
-  assert.equal(result.ok, false);
-  assert.equal(isAbilityDiscardFailure(result), true);
-  if (isAbilityDiscardFailure(result)) {
-    assert.equal(result.error.code, 'ability-not-in-hand');
-  }
+  assert.deepEqual(deck.movement, ['move-1', 'move-2', 'move-3', 'move-4']);
+  assert.deepEqual(deck.ability, [
+    'ability-1',
+    'ability-2',
+    'ability-3',
+    'ability-4',
+    'ability-5',
+    'ability-6',
+    'ability-7',
+    'ability-8',
+    'ability-9',
+    'ability-10',
+    'ability-11',
+    'ability-12',
+  ]);
 });

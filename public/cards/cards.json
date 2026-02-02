@@ -815,7 +815,12 @@
       "id": "murelious-base",
       "name": "Murelious Base",
       "characterId": "murelious",
-      "movement": ["step", "ninja-roll", "backflip", "grappling-hook"],
+      "movement": [
+        "step",
+        "ninja-roll",
+        "backflip",
+        "grappling-hook"
+      ],
       "ability": [
         "parry",
         "feint",
@@ -835,7 +840,12 @@
       "id": "strylan-base",
       "name": "Strylan Base",
       "characterId": "strylan",
-      "movement": ["step", "fleche", "advance", "jump"],
+      "movement": [
+        "step",
+        "fleche",
+        "advance",
+        "jump"
+      ],
       "ability": [
         "guard",
         "healing-harmony",
@@ -855,7 +865,12 @@
       "id": "discard-tester",
       "name": "discard tester",
       "characterId": "murelious",
-      "movement": ["step", "dash", "jump", "backflip"],
+      "movement": [
+        "step",
+        "dash",
+        "jump",
+        "backflip"
+      ],
       "ability": [
         "down-slash",
         "spike",
@@ -869,6 +884,31 @@
         "balestra-lunge",
         "jab",
         "counter-attack"
+      ]
+    },
+    {
+      "id": "aumandetta-bowfire-test",
+      "name": "Aumandetta Bowfire Test",
+      "characterId": "aumandetta",
+      "movement": [
+        "step",
+        "ninja-roll",
+        "grappling-hook",
+        "jump"
+      ],
+      "ability": [
+        "bow-shot",
+        "burning-strike",
+        "guard",
+        "iron-will",
+        "healing-harmony",
+        "cross-slash",
+        "fumikomi",
+        "flying-knee",
+        "tackle",
+        "jab",
+        "smash-attack",
+        "spike"
       ]
     }
   ]

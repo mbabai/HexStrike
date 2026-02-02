@@ -8,6 +8,13 @@ const DAMAGE_ICON_ACTION = 'DamageIcon';
 const KNOCKBACK_DIVISOR = 10;
 const ACTION_DURATION_MS = 1200;
 const THROW_DISTANCE = 2;
+const FIRE_HEX_TOKEN_TYPE = 'fire-hex';
+const ARROW_TOKEN_TYPE = 'arrow';
+const ARROW_DAMAGE = 4;
+const ARROW_KBF = 1;
+const ARROW_LAND_DISTANCE_LIMIT = 5;
+const BOW_SHOT_CARD_ID = 'bow-shot';
+const BURNING_STRIKE_CARD_ID = 'burning-strike';
 // Keep in sync with server-side throw detection.
 const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
 const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
@@ -141,6 +148,18 @@ const parseRotationDegrees = (rotation) => {
   return Number.isFinite(steps) ? direction * steps * 60 : 0;
 };
 
+const getRotationMagnitude = (rotationLabel) => {
+  const trimmed = `${rotationLabel ?? ''}`.trim().toUpperCase();
+  if (!trimmed) return null;
+  if (trimmed === '0') return 0;
+  if (trimmed === '3') return 3;
+  if (trimmed.startsWith('L') || trimmed.startsWith('R')) {
+    const steps = Number(trimmed.slice(1));
+    return Number.isFinite(steps) ? steps : null;
+  }
+  return null;
+};
+
 const rotateAxialCW = (coord) => ({ q: -coord.r, r: coord.q + coord.r });
 
 const rotateAxial = (coord, steps) => {
@@ -167,6 +186,27 @@ const isCoordOnLand = (coord, land) => {
   if (!coord || !Array.isArray(land) || !land.length) return false;
   const key = coordKey(coord);
   return land.some((tile) => coordKey(tile) === key);
+};
+
+const axialDistance = (a, b) => {
+  const aq = Math.round(a.q);
+  const ar = Math.round(a.r);
+  const bq = Math.round(b.q);
+  const br = Math.round(b.r);
+  const dq = aq - bq;
+  const dr = ar - br;
+  const ds = (aq + ar) - (bq + br);
+  return (Math.abs(dq) + Math.abs(dr) + Math.abs(ds)) / 2;
+};
+
+const getDistanceToLand = (position, land) => {
+  if (!Array.isArray(land) || !land.length) return Number.POSITIVE_INFINITY;
+  let min = Number.POSITIVE_INFINITY;
+  land.forEach((tile) => {
+    const distance = axialDistance(position, tile);
+    if (distance < min) min = distance;
+  });
+  return min;
 };
 
 const isBracketedAction = (action) => {
@@ -252,6 +292,15 @@ const isWaitAction = (action) => {
     return label === COMBO_ACTION;
   }
   return false;
+};
+
+const normalizeActionLabel = (action) => {
+  const trimmed = `${action ?? ''}`.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
 };
 
 const normalizeActionToken = (token) => {
@@ -378,6 +427,8 @@ const getResolvedDirectionIndex = (interaction) => {
   if (rounded < 0 || rounded >= AXIAL_DIRECTIONS.length) return null;
   return rounded;
 };
+
+const resolveEntryKey = (entry) => entry?.username ?? entry?.userId ?? entry?.userID ?? '';
 
 const getBeatEntryForCharacter = (beat, character) => {
   if (!Array.isArray(beat) || !character) return null;
@@ -751,6 +802,494 @@ const applyStep = (characters, step) => {
   return updated;
 };
 
+const createTokenRenderState = (baseTokens) => {
+  const renderTokens = Array.isArray(baseTokens)
+    ? baseTokens.map((token) => ({ ...token, position: { q: token.position.q, r: token.position.r } }))
+    : [];
+  const tokenIndex = new Map();
+  const rebuildTokenIndex = () => {
+    tokenIndex.clear();
+    renderTokens.forEach((token, index) => {
+      tokenIndex.set(token.id, index);
+    });
+  };
+  rebuildTokenIndex();
+
+  const applyTokenUpdate = (tokenId, patch) => {
+    const index = tokenIndex.get(tokenId);
+    if (index == null) return;
+    const current = renderTokens[index];
+    const next = { ...current, ...patch };
+    if (patch.position) {
+      next.position = { q: patch.position.q, r: patch.position.r };
+    } else if (current.position) {
+      next.position = { q: current.position.q, r: current.position.r };
+    }
+    renderTokens[index] = next;
+  };
+
+  const applyTokenSpawns = (spawns) => {
+    if (!Array.isArray(spawns) || !spawns.length) return;
+    spawns.forEach((token) => {
+      if (!token) return;
+      renderTokens.push({ ...token, position: { q: token.position.q, r: token.position.r } });
+    });
+    rebuildTokenIndex();
+  };
+
+  const applyTokenStep = (step) => {
+    if (!step || step.kind !== 'token') return;
+    if (step.removeToken) {
+      const index = tokenIndex.get(step.tokenId);
+      if (index == null) return;
+      renderTokens.splice(index, 1);
+      rebuildTokenIndex();
+      return;
+    }
+    if (step.moveDestination) {
+      applyTokenUpdate(step.tokenId, { position: step.moveDestination });
+    }
+  };
+
+  return {
+    renderTokens,
+    applyTokenUpdate,
+    applyTokenSpawns,
+    applyTokenStep,
+  };
+};
+
+const buildTokenPlayback = (gameState, beatIndex) => {
+  const beats = gameState?.state?.public?.beats ?? [];
+  const characters = gameState?.state?.public?.characters ?? [];
+  const interactions = gameState?.state?.public?.customInteractions ?? [];
+  const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
+
+  const userLookup = new Map();
+  const rosterOrder = new Map();
+  characters.forEach((character, index) => {
+    if (character.userId) {
+      userLookup.set(character.userId, character.userId);
+      rosterOrder.set(character.userId, index);
+    }
+    if (character.username) {
+      userLookup.set(character.username, character.userId);
+      rosterOrder.set(character.username, index);
+    }
+  });
+
+  const state = new Map();
+  characters.forEach((character) => {
+    state.set(character.userId, {
+      position: { q: character.position.q, r: character.position.r },
+      facing: normalizeDegrees(character.facing ?? 0),
+      damage: typeof character.damage === 'number' ? character.damage : 0,
+    });
+  });
+
+  const tokens = [];
+  const fireTokenKeys = new Set();
+  let tokenCounter = 0;
+
+  const actionSetFacingByUser = new Map();
+  const actionSetRotationByUser = new Map();
+  const lastActionByUser = new Map();
+
+  const tokenSpawnsByActor = new Map();
+  const tokenSpawnsAtEnd = [];
+  const tokenSteps = [];
+  let baseTokens = [];
+
+  const nextTokenId = (type) => `${type}:${tokenCounter++}`;
+
+  const cloneToken = (token) => ({
+    ...token,
+    position: { q: token.position.q, r: token.position.r },
+  });
+
+  const scheduleSpawnForActor = (actorId, token, isCurrentBeat) => {
+    if (!isCurrentBeat) {
+      tokens.push(token);
+      return;
+    }
+    if (!actorId) {
+      tokenSpawnsAtEnd.push(token);
+      return;
+    }
+    const existing = tokenSpawnsByActor.get(actorId) ?? [];
+    existing.push(token);
+    tokenSpawnsByActor.set(actorId, existing);
+  };
+
+  const addFireToken = (coord, ownerId, isCurrentBeat, spawnAtEnd = false) => {
+    if (!coord) return;
+    const key = coordKey(coord);
+    if (fireTokenKeys.has(key)) return;
+    fireTokenKeys.add(key);
+    const token = {
+      id: nextTokenId(FIRE_HEX_TOKEN_TYPE),
+      type: FIRE_HEX_TOKEN_TYPE,
+      position: { q: coord.q, r: coord.r },
+      facing: 0,
+      ownerUserId: ownerId,
+    };
+    if (spawnAtEnd && isCurrentBeat) {
+      tokenSpawnsAtEnd.push(token);
+      return;
+    }
+    scheduleSpawnForActor(ownerId, token, isCurrentBeat);
+  };
+
+  const addArrowToken = (coord, facing, ownerId, isCurrentBeat) => {
+    if (!coord) return;
+    const token = {
+      id: nextTokenId(ARROW_TOKEN_TYPE),
+      type: ARROW_TOKEN_TYPE,
+      position: { q: coord.q, r: coord.r },
+      facing: normalizeDegrees(facing ?? 0),
+      ownerUserId: ownerId,
+    };
+    scheduleSpawnForActor(ownerId, token, isCurrentBeat);
+  };
+
+  const buildEntriesByUser = (beat) => {
+    const entriesByUser = new Map();
+    (beat ?? []).forEach((entry) => {
+      const key = resolveEntryKey(entry);
+      const resolved = userLookup.get(key) ?? key;
+      if (!resolved) return;
+      const existing = entriesByUser.get(resolved);
+      if (!existing) {
+        entriesByUser.set(resolved, entry);
+        return;
+      }
+      const existingAction = existing.action ?? DEFAULT_ACTION;
+      const nextAction = entry.action ?? DEFAULT_ACTION;
+      if (existingAction === DEFAULT_ACTION && nextAction !== DEFAULT_ACTION) {
+        entriesByUser.set(resolved, entry);
+        return;
+      }
+      if (existingAction !== DEFAULT_ACTION && nextAction === DEFAULT_ACTION) {
+        return;
+      }
+    });
+    return entriesByUser;
+  };
+
+  const applyBeatEntriesToState = (beat) => {
+    characters.forEach((character) => {
+      const entry = getBeatEntryForCharacter(beat, character);
+      if (!entry || !entry.calculated) return;
+      const current = state.get(character.userId);
+      state.set(character.userId, {
+        position: entry.location ? { q: entry.location.q, r: entry.location.r } : current?.position ?? character.position,
+        facing: Number.isFinite(entry.facing)
+          ? normalizeDegrees(entry.facing)
+          : current?.facing ?? normalizeDegrees(character.facing ?? 0),
+        damage: typeof entry.damage === 'number' ? entry.damage : current?.damage ?? 0,
+      });
+    });
+  };
+
+  const isActionSetStart = (entry) =>
+    `${entry?.rotationSource ?? ''}`.trim() === 'selected' || Boolean(entry?.comboStarter);
+
+  const buildCharacterSnapshot = () =>
+    characters.map((character) => {
+      const stored = state.get(character.userId);
+      const position = stored?.position ?? character.position;
+      return {
+        ...character,
+        position: { q: position.q, r: position.r },
+        facing: stored?.facing ?? normalizeDegrees(character.facing ?? 0),
+        damage: typeof stored?.damage === 'number'
+          ? stored.damage
+          : typeof character.damage === 'number'
+            ? character.damage
+            : 0,
+      };
+    });
+
+  for (let index = 0; index < beats.length; index += 1) {
+    if (!Number.isFinite(beatIndex) || index > beatIndex) break;
+    const beat = beats[index] ?? [];
+    if (!isBeatCalculated(beat)) {
+      baseTokens = tokens.map(cloneToken);
+      break;
+    }
+    const isCurrentBeat = index === beatIndex;
+
+    if (isCurrentBeat) {
+      baseTokens = tokens.map(cloneToken);
+    }
+
+    const baseState = buildCharacterSnapshot();
+    const { steps } = buildActionSteps(beat, characters, baseState, interactions, index, land);
+    const processedActors = new Set(steps.map((step) => step.actorId));
+    let endState = baseState;
+    steps.forEach((step) => {
+      endState = applyStep(endState, step);
+    });
+    const endStateById = new Map();
+    endState.forEach((character) => {
+      endStateById.set(character.userId, {
+        position: { q: character.position.q, r: character.position.r },
+        facing: normalizeDegrees(character.facing ?? 0),
+        damage: typeof character.damage === 'number' ? character.damage : 0,
+      });
+    });
+
+    const entriesByUser = buildEntriesByUser(beat);
+    characters.forEach((character) => {
+      const actorId = character.userId;
+      const entry = entriesByUser.get(actorId);
+      const action = entry?.action ?? DEFAULT_ACTION;
+      const previous = lastActionByUser.get(actorId) ?? DEFAULT_ACTION;
+      const comboStart = previous === DEFAULT_ACTION || Boolean(entry?.comboStarter);
+      if (action === DEFAULT_ACTION) {
+        actionSetFacingByUser.delete(actorId);
+        actionSetRotationByUser.delete(actorId);
+      } else {
+        if (comboStart || !actionSetFacingByUser.has(actorId)) {
+          const actorState = state.get(actorId);
+          if (actorState) {
+            actionSetFacingByUser.set(actorId, actorState.facing);
+          }
+        }
+        if (comboStart || !actionSetRotationByUser.has(actorId)) {
+          const rotation = `${entry?.rotation ?? ''}`.trim();
+          const rotationSource = `${entry?.rotationSource ?? ''}`.trim();
+          if (rotation && (rotationSource === 'selected' || !rotationSource)) {
+            actionSetRotationByUser.set(actorId, rotation);
+          }
+        }
+      }
+      lastActionByUser.set(actorId, action);
+    });
+
+    const facingByUser = new Map();
+    state.forEach((value, userId) => {
+      facingByUser.set(userId, value.facing);
+    });
+    entriesByUser.forEach((entry, actorId) => {
+      const rotationDelta = parseRotationDegrees(entry.rotation ?? '');
+      if (!rotationDelta) return;
+      const currentFacing = facingByUser.get(actorId) ?? 0;
+      facingByUser.set(actorId, normalizeDegrees(currentFacing + rotationDelta));
+    });
+
+    const existingArrowIds = new Set(tokens.filter((token) => token.type === ARROW_TOKEN_TYPE).map((token) => token.id));
+
+    const ordered = beat
+      .slice()
+      .sort((a, b) => {
+        const priorityDelta = (b.priority ?? 0) - (a.priority ?? 0);
+        if (priorityDelta) return priorityDelta;
+        const orderA = rosterOrder.get(resolveEntryKey(a)) ?? Number.MAX_SAFE_INTEGER;
+        const orderB = rosterOrder.get(resolveEntryKey(b)) ?? Number.MAX_SAFE_INTEGER;
+        return orderA - orderB;
+      })
+      .filter((entry) => entry.action !== DEFAULT_ACTION);
+
+    ordered.forEach((entry) => {
+      const actorId = userLookup.get(resolveEntryKey(entry));
+      if (!actorId || !processedActors.has(actorId)) return;
+      const originState = state.get(actorId);
+      if (!originState) return;
+      const origin = originState.position;
+      const endStateForActor = endStateById.get(actorId) ?? originState;
+      const endPosition = endStateForActor?.position ?? origin;
+      const facing = facingByUser.get(actorId) ?? originState.facing ?? 0;
+      const actionLabel = normalizeActionLabel(entry.action ?? '');
+
+      if (entry.cardId === BOW_SHOT_CARD_ID && actionLabel.toUpperCase() === 'X1') {
+        const forward = applyFacingToVector(LOCAL_DIRECTIONS.F, facing);
+        addArrowToken(
+          { q: origin.q + forward.q, r: origin.r + forward.r },
+          facing,
+          actorId,
+          isCurrentBeat,
+        );
+      }
+
+      const actionTokens = parseActionTokens(entry.action ?? '');
+
+      if (entry.cardId === BURNING_STRIKE_CARD_ID && isBracketedAction(entry.action ?? '')) {
+        actionTokens
+          .filter((token) => token.type === 'a')
+          .forEach((token) => {
+            const { destination } = buildPath(origin, token.steps, facing);
+            addFireToken(destination, actorId, isCurrentBeat);
+          });
+      }
+
+      if (entry.passiveCardId === BURNING_STRIKE_CARD_ID) {
+        const hasMoveToken = actionTokens.some((token) => token.type === 'm');
+        if (hasMoveToken && !sameCoord(endPosition, origin)) {
+          addFireToken(origin, actorId, isCurrentBeat);
+        }
+      }
+
+      if (entry.passiveCardId === BOW_SHOT_CARD_ID) {
+        const hasMoveToken = actionTokens.some((token) => token.type === 'm');
+        const rotationMagnitude = getRotationMagnitude(actionSetRotationByUser.get(actorId) ?? '');
+        if (hasMoveToken && (rotationMagnitude === 1 || rotationMagnitude === 2) && !sameCoord(endPosition, origin)) {
+          const actionSetFacing = actionSetFacingByUser.get(actorId) ?? originState.facing ?? 0;
+          addArrowToken(endPosition, actionSetFacing, actorId, isCurrentBeat);
+        }
+      }
+    });
+
+    interactions.forEach((interaction) => {
+      if (interaction?.type !== 'burning-strike') return;
+      if (interaction.status !== 'resolved') return;
+      if (!interaction.resolution?.ignite) return;
+      if (interaction.beatIndex !== index) return;
+      const hexes = Array.isArray(interaction.attackHexes) ? interaction.attackHexes : [];
+      hexes.forEach((coord) => {
+        addFireToken(coord, interaction.actorUserId, isCurrentBeat, true);
+      });
+    });
+
+    const occupancy = new Map();
+    endState.forEach((character) => {
+      occupancy.set(coordKey(character.position), character.userId);
+    });
+
+    const nextTokens = [];
+    tokens.forEach((token) => {
+      if (token.type !== ARROW_TOKEN_TYPE || !existingArrowIds.has(token.id)) {
+        nextTokens.push(token);
+        return;
+      }
+      const forward = applyFacingToVector(LOCAL_DIRECTIONS.F, token.facing ?? 0);
+      const nextPosition = { q: token.position.q + forward.q, r: token.position.r + forward.r };
+      const targetId = occupancy.get(coordKey(nextPosition));
+      const removeToken = () => {
+        if (!isCurrentBeat) {
+          return;
+        }
+        tokenSteps.push({
+          kind: 'token',
+          tokenId: token.id,
+          tokenType: token.type,
+          facingAfter: token.facing,
+          moveDestination: nextPosition,
+          moveType: 'c',
+          movePath: buildPathFromPositions(token.position, [nextPosition], nextPosition),
+          attackOrigin: { q: token.position.q, r: token.position.r },
+          attackTargets: [{ q: nextPosition.q, r: nextPosition.r }],
+          damageChanges: [],
+          positionChanges: [],
+          hitTargets: [],
+          removeToken: true,
+        });
+      };
+
+      if (targetId) {
+        const targetState = endStateById.get(targetId);
+        if (targetState) {
+          const startPosition = { q: targetState.position.q, r: targetState.position.r };
+          const updatedDamage = (targetState.damage ?? 0) + ARROW_DAMAGE;
+          const knockbackDistance = getKnockbackDistance(updatedDamage, ARROW_KBF);
+          let finalPosition = { q: startPosition.q, r: startPosition.r };
+          const hitPath = [{ q: finalPosition.q, r: finalPosition.r }];
+          for (let step = 0; step < knockbackDistance; step += 1) {
+            const candidate = {
+              q: finalPosition.q + forward.q,
+              r: finalPosition.r + forward.r,
+            };
+            const occupant = occupancy.get(coordKey(candidate));
+            if (occupant && occupant !== targetId) break;
+            finalPosition = candidate;
+            hitPath.push({ q: finalPosition.q, r: finalPosition.r });
+          }
+          if (!sameCoord(finalPosition, targetState.position)) {
+            occupancy.delete(coordKey(targetState.position));
+            occupancy.set(coordKey(finalPosition), targetId);
+          }
+          endStateById.set(targetId, {
+            position: { q: finalPosition.q, r: finalPosition.r },
+            facing: targetState.facing,
+            damage: updatedDamage,
+          });
+          if (isCurrentBeat) {
+            tokenSteps.push({
+              kind: 'token',
+              tokenId: token.id,
+              tokenType: token.type,
+              facingAfter: token.facing,
+              moveDestination: nextPosition,
+              moveType: 'c',
+              movePath: buildPathFromPositions(token.position, [nextPosition], nextPosition),
+              attackOrigin: { q: token.position.q, r: token.position.r },
+              attackTargets: [{ q: nextPosition.q, r: nextPosition.r }],
+              damageChanges: [{ targetId, delta: ARROW_DAMAGE }],
+              positionChanges: !sameCoord(finalPosition, targetState.position)
+                ? [{ targetId, position: { q: finalPosition.q, r: finalPosition.r } }]
+                : [],
+              hitTargets: [
+                {
+                  targetId,
+                  from: { q: startPosition.q, r: startPosition.r },
+                  to: { q: finalPosition.q, r: finalPosition.r },
+                  path: hitPath,
+                },
+              ],
+              removeToken: true,
+            });
+          }
+        }
+        return;
+      }
+
+      const distance = getDistanceToLand(nextPosition, land);
+      if (distance >= ARROW_LAND_DISTANCE_LIMIT) {
+        removeToken();
+        return;
+      }
+
+      if (isCurrentBeat) {
+        tokenSteps.push({
+          kind: 'token',
+          tokenId: token.id,
+          tokenType: token.type,
+          facingAfter: token.facing,
+          moveDestination: nextPosition,
+          moveType: 'c',
+          movePath: buildPathFromPositions(token.position, [nextPosition], nextPosition),
+          attackOrigin: { q: token.position.q, r: token.position.r },
+          attackTargets: [{ q: nextPosition.q, r: nextPosition.r }],
+          damageChanges: [],
+          positionChanges: [],
+          hitTargets: [],
+          removeToken: false,
+        });
+        return;
+      }
+      nextTokens.push({
+        ...token,
+        position: { q: nextPosition.q, r: nextPosition.r },
+      });
+    });
+
+    if (!isCurrentBeat) {
+      tokens.splice(0, tokens.length, ...nextTokens);
+      applyBeatEntriesToState(beat);
+      continue;
+    }
+
+    break;
+  }
+
+  return {
+    baseTokens,
+    tokenSpawnsByActor,
+    tokenSpawnsAtEnd,
+    tokenSteps,
+  };
+};
+
 export const createTimelinePlayback = () => {
   let lastBeatIndex = null;
   let lastGameStamp = null;
@@ -769,10 +1308,12 @@ export const createTimelinePlayback = () => {
     const characters = gameState?.state?.public?.characters ?? [];
     const beat = beats[beatIndex] ?? [];
     const baseState = buildBaseState(beats, beatIndex, characters);
+    const tokenPlayback = buildTokenPlayback(gameState, beatIndex);
+    const baseTokens = tokenPlayback?.baseTokens ?? [];
 
     if (!isBeatCalculated(beat)) {
       playback = null;
-      scene = { characters: baseState, effects: [] };
+      scene = { characters: baseState, effects: [], boardTokens: baseTokens };
       status = {
         isCalculated: false,
         isAnimating: false,
@@ -785,7 +1326,7 @@ export const createTimelinePlayback = () => {
 
     const interactions = gameState?.state?.public?.customInteractions ?? [];
     const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
-    const { steps, persistentEffects } = buildActionSteps(
+    const { steps: characterSteps, persistentEffects } = buildActionSteps(
       beat,
       characters,
       baseState,
@@ -793,6 +1334,20 @@ export const createTimelinePlayback = () => {
       beatIndex,
       land,
     );
+    const steps = characterSteps.map((step) => ({
+      ...step,
+      kind: 'character',
+      tokenSpawns: tokenPlayback?.tokenSpawnsByActor?.get(step.actorId) ?? null,
+    }));
+    if (Array.isArray(tokenPlayback?.tokenSpawnsAtEnd) && tokenPlayback.tokenSpawnsAtEnd.length) {
+      steps.push({
+        kind: 'token',
+        tokenSpawns: tokenPlayback.tokenSpawnsAtEnd,
+      });
+    }
+    if (Array.isArray(tokenPlayback?.tokenSteps) && tokenPlayback.tokenSteps.length) {
+      steps.push(...tokenPlayback.tokenSteps);
+    }
     const stepDuration = steps.length ? ACTION_DURATION_MS / steps.length : 0;
     playback = {
       baseState,
@@ -801,6 +1356,7 @@ export const createTimelinePlayback = () => {
       startTime: now,
       persistentEffects,
       damagePreviewByStep: new Map(),
+      baseTokens,
     };
     status = {
       isCalculated: true,
@@ -809,14 +1365,17 @@ export const createTimelinePlayback = () => {
       elapsed: 0,
       duration: stepDuration * steps.length,
     };
-    scene = { characters: baseState, effects: [] };
+    scene = { characters: baseState, effects: [], boardTokens: baseTokens };
   };
 
   const updateScene = (now) => {
     if (!playback) return;
-    const { baseState, steps, stepDuration, startTime, persistentEffects, damagePreviewByStep } = playback;
+    const { baseState, steps, stepDuration, startTime, persistentEffects, damagePreviewByStep, baseTokens } = playback;
     if (!steps.length || stepDuration <= 0) {
-      scene = { characters: baseState, effects: [] };
+      const snapshotTokens = Array.isArray(baseTokens)
+        ? baseTokens.map((token) => ({ ...token, position: { q: token.position.q, r: token.position.r } }))
+        : [];
+      scene = { characters: baseState, effects: [], boardTokens: snapshotTokens };
       status = {
         isCalculated: true,
         isAnimating: false,
@@ -841,8 +1400,39 @@ export const createTimelinePlayback = () => {
     const stepProgress = Math.min(1, Math.max(0, (clamped - stepIndex * stepDuration) / stepDuration));
 
     let renderCharacters = baseState.map((character) => ({ ...character }));
+    const tokenState = createTokenRenderState(baseTokens);
+
+    const characterIndex = new Map();
+    renderCharacters.forEach((character, index) => {
+      characterIndex.set(character.userId, index);
+      if (character.username) characterIndex.set(character.username, index);
+    });
+
+    const applyCharacterUpdate = (characterId, patch) => {
+      const index = characterIndex.get(characterId);
+      if (index == null) return;
+      const current = renderCharacters[index];
+      const next = { ...current, ...patch };
+      if (patch.renderOffset) {
+        const base = current.renderOffset ?? { x: 0, y: 0 };
+        next.renderOffset = { x: base.x + patch.renderOffset.x, y: base.y + patch.renderOffset.y };
+      } else if (current.renderOffset) {
+        next.renderOffset = { ...current.renderOffset };
+      }
+      if (typeof patch.flashAlpha === 'number') {
+        next.flashAlpha = Math.max(current.flashAlpha ?? 0, patch.flashAlpha);
+      }
+      renderCharacters[index] = next;
+    };
     for (let i = 0; i < stepIndex; i += 1) {
-      renderCharacters = applyStep(renderCharacters, steps[i]);
+      const step = steps[i];
+      renderCharacters = applyStep(renderCharacters, step);
+      if (step?.tokenSpawns) {
+        tokenState.applyTokenSpawns(step.tokenSpawns);
+      }
+      if (step?.kind === 'token') {
+        tokenState.applyTokenStep(step);
+      }
     }
 
     const baseDamageById = new Map();
@@ -873,29 +1463,6 @@ export const createTimelinePlayback = () => {
     const arcEffects = [];
     const blockShake = new Map();
 
-    const characterIndex = new Map();
-    renderCharacters.forEach((character, index) => {
-      characterIndex.set(character.userId, index);
-      if (character.username) characterIndex.set(character.username, index);
-    });
-
-    const applyCharacterUpdate = (characterId, patch) => {
-      const index = characterIndex.get(characterId);
-      if (index == null) return;
-      const current = renderCharacters[index];
-      const next = { ...current, ...patch };
-      if (patch.renderOffset) {
-        const base = current.renderOffset ?? { x: 0, y: 0 };
-        next.renderOffset = { x: base.x + patch.renderOffset.x, y: base.y + patch.renderOffset.y };
-      } else if (current.renderOffset) {
-        next.renderOffset = { ...current.renderOffset };
-      }
-      if (typeof patch.flashAlpha === 'number') {
-        next.flashAlpha = Math.max(current.flashAlpha ?? 0, patch.flashAlpha);
-      }
-      renderCharacters[index] = next;
-    };
-
     const buildDamagePreview = (changes, baseDamageLookup) => {
       const preview = new Map();
       (changes ?? []).forEach((change) => {
@@ -920,7 +1487,11 @@ export const createTimelinePlayback = () => {
       if (currentStep.movePath?.length && currentStep.moveType) {
         const partialPath = buildPartialPath(currentStep.movePath, easedProgress);
         const currentPosition = partialPath[partialPath.length - 1];
-        applyCharacterUpdate(currentStep.actorId, { position: currentPosition });
+        if (currentStep.kind === 'token') {
+          tokenState.applyTokenUpdate(currentStep.tokenId, { position: currentPosition });
+        } else {
+          applyCharacterUpdate(currentStep.actorId, { position: currentPosition });
+        }
         trailEffects.push({
           type: 'trail',
           trailType: currentStep.moveType === 'j' ? 'jump' : 'move',
@@ -974,6 +1545,15 @@ export const createTimelinePlayback = () => {
       }
     }
 
+    if (currentStep && stepProgress >= 1) {
+      if (currentStep.tokenSpawns) {
+        tokenState.applyTokenSpawns(currentStep.tokenSpawns);
+      }
+      if (currentStep.kind === 'token') {
+        tokenState.applyTokenStep(currentStep);
+      }
+    }
+
     const previewedDamage = stepProgress < 1 ? damagePreviewByStep.get(stepIndex) : null;
     if (previewedDamage?.size) {
       previewedDamage.forEach((damageValue, targetId) => {
@@ -1003,6 +1583,7 @@ export const createTimelinePlayback = () => {
     scene = {
       characters: renderCharacters,
       effects: [...trailEffects, ...effects, ...arcEffects, ...blockEffects],
+      boardTokens: tokenState.renderTokens,
     };
   };
 

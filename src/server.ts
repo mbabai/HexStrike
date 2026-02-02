@@ -24,6 +24,7 @@ import {
   discardAbilityCards,
   isAbilityDiscardFailure,
   getDiscardRequirements,
+  getMovementHandIds,
   isActionValidationFailure,
   parseDeckDefinition,
   resolveLandRefreshes,
@@ -67,6 +68,7 @@ interface ActionSetResponse {
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const LOG_PREFIX = '[hexstrike]';
 const COMBO_ACTION = 'CO';
+const BURNING_STRIKE_CARD_ID = 'burning-strike';
 
 const normalizeActionLabel = (value: unknown): string => {
   const trimmed = `${value ?? ''}`.trim();
@@ -89,6 +91,16 @@ const buildComboAvailability = (deckStates: Map<string, DeckState>, catalog: Car
     const abilityAvailable = deckState.abilityHand.slice();
     const hasCombo = [...movementAvailable, ...abilityAvailable].some((id) => cardHasCombo(catalog.cardsById.get(id)));
     availability.set(userId, hasCombo);
+  });
+  return availability;
+};
+
+const buildBurningStrikeAvailability = (deckStates: Map<string, DeckState>) => {
+  const availability = new Map<string, boolean>();
+  deckStates.forEach((deckState, userId) => {
+    const hasBurningStrike = deckState.abilityHand.includes(BURNING_STRIKE_CARD_ID);
+    const movementAvailable = getMovementHandIds(deckState);
+    availability.set(userId, hasBurningStrike && movementAvailable.length > 0);
   });
   return availability;
 };
@@ -318,10 +330,8 @@ export function buildServer(port: number) {
     const catalog = await loadCardCatalog();
     const deckStates = new Map<string, DeckState>();
     match.players.forEach((player) => {
-      const queued = queuedDecks.get(player.userId);
-      const deck = queued ?? buildDefaultDeckDefinition(catalog);
+      const deck = queuedDecks.get(player.userId) ?? buildDefaultDeckDefinition(catalog);
       deckStates.set(player.userId, createDeckState(deck));
-      queuedDecks.delete(player.userId);
     });
     gameDeckStates.set(game.id, deckStates);
     return deckStates;
@@ -337,7 +347,8 @@ export function buildServer(port: number) {
     const deckStates = new Map<string, DeckState>();
     const characters = game.state?.public?.characters ?? [];
     characters.forEach((character) => {
-      deckStates.set(character.userId, createDeckState(buildDefaultDeckDefinition(catalog)));
+      const deck = queuedDecks.get(character.userId) ?? buildDefaultDeckDefinition(catalog);
+      deckStates.set(character.userId, createDeckState(deck));
     });
     gameDeckStates.set(game.id, deckStates);
     return deckStates;
@@ -422,16 +433,10 @@ export function buildServer(port: number) {
 
   const ensureUserCharacter = async (user: { id: string; username: string; characterId?: CharacterId }) => {
     if (user.characterId) return user;
-    const forcedCharacter =
-      user.username === 'Anonymous1'
-        ? ('murelious' as CharacterId)
-        : user.username === 'Anonymous2'
-          ? ('monkey-queen' as CharacterId)
-          : null;
     return db.upsertUser({
       id: user.id,
       username: user.username,
-      characterId: forcedCharacter ?? pickRandomCharacterId(),
+      characterId: pickRandomCharacterId(),
     });
   };
 
@@ -878,12 +883,22 @@ export function buildServer(port: number) {
         rotation: rotation ?? '',
       };
       const updatedBeats = applyActionSetToBeats(beats, characters, userId, actionList, [actionPlay]);
-      const comboAvailability = buildComboAvailability(deckStates, catalog);
-      const executed = executeBeatsWithInteractions(updatedBeats, characters, interactions, land, comboAvailability);
-      game.state.public.beats = executed.beats;
-      game.state.public.timeline = executed.beats;
-      game.state.public.characters = executed.characters;
-      game.state.public.customInteractions = executed.interactions;
+    const comboAvailability = buildComboAvailability(deckStates, catalog);
+    const burningStrikeAvailability = buildBurningStrikeAvailability(deckStates);
+    const executed = executeBeatsWithInteractions(
+      updatedBeats,
+      characters,
+      interactions,
+      land,
+      comboAvailability,
+      [],
+      burningStrikeAvailability,
+    );
+    game.state.public.beats = executed.beats;
+    game.state.public.timeline = executed.beats;
+    game.state.public.characters = executed.characters;
+    game.state.public.customInteractions = executed.interactions;
+    game.state.public.boardTokens = executed.boardTokens;
       resolveLandRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
       applyMatchOutcome(game, deckStates);
       console.log(`${LOG_PREFIX} action:set post`, {
@@ -991,11 +1006,21 @@ export function buildServer(port: number) {
       }
     });
     const comboAvailability = buildComboAvailability(deckStates, catalog);
-    const executed = executeBeatsWithInteractions(updatedBeats, characters, interactions, land, comboAvailability);
+    const burningStrikeAvailability = buildBurningStrikeAvailability(deckStates);
+    const executed = executeBeatsWithInteractions(
+      updatedBeats,
+      characters,
+      interactions,
+      land,
+      comboAvailability,
+      [],
+      burningStrikeAvailability,
+    );
     game.state.public.beats = executed.beats;
     game.state.public.timeline = executed.beats;
     game.state.public.characters = executed.characters;
     game.state.public.customInteractions = executed.interactions;
+    game.state.public.boardTokens = executed.boardTokens;
     resolveLandRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
     game.state.public.pendingActions = undefined;
     pendingActionSets.delete(game.id);
@@ -1080,6 +1105,58 @@ export function buildServer(port: number) {
       }
       interaction.status = 'resolved';
       interaction.resolution = { continue: resolvedContinue };
+    } else if (interaction.type === 'burning-strike') {
+      const rawIgnite = (body as { ignite?: unknown; burn?: unknown })?.ignite;
+      const fallbackIgnite = (body as { burn?: unknown })?.burn;
+      const resolvedIgnite =
+        typeof rawIgnite === 'boolean'
+          ? rawIgnite
+          : typeof fallbackIgnite === 'boolean'
+            ? fallbackIgnite
+            : null;
+      if (resolvedIgnite === null) {
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'invalid-burn-choice' });
+        return { ok: false, status: 400, error: 'Invalid burn choice' };
+      }
+      if (!resolvedIgnite) {
+        interaction.status = 'resolved';
+        interaction.resolution = { ignite: false };
+      } else {
+        const deckState = deckStates.get(userId);
+        if (!deckState) {
+          console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'missing-deck-state' });
+          return { ok: false, status: 500, error: 'Missing deck state for player' };
+        }
+        if (!deckState.abilityHand.includes(BURNING_STRIKE_CARD_ID)) {
+          console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'missing-burning-strike' });
+          return { ok: false, status: 400, error: 'Burning Strike is not in hand.' };
+        }
+        const { movementDiscardCount } = getDiscardRequirements(deckState, 1);
+        const movementCardIds =
+          (body as { movementCardIds?: unknown; movementIds?: unknown; movementCardIDs?: unknown })?.movementCardIds ??
+          (body as { movementIds?: unknown })?.movementIds ??
+          (body as { movementCardIDs?: unknown })?.movementCardIDs ??
+          [];
+        const movementList = Array.isArray(movementCardIds) ? movementCardIds : [];
+        if (movementDiscardCount !== movementList.length) {
+          console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'discard-count-mismatch' });
+          return { ok: false, status: 400, error: 'Incorrect number of movement cards selected for discard.' };
+        }
+        const discardResult: AbilityDiscardResult = discardAbilityCards(deckState, [BURNING_STRIKE_CARD_ID], {
+          discardMovementIds: movementList,
+          mode: 'strict',
+        });
+        if (isAbilityDiscardFailure(discardResult)) {
+          console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: discardResult.error.code });
+          return { ok: false, status: 400, error: discardResult.error.message, code: discardResult.error.code };
+        }
+        interaction.status = 'resolved';
+        interaction.resolution = {
+          ignite: true,
+          movementCardIds: discardResult.movement.discarded,
+          abilityCardIds: discardResult.discarded,
+        };
+      }
     } else if (interaction.type === 'discard') {
       const deckState = deckStates.get(userId);
       if (!deckState) {
@@ -1128,11 +1205,21 @@ export function buildServer(port: number) {
       return { ok: false, status: 400, error: 'Unsupported interaction type' };
     }
 
-    const executed = executeBeatsWithInteractions(beats, characters, interactions, land, comboAvailability);
+    const burningStrikeAvailability = buildBurningStrikeAvailability(deckStates);
+    const executed = executeBeatsWithInteractions(
+      beats,
+      characters,
+      interactions,
+      land,
+      comboAvailability,
+      [],
+      burningStrikeAvailability,
+    );
     game.state.public.beats = executed.beats;
     game.state.public.timeline = executed.beats;
     game.state.public.characters = executed.characters;
     game.state.public.customInteractions = executed.interactions;
+    game.state.public.boardTokens = executed.boardTokens;
     resolveLandRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
     applyMatchOutcome(game, deckStates);
     console.log(`${LOG_PREFIX} interaction:resolve post`, {

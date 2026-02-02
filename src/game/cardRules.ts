@@ -217,10 +217,15 @@ export const parseDeckDefinition = (
   return { deck: { movement, ability }, errors };
 };
 
-export const buildDefaultDeckDefinition = (catalog: CardCatalog): DeckDefinition => ({
-  movement: catalog.movement.map((card) => card.id),
-  ability: catalog.ability.map((card) => card.id),
-});
+export const buildDefaultDeckDefinition = (catalog: CardCatalog): DeckDefinition => {
+  const deck = catalog?.decks?.[0];
+  if (deck?.movement?.length && deck?.ability?.length) {
+    return { movement: [...deck.movement], ability: [...deck.ability] };
+  }
+  const movement = catalog?.movement?.slice(0, 4).map((card) => card.id) ?? [];
+  const ability = catalog?.ability?.slice(0, 12).map((card) => card.id) ?? [];
+  return { movement, ability };
+};
 
 export const createDeckState = (deck: DeckDefinition): DeckState => {
   const movement = Array.isArray(deck.movement) ? deck.movement.map((id) => `${id}`) : [];

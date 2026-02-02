@@ -1,4 +1,4 @@
-import { BeatEntry, CustomInteraction, HexCoord, PublicCharacter } from '../types';
+import { BeatEntry, BoardToken, CustomInteraction, HexCoord, PublicCharacter } from '../types';
 import {
   getActiveHitDiscardRule,
   getPassiveBlockDiscardCount,
@@ -17,6 +17,13 @@ const COMBO_ACTION = 'CO';
 const DAMAGE_ICON_ACTION = 'DamageIcon';
 const KNOCKBACK_DIVISOR = 10;
 const THROW_DISTANCE = 2;
+const FIRE_HEX_TOKEN_TYPE = 'fire-hex';
+const ARROW_TOKEN_TYPE = 'arrow';
+const ARROW_DAMAGE = 4;
+const ARROW_KBF = 1;
+const ARROW_LAND_DISTANCE_LIMIT = 5;
+const BOW_SHOT_CARD_ID = 'bow-shot';
+const BURNING_STRIKE_CARD_ID = 'burning-strike';
 // Keep in sync with cardRules/pendingActionPreview throw detection.
 const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
 const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
@@ -62,6 +69,18 @@ const parseRotationDegrees = (rotation: string) => {
   return Number.isFinite(steps) ? direction * steps * 60 : 0;
 };
 
+const getRotationMagnitude = (rotationLabel: string): number | null => {
+  const trimmed = `${rotationLabel ?? ''}`.trim().toUpperCase();
+  if (!trimmed) return null;
+  if (trimmed === '0') return 0;
+  if (trimmed === '3') return 3;
+  if (trimmed.startsWith('L') || trimmed.startsWith('R')) {
+    const steps = Number(trimmed.slice(1));
+    return Number.isFinite(steps) ? steps : null;
+  }
+  return null;
+};
+
 const rotateAxialCW = (coord: { q: number; r: number }) => ({ q: -coord.r, r: coord.q + coord.r });
 
 const rotateAxial = (coord: { q: number; r: number }, steps: number) => {
@@ -87,6 +106,27 @@ const isCoordOnLand = (coord: { q: number; r: number }, land: HexCoord[]) => {
   if (!coord || !Array.isArray(land) || !land.length) return false;
   const key = coordKey(coord);
   return land.some((tile) => coordKey(tile) === key);
+};
+
+const axialDistance = (a: { q: number; r: number }, b: { q: number; r: number }): number => {
+  const aq = Math.round(a.q);
+  const ar = Math.round(a.r);
+  const bq = Math.round(b.q);
+  const br = Math.round(b.r);
+  const dq = aq - bq;
+  const dr = ar - br;
+  const ds = (aq + ar) - (bq + br);
+  return (Math.abs(dq) + Math.abs(dr) + Math.abs(ds)) / 2;
+};
+
+const getDistanceToLand = (position: { q: number; r: number }, land: HexCoord[]): number => {
+  if (!Array.isArray(land) || !land.length) return Number.POSITIVE_INFINITY;
+  let min = Number.POSITIVE_INFINITY;
+  land.forEach((tile) => {
+    const distance = axialDistance(position, tile);
+    if (distance < min) min = distance;
+  });
+  return min;
 };
 
 const isForwardScale = (value: number) => Number.isFinite(value) && Math.round(value) === value && value > 0;
@@ -363,8 +403,12 @@ const buildEntryForCharacter = (
   return next;
 };
 
-export const executeBeats = (beats: BeatEntry[][], characters: PublicCharacter[], land?: HexCoord[]) =>
-  executeBeatsWithInteractions(beats, characters, [], land);
+export const executeBeats = (
+  beats: BeatEntry[][],
+  characters: PublicCharacter[],
+  land?: HexCoord[],
+  initialTokens: BoardToken[] = [],
+) => executeBeatsWithInteractions(beats, characters, [], land, undefined, initialTokens);
 
 export const executeBeatsWithInteractions = (
   beats: BeatEntry[][],
@@ -372,13 +416,35 @@ export const executeBeatsWithInteractions = (
   interactions: CustomInteraction[] = [],
   land: HexCoord[] = DEFAULT_LAND_HEXES,
   comboAvailability?: Map<string, boolean>,
-): { beats: BeatEntry[][]; characters: PublicCharacter[]; lastCalculated: number; interactions: CustomInteraction[] } => {
+  initialTokens: BoardToken[] = [],
+  burningStrikeAvailability?: Map<string, boolean>,
+): {
+  beats: BeatEntry[][];
+  characters: PublicCharacter[];
+  lastCalculated: number;
+  interactions: CustomInteraction[];
+  boardTokens: BoardToken[];
+} => {
   const landTiles = Array.isArray(land) && land.length ? land : DEFAULT_LAND_HEXES;
   const comboAvailabilityByUser = comboAvailability ?? new Map<string, boolean>();
+  const burningStrikeAvailabilityByUser = burningStrikeAvailability ?? new Map<string, boolean>();
   const resolvedIndex = getTimelineResolvedIndex(beats);
   const isHistoryIndex = (index: number) => resolvedIndex >= 0 && index <= resolvedIndex;
   const resolveTerrain = (position: { q: number; r: number }) =>
     (isCoordOnLand(position, landTiles) ? 'land' : 'abyss') as 'land' | 'abyss';
+  const boardTokens: BoardToken[] = Array.isArray(initialTokens)
+    ? initialTokens.map((token) => ({
+      ...token,
+      position: { q: token.position.q, r: token.position.r },
+    }))
+    : [];
+  let tokenCounter = boardTokens.length;
+  const fireTokenKeys = new Set<string>();
+  boardTokens.forEach((token) => {
+    if (token.type === FIRE_HEX_TOKEN_TYPE) {
+      fireTokenKeys.add(coordKey(token.position));
+    }
+  });
   const userLookup = new Map<string, string>();
   characters.forEach((character) => {
     userLookup.set(character.userId, character.userId);
@@ -424,6 +490,31 @@ export const executeBeatsWithInteractions = (
     characterById.set(character.userId, character);
     characterById.set(character.username, character);
   });
+
+  const nextTokenId = (type: string) => `${type}:${tokenCounter++}`;
+
+  const addFireHexToken = (coord: { q: number; r: number }, ownerId?: string) => {
+    const key = coordKey(coord);
+    if (fireTokenKeys.has(key)) return;
+    fireTokenKeys.add(key);
+    boardTokens.push({
+      id: nextTokenId(FIRE_HEX_TOKEN_TYPE),
+      type: FIRE_HEX_TOKEN_TYPE,
+      position: { q: coord.q, r: coord.r },
+      facing: 0,
+      ownerUserId: ownerId,
+    });
+  };
+
+  const addArrowToken = (coord: { q: number; r: number }, facing: number, ownerId?: string) => {
+    boardTokens.push({
+      id: nextTokenId(ARROW_TOKEN_TYPE),
+      type: ARROW_TOKEN_TYPE,
+      position: { q: coord.q, r: coord.r },
+      facing: normalizeDegrees(facing),
+      ownerUserId: ownerId,
+    });
+  };
 
   const getRosterIndex = (entry: BeatEntry) => {
     const key = resolveEntryKey(entry);
@@ -672,6 +763,8 @@ export const executeBeatsWithInteractions = (
   const comboStates = new Map<string, { coIndex: number; hit: boolean; cardId: string; throwInteraction: boolean }>();
   const lastActionByUser = new Map<string, string>();
   const cardStartTerrainByUser = new Map<string, 'land' | 'abyss'>();
+  const actionSetFacingByUser = new Map<string, number>();
+  const actionSetRotationByUser = new Map<string, string>();
 
   const findNextComboIndex = (character: PublicCharacter, startIndex: number) => {
     for (let i = startIndex; i < normalizedBeats.length; i += 1) {
@@ -732,6 +825,9 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
       break;
     }
     const beat = normalizedBeats[index];
+    const existingArrowIds = new Set(
+      boardTokens.filter((token) => token.type === ARROW_TOKEN_TYPE).map((token) => token.id),
+    );
     const entriesByUser = new Map<string, BeatEntry>();
     beat.forEach((entry) => {
       const key = resolveEntryKey(entry);
@@ -770,6 +866,8 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
       if (action === DEFAULT_ACTION) {
         comboStates.delete(actorId);
         cardStartTerrainByUser.delete(actorId);
+        actionSetFacingByUser.delete(actorId);
+        actionSetRotationByUser.delete(actorId);
         if (entry && 'cardStartTerrain' in entry) {
           delete entry.cardStartTerrain;
         }
@@ -778,6 +876,19 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
           const actorState = state.get(actorId);
           if (actorState) {
             cardStartTerrainByUser.set(actorId, resolveTerrain(actorState.position));
+          }
+        }
+        if (comboStart || !actionSetFacingByUser.has(actorId)) {
+          const actorState = state.get(actorId);
+          if (actorState) {
+            actionSetFacingByUser.set(actorId, actorState.facing);
+          }
+        }
+        if (comboStart || !actionSetRotationByUser.has(actorId)) {
+          const rotation = `${entry?.rotation ?? ''}`.trim();
+          const rotationSource = `${entry?.rotationSource ?? ''}`.trim();
+          if (rotation && (rotationSource === 'selected' || !rotationSource)) {
+            actionSetRotationByUser.set(actorId, rotation);
           }
         }
         const startTerrain = cardStartTerrainByUser.get(actorId);
@@ -911,17 +1022,42 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
       })
       .filter((entry) => entry.action !== DEFAULT_ACTION);
 
+    const burningStrikeBeatData = new Map<string, { attackedHexes: HexCoord[]; hasHit: boolean }>();
+    const recordBurningStrikeAttack = (actorId: string, coord: { q: number; r: number }) => {
+      const current = burningStrikeBeatData.get(actorId) ?? { attackedHexes: [], hasHit: false };
+      current.attackedHexes.push({ q: coord.q, r: coord.r });
+      burningStrikeBeatData.set(actorId, current);
+    };
+    const recordBurningStrikeHit = (actorId: string) => {
+      const current = burningStrikeBeatData.get(actorId) ?? { attackedHexes: [], hasHit: false };
+      current.hasHit = true;
+      burningStrikeBeatData.set(actorId, current);
+    };
+
     ordered.forEach((entry) => {
       const actorId = userLookup.get(resolveEntryKey(entry));
       if (!actorId) return;
       if (disabledActors.has(actorId)) return;
       const actorState = state.get(actorId);
       if (!actorState) return;
+      const actionSetFacing = actionSetFacingByUser.get(actorId) ?? actorState.facing;
+      const actionSetRotation = actionSetRotationByUser.get(actorId) ?? '';
+      const rotationMagnitude = getRotationMagnitude(actionSetRotation);
       const comboState = comboStates.get(actorId);
       if (comboState && isEntryThrow(entry)) {
         comboState.throwInteraction = true;
       }
       const origin = { q: actorState.position.q, r: actorState.position.r };
+      const actionLabel = normalizeActionLabel(entry.action ?? '');
+
+      if (entry.cardId === BOW_SHOT_CARD_ID && actionLabel.toUpperCase() === 'X1') {
+        const forward = applyFacingToVector(LOCAL_DIRECTIONS.F, actorState.facing);
+        addArrowToken(
+          { q: origin.q + forward.q, r: origin.r + forward.r },
+          actorState.facing,
+          actorId,
+        );
+      }
 
       const startDiscard = getPassiveStartDiscardCount(entry.passiveCardId);
       if (startDiscard && entry.action !== DEFAULT_ACTION && isActionSetStart(entry)) {
@@ -1003,6 +1139,7 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
         const isBlocked = directionIndex != null && blockMap.get(targetKey)?.has(directionIndex);
 
         if (token.type === 'a' || token.type === 'c') {
+          recordBurningStrikeAttack(actorId, destination);
           const isThrow = isEntryThrow(entry);
           const comboCardId = entry.cardId ? `${entry.cardId}` : '';
           let activeComboState = comboState;
@@ -1027,6 +1164,7 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
                 const resolvedDirection = getResolvedDirectionIndex(existing);
                 if (existing?.status === 'resolved' && resolvedDirection != null) {
                   targetState.damage += entryDamage;
+                  recordBurningStrikeHit(actorId);
                   const knockbackDirection = AXIAL_DIRECTIONS[resolvedDirection];
                   let knockedSteps = 0;
                   if (knockbackDirection && THROW_DISTANCE > 0) {
@@ -1082,6 +1220,10 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
                 }
 
                 targetState.damage += entryDamage;
+                if (entry.cardId === BURNING_STRIKE_CARD_ID && isBracketedAction(entry.action ?? '') && token.type === 'a') {
+                  addFireHexToken(destination, actorId);
+                }
+                recordBurningStrikeHit(actorId);
                 const usesGrapplingHookPassive = hasGrapplingHookPassive && token.type === 'a';
                 const attackDirection = getKnockbackDirection(origin, destination, lastStep);
                 const { knockbackDirection } = applyGrapplingHookPassiveFlip(
@@ -1125,6 +1267,8 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
                 disabledActors.add(targetId);
               }
             }
+          } else if (entry.cardId === BURNING_STRIKE_CARD_ID && isBracketedAction(entry.action ?? '') && token.type === 'a') {
+            addFireHexToken(destination, actorId);
           }
         }
 
@@ -1153,6 +1297,14 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
             actorState.position = { q: finalPosition.q, r: finalPosition.r };
             occupancy.set(coordKey(actorState.position), actorId);
           }
+          if (token.type === 'm' && !sameCoord(finalPosition, origin)) {
+            if (entry.passiveCardId === BURNING_STRIKE_CARD_ID) {
+              addFireHexToken(origin, actorId);
+            }
+            if (entry.passiveCardId === BOW_SHOT_CARD_ID && (rotationMagnitude === 1 || rotationMagnitude === 2)) {
+              addArrowToken(finalPosition, actionSetFacing, actorId);
+            }
+          }
         }
 
         if (token.type === 'j') {
@@ -1166,6 +1318,112 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
 
       executedActors.add(actorId);
     });
+
+    updatedInteractions.forEach((interaction) => {
+      if (interaction.type !== 'burning-strike') return;
+      if (interaction.status !== 'resolved') return;
+      if (interaction.beatIndex !== index) return;
+      if (!interaction.resolution?.ignite) return;
+      const hexes = Array.isArray(interaction.attackHexes) ? interaction.attackHexes : [];
+      hexes.forEach((coord) => {
+        if (!coord) return;
+        addFireHexToken(coord, interaction.actorUserId);
+      });
+    });
+
+    if (burningStrikeBeatData.size && burningStrikeAvailabilityByUser.size) {
+      burningStrikeBeatData.forEach((data, actorId) => {
+        if (!data.hasHit) return;
+        if (!burningStrikeAvailabilityByUser.get(actorId)) return;
+        const interactionId = buildInteractionId('burning-strike', index, actorId, actorId);
+        if (interactionById.has(interactionId)) return;
+        const uniqueHexes: HexCoord[] = [];
+        const seen = new Set<string>();
+        data.attackedHexes.forEach((coord) => {
+          const key = coordKey(coord);
+          if (seen.has(key)) return;
+          seen.add(key);
+          uniqueHexes.push({ q: coord.q, r: coord.r });
+        });
+        const created: CustomInteraction = {
+          id: interactionId,
+          type: 'burning-strike',
+          beatIndex: index,
+          actorUserId: actorId,
+          targetUserId: actorId,
+          status: 'pending',
+          discardCount: 1,
+          attackHexes: uniqueHexes,
+          abilityCardId: BURNING_STRIKE_CARD_ID,
+        };
+        updatedInteractions.push(created);
+        interactionById.set(interactionId, created);
+        if (haltIndex == null || index < haltIndex) {
+          haltIndex = index;
+        }
+      });
+    }
+
+    if (existingArrowIds.size) {
+      const nextTokens: BoardToken[] = [];
+      boardTokens.forEach((token) => {
+        if (token.type !== ARROW_TOKEN_TYPE) {
+          nextTokens.push(token);
+          return;
+        }
+        if (!existingArrowIds.has(token.id)) {
+          nextTokens.push(token);
+          return;
+        }
+        const forward = applyFacingToVector(LOCAL_DIRECTIONS.F, token.facing);
+        const nextPosition = { q: token.position.q + forward.q, r: token.position.r + forward.r };
+        const targetId = occupancy.get(coordKey(nextPosition));
+        if (targetId) {
+          const targetState = state.get(targetId);
+          if (targetState) {
+            targetState.damage += ARROW_DAMAGE;
+            const knockbackDistance = getKnockbackDistance(targetState.damage, ARROW_KBF);
+            let knockedSteps = 0;
+            if (knockbackDistance > 0) {
+              let finalPosition = { ...targetState.position };
+              for (let step = 0; step < knockbackDistance; step += 1) {
+                const candidate = {
+                  q: finalPosition.q + forward.q,
+                  r: finalPosition.r + forward.r,
+                };
+                const occupant = occupancy.get(coordKey(candidate));
+                if (occupant && occupant !== targetId) break;
+                finalPosition = candidate;
+                knockedSteps += 1;
+              }
+              if (!sameCoord(finalPosition, targetState.position)) {
+                occupancy.delete(coordKey(targetState.position));
+                targetState.position = { q: finalPosition.q, r: finalPosition.r };
+                occupancy.set(coordKey(targetState.position), targetId);
+              }
+            }
+            applyHitTimeline(targetId, index, targetState, knockedSteps, true);
+            recordHitConsequence(targetId, index, targetState, ARROW_DAMAGE, knockedSteps);
+          }
+          return;
+        }
+        const distance = getDistanceToLand(nextPosition, landTiles);
+        if (distance >= ARROW_LAND_DISTANCE_LIMIT) {
+          return;
+        }
+        nextTokens.push({ ...token, position: { q: nextPosition.q, r: nextPosition.r } });
+      });
+      boardTokens.splice(0, boardTokens.length, ...nextTokens);
+    }
+
+    if (fireTokenKeys.size) {
+      state.forEach((targetState, targetId) => {
+        const key = coordKey(targetState.position);
+        if (!fireTokenKeys.has(key)) return;
+        targetState.damage += 1;
+        recordHitConsequence(targetId, index, targetState, 1, 0);
+      });
+    }
 
     if (discardQueue.size) {
       discardQueue.forEach((count, targetId) => {
@@ -1223,5 +1481,9 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
     characters: updatedCharacters,
     lastCalculated,
     interactions: updatedInteractions,
+    boardTokens: boardTokens.map((token) => ({
+      ...token,
+      position: { q: token.position.q, r: token.position.r },
+    })),
   };
 };
