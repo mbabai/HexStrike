@@ -505,7 +505,7 @@
       "rotations": "*",
       "damage": 0,
       "kbf": 0,
-      "activeText": "{X1}: Draw 2.\n\nIf Iron Will is in your hand when you are hit, you can discard it to reduce the KBF to 0.",
+      "activeText": "{X1}: Draw 3.\n\nIf Iron Will is in your hand when you are hit, you can discard it to reduce the KBF to 0.",
       "passiveText": "If you are hit while this movement card is active, reduce the KBF by 1 (min 0)."
     },
     {
