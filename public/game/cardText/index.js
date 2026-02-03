@@ -1,4 +1,5 @@
 import { applyActiveMovementCardText } from './activeMovement.js';
+import { applyPassiveAbilityCardText } from './passiveAbility.js';
 import { applyPassiveMovementCardText } from './passiveMovement.js';
 
 export const applyActiveCardTextEffects = (actionList, activeCard, rotationLabel) => {
@@ -13,6 +14,9 @@ export const applyPassiveCardTextEffects = (actionList, activeCard, passiveCard,
   if (!passiveCard) return actionList;
   if (passiveCard.type === 'movement') {
     return applyPassiveMovementCardText(actionList, activeCard, passiveCard, rotationLabel);
+  }
+  if (passiveCard.type === 'ability') {
+    return applyPassiveAbilityCardText(actionList, activeCard, passiveCard, rotationLabel);
   }
   return actionList;
 };

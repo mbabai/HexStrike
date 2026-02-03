@@ -1,5 +1,5 @@
 {
-    "generatedAt": "2026-01-30",
+    "generatedAt": "2026-02-03",
     "movement": {
         "advance": {
             "active": false,
@@ -27,11 +27,11 @@
         },
         "leap": {
             "active": false,
-            "passive": false
+            "passive": true
         },
         "ninja-roll": {
             "active": true,
-            "passive": false
+            "passive": true
         },
         "step": {
             "active": false,
@@ -61,15 +61,15 @@
         },
         "chase": {
             "active": false,
-            "passive": false
+            "passive": true
         },
         "counter-attack": {
             "active": false,
-            "passive": false
+            "passive": true
         },
         "cross-slash": {
             "active": false,
-            "passive": false
+            "passive": true
         },
         "double-daggers": {
             "active": false,
@@ -85,7 +85,7 @@
         },
         "flying-knee": {
             "active": false,
-            "passive": false
+            "passive": true
         },
         "fumikomi": {
             "active": false,
@@ -97,7 +97,7 @@
         },
         "guard": {
             "active": false,
-            "passive": false
+            "passive": true
         },
         "hammer": {
             "active": false,
@@ -112,7 +112,7 @@
             "passive": false
         },
         "hip-throw": {
-            "active": false,
+            "active": true,
             "passive": false
         },
         "iron-will": {
@@ -121,7 +121,7 @@
         },
         "jab": {
             "active": false,
-            "passive": false
+            "passive": true
         },
         "long-thrust": {
             "active": false,
@@ -133,7 +133,7 @@
         },
         "push-kick": {
             "active": false,
-            "passive": false
+            "passive": true
         },
         "reflex-dodge": {
             "active": false,
@@ -149,11 +149,11 @@
         },
         "smash-attack": {
             "active": false,
-            "passive": false
+            "passive": true
         },
         "smoke-bomb": {
             "active": false,
-            "passive": false
+            "passive": true
         },
         "spike": {
             "active": true,
@@ -172,7 +172,7 @@
             "passive": true
         },
         "tackle": {
-            "active": false,
+            "active": true,
             "passive": false
         },
         "trip": {
@@ -185,7 +185,7 @@
         },
         "whirlwind": {
             "active": false,
-            "passive": false
+            "passive": true
         }
     }
 }

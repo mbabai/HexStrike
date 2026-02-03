@@ -1,5 +1,6 @@
 import { ActionListItem, CardDefinition } from '../../types';
 import { applyActiveMovementCardText } from './activeMovement';
+import { applyPassiveAbilityCardText } from './passiveAbility';
 import { applyPassiveMovementCardText } from './passiveMovement';
 
 export const applyActiveCardTextEffects = (
@@ -23,6 +24,9 @@ export const applyPassiveCardTextEffects = (
   if (!passiveCard) return actionList;
   if (passiveCard.type === 'movement') {
     return applyPassiveMovementCardText(actionList, activeCard, passiveCard, rotationLabel);
+  }
+  if (passiveCard.type === 'ability') {
+    return applyPassiveAbilityCardText(actionList, activeCard, passiveCard, rotationLabel);
   }
   return actionList;
 };

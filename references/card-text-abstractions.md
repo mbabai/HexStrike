@@ -24,6 +24,10 @@
 - Card text that modifies the action list (add/remove/replace) should use the shared helpers in
   `src/game/cardText/actionListTransforms.ts` and `public/game/cardText/actionListTransforms.js` to keep behavior precise and mirrored.
 
+## Action icon assets
+- Any new action token label (ex: `2c`, `B2m`, `B3j`) must have a matching PNG in `public/images/{token}.png` or the HUD/icon renderer will show the empty fallback.
+- Generate missing icons with `scripts/hex_diagrams_creator.py` (default output is `public/images`).
+
 ## Discard interactions
 - Discard effects queue a `customInteractions` entry of type `discard` with `discardCount`; the UI pauses on that beat and prompts the affected player to discard.
 - Discard selection follows hand-size rules: discard X ability cards, then discard movement cards to match the post-discard target size (see `getDiscardRequirements` in `src/game/handRules.ts`).
