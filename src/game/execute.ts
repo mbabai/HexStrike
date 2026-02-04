@@ -9,6 +9,7 @@ import {
 } from './cardText/discardEffects';
 import { getTimelineResolvedIndex } from './beatTimeline';
 import { DEFAULT_LAND_HEXES } from './hexGrid';
+import { getHandTriggerDefinition } from './handTriggers';
 
 const DEFAULT_ACTION = 'E';
 const LOG_PREFIX = '[execute]';
@@ -24,6 +25,9 @@ const ARROW_KBF = 1;
 const ARROW_LAND_DISTANCE_LIMIT = 5;
 const BOW_SHOT_CARD_ID = 'bow-shot';
 const BURNING_STRIKE_CARD_ID = 'burning-strike';
+const SINKING_SHOT_CARD_ID = 'sinking-shot';
+const VENGEANCE_CARD_ID = 'vengeance';
+const IRON_WILL_CARD_ID = 'iron-will';
 // Keep in sync with cardRules/pendingActionPreview throw detection.
 const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
 const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
@@ -335,6 +339,28 @@ const applyGrapplingHookPassiveFlip = (
 const buildInteractionId = (type: string, beatIndex: number, actorId: string, targetId: string) =>
   `${type}:${beatIndex}:${actorId}:${targetId}`;
 
+const buildHandTriggerKey = (cardId: string, beatIndex: number, actorId: string) =>
+  `${cardId}:${beatIndex}:${actorId}`;
+
+const buildHandTriggerInteractionId = (
+  cardId: string,
+  beatIndex: number,
+  actorId: string,
+  targetId: string,
+  sourceId?: string,
+) => `hand-trigger:${cardId}:${beatIndex}:${actorId}:${sourceId ?? targetId}`;
+
+const getHandTriggerCardId = (interaction: CustomInteraction) => interaction.cardId ?? interaction.abilityCardId ?? '';
+
+const getHandTriggerUse = (interaction: CustomInteraction | undefined) => {
+  if (!interaction || interaction.status !== 'resolved') return false;
+  const use = interaction.resolution?.use;
+  if (typeof use === 'boolean') return use;
+  const ignite = interaction.resolution?.ignite;
+  if (typeof ignite === 'boolean') return ignite;
+  return false;
+};
+
 const getResolvedDirectionIndex = (interaction: CustomInteraction | undefined) => {
   const direction = interaction?.resolution?.directionIndex;
   if (!Number.isFinite(direction)) return null;
@@ -417,7 +443,7 @@ export const executeBeatsWithInteractions = (
   land: HexCoord[] = DEFAULT_LAND_HEXES,
   comboAvailability?: Map<string, boolean>,
   initialTokens: BoardToken[] = [],
-  burningStrikeAvailability?: Map<string, boolean>,
+  handTriggerAvailability?: Map<string, Set<string>>,
 ): {
   beats: BeatEntry[][];
   characters: PublicCharacter[];
@@ -427,7 +453,9 @@ export const executeBeatsWithInteractions = (
 } => {
   const landTiles = Array.isArray(land) && land.length ? land : DEFAULT_LAND_HEXES;
   const comboAvailabilityByUser = comboAvailability ?? new Map<string, boolean>();
-  const burningStrikeAvailabilityByUser = burningStrikeAvailability ?? new Map<string, boolean>();
+  const handTriggerAvailabilityByUser = handTriggerAvailability ?? new Map<string, Set<string>>();
+  const hasHandTriggerCard = (userId: string, cardId: string) =>
+    Boolean(handTriggerAvailabilityByUser.get(userId)?.has(cardId));
   const resolvedIndex = getTimelineResolvedIndex(beats);
   const isHistoryIndex = (index: number) => resolvedIndex >= 0 && index <= resolvedIndex;
   const resolveTerrain = (position: { q: number; r: number }) =>
@@ -438,8 +466,15 @@ export const executeBeatsWithInteractions = (
       position: { q: token.position.q, r: token.position.r },
     }))
     : [];
+  for (let i = boardTokens.length - 1; i >= 0; i -= 1) {
+    const token = boardTokens[i];
+    if (token.type === FIRE_HEX_TOKEN_TYPE && resolveTerrain(token.position) === 'abyss') {
+      boardTokens.splice(i, 1);
+    }
+  }
   let tokenCounter = boardTokens.length;
   const fireTokenKeys = new Set<string>();
+  let ephemeralFireKeys = new Set<string>();
   boardTokens.forEach((token) => {
     if (token.type === FIRE_HEX_TOKEN_TYPE) {
       fireTokenKeys.add(coordKey(token.position));
@@ -477,11 +512,19 @@ export const executeBeatsWithInteractions = (
     resolution: interaction.resolution ? { ...interaction.resolution } : undefined,
   }));
   const interactionById = new Map<string, CustomInteraction>();
+  const handTriggerKeys = new Set<string>();
   const pendingIndices: number[] = [];
   updatedInteractions.forEach((interaction) => {
     interactionById.set(interaction.id, interaction);
     if (interaction.status === 'pending' && Number.isFinite(interaction.beatIndex)) {
       pendingIndices.push(interaction.beatIndex);
+    }
+    if (interaction.type === 'hand-trigger') {
+      const cardId = getHandTriggerCardId(interaction);
+      const beatIndex = Number.isFinite(interaction.beatIndex) ? Math.round(interaction.beatIndex) : null;
+      if (cardId && beatIndex != null && interaction.actorUserId) {
+        handTriggerKeys.add(buildHandTriggerKey(cardId, beatIndex, interaction.actorUserId));
+      }
     }
   });
   let haltIndex = pendingIndices.length ? Math.min(...pendingIndices) : null;
@@ -495,15 +538,21 @@ export const executeBeatsWithInteractions = (
 
   const addFireHexToken = (coord: { q: number; r: number }, ownerId?: string) => {
     const key = coordKey(coord);
-    if (fireTokenKeys.has(key)) return;
-    fireTokenKeys.add(key);
-    boardTokens.push({
-      id: nextTokenId(FIRE_HEX_TOKEN_TYPE),
-      type: FIRE_HEX_TOKEN_TYPE,
-      position: { q: coord.q, r: coord.r },
-      facing: 0,
-      ownerUserId: ownerId,
-    });
+    const onLand = resolveTerrain(coord) === 'land';
+    if (onLand) {
+      if (fireTokenKeys.has(key)) return;
+      fireTokenKeys.add(key);
+      boardTokens.push({
+        id: nextTokenId(FIRE_HEX_TOKEN_TYPE),
+        type: FIRE_HEX_TOKEN_TYPE,
+        position: { q: coord.q, r: coord.r },
+        facing: 0,
+        ownerUserId: ownerId,
+      });
+      return;
+    }
+    if (ephemeralFireKeys.has(key)) return;
+    ephemeralFireKeys.add(key);
   };
 
   const addArrowToken = (coord: { q: number; r: number }, facing: number, ownerId?: string) => {
@@ -825,6 +874,7 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
       break;
     }
     const beat = normalizedBeats[index];
+    ephemeralFireKeys = new Set<string>();
     const existingArrowIds = new Set(
       boardTokens.filter((token) => token.type === ARROW_TOKEN_TYPE).map((token) => token.id),
     );
@@ -992,13 +1042,176 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
     });
     const blockMap = new Map<string, Set<number>>();
     const discardQueue = new Map<string, number>();
+    const forcedDiscardQueue = new Map<string, number>();
     const disabledActors = new Set<string>();
     const executedActors = new Set<string>();
+    const resolveArrowHit = (targetId: string, ownerId: string, forward: { q: number; r: number }) => {
+      const targetState = state.get(targetId);
+      if (!targetState) return;
+      const blockDirection = getDirectionIndex({ q: -forward.q, r: -forward.r });
+      if (blockDirection != null) {
+        const targetKey = coordKey(targetState.position);
+        if (blockMap.get(targetKey)?.has(blockDirection)) {
+          return;
+        }
+      }
+      const safeOwnerId = ownerId ?? '';
+      if (
+        safeOwnerId &&
+        safeOwnerId !== targetId &&
+        hasHandTriggerCard(safeOwnerId, SINKING_SHOT_CARD_ID) &&
+        !handTriggerKeys.has(buildHandTriggerKey(SINKING_SHOT_CARD_ID, index, safeOwnerId)) &&
+        !isHistoryIndex(index)
+      ) {
+        const definition = getHandTriggerDefinition(SINKING_SHOT_CARD_ID);
+        const interactionId = buildHandTriggerInteractionId(SINKING_SHOT_CARD_ID, index, safeOwnerId, targetId);
+        if (!interactionById.has(interactionId)) {
+          const created: CustomInteraction = {
+            id: interactionId,
+            type: 'hand-trigger',
+            beatIndex: index,
+            actorUserId: safeOwnerId,
+            targetUserId: targetId,
+            sourceUserId: safeOwnerId,
+            status: 'pending',
+            discardCount: definition?.discardCount ?? 1,
+            cardId: definition?.cardId ?? SINKING_SHOT_CARD_ID,
+            cardType: definition?.cardType ?? 'ability',
+            effect: definition?.effect ?? 'sinking-shot',
+          };
+          updatedInteractions.push(created);
+          interactionById.set(interactionId, created);
+          handTriggerKeys.add(buildHandTriggerKey(SINKING_SHOT_CARD_ID, index, safeOwnerId));
+          if (haltIndex == null || index < haltIndex) {
+            haltIndex = index;
+          }
+        }
+      }
+
+      const ironWillKey = buildHandTriggerKey(IRON_WILL_CARD_ID, index, targetId);
+      const ironWillInteractionId = buildHandTriggerInteractionId(
+        IRON_WILL_CARD_ID,
+        index,
+        targetId,
+        targetId,
+        safeOwnerId || targetId,
+      );
+      const ironWillInteraction = interactionById.get(ironWillInteractionId);
+      if (
+        !isHistoryIndex(index) &&
+        hasHandTriggerCard(targetId, IRON_WILL_CARD_ID) &&
+        !ironWillInteraction &&
+        !handTriggerKeys.has(ironWillKey)
+      ) {
+        const definition = getHandTriggerDefinition(IRON_WILL_CARD_ID);
+        const created: CustomInteraction = {
+          id: ironWillInteractionId,
+          type: 'hand-trigger',
+          beatIndex: index,
+          actorUserId: targetId,
+          targetUserId: targetId,
+          sourceUserId: safeOwnerId || undefined,
+          status: 'pending',
+          discardCount: definition?.discardCount ?? 1,
+          cardId: definition?.cardId ?? IRON_WILL_CARD_ID,
+          cardType: definition?.cardType ?? 'ability',
+          effect: definition?.effect ?? 'iron-will',
+        };
+        updatedInteractions.push(created);
+        interactionById.set(ironWillInteractionId, created);
+        handTriggerKeys.add(ironWillKey);
+        if (haltIndex == null || index < haltIndex) {
+          haltIndex = index;
+        }
+        return;
+      }
+      if (ironWillInteraction?.status === 'pending') {
+        if (haltIndex == null || index < haltIndex) {
+          haltIndex = index;
+        }
+        return;
+      }
+
+      const fromPosition = { q: targetState.position.q, r: targetState.position.r };
+      targetState.damage += ARROW_DAMAGE;
+      const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : ARROW_KBF;
+      const knockbackDistance = getKnockbackDistance(targetState.damage, effectiveKbf);
+      let knockedSteps = 0;
+      if (knockbackDistance > 0) {
+        let finalPosition = { ...targetState.position };
+        for (let step = 0; step < knockbackDistance; step += 1) {
+          const candidate = {
+            q: finalPosition.q + forward.q,
+            r: finalPosition.r + forward.r,
+          };
+          const occupant = occupancy.get(coordKey(candidate));
+          if (occupant && occupant !== targetId) break;
+          finalPosition = candidate;
+          knockedSteps += 1;
+        }
+        if (!sameCoord(finalPosition, targetState.position)) {
+          occupancy.delete(coordKey(targetState.position));
+          targetState.position = { q: finalPosition.q, r: finalPosition.r };
+          occupancy.set(coordKey(targetState.position), targetId);
+        }
+      }
+      const shouldStun = effectiveKbf === 1 || (effectiveKbf > 1 && knockbackDistance > 0);
+      if (shouldStun) {
+        applyHitTimeline(targetId, index, targetState, knockedSteps, true);
+      }
+      recordHitConsequence(targetId, index, targetState, ARROW_DAMAGE, knockedSteps);
+
+      const wasOnLand = resolveTerrain(fromPosition) === 'land';
+      const nowOnAbyss = resolveTerrain(targetState.position) === 'abyss';
+      if (
+        knockedSteps > 0 &&
+        wasOnLand &&
+        nowOnAbyss &&
+        hasHandTriggerCard(targetId, VENGEANCE_CARD_ID) &&
+        !handTriggerKeys.has(buildHandTriggerKey(VENGEANCE_CARD_ID, index, targetId)) &&
+        !isHistoryIndex(index)
+      ) {
+        const definition = getHandTriggerDefinition(VENGEANCE_CARD_ID);
+        const interactionId = buildHandTriggerInteractionId(VENGEANCE_CARD_ID, index, targetId, targetId);
+        if (!interactionById.has(interactionId)) {
+          const created: CustomInteraction = {
+            id: interactionId,
+            type: 'hand-trigger',
+            beatIndex: index,
+            actorUserId: targetId,
+            targetUserId: targetId,
+            status: 'pending',
+            discardCount: definition?.discardCount ?? 1,
+            cardId: definition?.cardId ?? VENGEANCE_CARD_ID,
+            cardType: definition?.cardType ?? 'ability',
+            effect: definition?.effect ?? 'vengeance',
+            drawCount: knockedSteps,
+          };
+          updatedInteractions.push(created);
+          interactionById.set(interactionId, created);
+          handTriggerKeys.add(buildHandTriggerKey(VENGEANCE_CARD_ID, index, targetId));
+          if (haltIndex == null || index < haltIndex) {
+            haltIndex = index;
+          }
+        }
+      }
+    };
+    const spawnArrowToken = (coord: { q: number; r: number }, facing: number, ownerId: string) => {
+      const key = coordKey(coord);
+      const occupant = occupancy.get(key);
+      if (occupant && occupant !== ownerId) {
+        const forward = applyFacingToVector(LOCAL_DIRECTIONS.F, facing);
+        resolveArrowHit(occupant, ownerId, forward);
+        return;
+      }
+      addArrowToken(coord, facing, ownerId);
+    };
     const queueDiscard = (
       targetId: string,
       count: number,
       source: 'self' | 'opponent',
       targetEntry?: BeatEntry | null,
+      options: { force?: boolean } = {},
     ) => {
       const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
       if (!safeCount) return;
@@ -1009,7 +1222,8 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
           return targetCharacter ? findEntryForCharacter(beat, targetCharacter) : null;
         })();
       if (source === 'opponent' && isDiscardImmune(entryForImmunity)) return;
-      discardQueue.set(targetId, (discardQueue.get(targetId) ?? 0) + safeCount);
+      const queue = options.force ? forcedDiscardQueue : discardQueue;
+      queue.set(targetId, (queue.get(targetId) ?? 0) + safeCount);
     };
     const ordered = beat
       .slice()
@@ -1052,11 +1266,28 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
 
       if (entry.cardId === BOW_SHOT_CARD_ID && actionLabel.toUpperCase() === 'X1') {
         const forward = applyFacingToVector(LOCAL_DIRECTIONS.F, actorState.facing);
-        addArrowToken(
+        spawnArrowToken(
           { q: origin.q + forward.q, r: origin.r + forward.r },
           actorState.facing,
           actorId,
         );
+      }
+      if (entry.cardId === IRON_WILL_CARD_ID && actionLabel.toUpperCase() === 'X1') {
+        const interactionId = buildInteractionId('draw', index, actorId, actorId);
+        if (!interactionById.has(interactionId) && !isHistoryIndex(index)) {
+          const created: CustomInteraction = {
+            id: interactionId,
+            type: 'draw',
+            beatIndex: index,
+            actorUserId: actorId,
+            targetUserId: actorId,
+            status: 'resolved',
+            drawCount: 3,
+            resolution: { applied: false },
+          };
+          updatedInteractions.push(created);
+          interactionById.set(interactionId, created);
+        }
       }
 
       const startDiscard = getPassiveStartDiscardCount(entry.passiveCardId);
@@ -1211,6 +1442,51 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
                   }
                 }
               } else {
+                recordBurningStrikeHit(actorId);
+                const ironWillKey = buildHandTriggerKey(IRON_WILL_CARD_ID, index, targetId);
+                const ironWillInteractionId = buildHandTriggerInteractionId(
+                  IRON_WILL_CARD_ID,
+                  index,
+                  targetId,
+                  targetId,
+                  actorId,
+                );
+                const ironWillInteraction = interactionById.get(ironWillInteractionId);
+                if (
+                  !isHistoryIndex(index) &&
+                  hasHandTriggerCard(targetId, IRON_WILL_CARD_ID) &&
+                  !ironWillInteraction &&
+                  !handTriggerKeys.has(ironWillKey)
+                ) {
+                  const definition = getHandTriggerDefinition(IRON_WILL_CARD_ID);
+                  const created: CustomInteraction = {
+                    id: ironWillInteractionId,
+                    type: 'hand-trigger',
+                    beatIndex: index,
+                    actorUserId: targetId,
+                    targetUserId: targetId,
+                    sourceUserId: actorId,
+                    status: 'pending',
+                    discardCount: definition?.discardCount ?? 1,
+                    cardId: definition?.cardId ?? IRON_WILL_CARD_ID,
+                    cardType: definition?.cardType ?? 'ability',
+                    effect: definition?.effect ?? 'iron-will',
+                  };
+                  updatedInteractions.push(created);
+                  interactionById.set(ironWillInteractionId, created);
+                  handTriggerKeys.add(ironWillKey);
+                  if (haltIndex == null || index < haltIndex) {
+                    haltIndex = index;
+                  }
+                  return;
+                }
+                if (ironWillInteraction?.status === 'pending') {
+                  if (haltIndex == null || index < haltIndex) {
+                    haltIndex = index;
+                  }
+                  return;
+                }
+
                 const discardRule = getActiveHitDiscardRule(entry.cardId);
                 if (discardRule && isBracketedAction(entry.action ?? '')) {
                   const isCenter = !discardRule.centerOnly || isCenterAttackPath(token.path);
@@ -1219,11 +1495,11 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
                   }
                 }
 
+                const fromPosition = { q: targetState.position.q, r: targetState.position.r };
                 targetState.damage += entryDamage;
                 if (entry.cardId === BURNING_STRIKE_CARD_ID && isBracketedAction(entry.action ?? '') && token.type === 'a') {
                   addFireHexToken(destination, actorId);
                 }
-                recordBurningStrikeHit(actorId);
                 const usesGrapplingHookPassive = hasGrapplingHookPassive && token.type === 'a';
                 const attackDirection = getKnockbackDirection(origin, destination, lastStep);
                 const { knockbackDirection } = applyGrapplingHookPassiveFlip(
@@ -1234,7 +1510,8 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
                   occupancy,
                   targetId,
                 );
-                const baseKnockbackDistance = getKnockbackDistance(targetState.damage, entryKbf);
+                const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : entryKbf;
+                const baseKnockbackDistance = getKnockbackDistance(targetState.damage, effectiveKbf);
                 const convertKbf = shouldConvertKbfToDiscard(targetEntry);
                 if (convertKbf && baseKnockbackDistance > 0) {
                   queueDiscard(targetId, baseKnockbackDistance, 'self', targetEntry);
@@ -1259,12 +1536,47 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
                     occupancy.set(coordKey(targetState.position), targetId);
                   }
                 }
-                const shouldStun = entryKbf === 1 || (entryKbf > 1 && baseKnockbackDistance > 0);
+                const shouldStun = effectiveKbf === 1 || (effectiveKbf > 1 && baseKnockbackDistance > 0);
                 if (shouldStun) {
                   applyHitTimeline(targetId, index, targetState, knockedSteps, preserveAction);
                 }
                 recordHitConsequence(targetId, index, targetState, entryDamage, knockedSteps);
                 disabledActors.add(targetId);
+
+                const wasOnLand = resolveTerrain(fromPosition) === 'land';
+                const nowOnAbyss = resolveTerrain(targetState.position) === 'abyss';
+                if (
+                  knockedSteps > 0 &&
+                  wasOnLand &&
+                  nowOnAbyss &&
+                  hasHandTriggerCard(targetId, VENGEANCE_CARD_ID) &&
+                  !handTriggerKeys.has(buildHandTriggerKey(VENGEANCE_CARD_ID, index, targetId)) &&
+                  !isHistoryIndex(index)
+                ) {
+                  const definition = getHandTriggerDefinition(VENGEANCE_CARD_ID);
+                  const interactionId = buildHandTriggerInteractionId(VENGEANCE_CARD_ID, index, targetId, targetId);
+                  if (!interactionById.has(interactionId)) {
+                    const created: CustomInteraction = {
+                      id: interactionId,
+                      type: 'hand-trigger',
+                      beatIndex: index,
+                      actorUserId: targetId,
+                      targetUserId: targetId,
+                      status: 'pending',
+                      discardCount: definition?.discardCount ?? 1,
+                      cardId: definition?.cardId ?? VENGEANCE_CARD_ID,
+                      cardType: definition?.cardType ?? 'ability',
+                      effect: definition?.effect ?? 'vengeance',
+                      drawCount: knockedSteps,
+                    };
+                    updatedInteractions.push(created);
+                    interactionById.set(interactionId, created);
+                    handTriggerKeys.add(buildHandTriggerKey(VENGEANCE_CARD_ID, index, targetId));
+                    if (haltIndex == null || index < haltIndex) {
+                      haltIndex = index;
+                    }
+                  }
+                }
               }
             }
           } else if (entry.cardId === BURNING_STRIKE_CARD_ID && isBracketedAction(entry.action ?? '') && token.type === 'a') {
@@ -1302,7 +1614,7 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
               addFireHexToken(origin, actorId);
             }
             if (entry.passiveCardId === BOW_SHOT_CARD_ID && (rotationMagnitude === 1 || rotationMagnitude === 2)) {
-              addArrowToken(finalPosition, actionSetFacing, actorId);
+              spawnArrowToken(finalPosition, actionSetFacing, actorId);
             }
           }
         }
@@ -1320,23 +1632,32 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
     });
 
     updatedInteractions.forEach((interaction) => {
-      if (interaction.type !== 'burning-strike') return;
+      if (interaction.type !== 'hand-trigger') return;
       if (interaction.status !== 'resolved') return;
       if (interaction.beatIndex !== index) return;
-      if (!interaction.resolution?.ignite) return;
-      const hexes = Array.isArray(interaction.attackHexes) ? interaction.attackHexes : [];
-      hexes.forEach((coord) => {
-        if (!coord) return;
-        addFireHexToken(coord, interaction.actorUserId);
-      });
+      if (!getHandTriggerUse(interaction)) return;
+      const cardId = getHandTriggerCardId(interaction);
+      if (cardId === BURNING_STRIKE_CARD_ID) {
+        const hexes = Array.isArray(interaction.attackHexes) ? interaction.attackHexes : [];
+        hexes.forEach((coord) => {
+          if (!coord) return;
+          addFireHexToken(coord, interaction.actorUserId);
+        });
+      }
+      if (cardId === SINKING_SHOT_CARD_ID && interaction.targetUserId) {
+        const targetCharacter = characterById.get(interaction.targetUserId);
+        const targetEntry = targetCharacter ? findEntryForCharacter(beat, targetCharacter) : null;
+        queueDiscard(interaction.targetUserId, 2, 'opponent', targetEntry, { force: true });
+      }
     });
 
-    if (burningStrikeBeatData.size && burningStrikeAvailabilityByUser.size) {
+    if (burningStrikeBeatData.size) {
       burningStrikeBeatData.forEach((data, actorId) => {
         if (!data.hasHit) return;
-        if (!burningStrikeAvailabilityByUser.get(actorId)) return;
-        const interactionId = buildInteractionId('burning-strike', index, actorId, actorId);
-        if (interactionById.has(interactionId)) return;
+        if (!hasHandTriggerCard(actorId, BURNING_STRIKE_CARD_ID)) return;
+        if (isHistoryIndex(index)) return;
+        const interactionKey = buildHandTriggerKey(BURNING_STRIKE_CARD_ID, index, actorId);
+        if (handTriggerKeys.has(interactionKey)) return;
         const uniqueHexes: HexCoord[] = [];
         const seen = new Set<string>();
         data.attackedHexes.forEach((coord) => {
@@ -1345,19 +1666,25 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
           seen.add(key);
           uniqueHexes.push({ q: coord.q, r: coord.r });
         });
+        const definition = getHandTriggerDefinition(BURNING_STRIKE_CARD_ID);
+        const interactionId = buildHandTriggerInteractionId(BURNING_STRIKE_CARD_ID, index, actorId, actorId);
+        if (interactionById.has(interactionId)) return;
         const created: CustomInteraction = {
           id: interactionId,
-          type: 'burning-strike',
+          type: 'hand-trigger',
           beatIndex: index,
           actorUserId: actorId,
           targetUserId: actorId,
           status: 'pending',
-          discardCount: 1,
+          discardCount: definition?.discardCount ?? 1,
           attackHexes: uniqueHexes,
-          abilityCardId: BURNING_STRIKE_CARD_ID,
+          cardId: definition?.cardId ?? BURNING_STRIKE_CARD_ID,
+          cardType: definition?.cardType ?? 'ability',
+          effect: definition?.effect ?? 'burning-strike',
         };
         updatedInteractions.push(created);
         interactionById.set(interactionId, created);
+        handTriggerKeys.add(interactionKey);
         if (haltIndex == null || index < haltIndex) {
           haltIndex = index;
         }
@@ -1379,32 +1706,7 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
         const nextPosition = { q: token.position.q + forward.q, r: token.position.r + forward.r };
         const targetId = occupancy.get(coordKey(nextPosition));
         if (targetId) {
-          const targetState = state.get(targetId);
-          if (targetState) {
-            targetState.damage += ARROW_DAMAGE;
-            const knockbackDistance = getKnockbackDistance(targetState.damage, ARROW_KBF);
-            let knockedSteps = 0;
-            if (knockbackDistance > 0) {
-              let finalPosition = { ...targetState.position };
-              for (let step = 0; step < knockbackDistance; step += 1) {
-                const candidate = {
-                  q: finalPosition.q + forward.q,
-                  r: finalPosition.r + forward.r,
-                };
-                const occupant = occupancy.get(coordKey(candidate));
-                if (occupant && occupant !== targetId) break;
-                finalPosition = candidate;
-                knockedSteps += 1;
-              }
-              if (!sameCoord(finalPosition, targetState.position)) {
-                occupancy.delete(coordKey(targetState.position));
-                targetState.position = { q: finalPosition.q, r: finalPosition.r };
-                occupancy.set(coordKey(targetState.position), targetId);
-              }
-            }
-            applyHitTimeline(targetId, index, targetState, knockedSteps, true);
-            recordHitConsequence(targetId, index, targetState, ARROW_DAMAGE, knockedSteps);
-          }
+          resolveArrowHit(targetId, token.ownerUserId ?? '', forward);
           return;
         }
         const distance = getDistanceToLand(nextPosition, landTiles);
@@ -1416,24 +1718,35 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
       boardTokens.splice(0, boardTokens.length, ...nextTokens);
     }
 
-    if (fireTokenKeys.size) {
+    if (fireTokenKeys.size || ephemeralFireKeys.size) {
       state.forEach((targetState, targetId) => {
         const key = coordKey(targetState.position);
-        if (!fireTokenKeys.has(key)) return;
+        if (!fireTokenKeys.has(key) && !ephemeralFireKeys.has(key)) return;
         targetState.damage += 1;
         recordHitConsequence(targetId, index, targetState, 1, 0);
       });
     }
 
-    if (discardQueue.size) {
+    if (discardQueue.size || forcedDiscardQueue.size) {
+      const combined = new Map<string, { count: number; force: boolean }>();
       discardQueue.forEach((count, targetId) => {
-        if (!count) return;
-        if (isHistoryIndex(index)) return;
+        combined.set(targetId, { count, force: false });
+      });
+      forcedDiscardQueue.forEach((count, targetId) => {
+        const existing = combined.get(targetId);
+        combined.set(targetId, {
+          count: (existing?.count ?? 0) + count,
+          force: true,
+        });
+      });
+      combined.forEach((item, targetId) => {
+        if (!item.count) return;
+        if (!item.force && isHistoryIndex(index)) return;
         const interactionId = buildInteractionId('discard', index, targetId, targetId);
         const existing = interactionById.get(interactionId);
         if (existing) {
-          if (existing.status === 'pending' && existing.discardCount !== count) {
-            existing.discardCount = count;
+          if (existing.status === 'pending' && existing.discardCount !== item.count) {
+            existing.discardCount = item.count;
           }
           return;
         }
@@ -1444,7 +1757,7 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
           actorUserId: targetId,
           targetUserId: targetId,
           status: 'pending',
-          discardCount: count,
+          discardCount: item.count,
         };
         updatedInteractions.push(created);
         interactionById.set(interactionId, created);

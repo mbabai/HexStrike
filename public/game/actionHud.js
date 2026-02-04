@@ -411,6 +411,7 @@ export const createActionHud = ({
       raf = requestAnimationFrame(() => {
         raf = null;
         refreshHandLayouts();
+        fitAllCardText(root);
       });
     };
   })();

@@ -339,6 +339,31 @@ test('executeBeats moves bow shot arrows and applies damage on hit', () => {
   assert.equal((result.boardTokens || []).length, 0);
 });
 
+test('executeBeats blocks bow shot arrows when the target blocks the incoming direction', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 0, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('beta', 'b', 20, characters[1].position, characters[1].facing),
+      buildEntry('alpha', 'X1', 0, characters[0].position, characters[0].facing),
+    ],
+  ];
+  beats[0][1].cardId = 'bow-shot';
+  beats[0][1].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters);
+  const beat0 = result.beats[0] || [];
+  const betaEntry = beat0.find((entry) => entry.username === 'beta');
+
+  assert.ok(betaEntry);
+  assert.equal(betaEntry.damage, 0);
+  const hit = (betaEntry.consequences || []).find((item) => item?.type === 'hit');
+  assert.equal(Boolean(hit), false);
+});
+
 test('executeBeats applies fire hex damage from board tokens', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },

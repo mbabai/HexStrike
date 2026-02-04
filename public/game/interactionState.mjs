@@ -1,3 +1,5 @@
+import { getActiveHandTriggerId } from './handTriggerOrder.mjs';
+
 const COMBO_ACTION = 'CO';
 
 const normalizeActionLabel = (value) => {
@@ -44,27 +46,41 @@ const isPendingInteractionVisible = (interaction, resolvedIndex, alwaysAllowType
   return true;
 };
 
+
+const isInteractionForUser = (interaction, localUserId) => {
+  if (!interaction || !localUserId) return false;
+  if (interaction.actorUserId === localUserId) return true;
+  if (interaction.type === 'discard' && interaction.targetUserId === localUserId) return true;
+  return false;
+};
+
 export const selectPendingInteraction = ({
   interactions,
   beats,
   characters,
   localUserId,
   resolvedIndex,
-  alwaysAllowTypes = ['throw', 'discard', 'burning-strike'],
+  alwaysAllowTypes = ['throw', 'discard', 'hand-trigger'],
 }) => {
   const allowTypes = new Set(alwaysAllowTypes);
+  const activeHandTriggerId = getActiveHandTriggerId(interactions);
   const pending = (interactions ?? []).filter(
     (interaction) =>
-      interaction?.actorUserId === localUserId &&
+      isInteractionForUser(interaction, localUserId) &&
       isPendingInteractionVisible(interaction, resolvedIndex, allowTypes),
   );
-  if (!pending.length) return null;
-  const pendingThrows = pending.filter((interaction) => interaction?.type === 'throw');
+  const gated = pending.filter((interaction) => {
+    if (interaction?.type !== 'hand-trigger') return true;
+    if (!activeHandTriggerId) return true;
+    return interaction?.id === activeHandTriggerId;
+  });
+  if (!gated.length) return null;
+  const pendingThrows = gated.filter((interaction) => interaction?.type === 'throw');
   if (pendingThrows.length) {
     pendingThrows.sort((a, b) => (a?.beatIndex ?? 0) - (b?.beatIndex ?? 0));
     return pendingThrows[0] ?? null;
   }
-  const filtered = pending.filter(
+  const filtered = gated.filter(
     (interaction) => interaction?.type !== 'combo' || hasComboEntryForInteraction(interaction, beats, characters),
   );
   if (!filtered.length) return null;

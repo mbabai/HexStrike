@@ -98,7 +98,9 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Action HUD only shows when the timeline selector is on the earliest `E` across all players and the local player is at-bat; the HUD locks after submit until resolution.
 - Action HUD hands are always visible in the game view; only the slots and rotation wheel toggle with the `.is-turn` state.
 - Discard interactions reuse the existing hand UI: `public/game/discardPrompt.mjs` applies `.is-discard-pending` (pulsing) and `.is-discard-selected` (grey) on in-hand `.action-card` elements instead of rendering a separate discard hand; keep the `.action-hud.is-locked` override in `public/theme.css` so greyscale remains visible while the HUD is locked.
-- Discard requirements are capped to current hand sizes; if required ≥ cards in hand for a type, the client auto-selects all and auto-submits the discard.
+- Discard requirements are capped to current hand sizes; if required >= cards in hand for a type, the client auto-selects all and auto-submits the discard.
+- Hand-trigger prompts are staged: confirm "Use X?" first, then show the discard selection; `public/game/handTriggerPrompt.mjs` owns the reveal glow on the trigger card and discard glow on extra cards.
+- Pending hand-trigger interactions are globally ordered by `handTriggerOrder`; only the lowest order is interactive (`public/game/handTriggerOrder.mjs` + `src/server.ts`).
 - Action HUD hover targeting is based on the hand column + header band (not card transforms); keep `--action-card-hover-shift` synced with the hover rail in `public/game/actionHud.js`.
 - Action HUD card text uses `public/shared/cardRenderer.js`; call `fitAllCardText` after hand renders so active/passive text fits the surface rows.
 - Action HUD click selection: empty slots -> active; active filled + same type -> replace active; active filled + different type -> fill passive; both filled -> replace matching type slot; clicking a slotted card returns it to hand.
@@ -124,6 +126,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Direction indexing for blocks/attacks must ignore reverse vectors (only forward, positive steps); otherwise block walls flip away from facing.
 - Keep `getDirectionIndex` logic in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized so visuals match server resolution.
 - Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.
+- Arrow/projectile hits must respect block walls; client token playback derives block lookups from block effects to stop arrows on blocks.
 - Board tokens live in `public.boardTokens`; `executeBeatsWithInteractions` rebuilds fire/arrow tokens from beats, moves only pre-existing arrows each beat, and applies fire damage after arrow resolution.
 - Client board-token playback is derived from beats/interactions in `public/game/timelinePlayback.js` (`buildTokenPlayback`); keep token spawn logic in sync with server-side rules so timeline scrubbing matches resolution.
 - Fire hex tokens render as full-hex overlays (no facing arrow); keep `public/game/renderer.js` token drawing in sync with any token art changes.

@@ -35,6 +35,13 @@
 - Trip passive converts knockback distance into discard count (no knockback movement) but still uses the pre-conversion distance for stun checks.
 - Server mapping: `src/game/cardText/discardEffects.ts`; client mirror: `public/game/cardText/discardEffects.js`.
 
+## Hand-trigger interactions (in-hand reveals)
+- Cards with "If X is in your hand..." create a `customInteractions` entry of type `hand-trigger` when the trigger fires and the card is still in hand.
+- Interaction fields: `cardId`, `cardType`, `effect`, optional `sourceUserId`, and payloads like `attackHexes` (Burning Strike) or `drawCount` (Vengeance).
+- Resolution: `/api/v1/game/interaction` with `{ use, movementCardIds, abilityCardIds }`; discard requirements follow `getDiscardRequirements` in `src/game/handRules.ts`.
+- UI prompt: `public/index.html` + `public/game/handTriggerPrompt.mjs` (green reveal glow on the trigger card, red discard glow on required extra cards).
+- Timeline: mini card marker is drawn between beats in `public/game/timeIndicatorView.js`; tooltip uses `public/game/timelineTooltip.js` + `public/game/handTriggerText.mjs`.
+
 ## Board tokens
 - `boardTokens` live in `public.boardTokens` with types `fire-hex` and `arrow`.
 - Fire hex: persistent; deals 1 damage per beat to any character standing on the hex.

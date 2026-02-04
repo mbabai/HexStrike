@@ -243,7 +243,7 @@
       "rotations": "*",
       "damage": 4,
       "kbf": 0,
-      "activeText": "{i}: Place a fire hex on this location.\n\nIf Burning Strike is in your hand when you land an attack, you may choose to discard it and a movement card to place a hex on all hexes attacked.",
+      "activeText": "{i}: Place a fire hex on this location.\n\nIf Burning Strike is in your hand when you land an attack, you may reveal it to discard it and a movement card to place a fire hex on all hexes attacked.",
       "passiveText": "For every {m}, if you actually move, place a fire hex on your starting hex."
     },
     {
@@ -505,7 +505,7 @@
       "rotations": "*",
       "damage": 0,
       "kbf": 0,
-      "activeText": "{X1}: Draw 3.\n\nIf Iron Will is in your hand when you are hit, you can discard it to reduce the KBF to 0.",
+      "activeText": "{X1}: Draw 3.\n\nIf Iron Will is in your hand when you are hit, you may reveal it to discard it and a movement card to reduce the KBF to 0.",
       "passiveText": "If you are hit while this movement card is active, reduce the KBF by 1 (min 0)."
     },
     {
@@ -625,7 +625,7 @@
       "rotations": "*",
       "damage": 4,
       "kbf": 2,
-      "activeText": "If Sinking Shot is in your hand when an enemy is hit by a projectile, you may reveal it and discard it to force the target to discard 2 cards."
+      "activeText": "If Sinking Shot is in your hand when an enemy is hit by a projectile, you may reveal it to discard it and a movement card to force the target to discard 2 cards."
     },
     {
       "id": "smash-attack",
@@ -786,7 +786,7 @@
       "rotations": "*",
       "damage": 4,
       "kbf": 2,
-      "activeText": "If Vengeance is in your hand when you are knocked into the abyss, you may choose to reveal and discard it. If you do, draw as many cards as was the total hexes knocked back."
+      "activeText": "If Vengeance is in your hand when you are knocked into the abyss, you may reveal it to discard it and a movement card. If you do, draw as many cards as the total hexes knocked back."
     },
     {
       "id": "whirlwind",
@@ -859,6 +859,56 @@
         "smash-attack",
         "spinning-back-kick",
         "spike"
+      ]
+    },
+    {
+      "id": "trigger-burning-strike-sinking-shot",
+      "name": "Burning Strike + Sinking Shot",
+      "characterId": "strylan",
+      "movement": [
+        "step",
+        "dash",
+        "advance",
+        "jump"
+      ],
+      "ability": [
+        "burning-strike",
+        "sinking-shot",
+        "guard",
+        "iron-will",
+        "bow-shot",
+        "healing-harmony",
+        "cross-slash",
+        "fumikomi",
+        "flying-knee",
+        "tackle",
+        "jab",
+        "smash-attack"
+      ]
+    },
+    {
+      "id": "trigger-vengeance-iron-will",
+      "name": "Vengeance + Iron Will",
+      "characterId": "strylan",
+      "movement": [
+        "step",
+        "dash",
+        "advance",
+        "jump"
+      ],
+      "ability": [
+        "vengeance",
+        "iron-will",
+        "guard",
+        "bow-shot",
+        "burning-strike",
+        "sinking-shot",
+        "healing-harmony",
+        "cross-slash",
+        "fumikomi",
+        "flying-knee",
+        "tackle",
+        "jab"
       ]
     },
     {

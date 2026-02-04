@@ -30,6 +30,8 @@ const getTheme = () => {
     actionMove: css.getPropertyValue('--color-action-move').trim(),
     actionJump: css.getPropertyValue('--color-action-jump').trim(),
     actionBlock: css.getPropertyValue('--color-action-block').trim(),
+    cardAbility: css.getPropertyValue('--color-card-ability').trim(),
+    cardMovement: css.getPropertyValue('--color-card-movement').trim(),
   };
 };
 

@@ -15,6 +15,7 @@ const ARROW_KBF = 1;
 const ARROW_LAND_DISTANCE_LIMIT = 5;
 const BOW_SHOT_CARD_ID = 'bow-shot';
 const BURNING_STRIKE_CARD_ID = 'burning-strike';
+const IRON_WILL_CARD_ID = 'iron-will';
 // Keep in sync with server-side throw detection.
 const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
 const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
@@ -420,6 +421,17 @@ const applyGrapplingHookPassiveFlip = (enabled, origin, attackDirection, targetS
 
 const buildInteractionId = (beatIndex, actorId, targetId) => `throw:${beatIndex}:${actorId}:${targetId}`;
 
+const getHandTriggerCardId = (interaction) => interaction?.cardId ?? interaction?.abilityCardId ?? '';
+
+const getHandTriggerUse = (interaction) => {
+  if (!interaction || interaction.status !== 'resolved') return false;
+  const use = interaction?.resolution?.use;
+  if (typeof use === 'boolean') return use;
+  const ignite = interaction?.resolution?.ignite;
+  if (typeof ignite === 'boolean') return ignite;
+  return false;
+};
+
 const getResolvedDirectionIndex = (interaction) => {
   const direction = interaction?.resolution?.directionIndex;
   if (!Number.isFinite(direction)) return null;
@@ -441,6 +453,16 @@ const getBeatEntryForCharacter = (beat, character) => {
     }) ?? null
   );
 };
+
+const findIronWillInteraction = (interactions, beatIndex, attackerId, targetId) =>
+  (interactions ?? []).find((interaction) => {
+    if (!interaction || interaction.type !== 'hand-trigger') return false;
+    if (getHandTriggerCardId(interaction) !== IRON_WILL_CARD_ID) return false;
+    if (interaction.actorUserId !== targetId) return false;
+    if (Number.isFinite(interaction.beatIndex) && Math.round(interaction.beatIndex) !== beatIndex) return false;
+    if (interaction.sourceUserId && interaction.sourceUserId !== attackerId) return false;
+    return true;
+  }) ?? null;
 
 const getLastCalculatedEntryForCharacter = (beats, character, uptoIndex) => {
   if (!Array.isArray(beats) || !beats.length || !character) return null;
@@ -665,6 +687,10 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
               }
               return;
             }
+            const ironWillInteraction = findIronWillInteraction(interactions, beatIndex, actorId, targetId);
+            if (ironWillInteraction?.status === 'pending') {
+              return;
+            }
             targetState.damage += entryDamage;
             damageChanges.push({ targetId, delta: entryDamage });
             const usesGrapplingHookPassive = hasGrapplingHookPassive && token.type === 'a';
@@ -680,7 +706,8 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
               occupancy,
               targetId,
             );
-            const baseKnockbackDistance = getKnockbackDistance(targetState.damage, entryKbf);
+            const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : entryKbf;
+            const baseKnockbackDistance = getKnockbackDistance(targetState.damage, effectiveKbf);
             const knockbackDistance = shouldConvertKbfToDiscard(targetEntry) ? 0 : baseKnockbackDistance;
             if (flipPosition) {
               knockbackPath.push({ q: flipPosition.q, r: flipPosition.r });
@@ -774,6 +801,9 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
 };
 
 const applyStep = (characters, step) => {
+  if (!step) return characters;
+  const damageChanges = Array.isArray(step.damageChanges) ? step.damageChanges : [];
+  const positionChanges = Array.isArray(step.positionChanges) ? step.positionChanges : [];
   const updated = characters.map((character) => {
     if (character.userId !== step.actorId) return character;
     const next = { ...character, facing: step.facingAfter };
@@ -783,7 +813,7 @@ const applyStep = (characters, step) => {
     return next;
   });
 
-  step.damageChanges.forEach((change) => {
+  damageChanges.forEach((change) => {
     const index = updated.findIndex((character) => character.userId === change.targetId);
     if (index >= 0) {
       const target = updated[index];
@@ -791,7 +821,7 @@ const applyStep = (characters, step) => {
     }
   });
 
-  step.positionChanges.forEach((change) => {
+  positionChanges.forEach((change) => {
     const index = updated.findIndex((character) => character.userId === change.targetId);
     if (index >= 0) {
       const target = updated[index];
@@ -889,6 +919,7 @@ const buildTokenPlayback = (gameState, beatIndex) => {
 
   const tokens = [];
   const fireTokenKeys = new Set();
+  let ephemeralFireKeys = new Set();
   let tokenCounter = 0;
 
   const actionSetFacingByUser = new Map();
@@ -924,8 +955,15 @@ const buildTokenPlayback = (gameState, beatIndex) => {
   const addFireToken = (coord, ownerId, isCurrentBeat, spawnAtEnd = false) => {
     if (!coord) return;
     const key = coordKey(coord);
-    if (fireTokenKeys.has(key)) return;
-    fireTokenKeys.add(key);
+    const onLand = isCoordOnLand(coord, land);
+    if (onLand) {
+      if (fireTokenKeys.has(key)) return;
+      fireTokenKeys.add(key);
+    } else {
+      if (ephemeralFireKeys.has(key)) return;
+      ephemeralFireKeys.add(key);
+      if (!isCurrentBeat) return;
+    }
     const token = {
       id: nextTokenId(FIRE_HEX_TOKEN_TYPE),
       type: FIRE_HEX_TOKEN_TYPE,
@@ -1013,6 +1051,7 @@ const buildTokenPlayback = (gameState, beatIndex) => {
   for (let index = 0; index < beats.length; index += 1) {
     if (!Number.isFinite(beatIndex) || index > beatIndex) break;
     const beat = beats[index] ?? [];
+    ephemeralFireKeys = new Set();
     if (!isBeatCalculated(beat)) {
       baseTokens = tokens.map(cloneToken);
       break;
@@ -1024,7 +1063,16 @@ const buildTokenPlayback = (gameState, beatIndex) => {
     }
 
     const baseState = buildCharacterSnapshot();
-    const { steps } = buildActionSteps(beat, characters, baseState, interactions, index, land);
+    const { steps, persistentEffects } = buildActionSteps(beat, characters, baseState, interactions, index, land);
+    const blockMap = new Map();
+    (persistentEffects ?? []).forEach((effect) => {
+      if (effect?.type !== 'block') return;
+      if (!effect.coord || effect.directionIndex == null) return;
+      const key = coordKey(effect.coord);
+      const existing = blockMap.get(key) ?? new Set();
+      existing.add(effect.directionIndex);
+      blockMap.set(key, existing);
+    });
     const processedActors = new Set(steps.map((step) => step.actorId));
     let endState = baseState;
     steps.forEach((step) => {
@@ -1037,6 +1085,25 @@ const buildTokenPlayback = (gameState, beatIndex) => {
         facing: normalizeDegrees(character.facing ?? 0),
         damage: typeof character.damage === 'number' ? character.damage : 0,
       });
+    });
+    const stepByActor = new Map();
+    steps.forEach((step) => {
+      stepByActor.set(step.actorId, step);
+    });
+    let spawnState = baseState.map((character) => ({
+      ...character,
+      position: { q: character.position.q, r: character.position.r },
+    }));
+    const updateSpawnStatePosition = (targetId, position) => {
+      spawnState = spawnState.map((character) =>
+        character.userId === targetId
+          ? { ...character, position: { q: position.q, r: position.r } }
+          : character,
+      );
+    };
+    const occupancy = new Map();
+    endState.forEach((character) => {
+      occupancy.set(coordKey(character.position), character.userId);
     });
 
     const entriesByUser = buildEntriesByUser(beat);
@@ -1091,6 +1158,114 @@ const buildTokenPlayback = (gameState, beatIndex) => {
       })
       .filter((entry) => entry.action !== DEFAULT_ACTION);
 
+    const applyArrowHit = ({ token, nextPosition, targetId, forward, isCurrentBeat: applyNow }) => {
+      const targetState = endStateById.get(targetId);
+      if (!targetState) return;
+      const blockDirection = getDirectionIndex({ q: -forward.q, r: -forward.r });
+      if (blockDirection != null) {
+        const targetKey = coordKey(targetState.position);
+        if (blockMap.get(targetKey)?.has(blockDirection)) {
+          if (applyNow) {
+            const blockHit = { coord: { q: nextPosition.q, r: nextPosition.r }, directionIndex: blockDirection };
+            tokenSteps.push({
+              kind: 'token',
+              tokenId: token.id,
+              tokenType: token.type,
+              facingAfter: token.facing,
+              moveDestination: nextPosition,
+              moveType: 'c',
+              movePath: buildPathFromPositions(token.position, [nextPosition], nextPosition),
+              attackOrigin: { q: token.position.q, r: token.position.r },
+              attackTargets: [{ q: nextPosition.q, r: nextPosition.r }],
+              blockHits: [blockHit],
+              damageChanges: [],
+              positionChanges: [],
+              hitTargets: [],
+              removeToken: true,
+            });
+          }
+          return;
+        }
+      }
+      const startPosition = { q: targetState.position.q, r: targetState.position.r };
+      const ironWillInteraction = findIronWillInteraction(
+        interactions,
+        index,
+        token.ownerUserId ?? targetId,
+        targetId,
+      );
+      if (ironWillInteraction?.status === 'pending') {
+        if (applyNow) {
+          tokenSteps.push({
+            kind: 'token',
+            tokenId: token.id,
+            tokenType: token.type,
+            facingAfter: token.facing,
+            moveDestination: nextPosition,
+            moveType: 'c',
+            movePath: buildPathFromPositions(token.position, [nextPosition], nextPosition),
+            attackOrigin: { q: token.position.q, r: token.position.r },
+            attackTargets: [{ q: nextPosition.q, r: nextPosition.r }],
+            damageChanges: [],
+            positionChanges: [],
+            hitTargets: [],
+            removeToken: true,
+          });
+        }
+        return;
+      }
+      const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : ARROW_KBF;
+      const updatedDamage = (targetState.damage ?? 0) + ARROW_DAMAGE;
+      const knockbackDistance = getKnockbackDistance(updatedDamage, effectiveKbf);
+      let finalPosition = { q: startPosition.q, r: startPosition.r };
+      const hitPath = [{ q: finalPosition.q, r: finalPosition.r }];
+      for (let step = 0; step < knockbackDistance; step += 1) {
+        const candidate = {
+          q: finalPosition.q + forward.q,
+          r: finalPosition.r + forward.r,
+        };
+        const occupant = occupancy.get(coordKey(candidate));
+        if (occupant && occupant !== targetId) break;
+        finalPosition = candidate;
+        hitPath.push({ q: finalPosition.q, r: finalPosition.r });
+      }
+      if (!sameCoord(finalPosition, targetState.position)) {
+        occupancy.delete(coordKey(targetState.position));
+        occupancy.set(coordKey(finalPosition), targetId);
+      }
+      endStateById.set(targetId, {
+        position: { q: finalPosition.q, r: finalPosition.r },
+        facing: targetState.facing,
+        damage: updatedDamage,
+      });
+      if (applyNow) {
+        tokenSteps.push({
+          kind: 'token',
+          tokenId: token.id,
+          tokenType: token.type,
+          facingAfter: token.facing,
+          moveDestination: nextPosition,
+          moveType: 'c',
+          movePath: buildPathFromPositions(token.position, [nextPosition], nextPosition),
+          attackOrigin: { q: token.position.q, r: token.position.r },
+          attackTargets: [{ q: nextPosition.q, r: nextPosition.r }],
+          damageChanges: [{ targetId, delta: ARROW_DAMAGE }],
+          positionChanges: !sameCoord(finalPosition, targetState.position)
+            ? [{ targetId, position: { q: finalPosition.q, r: finalPosition.r } }]
+            : [],
+          hitTargets: [
+            {
+              targetId,
+              from: { q: startPosition.q, r: startPosition.r },
+              to: { q: finalPosition.q, r: finalPosition.r },
+              path: hitPath,
+            },
+          ],
+          removeToken: true,
+        });
+      }
+    };
+
     ordered.forEach((entry) => {
       const actorId = userLookup.get(resolveEntryKey(entry));
       if (!actorId || !processedActors.has(actorId)) return;
@@ -1101,15 +1276,41 @@ const buildTokenPlayback = (gameState, beatIndex) => {
       const endPosition = endStateForActor?.position ?? origin;
       const facing = facingByUser.get(actorId) ?? originState.facing ?? 0;
       const actionLabel = normalizeActionLabel(entry.action ?? '');
+      const step = stepByActor.get(actorId);
+      if (step) {
+        spawnState = applyStep(spawnState, step);
+      }
+      const spawnOccupancy = new Map();
+      spawnState.forEach((character) => {
+        spawnOccupancy.set(coordKey(character.position), character.userId);
+      });
 
       if (entry.cardId === BOW_SHOT_CARD_ID && actionLabel.toUpperCase() === 'X1') {
         const forward = applyFacingToVector(LOCAL_DIRECTIONS.F, facing);
-        addArrowToken(
-          { q: origin.q + forward.q, r: origin.r + forward.r },
-          facing,
-          actorId,
-          isCurrentBeat,
-        );
+        const spawnCoord = { q: origin.q + forward.q, r: origin.r + forward.r };
+        const spawnTargetId = spawnOccupancy.get(coordKey(spawnCoord));
+        if (spawnTargetId && spawnTargetId !== actorId) {
+          const token = {
+            id: nextTokenId(ARROW_TOKEN_TYPE),
+            type: ARROW_TOKEN_TYPE,
+            position: { q: spawnCoord.q, r: spawnCoord.r },
+            facing: normalizeDegrees(facing ?? 0),
+            ownerUserId: actorId,
+          };
+          applyArrowHit({
+            token,
+            nextPosition: spawnCoord,
+            targetId: spawnTargetId,
+            forward,
+            isCurrentBeat,
+          });
+          const updatedTarget = endStateById.get(spawnTargetId);
+          if (updatedTarget) {
+            updateSpawnStatePosition(spawnTargetId, updatedTarget.position);
+          }
+        } else {
+          addArrowToken(spawnCoord, facing, actorId, isCurrentBeat);
+        }
       }
 
       const actionTokens = parseActionTokens(entry.action ?? '');
@@ -1135,25 +1336,44 @@ const buildTokenPlayback = (gameState, beatIndex) => {
         const rotationMagnitude = getRotationMagnitude(actionSetRotationByUser.get(actorId) ?? '');
         if (hasMoveToken && (rotationMagnitude === 1 || rotationMagnitude === 2) && !sameCoord(endPosition, origin)) {
           const actionSetFacing = actionSetFacingByUser.get(actorId) ?? originState.facing ?? 0;
-          addArrowToken(endPosition, actionSetFacing, actorId, isCurrentBeat);
+          const spawnTargetId = spawnOccupancy.get(coordKey(endPosition));
+          if (spawnTargetId && spawnTargetId !== actorId) {
+            const token = {
+              id: nextTokenId(ARROW_TOKEN_TYPE),
+              type: ARROW_TOKEN_TYPE,
+              position: { q: endPosition.q, r: endPosition.r },
+              facing: normalizeDegrees(actionSetFacing ?? 0),
+              ownerUserId: actorId,
+            };
+            const forward = applyFacingToVector(LOCAL_DIRECTIONS.F, actionSetFacing);
+            applyArrowHit({
+              token,
+              nextPosition: endPosition,
+              targetId: spawnTargetId,
+              forward,
+              isCurrentBeat,
+            });
+            const updatedTarget = endStateById.get(spawnTargetId);
+            if (updatedTarget) {
+              updateSpawnStatePosition(spawnTargetId, updatedTarget.position);
+            }
+          } else {
+            addArrowToken(endPosition, actionSetFacing, actorId, isCurrentBeat);
+          }
         }
       }
     });
 
     interactions.forEach((interaction) => {
-      if (interaction?.type !== 'burning-strike') return;
+      if (interaction?.type !== 'hand-trigger') return;
+      if (getHandTriggerCardId(interaction) !== BURNING_STRIKE_CARD_ID) return;
       if (interaction.status !== 'resolved') return;
-      if (!interaction.resolution?.ignite) return;
+      if (!getHandTriggerUse(interaction)) return;
       if (interaction.beatIndex !== index) return;
       const hexes = Array.isArray(interaction.attackHexes) ? interaction.attackHexes : [];
       hexes.forEach((coord) => {
         addFireToken(coord, interaction.actorUserId, isCurrentBeat, true);
       });
-    });
-
-    const occupancy = new Map();
-    endState.forEach((character) => {
-      occupancy.set(coordKey(character.position), character.userId);
     });
 
     const nextTokens = [];
@@ -1187,59 +1407,13 @@ const buildTokenPlayback = (gameState, beatIndex) => {
       };
 
       if (targetId) {
-        const targetState = endStateById.get(targetId);
-        if (targetState) {
-          const startPosition = { q: targetState.position.q, r: targetState.position.r };
-          const updatedDamage = (targetState.damage ?? 0) + ARROW_DAMAGE;
-          const knockbackDistance = getKnockbackDistance(updatedDamage, ARROW_KBF);
-          let finalPosition = { q: startPosition.q, r: startPosition.r };
-          const hitPath = [{ q: finalPosition.q, r: finalPosition.r }];
-          for (let step = 0; step < knockbackDistance; step += 1) {
-            const candidate = {
-              q: finalPosition.q + forward.q,
-              r: finalPosition.r + forward.r,
-            };
-            const occupant = occupancy.get(coordKey(candidate));
-            if (occupant && occupant !== targetId) break;
-            finalPosition = candidate;
-            hitPath.push({ q: finalPosition.q, r: finalPosition.r });
-          }
-          if (!sameCoord(finalPosition, targetState.position)) {
-            occupancy.delete(coordKey(targetState.position));
-            occupancy.set(coordKey(finalPosition), targetId);
-          }
-          endStateById.set(targetId, {
-            position: { q: finalPosition.q, r: finalPosition.r },
-            facing: targetState.facing,
-            damage: updatedDamage,
-          });
-          if (isCurrentBeat) {
-            tokenSteps.push({
-              kind: 'token',
-              tokenId: token.id,
-              tokenType: token.type,
-              facingAfter: token.facing,
-              moveDestination: nextPosition,
-              moveType: 'c',
-              movePath: buildPathFromPositions(token.position, [nextPosition], nextPosition),
-              attackOrigin: { q: token.position.q, r: token.position.r },
-              attackTargets: [{ q: nextPosition.q, r: nextPosition.r }],
-              damageChanges: [{ targetId, delta: ARROW_DAMAGE }],
-              positionChanges: !sameCoord(finalPosition, targetState.position)
-                ? [{ targetId, position: { q: finalPosition.q, r: finalPosition.r } }]
-                : [],
-              hitTargets: [
-                {
-                  targetId,
-                  from: { q: startPosition.q, r: startPosition.r },
-                  to: { q: finalPosition.q, r: finalPosition.r },
-                  path: hitPath,
-                },
-              ],
-              removeToken: true,
-            });
-          }
-        }
+        applyArrowHit({
+          token,
+          nextPosition,
+          targetId,
+          forward,
+          isCurrentBeat,
+        });
         return;
       }
 

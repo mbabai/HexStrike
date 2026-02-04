@@ -230,6 +230,7 @@ export interface CustomInteraction {
   beatIndex: number;
   actorUserId: string;
   targetUserId: string;
+  sourceUserId?: string;
   status: 'pending' | 'resolved';
   resolution?: { directionIndex?: number; continue?: boolean; [key: string]: unknown };
   discardCount?: number;
@@ -237,6 +238,11 @@ export interface CustomInteraction {
   discardMovementCount?: number;
   attackHexes?: HexCoord[];
   abilityCardId?: string;
+  cardId?: string;
+  cardType?: CardType;
+  effect?: string;
+  drawCount?: number;
+  handTriggerOrder?: number;
 }
 
 export interface MatchOutcome {

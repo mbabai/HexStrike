@@ -1,5 +1,6 @@
 import { getBeatEntryForCharacter } from './beatTimeline.js';
 import { getTimeIndicatorActionTarget, getTimeIndicatorLayout } from './timeIndicatorView.js';
+import { extractHandTriggerText } from './handTriggerText.mjs';
 import { appendInlineText } from '../shared/cardRenderer.js';
 
 const normalizeSymbolText = (text) => {
@@ -53,7 +54,8 @@ const buildCardMetadata = (catalog) => {
   const byId = new Map();
   const addCard = (card) => {
     if (!card?.id) return;
-    const enriched = { ...card, symbolText: parseSymbolInstructions(card.activeText) };
+    const handTriggerText = extractHandTriggerText(card.activeText);
+    const enriched = { ...card, symbolText: parseSymbolInstructions(card.activeText), handTriggerText };
     list.push(enriched);
     byId.set(card.id, enriched);
   };
@@ -197,6 +199,38 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       hide();
       return;
     }
+    if (target.kind === 'hand-trigger') {
+      const cardId = target.cardId ? `${target.cardId}` : '';
+      const card = cardId ? cardMetadata.byId.get(cardId) : null;
+      const titleText = card?.name ?? cardId;
+      const bodyText = card?.handTriggerText || card?.activeText || '';
+      if (!titleText && !bodyText) {
+        hide();
+        return;
+      }
+      const key = ['hand-trigger', cardId, target.beatIndex, bodyText].join(':');
+      if (key !== lastTooltipKey) {
+        title.textContent = titleText;
+        title.hidden = !titleText;
+        if (bodyText) {
+          instruction.hidden = false;
+          appendInlineText(instruction, bodyText);
+        } else {
+          instruction.hidden = true;
+          instruction.textContent = '';
+        }
+        divider.hidden = true;
+        passive.hidden = true;
+        passiveText.hidden = true;
+        passive.textContent = '';
+        passiveText.textContent = '';
+        lastTooltipKey = key;
+      }
+      tooltip.hidden = false;
+      positionTooltip(target.center.x, target.center.y);
+      return;
+    }
+
     const beats = gameState?.state?.public?.beats ?? [];
     const entry = target.entry;
     const activeCardId = entry?.cardId ? `${entry.cardId}` : null;

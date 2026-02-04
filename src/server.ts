@@ -11,7 +11,9 @@ import { executeBeatsWithInteractions } from './game/execute';
 import { applyDeathToBeats, evaluateMatchOutcome } from './game/matchEndRules';
 import {
   getCharacterFirstEIndex,
+  getCharacterLocationAtIndex,
   getCharactersAtEarliestE,
+  getLastEntryForCharacter,
   getTimelineEarliestEIndex,
   isCharacterAtEarliestE,
 } from './game/beatTimeline';
@@ -21,6 +23,7 @@ import {
   buildDefaultDeckDefinition,
   buildPlayerCardState,
   createDeckState,
+  drawAbilityCards,
   discardAbilityCards,
   isAbilityDiscardFailure,
   getDiscardRequirements,
@@ -30,14 +33,17 @@ import {
   resolveLandRefreshes,
   validateActionSubmission,
 } from './game/cardRules';
+import { HAND_TRIGGER_BY_ID, HAND_TRIGGER_DEFINITIONS } from './game/handTriggers';
 import {
   ActionListItem,
   BeatEntry,
   CardCatalog,
   CharacterId,
+  CustomInteraction,
   DeckDefinition,
   DeckState,
   GameDoc,
+  HexCoord,
   MatchDoc,
   PublicCharacter,
   QueueName,
@@ -68,7 +74,6 @@ interface ActionSetResponse {
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const LOG_PREFIX = '[hexstrike]';
 const COMBO_ACTION = 'CO';
-const BURNING_STRIKE_CARD_ID = 'burning-strike';
 
 const normalizeActionLabel = (value: unknown): string => {
   const trimmed = `${value ?? ''}`.trim();
@@ -95,14 +100,144 @@ const buildComboAvailability = (deckStates: Map<string, DeckState>, catalog: Car
   return availability;
 };
 
-const buildBurningStrikeAvailability = (deckStates: Map<string, DeckState>) => {
-  const availability = new Map<string, boolean>();
+const buildHandTriggerAvailability = (deckStates: Map<string, DeckState>) => {
+  const availability = new Map<string, Set<string>>();
   deckStates.forEach((deckState, userId) => {
-    const hasBurningStrike = deckState.abilityHand.includes(BURNING_STRIKE_CARD_ID);
-    const movementAvailable = getMovementHandIds(deckState);
-    availability.set(userId, hasBurningStrike && movementAvailable.length > 0);
+    const available = new Set<string>();
+    const movementHand = getMovementHandIds(deckState);
+    HAND_TRIGGER_DEFINITIONS.forEach((definition) => {
+      if (definition.cardType === 'ability') {
+        if (deckState.abilityHand.includes(definition.cardId)) {
+          available.add(definition.cardId);
+        }
+        return;
+      }
+      if (movementHand.includes(definition.cardId)) {
+        available.add(definition.cardId);
+      }
+    });
+    if (available.size) {
+      availability.set(userId, available);
+    }
   });
   return availability;
+};
+
+const hashString = (value: string): number => {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+};
+
+const axialDistance = (a: { q: number; r: number }, b: { q: number; r: number }): number => {
+  const aq = Math.round(a.q);
+  const ar = Math.round(a.r);
+  const bq = Math.round(b.q);
+  const br = Math.round(b.r);
+  const dq = aq - bq;
+  const dr = ar - br;
+  const ds = (aq + ar) - (bq + br);
+  return (Math.abs(dq) + Math.abs(dr) + Math.abs(ds)) / 2;
+};
+
+const getLandCenter = (land: HexCoord[] | undefined): { q: number; r: number } => {
+  if (!Array.isArray(land) || !land.length) {
+    return { q: 0, r: 0 };
+  }
+  let sumQ = 0;
+  let sumR = 0;
+  land.forEach((tile) => {
+    sumQ += tile.q;
+    sumR += tile.r;
+  });
+  return { q: sumQ / land.length, r: sumR / land.length };
+};
+
+const getCharacterDamageAtIndex = (beats: BeatEntry[][], character: PublicCharacter, index: number): number => {
+  const entry = getLastEntryForCharacter(beats, character, index);
+  return Number.isFinite(entry?.damage) ? Math.round(entry.damage as number) : 0;
+};
+
+const buildHandTriggerOrder = (
+  interactions: CustomInteraction[],
+  beats: BeatEntry[][],
+  characters: PublicCharacter[],
+  land: HexCoord[] | undefined,
+  deckStates: Map<string, DeckState> | undefined,
+): Map<string, number> => {
+  const orderById = new Map<string, number>();
+  if (!Array.isArray(interactions) || !interactions.length || !Array.isArray(characters) || !characters.length) {
+    return orderById;
+  }
+  const pending = interactions.filter(
+    (interaction) => interaction?.type === 'hand-trigger' && interaction?.status === 'pending',
+  );
+  if (!pending.length) return orderById;
+
+  const center = getLandCenter(land);
+  const characterById = new Map<string, PublicCharacter>();
+  characters.forEach((character) => {
+    characterById.set(character.userId, character);
+    characterById.set(character.username, character);
+  });
+
+  const ranked = pending.map((interaction) => {
+    const actorId = interaction.actorUserId;
+    const character = characterById.get(actorId);
+    const beatIndex = Number.isFinite(interaction.beatIndex) ? Math.round(interaction.beatIndex) : beats.length - 1;
+    const damage = character ? getCharacterDamageAtIndex(beats, character, beatIndex) : 0;
+    const deckState = actorId && deckStates ? deckStates.get(actorId) : undefined;
+    const movementCount = deckState ? getMovementHandIds(deckState).length : 0;
+    const abilityCount = deckState ? deckState.abilityHand.length : 0;
+    const handSize = movementCount + abilityCount;
+    const location = character ? getCharacterLocationAtIndex(beats, character, beatIndex) ?? character.position : null;
+    const distance = location ? axialDistance(location, center) : Number.POSITIVE_INFINITY;
+    return {
+      interaction,
+      damage,
+      handSize,
+      distance,
+      tieBreaker: hashString(interaction.id ?? ''),
+    };
+  });
+
+  ranked.sort((a, b) => {
+    if (a.damage !== b.damage) return b.damage - a.damage;
+    if (a.handSize !== b.handSize) return a.handSize - b.handSize;
+    if (a.distance !== b.distance) return b.distance - a.distance;
+    return a.tieBreaker - b.tieBreaker;
+  });
+
+  ranked.forEach((item, index) => {
+    orderById.set(item.interaction.id, index + 1);
+  });
+
+  return orderById;
+};
+
+const applyDrawInteractions = (deckStates: Map<string, DeckState>, interactions: CustomInteraction[]): void => {
+  if (!deckStates || !interactions?.length) return;
+  interactions.forEach((interaction) => {
+    if (!interaction || interaction.type !== 'draw') return;
+    if (interaction.status !== 'resolved') return;
+    if (interaction.resolution?.applied) return;
+    const drawCount = Number.isFinite(interaction.drawCount) ? Math.max(0, Math.floor(interaction.drawCount)) : 0;
+    const deckState = deckStates.get(interaction.actorUserId);
+    if (!deckState) return;
+    if (drawCount > 0) {
+      const drawResult = drawAbilityCards(deckState, drawCount, { mode: 'auto' });
+      if ('error' in drawResult) {
+        console.log(`${LOG_PREFIX} draw:resolve failed`, {
+          userId: interaction.actorUserId,
+          error: drawResult.error.code,
+        });
+        return;
+      }
+    }
+    interaction.resolution = { ...(interaction.resolution ?? {}), applied: true };
+  });
 };
 
 const findComboContinuation = (
@@ -363,18 +498,52 @@ export function buildServer(port: number) {
     const baseInteractions = Array.isArray(publicState.customInteractions) ? publicState.customInteractions : [];
     const customInteractions = baseInteractions.map((interaction) => {
       if (!interaction || typeof interaction !== 'object') return interaction;
-      if (interaction.type !== 'discard') return { ...interaction };
       const next = { ...interaction };
-      if (interaction.actorUserId === userId && playerDeckState) {
-        const { abilityDiscardCount, movementDiscardCount } = getDiscardRequirements(
-          playerDeckState,
-          interaction.discardCount ?? 0,
-        );
-        next.discardAbilityCount = abilityDiscardCount;
-        next.discardMovementCount = movementDiscardCount;
+      if (interaction.type === 'discard') {
+        if (interaction.actorUserId === userId && playerDeckState) {
+          const { abilityDiscardCount, movementDiscardCount } = getDiscardRequirements(
+            playerDeckState,
+            interaction.discardCount ?? 0,
+          );
+          next.discardAbilityCount = abilityDiscardCount;
+          next.discardMovementCount = movementDiscardCount;
+        }
+        return next;
+      }
+      if (interaction.type === 'hand-trigger') {
+        if (interaction.actorUserId === userId && playerDeckState && interaction.status === 'pending') {
+          const cardId = interaction.cardId ?? interaction.abilityCardId;
+          const definition = cardId ? HAND_TRIGGER_BY_ID.get(cardId) : null;
+          if (definition?.cardType === 'ability') {
+            const { movementDiscardCount } = getDiscardRequirements(playerDeckState, definition.discardCount);
+            next.discardMovementCount = movementDiscardCount;
+            next.discardAbilityCount = 0;
+          } else if (definition?.cardType === 'movement') {
+            const abilityRequired = playerDeckState.abilityHand.length > 0 ? 1 : 0;
+            next.discardAbilityCount = abilityRequired;
+            next.discardMovementCount = 0;
+          }
+        }
+        return next;
       }
       return next;
     });
+    const handTriggerOrder = buildHandTriggerOrder(
+      customInteractions,
+      beats,
+      publicState.characters ?? [],
+      publicState.land ?? [],
+      resolvedDeckStates,
+    );
+    if (handTriggerOrder.size) {
+      customInteractions.forEach((interaction) => {
+        if (interaction?.type !== 'hand-trigger' || interaction.status !== 'pending') return;
+        const order = handTriggerOrder.get(interaction.id);
+        if (order != null) {
+          interaction.handTriggerOrder = order;
+        }
+      });
+    }
     return {
       ...game,
       state: {
@@ -476,13 +645,18 @@ export function buildServer(port: number) {
     const interactions = publicState.customInteractions ?? [];
     const pendingInteraction = interactions.find((interaction) => interaction.status === 'pending');
     if (pendingInteraction) {
+      const recipientId =
+        pendingInteraction.type === 'discard'
+          ? pendingInteraction.actorUserId ?? pendingInteraction.targetUserId
+          : pendingInteraction.actorUserId;
+      if (!recipientId) return;
       const payload = {
         gameId: game.id,
         beatIndex: pendingInteraction.beatIndex,
-        requiredUserIds: [pendingInteraction.actorUserId],
+        requiredUserIds: [recipientId],
         interactionId: pendingInteraction.id,
       };
-      sendRealtimeEvent({ type: 'input:request', payload }, pendingInteraction.actorUserId);
+      sendRealtimeEvent({ type: 'input:request', payload }, recipientId);
       return;
     }
     if (pending) {
@@ -883,22 +1057,23 @@ export function buildServer(port: number) {
         rotation: rotation ?? '',
       };
       const updatedBeats = applyActionSetToBeats(beats, characters, userId, actionList, [actionPlay]);
-    const comboAvailability = buildComboAvailability(deckStates, catalog);
-    const burningStrikeAvailability = buildBurningStrikeAvailability(deckStates);
-    const executed = executeBeatsWithInteractions(
-      updatedBeats,
-      characters,
-      interactions,
-      land,
-      comboAvailability,
-      [],
-      burningStrikeAvailability,
-    );
-    game.state.public.beats = executed.beats;
-    game.state.public.timeline = executed.beats;
-    game.state.public.characters = executed.characters;
-    game.state.public.customInteractions = executed.interactions;
-    game.state.public.boardTokens = executed.boardTokens;
+      const comboAvailability = buildComboAvailability(deckStates, catalog);
+      const handTriggerAvailability = buildHandTriggerAvailability(deckStates);
+      const executed = executeBeatsWithInteractions(
+        updatedBeats,
+        characters,
+        interactions,
+        land,
+        comboAvailability,
+        [],
+        handTriggerAvailability,
+      );
+      game.state.public.beats = executed.beats;
+      game.state.public.timeline = executed.beats;
+      game.state.public.characters = executed.characters;
+      game.state.public.customInteractions = executed.interactions;
+      game.state.public.boardTokens = executed.boardTokens;
+      applyDrawInteractions(deckStates, executed.interactions);
       resolveLandRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
       applyMatchOutcome(game, deckStates);
       console.log(`${LOG_PREFIX} action:set post`, {
@@ -1006,7 +1181,7 @@ export function buildServer(port: number) {
       }
     });
     const comboAvailability = buildComboAvailability(deckStates, catalog);
-    const burningStrikeAvailability = buildBurningStrikeAvailability(deckStates);
+    const handTriggerAvailability = buildHandTriggerAvailability(deckStates);
     const executed = executeBeatsWithInteractions(
       updatedBeats,
       characters,
@@ -1014,13 +1189,14 @@ export function buildServer(port: number) {
       land,
       comboAvailability,
       [],
-      burningStrikeAvailability,
+      handTriggerAvailability,
     );
     game.state.public.beats = executed.beats;
     game.state.public.timeline = executed.beats;
     game.state.public.characters = executed.characters;
     game.state.public.customInteractions = executed.interactions;
     game.state.public.boardTokens = executed.boardTokens;
+    applyDrawInteractions(deckStates, executed.interactions);
     resolveLandRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
     game.state.public.pendingActions = undefined;
     pendingActionSets.delete(game.id);
@@ -1105,57 +1281,123 @@ export function buildServer(port: number) {
       }
       interaction.status = 'resolved';
       interaction.resolution = { continue: resolvedContinue };
-    } else if (interaction.type === 'burning-strike') {
-      const rawIgnite = (body as { ignite?: unknown; burn?: unknown })?.ignite;
-      const fallbackIgnite = (body as { burn?: unknown })?.burn;
-      const resolvedIgnite =
-        typeof rawIgnite === 'boolean'
-          ? rawIgnite
-          : typeof fallbackIgnite === 'boolean'
-            ? fallbackIgnite
-            : null;
-      if (resolvedIgnite === null) {
-        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'invalid-burn-choice' });
-        return { ok: false, status: 400, error: 'Invalid burn choice' };
+    } else if (interaction.type === 'hand-trigger') {
+      const rawUse = (body as { use?: unknown; accept?: unknown; ignite?: unknown; burn?: unknown })?.use;
+      const altUse = (body as { accept?: unknown })?.accept;
+      const igniteUse = (body as { ignite?: unknown; burn?: unknown })?.ignite;
+      const burnUse = (body as { burn?: unknown })?.burn;
+      const resolvedUse =
+        typeof rawUse === 'boolean'
+          ? rawUse
+          : typeof altUse === 'boolean'
+            ? altUse
+            : typeof igniteUse === 'boolean'
+              ? igniteUse
+              : typeof burnUse === 'boolean'
+                ? burnUse
+                : null;
+      if (resolvedUse === null) {
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'invalid-hand-trigger' });
+        return { ok: false, status: 400, error: 'Invalid hand trigger choice' };
       }
-      if (!resolvedIgnite) {
+      if (!resolvedUse) {
         interaction.status = 'resolved';
-        interaction.resolution = { ignite: false };
+        interaction.resolution = { use: false };
       } else {
         const deckState = deckStates.get(userId);
         if (!deckState) {
           console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'missing-deck-state' });
           return { ok: false, status: 500, error: 'Missing deck state for player' };
         }
-        if (!deckState.abilityHand.includes(BURNING_STRIKE_CARD_ID)) {
-          console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'missing-burning-strike' });
-          return { ok: false, status: 400, error: 'Burning Strike is not in hand.' };
+        const cardId = interaction.cardId ?? interaction.abilityCardId;
+        const definition = cardId ? HAND_TRIGGER_BY_ID.get(cardId) : null;
+        if (!cardId || !definition) {
+          console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'unknown-hand-trigger' });
+          return { ok: false, status: 400, error: 'Unknown hand trigger card' };
         }
-        const { movementDiscardCount } = getDiscardRequirements(deckState, 1);
-        const movementCardIds =
-          (body as { movementCardIds?: unknown; movementIds?: unknown; movementCardIDs?: unknown })?.movementCardIds ??
-          (body as { movementIds?: unknown })?.movementIds ??
-          (body as { movementCardIDs?: unknown })?.movementCardIDs ??
-          [];
-        const movementList = Array.isArray(movementCardIds) ? movementCardIds : [];
-        if (movementDiscardCount !== movementList.length) {
-          console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'discard-count-mismatch' });
-          return { ok: false, status: 400, error: 'Incorrect number of movement cards selected for discard.' };
+        if (definition.cardType === 'ability') {
+          if (!deckState.abilityHand.includes(cardId)) {
+            console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'card-not-in-hand' });
+            return { ok: false, status: 400, error: 'Card is not in hand.' };
+          }
+          const { movementDiscardCount } = getDiscardRequirements(deckState, definition.discardCount);
+          const movementCardIds =
+            (body as { movementCardIds?: unknown; movementIds?: unknown; movementCardIDs?: unknown })?.movementCardIds ??
+            (body as { movementIds?: unknown })?.movementIds ??
+            (body as { movementCardIDs?: unknown })?.movementCardIDs ??
+            [];
+          const movementList = Array.isArray(movementCardIds) ? movementCardIds : [];
+          if (movementDiscardCount !== movementList.length) {
+            console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'discard-count-mismatch' });
+            return { ok: false, status: 400, error: 'Incorrect number of movement cards selected for discard.' };
+          }
+          const discardResult: AbilityDiscardResult = discardAbilityCards(deckState, [cardId], {
+            discardMovementIds: movementList,
+            mode: 'strict',
+          });
+          if (isAbilityDiscardFailure(discardResult)) {
+            console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: discardResult.error.code });
+            return { ok: false, status: 400, error: discardResult.error.message, code: discardResult.error.code };
+          }
+          if (cardId === 'vengeance') {
+            const drawCount = Number.isFinite(interaction.drawCount) ? Math.max(0, Math.floor(interaction.drawCount)) : 0;
+            if (drawCount > 0) {
+              const drawResult = drawAbilityCards(deckState, drawCount, { mode: 'auto' });
+              if ('error' in drawResult) {
+                console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: drawResult.error.code });
+                return { ok: false, status: 400, error: drawResult.error.message, code: drawResult.error.code };
+              }
+            }
+          }
+          interaction.status = 'resolved';
+          interaction.resolution = {
+            use: true,
+            movementCardIds: discardResult.movement.discarded,
+            abilityCardIds: discardResult.discarded,
+          };
+        } else if (definition.cardType === 'movement') {
+          const movementHand = getMovementHandIds(deckState);
+          if (!movementHand.includes(cardId)) {
+            console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'card-not-in-hand' });
+            return { ok: false, status: 400, error: 'Card is not in hand.' };
+          }
+          if (!deckState.abilityHand.length) {
+            console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'missing-ability' });
+            return { ok: false, status: 400, error: 'Ability card required for discard.' };
+          }
+          const abilityCardIds =
+            (body as { abilityCardIds?: unknown; abilityIds?: unknown; abilityCardIDs?: unknown })?.abilityCardIds ??
+            (body as { abilityIds?: unknown })?.abilityIds ??
+            (body as { abilityCardIDs?: unknown })?.abilityCardIDs ??
+            [];
+          const abilityList = Array.isArray(abilityCardIds) ? abilityCardIds : [];
+          if (abilityList.length !== 1) {
+            console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'discard-count-mismatch' });
+            return { ok: false, status: 400, error: 'Incorrect number of ability cards selected for discard.' };
+          }
+          const { movementDiscardCount } = getDiscardRequirements(deckState, 1);
+          if (movementDiscardCount !== 1) {
+            console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'movement-discard-required' });
+            return { ok: false, status: 400, error: 'Movement discard must follow hand size rules.' };
+          }
+          const discardResult: AbilityDiscardResult = discardAbilityCards(deckState, abilityList, {
+            discardMovementIds: [cardId],
+            mode: 'strict',
+          });
+          if (isAbilityDiscardFailure(discardResult)) {
+            console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: discardResult.error.code });
+            return { ok: false, status: 400, error: discardResult.error.message, code: discardResult.error.code };
+          }
+          interaction.status = 'resolved';
+          interaction.resolution = {
+            use: true,
+            movementCardIds: discardResult.movement.discarded,
+            abilityCardIds: discardResult.discarded,
+          };
+        } else {
+          console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'hand-trigger-type' });
+          return { ok: false, status: 400, error: 'Unsupported hand trigger type' };
         }
-        const discardResult: AbilityDiscardResult = discardAbilityCards(deckState, [BURNING_STRIKE_CARD_ID], {
-          discardMovementIds: movementList,
-          mode: 'strict',
-        });
-        if (isAbilityDiscardFailure(discardResult)) {
-          console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: discardResult.error.code });
-          return { ok: false, status: 400, error: discardResult.error.message, code: discardResult.error.code };
-        }
-        interaction.status = 'resolved';
-        interaction.resolution = {
-          ignite: true,
-          movementCardIds: discardResult.movement.discarded,
-          abilityCardIds: discardResult.discarded,
-        };
       }
     } else if (interaction.type === 'discard') {
       const deckState = deckStates.get(userId);
@@ -1205,7 +1447,7 @@ export function buildServer(port: number) {
       return { ok: false, status: 400, error: 'Unsupported interaction type' };
     }
 
-    const burningStrikeAvailability = buildBurningStrikeAvailability(deckStates);
+    const handTriggerAvailability = buildHandTriggerAvailability(deckStates);
     const executed = executeBeatsWithInteractions(
       beats,
       characters,
@@ -1213,13 +1455,14 @@ export function buildServer(port: number) {
       land,
       comboAvailability,
       [],
-      burningStrikeAvailability,
+      handTriggerAvailability,
     );
     game.state.public.beats = executed.beats;
     game.state.public.timeline = executed.beats;
     game.state.public.characters = executed.characters;
     game.state.public.customInteractions = executed.interactions;
     game.state.public.boardTokens = executed.boardTokens;
+    applyDrawInteractions(deckStates, executed.interactions);
     resolveLandRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
     applyMatchOutcome(game, deckStates);
     console.log(`${LOG_PREFIX} interaction:resolve post`, {

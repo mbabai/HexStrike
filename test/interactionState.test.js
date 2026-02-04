@@ -56,3 +56,40 @@ test('selectPendingInteraction returns combo when Co entry exists', async () => 
 
   assert.equal(pending?.id, 'combo:1:me:me');
 });
+
+test('selectPendingInteraction gates hand-trigger prompts by global order', async () => {
+  const { selectPendingInteraction } = await loadModule();
+  const interactions = [
+    { id: 'hand-trigger:a', type: 'hand-trigger', status: 'pending', actorUserId: 'me', beatIndex: 1, handTriggerOrder: 2 },
+    { id: 'hand-trigger:b', type: 'hand-trigger', status: 'pending', actorUserId: 'you', beatIndex: 1, handTriggerOrder: 1 },
+  ];
+  const beats = [[{ username: 'me', action: 'W' }, { username: 'you', action: 'W' }]];
+  const characters = [{ userId: 'me', username: 'me' }, { userId: 'you', username: 'you' }];
+  const pending = selectPendingInteraction({
+    interactions,
+    beats,
+    characters,
+    localUserId: 'me',
+    resolvedIndex: -1,
+  });
+
+  assert.equal(pending, null);
+});
+
+test('selectPendingInteraction accepts discard interactions targeting the local player', async () => {
+  const { selectPendingInteraction } = await loadModule();
+  const interactions = [
+    { id: 'discard:1:other:other', type: 'discard', status: 'pending', actorUserId: 'other', targetUserId: 'me', beatIndex: 1 },
+  ];
+  const beats = [[{ username: 'me', action: 'W' }]];
+  const characters = [{ userId: 'me', username: 'me' }];
+  const pending = selectPendingInteraction({
+    interactions,
+    beats,
+    characters,
+    localUserId: 'me',
+    resolvedIndex: 0,
+  });
+
+  assert.equal(pending?.id, 'discard:1:other:other');
+});

@@ -116,7 +116,7 @@
             "passive": false
         },
         "iron-will": {
-            "active": false,
+            "active": true,
             "passive": false
         },
         "jab": {
@@ -144,7 +144,7 @@
             "passive": false
         },
         "sinking-shot": {
-            "active": false,
+            "active": true,
             "passive": false
         },
         "smash-attack": {
@@ -180,7 +180,7 @@
             "passive": true
         },
         "vengeance": {
-            "active": false,
+            "active": true,
             "passive": false
         },
         "whirlwind": {

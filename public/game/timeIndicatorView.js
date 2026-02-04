@@ -1,5 +1,6 @@
 import { CHARACTER_IMAGE_SOURCES, CHARACTER_TOKEN_STYLE } from './characterTokens.mjs';
 import { getEarliestPendingInteractionIndex, getTimelineStopIndex } from './beatTimeline.js';
+import { getActiveHandTriggerId } from './handTriggerOrder.mjs';
 import { drawNameCapsule } from './portraitBadges.js';
 
 const DEFAULT_BORDER_SIZE = { width: 640, height: 64 };
@@ -23,6 +24,9 @@ const COMBO_SKIPPED_ALPHA = 0.35;
 const KNOCKBACK_BADGE_OUTSET = 0.25;
 const DAMAGE_BADGE_OUTSET = 0.22;
 const BADGE_NUDGE_X = 5;
+const HAND_TRIGGER_CARD_HEIGHT = 0.62;
+const HAND_TRIGGER_CARD_ASPECT = 0.72;
+const HAND_TRIGGER_STACK_OFFSET = 0.22;
 
 const getActionArt = (action) => {
   const key = action || ACTION_ICON_FALLBACK;
@@ -90,6 +94,32 @@ const getPendingPreviewEntry = (preview, character, beatIndex) => {
   const offset = beatIndex - startIndex;
   if (offset < 0 || offset >= actionList.length) return null;
   return actionList[offset] ?? null;
+};
+
+const buildHandTriggerLookup = (interactions, characters) => {
+  const lookup = new Map();
+  if (!Array.isArray(interactions) || !Array.isArray(characters) || !characters.length) return lookup;
+  const actorKeyMap = new Map();
+  characters.forEach((character) => {
+    const key = character.username ?? character.userId;
+    if (!key) return;
+    actorKeyMap.set(character.userId, key);
+    if (character.username) {
+      actorKeyMap.set(character.username, key);
+    }
+  });
+  interactions.forEach((interaction) => {
+    if (!interaction || interaction.type !== 'hand-trigger') return;
+    const beatIndex = Number.isFinite(interaction.beatIndex) ? Math.round(interaction.beatIndex) : null;
+    if (beatIndex == null || beatIndex < 0) return;
+    const actorKey = actorKeyMap.get(interaction.actorUserId) ?? interaction.actorUserId;
+    if (!actorKey) return;
+    const key = `${actorKey}:${beatIndex}`;
+    const list = lookup.get(key) ?? [];
+    list.push(interaction);
+    lookup.set(key, list);
+  });
+  return lookup;
 };
 
 export const getTimeIndicatorLayout = (viewport) => {
@@ -197,6 +227,7 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
   if (!layout) return null;
   const characters = gameState?.state?.public?.characters ?? [];
   const beats = gameState?.state?.public?.beats ?? [];
+  const interactions = gameState?.state?.public?.customInteractions ?? [];
   if (!characters.length || !beats.length) return null;
   const offsets = TIMELINE_OFFSETS;
   const value = viewModel?.value ?? 0;
@@ -214,6 +245,7 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
     });
     return map;
   });
+  const handTriggerLookup = buildHandTriggerLookup(interactions, characters);
 
   for (let rowIndex = 0; rowIndex < characters.length; rowIndex += 1) {
     const character = characters[rowIndex];
@@ -227,11 +259,47 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
       const beatIndex = value + offset;
       if (beatIndex < 0) continue;
       const entry = beatLookup[beatIndex]?.get(lookupKey);
+      const xPos = rowCenterX + offset * spacing;
+      const handTriggerKey = `${lookupKey}:${beatIndex}`;
+      const handTriggers = handTriggerLookup.get(handTriggerKey) ?? [];
+      if (handTriggers.length) {
+        const cardHeight = iconSize * HAND_TRIGGER_CARD_HEIGHT;
+        const cardWidth = cardHeight * HAND_TRIGGER_CARD_ASPECT;
+        const cardCenterX = xPos + spacing * 0.5;
+        const minCenterX = row.numberArea.x + cardWidth / 2;
+        const maxCenterX = row.numberArea.x + row.numberArea.width - cardWidth / 2;
+        if (cardCenterX >= minCenterX && cardCenterX <= maxCenterX) {
+          const stackOffset = cardHeight * HAND_TRIGGER_STACK_OFFSET;
+          const startOffset = -((handTriggers.length - 1) * stackOffset) / 2;
+          for (let i = 0; i < handTriggers.length; i += 1) {
+            const centerY = rowCenterY + startOffset + i * stackOffset;
+            const bounds = {
+              x: cardCenterX - cardWidth / 2,
+              y: centerY - cardHeight / 2,
+              width: cardWidth,
+              height: cardHeight,
+            };
+            if (!isPointInRect(x, y, bounds)) continue;
+            const interaction = handTriggers[i];
+            const cardId =
+              interaction?.cardId ?? interaction?.abilityCardId ?? interaction?.movementCardId ?? '';
+            return {
+              kind: 'hand-trigger',
+              beatIndex,
+              character,
+              interaction,
+              cardId,
+              cardType: interaction?.cardType ?? null,
+              center: { x: cardCenterX, y: centerY },
+              size: Math.max(cardWidth, cardHeight),
+            };
+          }
+        }
+      }
       if (!entry) continue;
       const token = parseActionToken(entry.action ?? '');
       const symbol = token.emphasized ? EMPHASIS_ICON_KEY : token.label;
       if (token.label === ACTION_ICON_FALLBACK) continue;
-      const xPos = rowCenterX + offset * spacing;
       const bounds = {
         x: xPos - iconSize / 2,
         y: rowCenterY - iconSize / 2,
@@ -240,6 +308,7 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
       };
       if (!isPointInRect(x, y, bounds)) continue;
       return {
+        kind: 'action',
         beatIndex,
         character,
         entry,
@@ -272,6 +341,7 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
   const deathUserId = matchOutcome?.loserUserId ?? null;
   const deathIndex = Number.isFinite(matchOutcome?.beatIndex) ? matchOutcome.beatIndex : null;
   const highlightIndex = getTimelineStopIndex(beats, characters, interactions);
+  const handTriggerLookup = buildHandTriggerLookup(interactions, characters);
   const interactionStopIndex = getEarliestPendingInteractionIndex(interactions);
   const fadeAfterIndex =
     interactionStopIndex !== null && interactionStopIndex <= highlightIndex ? interactionStopIndex : null;
@@ -285,8 +355,12 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       }
     });
   }
+  const activeHandTriggerId = getActiveHandTriggerId(interactions);
   interactions.forEach((interaction) => {
     if (!interaction || interaction.status !== 'pending') return;
+    if (interaction.type === 'hand-trigger' && activeHandTriggerId && interaction.id !== activeHandTriggerId) {
+      return;
+    }
     if (interaction.actorUserId) {
       waitingUserIds.add(interaction.actorUserId);
     }
@@ -380,16 +454,22 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
         isDeathBeat && (!baseEntry || baseAction === DEFAULT_ACTION)
           ? 'Death'
           : entry?.action ?? ACTION_ICON_FALLBACK;
+      const xPos = rowCenterX + offset * rowSpacing;
+      const shouldFade = fadeAfterIndex !== null && beatIndex > fadeAfterIndex;
+      const handTriggerKey = `${lookupKey}:${beatIndex}`;
+      const handTriggers = handTriggerLookup.get(handTriggerKey) ?? [];
+      if (handTriggers.length) {
+        const cardAlpha = shouldFade ? 0.28 : 1;
+        drawHandTriggerCards(ctx, row, xPos, rowCenterY, rowSpacing, iconSize, handTriggers, theme, cardAlpha);
+      }
       const token = parseActionToken(action);
       const image = getActionArt(token.label);
       if (!image || !image.complete || image.naturalWidth === 0) return;
       const comboSkipped = entry?.comboSkipped && token.label === COMBO_ICON_KEY;
-      const xPos = rowCenterX + offset * rowSpacing;
       const drawScale = usePreview ? previewScale : 1;
       const drawSize = iconSize * drawScale;
       const imageX = xPos - drawSize / 2;
       const imageY = rowCenterY - drawSize / 2;
-      const shouldFade = fadeAfterIndex !== null && beatIndex > fadeAfterIndex;
       const alpha =
         (shouldFade ? 0.28 : 1) *
         (usePreview ? PREVIEW_ALPHA : 1) *
@@ -543,6 +623,59 @@ const drawRowSeparator = (ctx, layout, numberArea, y, color) => {
   ctx.moveTo(numberArea.x, y);
   ctx.lineTo(numberArea.x + numberArea.width, y);
   ctx.stroke();
+};
+
+
+const getHandTriggerFill = (interaction, theme) => {
+  const cardType = `${interaction?.cardType ?? ''}`.toLowerCase();
+  if (cardType === 'movement') {
+    return theme.cardMovement || theme.actionMove || theme.accent;
+  }
+  return theme.cardAbility || theme.actionAttack || theme.accentStrong;
+};
+
+const drawHandTriggerCard = (ctx, centerX, centerY, width, height, interaction, theme, alpha = 1) => {
+  const x = centerX - width / 2;
+  const y = centerY - height / 2;
+  const radius = Math.max(2, height * 0.18);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.fillStyle = getHandTriggerFill(interaction, theme);
+  drawRoundedRect(ctx, x, y, width, height, radius);
+  ctx.fill();
+  ctx.strokeStyle = theme.panelStrong || theme.textDark || '#000000';
+  ctx.lineWidth = Math.max(1, height * 0.08);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+  drawRoundedRect(ctx, x + width * 0.08, y + height * 0.1, width * 0.84, height * 0.26, radius * 0.8);
+  ctx.fill();
+  ctx.restore();
+};
+
+const drawHandTriggerCards = (
+  ctx,
+  row,
+  xPos,
+  rowCenterY,
+  rowSpacing,
+  iconSize,
+  handTriggers,
+  theme,
+  alpha = 1,
+) => {
+  if (!handTriggers.length) return;
+  const cardHeight = iconSize * HAND_TRIGGER_CARD_HEIGHT;
+  const cardWidth = cardHeight * HAND_TRIGGER_CARD_ASPECT;
+  const cardCenterX = xPos + rowSpacing * 0.5;
+  const minCenterX = row.numberArea.x + cardWidth / 2;
+  const maxCenterX = row.numberArea.x + row.numberArea.width - cardWidth / 2;
+  if (cardCenterX < minCenterX || cardCenterX > maxCenterX) return;
+  const stackOffset = cardHeight * HAND_TRIGGER_STACK_OFFSET;
+  const startOffset = -((handTriggers.length - 1) * stackOffset) / 2;
+  handTriggers.forEach((interaction, index) => {
+    const centerY = rowCenterY + startOffset + index * stackOffset;
+    drawHandTriggerCard(ctx, cardCenterX, centerY, cardWidth, cardHeight, interaction, theme, alpha);
+  });
 };
 
 const drawRotationBadge = (ctx, x, y, size, rotation, theme) => {

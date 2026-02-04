@@ -98,10 +98,15 @@
   --action-card-surface-top-height: calc(157px * var(--action-card-scale));
   --action-card-surface-mid-height: calc(72px * var(--action-card-scale));
   --action-card-surface-bottom-height: calc(66px * var(--action-card-scale));
-  --action-card-title-top: calc(6px * var(--action-card-scale));
+  --action-card-title-padding-top: calc(6px * var(--action-card-scale));
+  --action-card-title-padding-bottom: calc(2px * var(--action-card-scale));
+  --action-card-title-top: 0;
   --action-card-title-left: calc(40px * var(--action-card-scale));
   --action-card-title-width: calc(139px * var(--action-card-scale));
-  --action-card-title-height: calc(29px * var(--action-card-scale));
+  --action-card-title-height: var(--action-card-header-height);
+  --action-card-title-font-size: calc(
+    var(--action-card-title-height) - var(--action-card-title-padding-top) - var(--action-card-title-padding-bottom)
+  );
   --action-card-rotation-top: calc(6px * var(--action-card-scale));
   --action-card-rotation-left: calc(179px * var(--action-card-scale));
   --action-card-rotation-width: calc(30px * var(--action-card-scale));
@@ -1202,18 +1207,18 @@ small {
   justify-content: center;
 }
 
-.burning-strike-modal {
+.hand-trigger-modal {
   width: min(380px, 92vw);
   display: grid;
   gap: 10px;
   text-align: center;
   pointer-events: auto;
   padding: 22px 24px;
-  border-color: rgba(211, 75, 66, 0.5);
-  background: linear-gradient(160deg, rgba(26, 10, 10, 0.95), rgba(16, 24, 28, 0.9));
+  border-color: rgba(67, 190, 134, 0.55);
+  background: linear-gradient(160deg, rgba(12, 30, 20, 0.95), rgba(16, 24, 28, 0.9));
 }
 
-.burning-strike-eyebrow {
+.hand-trigger-eyebrow {
   margin: 0;
   text-transform: uppercase;
   letter-spacing: 0.2em;
@@ -1221,13 +1226,13 @@ small {
   color: var(--color-subtle);
 }
 
-.burning-strike-copy {
+.hand-trigger-copy {
   margin: 0;
   color: var(--color-subtle);
   font-size: 0.95rem;
 }
 
-.burning-strike-actions {
+.hand-trigger-actions {
   justify-content: center;
 }
 
@@ -1270,6 +1275,15 @@ small {
   animation: discardPulse 1.1s ease-in-out infinite;
 }
 
+.action-card.is-reveal-pending {
+  box-shadow:
+    var(--shadow-soft),
+    inset 0 1px 0 var(--color-highlight-soft),
+    0 0 0 2px rgba(71, 210, 144, 0.7),
+    0 0 18px rgba(71, 210, 144, 0.7);
+  animation: revealPulse 1.2s ease-in-out infinite;
+}
+
 .action-card.is-discard-selected {
   box-shadow:
     var(--shadow-soft),
@@ -1277,6 +1291,24 @@ small {
   filter: grayscale(1) brightness(0.55);
   opacity: 0.7;
   animation: none;
+}
+
+@keyframes revealPulse {
+  0%,
+  100% {
+    box-shadow:
+      var(--shadow-soft),
+      inset 0 1px 0 var(--color-highlight-soft),
+      0 0 0 2px rgba(71, 210, 144, 0.5),
+      0 0 12px rgba(71, 210, 144, 0.45);
+  }
+  50% {
+    box-shadow:
+      var(--shadow-soft),
+      inset 0 1px 0 var(--color-highlight-soft),
+      0 0 0 2px rgba(71, 210, 144, 0.85),
+      0 0 24px rgba(71, 210, 144, 0.8);
+  }
 }
 
 .action-hud.is-locked .action-card.is-discard-selected {
@@ -1649,9 +1681,6 @@ small {
   pointer-events: none;
   --action-card-scale-base: 0.67;
   --action-card-scale: var(--action-card-scale-base);
-  --action-card-title-scale: 2.7;
-  --action-card-title-top: calc(-8px * var(--action-card-scale));
-  --action-card-title-height: calc(29px * var(--action-card-scale) * var(--action-card-title-scale));
   --action-hand-width-base: min(70vw, 920px);
   --action-hand-width: var(--action-hand-width-base);
   --action-hand-height: calc(var(--action-card-height) * 1.05);
@@ -1879,7 +1908,7 @@ small {
   width: var(--action-card-title-width);
   height: var(--action-card-title-height);
   font-family: var(--font-heading);
-  font-size: calc(10px * var(--action-card-scale) * var(--action-card-title-scale, 1));
+  font-size: var(--action-card-title-font-size);
   font-weight: 600;
   line-height: 1;
   letter-spacing: 0.01em;
@@ -1887,6 +1916,7 @@ small {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: var(--action-card-title-padding-top) 0 var(--action-card-title-padding-bottom);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

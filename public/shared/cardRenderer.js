@@ -136,12 +136,13 @@ const fitTitleToHeader = (title) => {
   if (!title || !title.textContent.trim()) return;
   title.style.fontSize = '';
   const titleWidth = title.clientWidth;
-  if (!titleWidth) return;
+  const titleHeight = title.clientHeight;
+  if (!titleWidth || !titleHeight) return;
   let size = Number.parseFloat(getComputedStyle(title).fontSize) || 10;
   const scaleValue = getCardScale(title);
   const minSize = 6 * scaleValue;
   let safety = 0;
-  while (title.scrollWidth > titleWidth && size > minSize && safety < 32) {
+  while ((title.scrollWidth > titleWidth || title.scrollHeight > titleHeight) && size > minSize && safety < 32) {
     size = Math.max(minSize, size - 0.5);
     title.style.fontSize = `${size}px`;
     safety += 1;
