@@ -174,7 +174,7 @@
       "damage": 0,
       "kbf": 0,
       "activeText": "{i}: For each point of damage that would have hit you, draw 1 card.",
-      "passiveText": "After this movement card is done, if you are on the abyss, you may choose to swap a movement card from your hand with one in your discard pile."
+      "passiveText": "After this movement card is done, if you are on the abyss, draw 1."
     },
     {
       "id": "aerial-strike",
