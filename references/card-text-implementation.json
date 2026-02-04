@@ -1,5 +1,5 @@
 {
-    "generatedAt": "2026-02-03",
+    "generatedAt": "2026-02-04",
     "movement": {
         "advance": {
             "active": false,
@@ -64,7 +64,7 @@
             "passive": true
         },
         "counter-attack": {
-            "active": false,
+            "active": true,
             "passive": true
         },
         "cross-slash": {
@@ -113,14 +113,14 @@
         },
         "hip-throw": {
             "active": true,
-            "passive": false
+            "passive": true
         },
         "iron-will": {
             "active": true,
-            "passive": false
+            "passive": true
         },
         "jab": {
-            "active": false,
+            "active": true,
             "passive": true
         },
         "long-thrust": {
@@ -173,7 +173,7 @@
         },
         "tackle": {
             "active": true,
-            "passive": false
+            "passive": true
         },
         "trip": {
             "active": true,

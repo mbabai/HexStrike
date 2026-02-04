@@ -7,6 +7,7 @@ import {
   isDiscardImmune,
   shouldConvertKbfToDiscard,
 } from './cardText/discardEffects';
+import { getPassiveKbfReduction, isThrowImmune } from './cardText/combatModifiers';
 import { getTimelineResolvedIndex } from './beatTimeline';
 import { DEFAULT_LAND_HEXES } from './hexGrid';
 import { getHandTriggerDefinition } from './handTriggers';
@@ -28,6 +29,7 @@ const BURNING_STRIKE_CARD_ID = 'burning-strike';
 const SINKING_SHOT_CARD_ID = 'sinking-shot';
 const VENGEANCE_CARD_ID = 'vengeance';
 const IRON_WILL_CARD_ID = 'iron-will';
+const JAB_CARD_ID = 'jab';
 // Keep in sync with cardRules/pendingActionPreview throw detection.
 const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
 const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
@@ -379,6 +381,7 @@ const isEntryThrow = (entry: BeatEntry | null | undefined) => {
   if (entry.passiveCardId && PASSIVE_THROW_CARD_IDS.has(entry.passiveCardId)) return true;
   return false;
 };
+
 
 const matchesEntryForCharacter = (entry: BeatEntry, character: PublicCharacter) => {
   const key = resolveEntryKey(entry);
@@ -1134,7 +1137,11 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
 
       const fromPosition = { q: targetState.position.q, r: targetState.position.r };
       targetState.damage += ARROW_DAMAGE;
-      const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : ARROW_KBF;
+      const targetCharacter = characterById.get(targetId);
+      const targetEntry = targetCharacter ? findEntryForCharacter(beat, targetCharacter) : null;
+      const passiveKbfReduction = getPassiveKbfReduction(targetEntry);
+      const baseKbf = Math.max(0, ARROW_KBF - passiveKbfReduction);
+      const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : baseKbf;
       const knockbackDistance = getKnockbackDistance(targetState.damage, effectiveKbf);
       let knockedSteps = 0;
       if (knockbackDistance > 0) {
@@ -1289,6 +1296,23 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
           interactionById.set(interactionId, created);
         }
       }
+      if (entry.cardId === JAB_CARD_ID && isBracketedAction(entry.action ?? '')) {
+        const interactionId = buildInteractionId('draw', index, actorId, actorId);
+        if (!interactionById.has(interactionId) && !isHistoryIndex(index)) {
+          const created: CustomInteraction = {
+            id: interactionId,
+            type: 'draw',
+            beatIndex: index,
+            actorUserId: actorId,
+            targetUserId: actorId,
+            status: 'resolved',
+            drawCount: 1,
+            resolution: { applied: false },
+          };
+          updatedInteractions.push(created);
+          interactionById.set(interactionId, created);
+        }
+      }
 
       const startDiscard = getPassiveStartDiscardCount(entry.passiveCardId);
       if (startDiscard && entry.action !== DEFAULT_ACTION && isActionSetStart(entry)) {
@@ -1368,10 +1392,14 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
         }
 
         const isBlocked = directionIndex != null && blockMap.get(targetKey)?.has(directionIndex);
+        const targetCharacter = targetId ? characterById.get(targetId) : null;
+        const targetEntry = targetCharacter ? findEntryForCharacter(beat, targetCharacter) : null;
 
         if (token.type === 'a' || token.type === 'c') {
           recordBurningStrikeAttack(actorId, destination);
           const isThrow = isEntryThrow(entry);
+          const throwBlocked = isThrow && isThrowImmune(targetEntry);
+          const blocked = (isBlocked && !isThrow) || throwBlocked;
           const comboCardId = entry.cardId ? `${entry.cardId}` : '';
           let activeComboState = comboState;
           if (!isThrow && targetId && !isBlocked) {
@@ -1382,11 +1410,9 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
               activeComboState.hit = true;
             }
           }
-          if (targetId && (!isBlocked || isThrow)) {
+          if (targetId && !blocked) {
             const targetState = state.get(targetId);
             if (targetState) {
-              const targetCharacter = characterById.get(targetId);
-              const targetEntry = targetCharacter ? findEntryForCharacter(beat, targetCharacter) : null;
               const preserveAction =
                 executedActors.has(targetId) && (targetEntry?.action ?? DEFAULT_ACTION) !== DAMAGE_ICON_ACTION;
               if (isThrow) {
@@ -1510,7 +1536,9 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
                   occupancy,
                   targetId,
                 );
-                const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : entryKbf;
+                const passiveKbfReduction = getPassiveKbfReduction(targetEntry);
+                const baseKbf = Math.max(0, entryKbf - passiveKbfReduction);
+                const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : baseKbf;
                 const baseKnockbackDistance = getKnockbackDistance(targetState.damage, effectiveKbf);
                 const convertKbf = shouldConvertKbfToDiscard(targetEntry);
                 if (convertKbf && baseKnockbackDistance > 0) {

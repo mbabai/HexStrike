@@ -134,6 +134,10 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Combo prompts pause on the `Co` beat before any action/E resolution, and choosing to continue skips land refresh/draw for that player at that beat.
 - Combo continuation is tied to a specific active card (`cardId` on action list/beat entry); only hits from that card can open the combo prompt.
 - Throw interactions are tagged from card text (`throw` keyword in the active card's active/passive text and the passive card's passive text only); combo prompts only open on non-throw hits.
+- Hip Throw/Tackle passives grant throw immunity while their action set is active (non-`E`), blocking throws from any direction; keep `cardText/combatModifiers` mirrored server/client.
+- Iron Will passive reduces KBF by 1 (min 0) on hits, including projectiles, while the action set is active; hand-trigger use still sets KBF to 0.
+- Jab active `{i}` draws 1 by emitting a `draw` interaction on the bracketed attack step.
+- Active ability card text is handled in `src/game/cardText/activeAbility.ts` + `public/game/cardText/activeAbility.js`; Counter Attack shifts the selected rotation to after `{i}` by clearing the start rotation and applying a forced rotation on the next entry.
 - The combo modal is filtered to the actor's beat entry by userId/username; keep interaction actor resolution aligned with roster identifiers.
 - Cards can opt out of throw keyword detection by id (e.g., `grappling-hook`).
 - Grappling Hook uses `cardStartTerrain` to gate its conditional throw (throw only if the action set started on land), and its `{i}` bracketed charge stops at the first land tile or target in front.

@@ -398,3 +398,73 @@ test('executeBeats places burning strike fire hexes on bracketed attacks', () =>
   assert.equal(tokens[0].type, 'fire-hex');
   assert.deepEqual(tokens[0].position, { q: 1, r: 0 });
 });
+
+test('executeBeats creates jab draw interactions on bracketed attacks', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+  ];
+
+  const beats = [[buildEntry('alpha', '[a]', 20, characters[0].position, characters[0].facing, '', 1, 0)]];
+  beats[0][0].cardId = 'jab';
+  beats[0][0].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters);
+  const draw = (result.interactions || []).find((interaction) => interaction.type === 'draw');
+
+  assert.ok(draw);
+  assert.equal(draw.actorUserId, 'alpha');
+  assert.equal(draw.drawCount, 1);
+});
+
+test('executeBeats blocks throws against hip-throw and tackle passives', () => {
+  const passiveCards = ['hip-throw', 'tackle'];
+
+  passiveCards.forEach((passiveCardId) => {
+    const characters = [
+      { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+      { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+    ];
+
+    const beats = [
+      [
+        buildEntry('alpha', '[a]', 20, characters[0].position, characters[0].facing, '', 2, 0),
+        buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+      ],
+    ];
+
+    beats[0][0].interaction = { type: 'throw' };
+    beats[0][1].passiveCardId = passiveCardId;
+
+    const result = executeBeats(beats, characters);
+    const betaEntry = (result.beats[0] || []).find((entry) => entry.username === 'beta');
+
+    assert.equal(result.interactions.some((interaction) => interaction.type === 'throw'), false);
+    assert.ok(betaEntry);
+    assert.equal(betaEntry.damage, 0);
+    assert.equal(betaEntry.location.q, 1);
+    assert.equal(betaEntry.location.r, 0);
+  });
+});
+
+test('executeBeats reduces KBF by 1 for iron will passive hits', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'a', 20, characters[0].position, characters[0].facing, '', 1, 1),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+  beats[0][1].passiveCardId = 'iron-will';
+
+  const result = executeBeats(beats, characters);
+  const betaEntry = (result.beats[0] || []).find((entry) => entry.username === 'beta');
+
+  assert.ok(betaEntry);
+  assert.equal(betaEntry.damage, 1);
+  assert.equal(betaEntry.location.q, 1);
+  assert.equal(betaEntry.location.r, 0);
+});

@@ -20,6 +20,11 @@
 - Grappling Hook passive: when an `{a}` lands, flip the target to the opposite side of the attacker and knock them further in that direction (execution + playback).
 - In code: Fleche/Ninja Roll are in `applyPassiveMovementCardText` (`src/game/cardText/passiveMovement.ts` and `public/game/cardText/passiveMovement.js`); Grappling Hook passive is handled in `src/game/execute.ts` + `public/game/timelinePlayback.js`.
 
+## Combat modifiers
+- Hip Throw/Tackle passives grant throw immunity while the action set is active (non-`E`), blocking throw hits entirely.
+- Iron Will passive reduces incoming KBF by 1 (min 0) while the action set is active; hand-trigger use still sets KBF to 0.
+- In code: `src/game/cardText/combatModifiers.ts` + `public/game/cardText/combatModifiers.js`; consumed in `execute.ts` and `timelinePlayback.js`.
+
 ## Action list transforms
 - Card text that modifies the action list (add/remove/replace) should use the shared helpers in
   `src/game/cardText/actionListTransforms.ts` and `public/game/cardText/actionListTransforms.js` to keep behavior precise and mirrored.

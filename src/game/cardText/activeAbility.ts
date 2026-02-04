@@ -1,0 +1,61 @@
+import { ActionListItem, CardDefinition } from '../../types';
+import { isBracketedAction, patchActionEntry, updateActionEntries } from './actionListTransforms';
+
+const getBracketedActionIndices = (actions: string[]): number[] => {
+  const indices: number[] = [];
+  actions.forEach((action, index) => {
+    if (isBracketedAction(action)) {
+      indices.push(index);
+    }
+  });
+  return indices;
+};
+
+const getSymbolActionIndices = (actions: string[], symbol: string): number[] => {
+  if (symbol === 'i') {
+    return getBracketedActionIndices(actions);
+  }
+  return [];
+};
+
+const applyRotationAfterIndex = (
+  actionList: ActionListItem[],
+  index: number,
+  rotation: string,
+): ActionListItem[] => {
+  if (!rotation || !Number.isFinite(index) || index < 0 || index >= actionList.length) return actionList;
+  const cleared = updateActionEntries(actionList, [0], (entry) => {
+    if (!entry?.rotation) return entry;
+    return patchActionEntry(entry, { rotation: '' });
+  });
+  return updateActionEntries(cleared, [index], (entry) => {
+    if (!entry) return entry;
+    return patchActionEntry(entry, { rotation, rotationSource: 'forced' });
+  });
+};
+
+const applyCounterAttackActiveText = (
+  actionList: ActionListItem[],
+  card: CardDefinition,
+  rotationLabel: string,
+): ActionListItem[] => {
+  const indices = getSymbolActionIndices(Array.isArray(card.actions) ? card.actions : [], 'i');
+  const targetIndex = indices.length ? indices[0] + 1 : null;
+  if (targetIndex == null) return actionList;
+  return applyRotationAfterIndex(actionList, targetIndex, rotationLabel);
+};
+
+type ActiveAbilityEffect = (actionList: ActionListItem[], card: CardDefinition, rotationLabel: string) => ActionListItem[];
+
+const ACTIVE_ABILITY_EFFECTS = new Map<string, ActiveAbilityEffect>([['counter-attack', applyCounterAttackActiveText]]);
+
+export const applyActiveAbilityCardText = (
+  actionList: ActionListItem[],
+  card: CardDefinition,
+  rotationLabel: string,
+): ActionListItem[] => {
+  if (!card || card.type !== 'ability') return actionList;
+  const handler = ACTIVE_ABILITY_EFFECTS.get(card.id);
+  if (!handler) return actionList;
+  return handler(actionList, card, rotationLabel);
+};

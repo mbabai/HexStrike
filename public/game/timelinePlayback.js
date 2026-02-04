@@ -1,4 +1,5 @@
 import { LAND_HEXES } from '../shared/hex.mjs';
+import { getPassiveKbfReduction, isThrowImmune } from './cardText/combatModifiers.js';
 import { shouldConvertKbfToDiscard } from './cardText/discardEffects.js';
 
 const DEFAULT_ACTION = 'E';
@@ -622,10 +623,13 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
       const isBlocked =
         directionIndex != null &&
         blockMap.get(targetKey)?.has(directionIndex);
+      const targetCharacter = targetId ? characterById.get(targetId) : null;
+      const targetEntry = targetCharacter ? getBeatEntryForCharacter(beat, targetCharacter) : null;
 
       if (token.type === 'a' || token.type === 'c') {
         const isThrow = isEntryThrow(entry);
-        const blocked = isBlocked && !isThrow;
+        const throwBlocked = isThrow && isThrowImmune(targetEntry);
+        const blocked = (isBlocked && !isThrow) || throwBlocked;
         if (targetId && blocked && directionIndex != null) {
           blockHits.push({ coord: { q: destination.q, r: destination.r }, directionIndex });
         }
@@ -695,8 +699,6 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
             damageChanges.push({ targetId, delta: entryDamage });
             const usesGrapplingHookPassive = hasGrapplingHookPassive && token.type === 'a';
             const attackDirection = getKnockbackDirection(origin, destination, lastStep);
-            const targetCharacter = characterById.get(targetId);
-            const targetEntry = targetCharacter ? getBeatEntryForCharacter(beat, targetCharacter) : null;
             const knockbackPath = [{ q: targetState.position.q, r: targetState.position.r }];
             const { knockbackDirection, flipPosition } = applyGrapplingHookPassiveFlip(
               usesGrapplingHookPassive,
@@ -706,7 +708,9 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
               occupancy,
               targetId,
             );
-            const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : entryKbf;
+            const passiveKbfReduction = getPassiveKbfReduction(targetEntry);
+            const baseKbf = Math.max(0, entryKbf - passiveKbfReduction);
+            const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : baseKbf;
             const baseKnockbackDistance = getKnockbackDistance(targetState.damage, effectiveKbf);
             const knockbackDistance = shouldConvertKbfToDiscard(targetEntry) ? 0 : baseKnockbackDistance;
             if (flipPosition) {
@@ -1214,7 +1218,11 @@ const buildTokenPlayback = (gameState, beatIndex) => {
         }
         return;
       }
-      const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : ARROW_KBF;
+      const targetCharacter = characterById.get(targetId);
+      const targetEntry = targetCharacter ? getBeatEntryForCharacter(beat, targetCharacter) : null;
+      const passiveKbfReduction = getPassiveKbfReduction(targetEntry);
+      const baseKbf = Math.max(0, ARROW_KBF - passiveKbfReduction);
+      const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : baseKbf;
       const updatedDamage = (targetState.damage ?? 0) + ARROW_DAMAGE;
       const knockbackDistance = getKnockbackDistance(updatedDamage, effectiveKbf);
       let finalPosition = { q: startPosition.q, r: startPosition.r };
