@@ -29,6 +29,7 @@ export const createHandTriggerPrompt = ({
     triggerCardType: null,
     required: { movement: 0, ability: 0 },
     selection: { movement: new Set(), ability: new Set() },
+    handIds: { movement: new Set(), ability: new Set() },
     lastKey: null,
     useConfirmed: false,
     pendingId: null,
@@ -125,10 +126,15 @@ export const createHandTriggerPrompt = ({
     const needsAbility =
       allowDiscard && state.required.ability > 0 && state.selection.ability.size < state.required.ability;
     const triggerId = state.triggerCardId;
-    const updateHand = (hand, selectedSet, needsSelection) => {
+    const updateHand = (hand, selectedSet, needsSelection, validSet) => {
       if (!hand) return;
       hand.querySelectorAll('.action-card').forEach((card) => {
         const cardId = card.dataset.cardId;
+        const isValid = Boolean(cardId && validSet?.has(cardId));
+        if (!isValid) {
+          card.classList.remove('is-reveal-pending', 'is-discard-selected', 'is-discard-pending');
+          return;
+        }
         const isTrigger = Boolean(cardId && cardId === triggerId);
         const isSelected = Boolean(cardId && selectedSet.has(cardId));
         card.classList.toggle('is-reveal-pending', allowGlow && !state.useConfirmed && isTrigger);
@@ -136,8 +142,8 @@ export const createHandTriggerPrompt = ({
         card.classList.toggle('is-discard-pending', allowDiscard && needsSelection && !isTrigger && !isSelected);
       });
     };
-    updateHand(movementHand, state.selection.movement, needsMovement);
-    updateHand(abilityHand, state.selection.ability, needsAbility);
+    updateHand(movementHand, state.selection.movement, needsMovement, state.handIds.movement);
+    updateHand(abilityHand, state.selection.ability, needsAbility, state.handIds.ability);
   };
 
   const sync = ({ pending = null, playerCards = null, inFlight = false } = {}) => {
@@ -176,6 +182,7 @@ export const createHandTriggerPrompt = ({
 
     const movementIds = Array.isArray(playerCards.movementHand) ? playerCards.movementHand : [];
     const abilityIds = Array.isArray(playerCards.abilityHand) ? playerCards.abilityHand : [];
+    state.handIds = { movement: new Set(movementIds), ability: new Set(abilityIds) };
     const handKey = `${pending.id}|${movementIds.join(',')}|${abilityIds.join(',')}`;
     if (handKey !== state.lastKey) {
       state.lastKey = handKey;
@@ -253,6 +260,8 @@ export const createHandTriggerPrompt = ({
     if (!cardElement) return;
     const cardId = cardElement.dataset.cardId;
     if (!cardId) return;
+    const validSet = type === 'movement' ? state.handIds.movement : state.handIds.ability;
+    if (!validSet?.has(cardId)) return;
     if (state.triggerCardId && cardId === state.triggerCardId) {
       event.preventDefault();
       event.stopPropagation();

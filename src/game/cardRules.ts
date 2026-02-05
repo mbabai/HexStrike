@@ -354,6 +354,7 @@ export const applyCardUse = (deckState: DeckState, cardUse: CardUse): { ok: true
 
 export const buildPlayerCardState = (deckState: DeckState): PlayerCardState => ({
   deck: [...deckState.abilityDeck],
+  movementDeck: [...deckState.movement],
   movementHand: getMovementHandIds(deckState),
   abilityHand: [...deckState.abilityHand],
   activeCardId: deckState.activeCardId ?? null,

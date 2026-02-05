@@ -33,6 +33,7 @@ import {
   resolveLandRefreshes,
   validateActionSubmission,
 } from './game/cardRules';
+import { getTargetMovementHandSize } from './game/handRules';
 import { HAND_TRIGGER_BY_ID, HAND_TRIGGER_DEFINITIONS } from './game/handTriggers';
 import {
   ActionListItem,
@@ -217,6 +218,19 @@ const buildHandTriggerOrder = (
   return orderById;
 };
 
+const DRAW_SELECTION_MAX_MOVEMENT = 3;
+
+const getDrawSelectionRequirement = (deckState: DeckState, drawCount: number) => {
+  const requested = Number.isFinite(drawCount) ? Math.max(0, Math.floor(drawCount)) : 0;
+  const actualDraw = Math.min(requested, deckState.abilityDeck.length);
+  const abilityAfter = deckState.abilityHand.length + actualDraw;
+  const targetMovementSize = getTargetMovementHandSize(abilityAfter);
+  const movementHandSize = getMovementHandIds(deckState).length;
+  const requiredRestore = Math.max(0, targetMovementSize - movementHandSize);
+  const requiresSelection = requiredRestore > 0 && targetMovementSize <= DRAW_SELECTION_MAX_MOVEMENT;
+  return { requested, actualDraw, targetMovementSize, requiredRestore, requiresSelection };
+};
+
 const applyDrawInteractions = (deckStates: Map<string, DeckState>, interactions: CustomInteraction[]): void => {
   if (!deckStates || !interactions?.length) return;
   interactions.forEach((interaction) => {
@@ -226,6 +240,12 @@ const applyDrawInteractions = (deckStates: Map<string, DeckState>, interactions:
     const drawCount = Number.isFinite(interaction.drawCount) ? Math.max(0, Math.floor(interaction.drawCount)) : 0;
     const deckState = deckStates.get(interaction.actorUserId);
     if (!deckState) return;
+    const requirement = getDrawSelectionRequirement(deckState, drawCount);
+    if (requirement.requiresSelection) {
+      interaction.status = 'pending';
+      interaction.drawMovementCount = requirement.requiredRestore;
+      return;
+    }
     if (drawCount > 0) {
       const drawResult = drawAbilityCards(deckState, drawCount, { mode: 'auto' });
       if ('error' in drawResult) {
@@ -1281,6 +1301,39 @@ export function buildServer(port: number) {
       }
       interaction.status = 'resolved';
       interaction.resolution = { continue: resolvedContinue };
+    } else if (interaction.type === 'draw') {
+      const deckState = deckStates.get(userId);
+      if (!deckState) {
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'missing-deck-state' });
+        return { ok: false, status: 500, error: 'Missing deck state for player' };
+      }
+      const drawCount = Number.isFinite(interaction.drawCount) ? Math.max(0, Math.floor(interaction.drawCount)) : 0;
+      const requirement = getDrawSelectionRequirement(deckState, drawCount);
+      const movementCardIds =
+        (body as { movementCardIds?: unknown; movementIds?: unknown; movementCardIDs?: unknown })?.movementCardIds ??
+        (body as { movementIds?: unknown })?.movementIds ??
+        (body as { movementCardIDs?: unknown })?.movementCardIDs ??
+        [];
+      const movementList = Array.isArray(movementCardIds) ? movementCardIds : [];
+      if (requirement.requiredRestore !== movementList.length) {
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'draw-count-mismatch' });
+        return { ok: false, status: 400, error: 'Incorrect number of movement cards selected to draw.' };
+      }
+      const drawResult = drawAbilityCards(deckState, drawCount, {
+        restoreMovementIds: movementList,
+        mode: requirement.requiredRestore > 0 ? 'strict' : 'auto',
+      });
+      if ('error' in drawResult) {
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: drawResult.error.code });
+        return { ok: false, status: 400, error: drawResult.error.message, code: drawResult.error.code };
+      }
+      interaction.status = 'resolved';
+      interaction.resolution = {
+        ...(interaction.resolution ?? {}),
+        applied: true,
+        movementCardIds: drawResult.movement.restored,
+        abilityCardIds: drawResult.drawn,
+      };
     } else if (interaction.type === 'hand-trigger') {
       const rawUse = (body as { use?: unknown; accept?: unknown; ignite?: unknown; burn?: unknown })?.use;
       const altUse = (body as { accept?: unknown })?.accept;

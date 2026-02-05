@@ -1250,6 +1250,10 @@ small {
   background: linear-gradient(160deg, rgba(24, 10, 12, 0.92), rgba(12, 26, 32, 0.88));
 }
 
+.draw-modal {
+  border-color: rgba(71, 210, 144, 0.55);
+}
+
 .discard-modal-eyebrow {
   margin: 0;
   text-transform: uppercase;
@@ -1282,6 +1286,29 @@ small {
     0 0 0 2px rgba(71, 210, 144, 0.7),
     0 0 18px rgba(71, 210, 144, 0.7);
   animation: revealPulse 1.2s ease-in-out infinite;
+}
+
+.action-card.is-draw-pending {
+  box-shadow:
+    var(--shadow-soft),
+    inset 0 1px 0 var(--color-highlight-soft),
+    0 0 0 2px rgba(71, 210, 144, 0.7),
+    0 0 18px rgba(71, 210, 144, 0.7);
+  animation: revealPulse 1.2s ease-in-out infinite;
+}
+
+.action-card.is-draw-selected {
+  box-shadow:
+    var(--shadow-soft),
+    inset 0 1px 0 var(--color-highlight-soft),
+    0 0 0 2px rgba(71, 210, 144, 0.9),
+    0 0 22px rgba(71, 210, 144, 0.85);
+  animation: none;
+}
+
+.action-card.is-draw-pending,
+.action-card.is-draw-selected {
+  cursor: pointer;
 }
 
 .action-card.is-discard-selected {
@@ -1845,7 +1872,35 @@ small {
 
 .action-card.is-exhausted {
   cursor: not-allowed;
-  filter: grayscale(1);
+}
+
+.action-card.is-exhausted.is-draw-pending,
+.action-card.is-exhausted.is-draw-selected {
+  cursor: pointer;
+}
+
+.action-card.is-exhausted::before {
+  filter: grayscale(1) brightness(0.65);
+}
+
+.action-card.is-exhausted .action-card-header,
+.action-card.is-exhausted .action-card-body {
+  filter: grayscale(1) brightness(0.65);
+}
+
+.action-card.is-draw-selected .action-card-header,
+.action-card.is-draw-selected .action-card-body {
+  filter: none;
+  opacity: 1;
+}
+
+.action-card.is-draw-selected::before {
+  filter: none;
+  opacity: 1;
+}
+
+.action-card.is-draw-selected::after {
+  opacity: 1;
 }
 
 .action-card.is-animating,

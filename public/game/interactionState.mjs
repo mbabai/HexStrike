@@ -60,7 +60,7 @@ export const selectPendingInteraction = ({
   characters,
   localUserId,
   resolvedIndex,
-  alwaysAllowTypes = ['throw', 'discard', 'hand-trigger'],
+  alwaysAllowTypes = ['throw', 'discard', 'hand-trigger', 'draw'],
 }) => {
   const allowTypes = new Set(alwaysAllowTypes);
   const activeHandTriggerId = getActiveHandTriggerId(interactions);

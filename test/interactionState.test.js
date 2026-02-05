@@ -22,6 +22,24 @@ test('selectPendingInteraction returns pending throw even if beat is resolved', 
   assert.equal(pending?.id, 'throw:0:me:you');
 });
 
+test('selectPendingInteraction returns pending draw even if beat is resolved', async () => {
+  const { selectPendingInteraction } = await loadModule();
+  const interactions = [
+    { id: 'draw:0:me:me', type: 'draw', status: 'pending', actorUserId: 'me', targetUserId: 'me', beatIndex: 0 },
+  ];
+  const beats = [[{ username: 'me', action: 'W' }]];
+  const characters = [{ userId: 'me', username: 'me' }];
+  const pending = selectPendingInteraction({
+    interactions,
+    beats,
+    characters,
+    localUserId: 'me',
+    resolvedIndex: 0,
+  });
+
+  assert.equal(pending?.id, 'draw:0:me:me');
+});
+
 test('selectPendingInteraction ignores combo without Co entry', async () => {
   const { selectPendingInteraction } = await loadModule();
   const interactions = [{ id: 'combo:0:me:me', type: 'combo', status: 'pending', actorUserId: 'me', beatIndex: 0 }];

@@ -18,6 +18,7 @@ import {
 } from './game/beatTimeline.js';
 import { loadCardCatalog } from './shared/cardCatalog.js';
 import { createDiscardPrompt } from './game/discardPrompt.mjs';
+import { createDrawPrompt } from './game/drawPrompt.mjs';
 import { createHandTriggerPrompt } from './game/handTriggerPrompt.mjs';
 import { AXIAL_DIRECTIONS, axialToPixel, getHexSize } from './shared/hex.mjs';
 import { getOrCreateUserId } from './storage.js';
@@ -188,6 +189,8 @@ export const initGame = () => {
   const handTriggerDecline = document.getElementById('handTriggerDecline');
   const discardModal = document.getElementById('discardModal');
   const discardCopy = document.getElementById('discardModalCopy');
+  const drawModal = document.getElementById('drawModal');
+  const drawCopy = document.getElementById('drawModalCopy');
   const gameOverOverlay = document.getElementById('gameOverOverlay');
   const gameOverMessage = document.getElementById('gameOverMessage');
   const gameOverDone = document.getElementById('gameOverDone');
@@ -216,6 +219,7 @@ export const initGame = () => {
   let lastComboKey = null;
   let lastComboRequired = false;
   let discardPrompt = null;
+  let drawPrompt = null;
   let handTriggerPrompt = null;
   const pendingActionPreview = createPendingActionPreview();
 
@@ -343,11 +347,13 @@ export const initGame = () => {
       setThrowButtonsEnabled(false);
       setComboButtonsEnabled(false);
       discardPrompt?.sync();
+      drawPrompt?.sync();
       handTriggerPrompt?.sync();
       setModalVisibility(throwModal, false);
       setModalVisibility(comboModal, false);
       setModalVisibility(handTriggerModal, false);
       setModalVisibility(discardModal, false);
+      setModalVisibility(drawModal, false);
       return;
     }
     const pending = getPendingInteractionForUser();
@@ -361,11 +367,13 @@ export const initGame = () => {
       setThrowButtonsEnabled(false);
       setComboButtonsEnabled(false);
       discardPrompt?.sync();
+      drawPrompt?.sync();
       handTriggerPrompt?.sync();
       setModalVisibility(throwModal, false);
       setModalVisibility(comboModal, false);
       setModalVisibility(handTriggerModal, false);
       setModalVisibility(discardModal, false);
+      setModalVisibility(drawModal, false);
       return;
     }
     if (pendingInteractionId !== pending.id || pendingInteractionType !== pending.type) {
@@ -379,9 +387,11 @@ export const initGame = () => {
       setModalVisibility(comboModal, false);
       setModalVisibility(handTriggerModal, false);
       setModalVisibility(discardModal, false);
+      setModalVisibility(drawModal, false);
       setThrowButtonsEnabled(!interactionSubmitInFlight);
       setComboButtonsEnabled(false);
       discardPrompt?.sync();
+      drawPrompt?.sync();
       handTriggerPrompt?.sync();
       applyThrowLayout(pending);
       return;
@@ -391,18 +401,22 @@ export const initGame = () => {
       setModalVisibility(throwModal, false);
       setModalVisibility(handTriggerModal, false);
       setModalVisibility(discardModal, false);
+      setModalVisibility(drawModal, false);
       setComboButtonsEnabled(!interactionSubmitInFlight);
       setThrowButtonsEnabled(false);
       discardPrompt?.sync();
+      drawPrompt?.sync();
       handTriggerPrompt?.sync();
       return;
     }
     if (pending.type === 'hand-trigger') {
       setModalVisibility(throwModal, false);
       setModalVisibility(comboModal, false);
+      setModalVisibility(drawModal, false);
       setThrowButtonsEnabled(false);
       setComboButtonsEnabled(false);
       discardPrompt?.sync();
+      drawPrompt?.sync();
       handTriggerPrompt?.sync({ pending, playerCards, inFlight: interactionSubmitInFlight });
       return;
     }
@@ -410,19 +424,35 @@ export const initGame = () => {
       setModalVisibility(throwModal, false);
       setModalVisibility(comboModal, false);
       setModalVisibility(handTriggerModal, false);
+      setModalVisibility(drawModal, false);
       setThrowButtonsEnabled(false);
       setComboButtonsEnabled(false);
       handTriggerPrompt?.sync();
       discardPrompt?.sync({ pending, playerCards, inFlight: interactionSubmitInFlight });
+      drawPrompt?.sync();
+      return;
+    }
+    if (pending.type === 'draw') {
+      setModalVisibility(throwModal, false);
+      setModalVisibility(comboModal, false);
+      setModalVisibility(handTriggerModal, false);
+      setModalVisibility(discardModal, false);
+      setThrowButtonsEnabled(false);
+      setComboButtonsEnabled(false);
+      handTriggerPrompt?.sync();
+      discardPrompt?.sync();
+      drawPrompt?.sync({ pending, playerCards, inFlight: interactionSubmitInFlight });
       return;
     }
     setModalVisibility(throwModal, false);
     setModalVisibility(comboModal, false);
     setModalVisibility(handTriggerModal, false);
     setModalVisibility(discardModal, false);
+    setModalVisibility(drawModal, false);
     setThrowButtonsEnabled(false);
     setComboButtonsEnabled(false);
     discardPrompt?.sync();
+    drawPrompt?.sync();
     handTriggerPrompt?.sync();
   };
 
@@ -481,10 +511,11 @@ export const initGame = () => {
 
     const movementIds = Array.isArray(playerCards.movementHand) ? playerCards.movementHand : [];
     const abilityIds = Array.isArray(playerCards.abilityHand) ? playerCards.abilityHand : [];
+    const movementDeckIds = Array.isArray(playerCards.movementDeck) ? playerCards.movementDeck : movementIds;
     const exhaustedIds = Array.isArray(playerCards.discardPile) ? playerCards.discardPile : [];
-    const movementCards = movementIds.map((id) => cardLookup.get(id)).filter(Boolean);
+    const movementCards = movementDeckIds.map((id) => cardLookup.get(id)).filter(Boolean);
     const abilityCards = abilityIds.map((id) => cardLookup.get(id)).filter(Boolean);
-    const nextKey = `${movementIds.join(',')}|${abilityIds.join(',')}`;
+    const nextKey = `${movementDeckIds.join(',')}|${abilityIds.join(',')}`;
     if (nextKey !== lastHudKey) {
       actionHud.setCards(movementCards, abilityCards, { exhaustedCardIds: exhaustedIds });
       lastHudKey = nextKey;
@@ -817,6 +848,52 @@ export const initGame = () => {
     }
   };
 
+  const handleDrawSubmit = async ({ movementCardIds = [] } = {}) => {
+    if (!gameState?.id || !pendingInteractionId || interactionSubmitInFlight) return;
+    if (pendingInteractionType !== 'draw') return;
+    if (getMatchOutcome(gameState?.state?.public)) return;
+    interactionSubmitInFlight = true;
+    console.log(`${LOG_PREFIX} interaction:submit`, {
+      userId: localUserId,
+      gameId: gameState.id,
+      interactionId: pendingInteractionId,
+      movementCardIds,
+    });
+    try {
+      const response = await fetch('/api/v1/game/interaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: localUserId,
+          gameId: gameState.id,
+          interactionId: pendingInteractionId,
+          movementCardIds,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = payload?.error ? `${payload.error}` : 'Failed to resolve draw.';
+        console.warn(`${LOG_PREFIX} interaction:rejected`, {
+          status: response.status,
+          error: payload?.error,
+          code: payload?.code,
+        });
+        throw new Error(message);
+      }
+      console.log(`${LOG_PREFIX} interaction:ack`, {
+        status: response.status,
+        interactionId: pendingInteractionId,
+      });
+    } catch (err) {
+      console.error('Failed to resolve draw', err);
+      const message = err instanceof Error ? err.message : 'Failed to resolve draw.';
+      window.alert(message);
+    } finally {
+      interactionSubmitInFlight = false;
+      refreshInteractionOverlay();
+    }
+  };
+
   const handleGameOverDone = async () => {
     const outcome = getMatchOutcome(gameState?.state?.public);
     if (!outcome || !gameState?.matchId || gameOverInFlight) return;
@@ -861,6 +938,15 @@ export const initGame = () => {
     maxHandSize: MAX_HAND_SIZE,
     onSubmit: (payload) => {
       void handleDiscardSubmit(payload);
+    },
+  });
+  drawPrompt = createDrawPrompt({
+    movementHand,
+    drawModal,
+    drawCopy,
+    maxHandSize: MAX_HAND_SIZE,
+    onSubmit: (payload) => {
+      void handleDrawSubmit(payload);
     },
   });
   handTriggerPrompt = createHandTriggerPrompt({
@@ -942,6 +1028,7 @@ export const initGame = () => {
     lastComboKey = null;
     lastComboRequired = false;
     discardPrompt?.sync();
+    drawPrompt?.sync();
     handTriggerPrompt?.sync();
     if (actionHud) {
       actionHud.clearSelection();

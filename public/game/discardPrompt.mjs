@@ -20,6 +20,7 @@ export const createDiscardPrompt = ({
     playerCards: null,
     selection: { movement: new Set(), ability: new Set() },
     required: { movement: 0, ability: 0 },
+    handIds: { movement: new Set(), ability: new Set() },
     lastHandKey: null,
     lastRequirementKey: null,
     submitLockedId: null,
@@ -71,16 +72,21 @@ export const createDiscardPrompt = ({
     const allowGlow = !state.inFlight && !status.complete;
     const highlightMovement = allowGlow && status.needsMovement;
     const highlightAbility = allowGlow && status.needsAbility;
-    const updateHand = (hand, selectedSet, showPulse) => {
+    const updateHand = (hand, selectedSet, showPulse, validSet) => {
       hand.querySelectorAll('.action-card').forEach((card) => {
         const cardId = card.dataset.cardId;
+        const isValid = Boolean(cardId && validSet?.has(cardId));
+        if (!isValid) {
+          card.classList.remove('is-discard-selected', 'is-discard-pending');
+          return;
+        }
         const isSelected = Boolean(cardId && selectedSet.has(cardId));
         card.classList.toggle('is-discard-selected', allowGlow && isSelected);
         card.classList.toggle('is-discard-pending', showPulse && !isSelected);
       });
     };
-    updateHand(movementHand, state.selection.movement, highlightMovement);
-    updateHand(abilityHand, state.selection.ability, highlightAbility);
+    updateHand(movementHand, state.selection.movement, highlightMovement, state.handIds.movement);
+    updateHand(abilityHand, state.selection.ability, highlightAbility, state.handIds.ability);
   };
 
   const sync = ({ pending = null, playerCards = null, inFlight = false } = {}) => {
@@ -106,6 +112,7 @@ export const createDiscardPrompt = ({
 
     const movementIds = Array.isArray(playerCards.movementHand) ? playerCards.movementHand : [];
     const abilityIds = Array.isArray(playerCards.abilityHand) ? playerCards.abilityHand : [];
+    state.handIds = { movement: new Set(movementIds), ability: new Set(abilityIds) };
     const handKey = `${movementIds.join(',')}|${abilityIds.join(',')}`;
     const requirementKey = `${pending.id}|${counts.ability}|${counts.movement}`;
     if (handKey !== state.lastHandKey || requirementKey !== state.lastRequirementKey) {
@@ -158,6 +165,8 @@ export const createDiscardPrompt = ({
     if (!cardElement) return;
     const cardId = cardElement.dataset.cardId;
     if (!cardId) return;
+    const validSet = type === 'movement' ? state.handIds.movement : state.handIds.ability;
+    if (!validSet?.has(cardId)) return;
     event.preventDefault();
     event.stopPropagation();
     const selected = type === 'movement' ? state.selection.movement : state.selection.ability;

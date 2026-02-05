@@ -129,6 +129,7 @@ export interface DeckState {
 
 export interface PlayerCardState {
   deck: string[];
+  movementDeck: string[];
   movementHand: string[];
   abilityHand: string[];
   activeCardId: string | null;
@@ -242,6 +243,7 @@ export interface CustomInteraction {
   cardType?: CardType;
   effect?: string;
   drawCount?: number;
+  drawMovementCount?: number;
   handTriggerOrder?: number;
 }
 
