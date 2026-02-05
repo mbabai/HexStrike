@@ -215,7 +215,6 @@ export const initGame = () => {
   let pendingInteractionType = null;
   let gameOverInFlight = false;
   let didInitTimelinePosition = false;
-  let lastStopIndex = null;
   let lastComboKey = null;
   let lastComboRequired = false;
   let discardPrompt = null;
@@ -1048,7 +1047,6 @@ export const initGame = () => {
     tooltip.setGameState(nextState);
     pendingActionPreview.syncWithState(nextState, localUserId);
     if (!gameState) {
-      lastStopIndex = null;
       didInitTimelinePosition = false;
     }
     if (!didInitTimelinePosition && gameState) {
@@ -1057,18 +1055,7 @@ export const initGame = () => {
       const interactions = gameState?.state?.public?.customInteractions ?? [];
       const stopIndex = getTimelineStopIndex(beats, characters, interactions);
       timeIndicatorViewModel.setValue(stopIndex);
-      lastStopIndex = stopIndex;
       didInitTimelinePosition = true;
-    } else if (gameState) {
-      const beats = gameState?.state?.public?.beats ?? [];
-      const characters = gameState?.state?.public?.characters ?? [];
-      const interactions = gameState?.state?.public?.customInteractions ?? [];
-      const stopIndex = getTimelineStopIndex(beats, characters, interactions);
-      const isFollowing = lastStopIndex !== null && timeIndicatorViewModel.value === lastStopIndex;
-      if (isFollowing && !timeIndicatorViewModel.isHolding) {
-        timeIndicatorViewModel.setValue(stopIndex);
-      }
-      lastStopIndex = stopIndex;
     }
     clampTimeline();
     refreshActionHud();

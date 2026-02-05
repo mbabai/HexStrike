@@ -32,6 +32,10 @@ The board is an infinite axial hex grid. Terrain is derived from coordinates:
 
 Simultaneous inputs are enforced by batching action sets for all required players at the earliest `E`.
 
+## Client Playback
+
+Clients should step the timeline forward one beat at a time until they reach the current stop index (earliest open beat or pending interaction). Avoid snapping the visible beat directly to the latest stop index on each update so intermediate animations remain visible.
+
 ## WebSocket Messages
 
 All WebSocket messages use the envelope `{ type, payload, recipient }`. The recipient is populated by the server.

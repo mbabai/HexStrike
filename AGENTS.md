@@ -116,6 +116,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
 - Timeline gold highlight uses the earliest `E` beat across all players, not the currently viewed beat.
 - Timeline play/pause replaces the center beat label; hit detection is a circular button in `public/game/timeIndicatorView.js` and auto-advance only steps after playback reports completion.
+- Timeline playback should advance beat-by-beat to the stop index; do not auto-jump the time indicator to the latest stop index on `game:update` or intermediate animations will be skipped.
 - Timeline tooltips use `cardId`/`passiveCardId` on beat entries for active/passive names; symbol instructions still come from `{X1}/{X2}/{i}` fragments in `activeText`.
 - Timeline tooltip action-set start prefers `rotationSource: 'selected'` and falls back to non-empty `rotation` when the source flag is missing (legacy data).
 - Hit rewrites clear `cardId`/`passiveCardId` on `DamageIcon`/forced `E` entries so tooltips only describe actions that actually resolved.
