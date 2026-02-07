@@ -59,6 +59,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 ## Testing and validation (current)
 - Use the Node.js built-in test runner (`npm run test`).
 - `npm run dev` builds, runs tests, and only starts the server when tests pass.
+- Any new or edited card in `public/cards/cards.json` must include simulation tests that validate both roles (card as `activeCardId` and as `passiveCardId`) by executing timelines and asserting beat entries; action-list-only coverage is not sufficient.
 
 ## Planned gameplay architecture (future)
 - Bounded contexts: `rules`, `engine`, `realtime`, and a durable `persistence` layer for frame replays.
@@ -89,6 +90,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Fleche passive skips the final `W` in the active ability action list if any prior action token contains an `a`; keep `src/game/cardText/passiveMovement.ts` and `public/game/cardText/passiveMovement.js` in sync.
 - Ninja Roll passive only transforms exact `{a}` or `[a]` tokens; do not broaden other attack strings (ex: `a-2a`, `a-La-Ra`).
 - Card-text timeline edits (add/remove/replace actions) should use `actionListTransforms` helpers on both server/client to keep precision and parity.
+- Card additions/edits must update simulation coverage in `test/cardTimelineSimulations.test.js` (or equivalent) so every card has active + passive timeline assertions through `validateActionSubmission` -> `applyActionSetToBeats` -> `executeBeats`.
 - If card text introduces new action tokens (ex: `2c`, `B2m`, `B3j`), the HUD needs `/public/images/{token}.png`; generate via `scripts/hex_diagrams_creator.py` (or the `action-diagram-creator` skill, which outputs to `public/images`).
 - Ability cards are never exhausted; on use they leave the hand immediately and are placed under the ability deck (client and server).
 - Movement hand size is derived from ability count (<=4 matches ability count, >4 caps at 4); use `syncMovementHand`/`getMovementHandIds` in `src/game/handRules.ts` instead of hand-counting on the client.
