@@ -26,6 +26,16 @@ test('chase passive adds a leading wait and upgrades m to 2m', () => {
   assert.equal(actionList[1].rotation, '');
 });
 
+test('aerial-strike passive forces rotation after the final movement entry', () => {
+  const actionList = buildActionList('advance', 'aerial-strike');
+  assert.deepEqual(
+    actionList.map((entry) => entry.action),
+    ['W', 'm', 'm', 'W', 'E'],
+  );
+  assert.equal(actionList[3].rotation, '3');
+  assert.equal(actionList[3].rotationSource, 'forced');
+});
+
 test('cross-slash passive replaces m with m-La-Ra and sets damage/KBF', () => {
   const actionList = buildActionList('step', 'cross-slash');
   assert.deepEqual(

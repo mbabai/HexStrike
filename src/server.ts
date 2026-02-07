@@ -15,6 +15,7 @@ import {
   getCharactersAtEarliestE,
   getLastEntryForCharacter,
   getTimelineEarliestEIndex,
+  getTimelineResolvedIndex,
   isCharacterAtEarliestE,
 } from './game/beatTimeline';
 import { loadCardCatalog } from './game/cardCatalog';
@@ -44,6 +45,7 @@ import {
   DeckDefinition,
   DeckState,
   GameDoc,
+  GameStateDoc,
   HexCoord,
   MatchDoc,
   PublicCharacter,
@@ -72,9 +74,31 @@ interface ActionSetResponse {
   code?: string;
 }
 
+const cloneBaselineCharacter = (character: PublicCharacter): PublicCharacter => ({
+  ...character,
+  position: { q: character.position.q, r: character.position.r },
+});
+
+const ensureBaselineCharacters = (publicState: GameStateDoc['public']): PublicCharacter[] => {
+  const existing = publicState.startingCharacters;
+  if (Array.isArray(existing) && existing.length) {
+    return existing.map((character) => cloneBaselineCharacter(character));
+  }
+  const characters = Array.isArray(publicState.characters) ? publicState.characters : [];
+  const baseline = characters.map((character) => cloneBaselineCharacter(character));
+  publicState.startingCharacters = baseline.map((character) => cloneBaselineCharacter(character));
+  return baseline;
+};
+
+const resetCharactersToBaseline = (publicState: GameStateDoc['public']) => {
+  publicState.characters = ensureBaselineCharacters(publicState);
+};
+
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const LOG_PREFIX = '[hexstrike]';
 const COMBO_ACTION = 'CO';
+const WHIRLWIND_CARD_ID = 'whirlwind';
+const WHIRLWIND_MIN_DAMAGE = 12;
 
 const normalizeActionLabel = (value: unknown): string => {
   const trimmed = `${value ?? ''}`.trim();
@@ -500,7 +524,7 @@ export function buildServer(port: number) {
     }
     const catalog = await loadCardCatalog();
     const deckStates = new Map<string, DeckState>();
-    const characters = game.state?.public?.characters ?? [];
+    const characters = game.state?.public ? ensureBaselineCharacters(game.state.public) : [];
     characters.forEach((character) => {
       const deck = queuedDecks.get(character.userId) ?? buildDefaultDeckDefinition(catalog);
       deckStates.set(character.userId, createDeckState(deck));
@@ -515,6 +539,7 @@ export function buildServer(port: number) {
     const playerCards = playerDeckState ? buildPlayerCardState(playerDeckState) : null;
     const publicState = game.state.public;
     const beats = publicState.beats ?? publicState.timeline ?? [];
+    const characters = ensureBaselineCharacters(publicState);
     const baseInteractions = Array.isArray(publicState.customInteractions) ? publicState.customInteractions : [];
     const customInteractions = baseInteractions.map((interaction) => {
       if (!interaction || typeof interaction !== 'object') return interaction;
@@ -551,7 +576,7 @@ export function buildServer(port: number) {
     const handTriggerOrder = buildHandTriggerOrder(
       customInteractions,
       beats,
-      publicState.characters ?? [],
+      characters,
       publicState.land ?? [],
       resolvedDeckStates,
     );
@@ -569,6 +594,7 @@ export function buildServer(port: number) {
       state: {
         public: {
           ...publicState,
+          characters,
           beats,
           timeline: beats,
           customInteractions,
@@ -634,7 +660,7 @@ export function buildServer(port: number) {
     match?.players.forEach((player) => {
       usernameById.set(player.userId, player.username);
     });
-    const characters = game.state?.public?.characters ?? [];
+    const characters = game.state?.public ? ensureBaselineCharacters(game.state.public) : [];
     const beats = game.state?.public?.beats ?? [];
     const lines = ['[game:update] Player locations:'];
     if (!characters.length) {
@@ -689,7 +715,7 @@ export function buildServer(port: number) {
       return;
     }
     const beats = publicState.beats ?? publicState.timeline ?? [];
-    const characters = publicState.characters ?? [];
+    const characters = ensureBaselineCharacters(publicState);
     const earliestIndex = getTimelineEarliestEIndex(beats, characters);
     const atBatCharacters = getCharactersAtEarliestE(beats, characters);
     const requiredUserIds = Array.from(new Set(atBatCharacters.map((candidate) => candidate.userId).filter(Boolean)));
@@ -716,7 +742,7 @@ export function buildServer(port: number) {
   const applyMatchOutcome = (game: GameDoc, deckStates?: Map<string, DeckState>) => {
     if (game.state.public.matchOutcome) return false;
     const beats = game.state.public.beats ?? game.state.public.timeline ?? [];
-    const characters = game.state.public.characters ?? [];
+    const characters = ensureBaselineCharacters(game.state.public);
     const land = game.state.public.land ?? [];
     const resolvedDeckStates = deckStates ?? gameDeckStates.get(game.id);
     if (!resolvedDeckStates) return false;
@@ -975,7 +1001,7 @@ export function buildServer(port: number) {
       console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'match-ended' });
       return { ok: false, status: 409, error: 'Match is already over' };
     }
-    const characters = game.state?.public?.characters ?? [];
+    const characters = game.state?.public ? ensureBaselineCharacters(game.state.public) : [];
     const isPlayer = game.players.some((player) => player.userId === userId);
     const hasCharacter = characters.some((character) => character.userId === userId);
     if (!isPlayer || !hasCharacter) {
@@ -988,12 +1014,29 @@ export function buildServer(port: number) {
       console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'pending-interaction' });
       return { ok: false, status: 409, error: 'Action set rejected: pending interaction in progress' };
     }
-    const beats = game.state?.public?.beats ?? game.state?.public?.timeline ?? [];
-    const character = characters.find((candidate) => candidate.userId === userId);
-    console.log(`${LOG_PREFIX} action:set pre`, {
-      userId,
-      gameId,
-      earliestIndex: getTimelineEarliestEIndex(beats, characters),
+      const beats = game.state?.public?.beats ?? game.state?.public?.timeline ?? [];
+      const character = characters.find((candidate) => candidate.userId === userId);
+      const normalizedActiveCardId = typeof activeCardId === 'string' ? activeCardId.trim() : '';
+      if (normalizedActiveCardId === WHIRLWIND_CARD_ID) {
+        const resolvedIndex = getTimelineResolvedIndex(beats);
+        const currentDamage =
+          character && resolvedIndex >= 0
+            ? getCharacterDamageAtIndex(beats, character, resolvedIndex)
+            : character?.damage ?? 0;
+        if (currentDamage < WHIRLWIND_MIN_DAMAGE) {
+        console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'whirlwind-damage' });
+        return {
+          ok: false,
+          status: 409,
+          error: `Whirlwind requires at least ${WHIRLWIND_MIN_DAMAGE} damage to play.`,
+          code: 'whirlwind-damage',
+        };
+        }
+      }
+      console.log(`${LOG_PREFIX} action:set pre`, {
+        userId,
+        gameId,
+        earliestIndex: getTimelineEarliestEIndex(beats, characters),
       timeline: buildTimelineSummary(beats, characters),
       pendingActions: game.state?.public?.pendingActions ?? null,
     });
@@ -1090,7 +1133,7 @@ export function buildServer(port: number) {
       );
       game.state.public.beats = executed.beats;
       game.state.public.timeline = executed.beats;
-      game.state.public.characters = executed.characters;
+      resetCharactersToBaseline(game.state.public);
       game.state.public.customInteractions = executed.interactions;
       game.state.public.boardTokens = executed.boardTokens;
       applyDrawInteractions(deckStates, executed.interactions);
@@ -1213,7 +1256,7 @@ export function buildServer(port: number) {
     );
     game.state.public.beats = executed.beats;
     game.state.public.timeline = executed.beats;
-    game.state.public.characters = executed.characters;
+    resetCharactersToBaseline(game.state.public);
     game.state.public.customInteractions = executed.interactions;
     game.state.public.boardTokens = executed.boardTokens;
     applyDrawInteractions(deckStates, executed.interactions);
@@ -1251,7 +1294,7 @@ export function buildServer(port: number) {
       console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'match-ended' });
       return { ok: false, status: 409, error: 'Match is already over' };
     }
-    const characters = game.state?.public?.characters ?? [];
+    const characters = game.state?.public ? ensureBaselineCharacters(game.state.public) : [];
     const isPlayer = game.players.some((player) => player.userId === userId);
     const hasCharacter = characters.some((character) => character.userId === userId);
     if (!isPlayer || !hasCharacter) {
@@ -1512,7 +1555,7 @@ export function buildServer(port: number) {
     );
     game.state.public.beats = executed.beats;
     game.state.public.timeline = executed.beats;
-    game.state.public.characters = executed.characters;
+    resetCharactersToBaseline(game.state.public);
     game.state.public.customInteractions = executed.interactions;
     game.state.public.boardTokens = executed.boardTokens;
     applyDrawInteractions(deckStates, executed.interactions);

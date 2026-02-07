@@ -113,13 +113,15 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Action icon column placement is controlled by `--action-card-actions-top` in `public/theme.css`; adjust that single value to keep the top icon aligned without colliding with the border.
 - Keep beat arrays ordered by character roster when mutating to prevent UI rows from swapping entries.
 - Do not synthesize missing beat entries just to fill the timeline; missing entries count as `E` and prevent trailing-E spam.
+- Earliest-`E` lookups used for action submission/HUD gating must ignore calculated history (`calculated: true`) and start at the first unresolved beat (`resolvedIndex + 1`), or cards can be consumed into past beats (not inserted) after parry/damage rewrites.
+- Parry cleanup must not wipe newly submitted future action-set starts: when forcing the defender to `E` on the counter beat, only clear stale continuation entries and preserve future entries tagged with `rotationSource: 'selected'`/`comboStarter`.
 - Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
 - Timeline gold highlight uses the earliest `E` beat across all players, not the currently viewed beat.
 - Timeline play/pause replaces the center beat label; hit detection is a circular button in `public/game/timeIndicatorView.js` and auto-advance only steps after playback reports completion.
 - Timeline playback should advance beat-by-beat to the stop index; do not auto-jump the time indicator to the latest stop index on `game:update` or intermediate animations will be skipped.
 - Timeline tooltips use `cardId`/`passiveCardId` on beat entries for active/passive names; symbol instructions still come from `{X1}/{X2}/{i}` fragments in `activeText`.
 - Timeline tooltip action-set start prefers `rotationSource: 'selected'` and falls back to non-empty `rotation` when the source flag is missing (legacy data).
-- Hit rewrites clear `cardId`/`passiveCardId` on `DamageIcon`/forced `E` entries so tooltips only describe actions that actually resolved.
+- Hit rewrites clear `cardId`/`passiveCardId` on `DamageIcon`/forced `E` entries, except the first `DamageIcon` keeps the active/passive ids so the tooltip can show the interrupted action set.
 - Rotation restrictions like `0-2` are interpreted as rotation magnitude (both left/right labels plus `0`/`3` where applicable), not directional ranges.
 - Rotations resolve in a pre-action phase; apply them even if the actor's action is skipped/disabled, and keep `src/game/execute.ts` + `public/game/timelinePlayback.js` in sync.
 - When multiple players share the earliest `E`, the server batches action sets in `pendingActions` and reveals them simultaneously once all required players submit; timeline rings blink red for players still needed.

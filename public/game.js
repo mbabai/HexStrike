@@ -12,6 +12,7 @@ import { selectPendingInteraction } from './game/interactionState.mjs';
 import {
   getCharacterFirstEIndex,
   getCharactersAtEarliestE,
+  getLastEntryForCharacter,
   getTimelineEarliestEIndex,
   getTimelineResolvedIndex,
   getTimelineStopIndex,
@@ -543,12 +544,21 @@ export const initGame = () => {
       if (isRequired && submitted) {
         locked = true;
       }
-    }
-    const isTurn = isLocalAtBat && isAtEarliest && !hasPendingInteraction;
-    const localCharacter = characters.find((candidate) => candidate.userId === localUserId);
-    const localFirstE = localCharacter ? getCharacterFirstEIndex(beats, localCharacter) : null;
-    const comboInteraction =
-      localFirstE !== null
+      }
+      const isTurn = isLocalAtBat && isAtEarliest && !hasPendingInteraction;
+      const localCharacter = characters.find((candidate) => candidate.userId === localUserId);
+      const resolvedIndex = beats.length ? getTimelineResolvedIndex(beats) : -1;
+      const localEntry =
+        localCharacter && resolvedIndex >= 0
+          ? getLastEntryForCharacter(beats, localCharacter, resolvedIndex)
+          : null;
+      const localDamage = Number.isFinite(localEntry?.damage)
+        ? Math.round(localEntry.damage)
+        : localCharacter?.damage ?? 0;
+      actionHud.setPlayerDamage?.(localDamage);
+      const localFirstE = localCharacter ? getCharacterFirstEIndex(beats, localCharacter) : null;
+      const comboInteraction =
+        localFirstE !== null
         ? interactions.find(
             (interaction) =>
               interaction?.status === 'resolved' &&

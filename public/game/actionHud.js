@@ -4,6 +4,8 @@ import { buildRotationWheel, ROTATION_LABELS } from './rotationWheel.js';
 const LOG_PREFIX = '[actionHud]';
 const log = (...args) => console.log(LOG_PREFIX, ...args);
 const DEBUG_HOVER = false;
+const WHIRLWIND_CARD_ID = 'whirlwind';
+const WHIRLWIND_MIN_DAMAGE = 12;
 
 const getRotationMagnitude = (label) => {
   const value = `${label ?? ''}`.trim().toUpperCase();
@@ -53,6 +55,7 @@ export const createActionHud = ({
       setLocked: () => {},
       setComboMode: () => {},
       clearSelection: () => {},
+      setPlayerDamage: () => {},
     };
   }
 
@@ -72,6 +75,7 @@ export const createActionHud = ({
     lastVisible: null,
     lastLocked: null,
     hasDealtCards: false,
+    playerDamage: 0,
   };
 
   const debugOverlay = (() => {
@@ -677,10 +681,28 @@ export const createActionHud = ({
     }
   };
 
+  const shakeCard = (card) => {
+    if (!card?.element || prefersReducedMotion) return;
+    card.element.classList.remove('is-shaking');
+    void card.element.offsetWidth;
+    card.element.classList.add('is-shaking');
+    card.element.addEventListener(
+      'animationend',
+      () => {
+        card.element?.classList?.remove('is-shaking');
+      },
+      { once: true },
+    );
+  };
+
   const assignCardToSlot = (slotName, cardId) => {
     if (state.locked) return;
     const card = getCard(cardId);
     if (!card || card.exhausted) return;
+    if (slotName === 'active' && card.id === WHIRLWIND_CARD_ID && state.playerDamage < WHIRLWIND_MIN_DAMAGE) {
+      shakeCard(card);
+      return;
+    }
     if (slotName === 'active' && state.comboMode && !state.comboEligibleIds.has(cardId)) {
       returnCardToHand(cardId);
       return;
@@ -1163,6 +1185,11 @@ export const createActionHud = ({
   updateRotationRestriction();
   updateSubmitState();
 
+  const setPlayerDamage = (damage) => {
+    const next = Number.isFinite(damage) ? Math.max(0, Math.floor(damage)) : 0;
+    state.playerDamage = next;
+  };
+
   return {
     setCards,
     setExhaustedCards,
@@ -1171,5 +1198,6 @@ export const createActionHud = ({
     setLocked,
     setComboMode,
     clearSelection,
+    setPlayerDamage,
   };
 };

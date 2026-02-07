@@ -652,6 +652,15 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
         const isKnockbackIcon = actionTag === 'knockbackicon' || actionTag === 'damageicon';
 
         drawCharacterPortrait(ctx, image, drawX, drawY, metrics.radius, theme.panelStrong, isKnockbackIcon);
+        if (character.healFlashAlpha) {
+          ctx.save();
+          ctx.globalAlpha = clamp(character.healFlashAlpha, 0, 1);
+          ctx.fillStyle = '#a6ddff';
+          ctx.beginPath();
+          ctx.arc(drawX, drawY, metrics.radius * 0.9, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
         if (character.flashAlpha) {
           ctx.save();
           ctx.globalAlpha = clamp(character.flashAlpha, 0, 1);
@@ -662,6 +671,18 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
           ctx.restore();
         }
         drawCharacterRing(ctx, drawX, drawY, metrics.radius, metrics.borderWidth, ringColor);
+        if (character.healPulseAlpha) {
+          const pulseScale = typeof character.healPulseScale === 'number' ? character.healPulseScale : 1;
+          const pulseRadius = metrics.radius * (1.05 + Math.max(0, pulseScale - 1) * 0.9);
+          ctx.save();
+          ctx.globalAlpha = clamp(character.healPulseAlpha, 0, 1);
+          ctx.strokeStyle = '#7fc8ff';
+          ctx.lineWidth = Math.max(2, metrics.borderWidth * 0.7);
+          ctx.beginPath();
+          ctx.arc(drawX, drawY, pulseRadius, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
 
         const arrowPoints = getFacingArrowPoints(drawX, drawY, metrics, character.facing);
         drawFacingArrow(ctx, arrowPoints, ringColor);

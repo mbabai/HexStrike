@@ -6,7 +6,7 @@ const ACTIVE_HIT_DISCARD_RULES = new Map([
 ]);
 
 const PASSIVE_BLOCK_DISCARD = new Map([['sweeping-strike', 1]]);
-const PASSIVE_START_DISCARD = new Map([['cross-slash', 1]]);
+const PASSIVE_START_DISCARD = new Map();
 const PASSIVE_DISCARD_IMMUNE = new Set(['spike']);
 const PASSIVE_CONVERT_KBF = new Set(['trip']);
 

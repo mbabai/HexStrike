@@ -1,4 +1,5 @@
 import { ActionListItem, BeatEntry, PublicCharacter } from '../types';
+import { getTimelineResolvedIndex } from './beatTimeline';
 
 const DEFAULT_ACTION = 'E';
 const LOG_PREFIX = '[actionSets]';
@@ -110,20 +111,31 @@ export const applyActionSetToBeats = (
 
   const updated = beats.map((beat) => beat.map((entry) => cloneEntry(entry)));
   const beforeLength = updated.length;
+  const resolvedIndex = getTimelineResolvedIndex(updated);
+  const scanStartIndex = Math.max(0, resolvedIndex + 1);
   let startIndex = updated.length;
-  let lastTargetEntry: BeatEntry | undefined;
 
-  for (let i = 0; i < updated.length; i += 1) {
+  for (let i = scanStartIndex; i < updated.length; i += 1) {
     const entry = findEntryForUser(updated[i], target);
     if (!entry) {
       startIndex = i;
       break;
     }
-    lastTargetEntry = entry;
     if (entry.action === DEFAULT_ACTION) {
       startIndex = i;
       break;
     }
+  }
+  if (startIndex === updated.length) {
+    startIndex = Math.max(scanStartIndex, updated.length);
+  }
+
+  let lastTargetEntry: BeatEntry | undefined;
+  for (let i = startIndex - 1; i >= 0; i -= 1) {
+    const entry = findEntryForUser(updated[i], target);
+    if (!entry) continue;
+    lastTargetEntry = entry;
+    break;
   }
 
   const seed = {
@@ -259,6 +271,8 @@ export const applyActionSetToBeats = (
   const afterLength = updated.length;
   console.log(LOG_PREFIX, 'apply', {
     targetUserId,
+    resolvedIndex,
+    scanStartIndex,
     startIndex,
     lastIndex,
     beforeLength,

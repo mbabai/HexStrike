@@ -1,5 +1,5 @@
 {
-    "generatedAt": "2026-02-04",
+    "generatedAt": "2026-02-05",
     "movement": {
         "advance": {
             "active": false,
@@ -40,12 +40,12 @@
     },
     "ability": {
         "absorb": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "aerial-strike": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "balestra-lunge": {
             "active": false,
@@ -92,24 +92,24 @@
             "passive": false
         },
         "gigantic-staff": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "guard": {
             "active": false,
             "passive": true
         },
         "hammer": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "haven": {
             "active": false,
             "passive": false
         },
         "healing-harmony": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "hip-throw": {
             "active": true,
@@ -128,8 +128,8 @@
             "passive": false
         },
         "parry": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "push-kick": {
             "active": false,
@@ -164,8 +164,8 @@
             "passive": false
         },
         "stab": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "sweeping-strike": {
             "active": true,
@@ -184,7 +184,7 @@
             "passive": false
         },
         "whirlwind": {
-            "active": false,
+            "active": true,
             "passive": true
         }
     }

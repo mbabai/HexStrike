@@ -25,6 +25,11 @@
 - Iron Will passive reduces incoming KBF by 1 (min 0) while the action set is active; hand-trigger use still sets KBF to 0.
 - In code: `src/game/cardText/combatModifiers.ts` + `public/game/cardText/combatModifiers.js`; consumed in `execute.ts` and `timelinePlayback.js`.
 
+## Parry counters
+- Parry active creates a resolved `customInteractions` entry of type `parry` when a bracketed block stops a melee attack.
+- The counter applies on the following beat: reflect damage/KBF back to the attacker, end the parry user's action set (`E`), and disable the attacker for that beat.
+- In code: `src/game/execute.ts` + `public/game/timelinePlayback.js`.
+
 ## Action list transforms
 - Card text that modifies the action list (add/remove/replace) should use the shared helpers in
   `src/game/cardText/actionListTransforms.ts` and `public/game/cardText/actionListTransforms.js` to keep behavior precise and mirrored.

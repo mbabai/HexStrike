@@ -110,6 +110,7 @@ const buildHandTriggerLookup = (interactions, characters) => {
   });
   interactions.forEach((interaction) => {
     if (!interaction || interaction.type !== 'hand-trigger') return;
+    if (interaction.status === 'resolved' && interaction.resolution?.use === false) return;
     const beatIndex = Number.isFinite(interaction.beatIndex) ? Math.round(interaction.beatIndex) : null;
     if (beatIndex == null || beatIndex < 0) return;
     const actorKey = actorKeyMap.get(interaction.actorUserId) ?? interaction.actorUserId;

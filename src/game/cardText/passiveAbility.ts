@@ -56,6 +56,40 @@ const replaceLastAction = (
   return actionList;
 };
 
+const actionHasMovementToken = (action: string): boolean => {
+  if (!action) return false;
+  return action
+    .split('-')
+    .map((token) => normalizeActionLabel(token))
+    .some((label) => {
+      if (!label) return false;
+      const type = label[label.length - 1]?.toLowerCase();
+      return type === 'm' || type === 'j';
+    });
+};
+
+const getLastMovementIndex = (actionList: ActionListItem[]): number | null => {
+  for (let index = actionList.length - 1; index >= 0; index -= 1) {
+    if (actionHasMovementToken(actionList[index]?.action ?? '')) return index;
+  }
+  return null;
+};
+
+const applyAerialStrikePassiveText = (
+  actionList: ActionListItem[],
+  activeCard: CardDefinition | undefined,
+): ActionListItem[] => {
+  if (activeCard?.type !== 'movement') return actionList;
+  const lastMovementIndex = getLastMovementIndex(actionList);
+  if (lastMovementIndex == null) return actionList;
+  const targetIndex = lastMovementIndex + 1;
+  if (targetIndex >= actionList.length) return actionList;
+  return updateActionEntries(actionList, [targetIndex], (entry) => {
+    if (!entry) return entry;
+    return patchActionEntry(entry, { rotation: '3', rotationSource: 'forced' });
+  });
+};
+
 const applyChasePassiveText = (actionList: ActionListItem[]): ActionListItem[] => {
   if (!actionList.length) return actionList;
   const first = actionList[0];
@@ -141,6 +175,7 @@ const applyWhirlwindPassiveText = (actionList: ActionListItem[]): ActionListItem
 type PassiveAbilityEffect = (actionList: ActionListItem[], activeCard: CardDefinition | undefined) => ActionListItem[];
 
 const PASSIVE_ABILITY_EFFECTS = new Map<string, PassiveAbilityEffect>([
+  ['aerial-strike', applyAerialStrikePassiveText],
   ['chase', applyChasePassiveText],
   ['counter-attack', applyCounterAttackPassiveText],
   ['cross-slash', applyCrossSlashPassiveText],

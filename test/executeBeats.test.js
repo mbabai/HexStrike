@@ -1,6 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { executeBeats } = require('../dist/game/execute.js');
+const { applyActionSetToBeats } = require('../dist/game/actionSets.js');
+const { getCharactersAtEarliestE, getTimelineEarliestEIndex } = require('../dist/game/beatTimeline.js');
 
 const buildEntry = (username, action, priority, position, facing, rotation = '', attackDamage = 0, attackKbf = 0) => ({
   username,
@@ -43,7 +45,7 @@ test('executeBeats applies rotations before action resolution even when disabled
 
   const beats = [
     [
-      buildEntry('alpha', '1a', 20, characters[0].position, characters[0].facing, '', 2, 0),
+      buildEntry('alpha', '1a', 20, characters[0].position, characters[0].facing, '', 2, 1),
       buildEntry('beta', '1m', 0, characters[1].position, characters[1].facing, 'R1', 0, 0),
     ],
   ];
@@ -53,7 +55,7 @@ test('executeBeats applies rotations before action resolution even when disabled
   const betaEntry = beat0.find((entry) => entry.username === 'beta');
 
   assert.ok(betaEntry);
-  assert.equal(betaEntry.location.q, 1);
+  assert.equal(betaEntry.location.q, 2);
   assert.equal(betaEntry.location.r, 0);
   assert.equal(betaEntry.facing, 240);
 });
@@ -364,6 +366,33 @@ test('executeBeats blocks bow shot arrows when the target blocks the incoming di
   assert.equal(Boolean(hit), false);
 });
 
+test('executeBeats queues Absorb draws when a bracketed block stops damage', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 0, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('beta', '[b-Lb-Rb]', 20, characters[1].position, characters[1].facing),
+      buildEntry('alpha', 'a', 0, characters[0].position, characters[0].facing, '', 3, 0),
+    ],
+  ];
+
+  beats[0][0].cardId = 'absorb';
+  beats[0][0].passiveCardId = 'step';
+  beats[0][1].cardId = 'strike';
+  beats[0][1].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters);
+  const draw = (result.interactions || []).find(
+    (interaction) => interaction.type === 'draw' && interaction.actorUserId === 'beta',
+  );
+
+  assert.ok(draw);
+  assert.equal(draw.drawCount, 3);
+});
+
 test('executeBeats applies fire hex damage from board tokens', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
@@ -446,6 +475,31 @@ test('executeBeats blocks throws against hip-throw and tackle passives', () => {
   });
 });
 
+test('executeBeats still creates tackle throw interaction when thrower is hit with KBF 0', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', '[a]', 10, characters[0].position, characters[0].facing, '', 2, 0),
+      buildEntry('beta', 'a', 20, characters[1].position, characters[1].facing, '', 2, 0),
+    ],
+  ];
+
+  beats[0][0].cardId = 'tackle';
+  beats[0][0].interaction = { type: 'throw' };
+
+  const result = executeBeats(beats, characters);
+  const throwInteraction = (result.interactions || []).find(
+    (interaction) => interaction.type === 'throw' && interaction.actorUserId === 'alpha' && interaction.targetUserId === 'beta',
+  );
+
+  assert.ok(throwInteraction);
+  assert.equal(throwInteraction.status, 'pending');
+});
+
 test('executeBeats reduces KBF by 1 for iron will passive hits', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
@@ -467,4 +521,167 @@ test('executeBeats reduces KBF by 1 for iron will passive hits', () => {
   assert.equal(betaEntry.damage, 1);
   assert.equal(betaEntry.location.q, 1);
   assert.equal(betaEntry.location.r, 0);
+});
+
+test('executeBeats preserves character baseline state in returned characters', () => {
+  const characters = [
+    {
+      userId: 'alpha',
+      username: 'alpha',
+      position: { q: 0, r: 0 },
+      facing: 120,
+      damage: 7,
+      characterId: 'murelious',
+      characterName: 'Alpha',
+    },
+    {
+      userId: 'beta',
+      username: 'beta',
+      position: { q: 2, r: -1 },
+      facing: 240,
+      damage: 3,
+      characterId: 'zenytha',
+      characterName: 'Beta',
+    },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'E', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'E', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  const result = executeBeats(beats, characters);
+  const alpha = result.characters.find((character) => character.userId === 'alpha');
+  const beta = result.characters.find((character) => character.userId === 'beta');
+
+  assert.ok(alpha);
+  assert.ok(beta);
+  assert.deepEqual(alpha.position, characters[0].position);
+  assert.equal(alpha.damage, characters[0].damage);
+  assert.equal(alpha.facing, characters[0].facing);
+  assert.deepEqual(beta.position, characters[1].position);
+  assert.equal(beta.damage, characters[1].damage);
+  assert.equal(beta.facing, characters[1].facing);
+});
+
+test('executeBeats converts Gigantic Staff movement to 2j when on abyss', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 2, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+  const beats = [
+    [
+      buildEntry('alpha', 'm', 10, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+  beats[0][0].passiveCardId = 'gigantic-staff';
+
+  const land = [{ q: 99, r: 99 }];
+  const result = executeBeats(beats, characters, land);
+  const alphaEntry = (result.beats[0] || []).find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.action, '2j');
+});
+
+test('executeBeats applies cross-slash passive self damage at action start', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'm', 20, characters[0].position, characters[0].facing),
+    ],
+  ];
+
+  beats[0][0].passiveCardId = 'cross-slash';
+  beats[0][0].rotationSource = 'selected';
+
+  const result = executeBeats(beats, characters);
+  const beat0 = result.beats[0] || [];
+  const alphaEntry = beat0.find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.damage, 1);
+  assert.ok(alphaEntry.consequences?.some((effect) => effect.type === 'hit' && effect.damageDelta === 1));
+});
+
+test('executeBeats resolves parry counters even when a defender is at E', () => {
+  const characters = [
+    { userId: 'def', username: 'def', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Def' },
+    { userId: 'atk', username: 'atk', position: { q: 1, r: 0 }, facing: 0, characterId: 'murelious', characterName: 'Atk' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('def', '[b]', 99, characters[0].position, characters[0].facing),
+      buildEntry('atk', 'a', 10, characters[1].position, characters[1].facing, '', 2, 1),
+    ],
+    [
+      buildEntry('def', 'E', 0, characters[0].position, characters[0].facing),
+      buildEntry('atk', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  beats[0][0].cardId = 'parry';
+  beats[0][0].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters);
+  const beat1 = result.beats[1] || [];
+  const attackerEntry = beat1.find((entry) => entry.username === 'atk');
+
+  assert.ok(attackerEntry);
+  assert.equal(attackerEntry.action, 'DamageIcon');
+  assert.ok(attackerEntry.consequences?.some((effect) => effect.type === 'hit' && effect.damageDelta > 0));
+});
+
+test('parry stun does not trap future submissions on calculated history E beats', () => {
+  const characters = [
+    { userId: 'def', username: 'def', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Def' },
+    { userId: 'atk', username: 'atk', position: { q: 1, r: 0 }, facing: 0, characterId: 'murelious', characterName: 'Atk' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('def', '[b]', 99, characters[0].position, characters[0].facing),
+      buildEntry('atk', 'a', 10, characters[1].position, characters[1].facing, '', 2, 1),
+    ],
+    [
+      buildEntry('def', 'E', 0, characters[0].position, characters[0].facing),
+      buildEntry('atk', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+  beats[0][0].cardId = 'parry';
+  beats[0][0].passiveCardId = 'step';
+
+  const afterParry = executeBeats(beats, characters);
+  const earliestIndex = getTimelineEarliestEIndex(afterParry.beats, characters);
+  const atBat = getCharactersAtEarliestE(afterParry.beats, characters).map((character) => character.userId);
+
+  assert.equal(earliestIndex, 2);
+  assert.deepEqual(atBat, ['def']);
+
+  const actionList = [
+    {
+      action: 'm',
+      rotation: 'R1',
+      rotationSource: 'selected',
+      priority: 50,
+      damage: 0,
+      kbf: 0,
+      cardId: 'step',
+      passiveCardId: 'jab',
+    },
+  ];
+  const withSubmission = applyActionSetToBeats(afterParry.beats, characters, 'def', actionList, []);
+  const afterSubmission = executeBeats(withSubmission, characters);
+  const beat2 = afterSubmission.beats[2] || [];
+  const defenderEntry = beat2.find((entry) => entry.username === 'def');
+
+  assert.ok(defenderEntry);
+  assert.equal(defenderEntry.action, 'm');
 });

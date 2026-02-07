@@ -35,6 +35,37 @@ const replaceLastAction = (actionList, label, nextLabel, patch = {}) => {
   return actionList;
 };
 
+const actionHasMovementToken = (action) => {
+  if (!action) return false;
+  return action
+    .split('-')
+    .map((token) => normalizeActionLabel(token))
+    .some((label) => {
+      if (!label) return false;
+      const type = label[label.length - 1]?.toLowerCase();
+      return type === 'm' || type === 'j';
+    });
+};
+
+const getLastMovementIndex = (actionList) => {
+  for (let index = actionList.length - 1; index >= 0; index -= 1) {
+    if (actionHasMovementToken(actionList[index]?.action ?? '')) return index;
+  }
+  return null;
+};
+
+const applyAerialStrikePassiveText = (actionList, activeCard) => {
+  if (activeCard?.type !== 'movement') return actionList;
+  const lastMovementIndex = getLastMovementIndex(actionList);
+  if (lastMovementIndex == null) return actionList;
+  const targetIndex = lastMovementIndex + 1;
+  if (targetIndex >= actionList.length) return actionList;
+  return updateActionEntries(actionList, [targetIndex], (entry) => {
+    if (!entry) return entry;
+    return patchActionEntry(entry, { rotation: '3', rotationSource: 'forced' });
+  });
+};
+
 const applyChasePassiveText = (actionList) => {
   if (!actionList.length) return actionList;
   const first = actionList[0];
@@ -114,6 +145,7 @@ const applySmokeBombPassiveText = (actionList) =>
 const applyWhirlwindPassiveText = (actionList) => replaceLastAction(actionList, 'm', 'c-La-Ra-BLa-BRa-Ba', { damage: 1, kbf: 0 });
 
 const PASSIVE_ABILITY_EFFECTS = new Map([
+  ['aerial-strike', applyAerialStrikePassiveText],
   ['chase', applyChasePassiveText],
   ['counter-attack', applyCounterAttackPassiveText],
   ['cross-slash', applyCrossSlashPassiveText],

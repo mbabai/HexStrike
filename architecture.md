@@ -13,7 +13,7 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
 2. Quickplay matchmaking pairs the oldest two players; bot queue pairs with a placeholder bot user.
 3. A match and game are created; initial state is seeded with characters and a first timeline beat.
 4. The server emits `match:created` and `game:update` events.
-5. Players submit action sets at the earliest open beat; the server validates cards, applies actions, executes beats, resolves interactions, refreshes decks, and evaluates match end conditions.
+5. Players submit action sets at the earliest open unresolved beat (`resolvedIndex + 1` onward); the server validates cards, applies actions, executes beats, resolves interactions, refreshes decks, and evaluates match end conditions.
 6. `game:update` events stream to each player with public state plus their private card state.
 
 ## Server responsibilities (src/)
@@ -60,7 +60,7 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
 - `submitActionSet` validates cards and rotations, applies card costs, and either:
   - executes immediately if only one player is required, or
   - batches in `pendingActions` until all required players submit.
-- `applyActionSetToBeats` inserts the action list at the player's first open beat and clears later entries for that player.
+- `applyActionSetToBeats` inserts the action list at the player's first open unresolved beat and clears later entries for that player.
 - `executeBeatsWithInteractions` recomputes positions, damage, and interactions from the start of the timeline.
 - `resolveLandRefreshes` applies deck refresh rules after execution.
 - `evaluateMatchOutcome` determines win/loss conditions and inserts `Death` beats when needed.

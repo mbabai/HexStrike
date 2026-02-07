@@ -22,13 +22,17 @@ const applyRotationAfterIndex = (
   actionList: ActionListItem[],
   index: number,
   rotation: string,
+  options: { clearStartRotation?: boolean } = {},
 ): ActionListItem[] => {
   if (!rotation || !Number.isFinite(index) || index < 0 || index >= actionList.length) return actionList;
-  const cleared = updateActionEntries(actionList, [0], (entry) => {
-    if (!entry?.rotation) return entry;
-    return patchActionEntry(entry, { rotation: '' });
-  });
-  return updateActionEntries(cleared, [index], (entry) => {
+  const { clearStartRotation = true } = options;
+  const base = clearStartRotation
+    ? updateActionEntries(actionList, [0], (entry) => {
+        if (!entry?.rotation) return entry;
+        return patchActionEntry(entry, { rotation: '' });
+      })
+    : actionList;
+  return updateActionEntries(base, [index], (entry) => {
     if (!entry) return entry;
     return patchActionEntry(entry, { rotation, rotationSource: 'forced' });
   });
@@ -36,18 +40,31 @@ const applyRotationAfterIndex = (
 
 const applyCounterAttackActiveText = (
   actionList: ActionListItem[],
-  card: CardDefinition,
-  rotationLabel: string,
-): ActionListItem[] => {
+): ActionListItem[] => actionList;
+
+const applyAerialStrikeActiveText = (actionList: ActionListItem[], card: CardDefinition): ActionListItem[] => {
   const indices = getSymbolActionIndices(Array.isArray(card.actions) ? card.actions : [], 'i');
   const targetIndex = indices.length ? indices[0] + 1 : null;
   if (targetIndex == null) return actionList;
-  return applyRotationAfterIndex(actionList, targetIndex, rotationLabel);
+  return applyRotationAfterIndex(actionList, targetIndex, '3', { clearStartRotation: false });
+};
+
+const applyWhirlwindActiveText = (actionList: ActionListItem[], card: CardDefinition): ActionListItem[] => {
+  const indices = getSymbolActionIndices(Array.isArray(card.actions) ? card.actions : [], 'i');
+  if (!indices.length) return actionList;
+  return updateActionEntries(actionList, indices, (entry) => {
+    if (!entry) return entry;
+    return patchActionEntry(entry, { kbf: 3 });
+  });
 };
 
 type ActiveAbilityEffect = (actionList: ActionListItem[], card: CardDefinition, rotationLabel: string) => ActionListItem[];
 
-const ACTIVE_ABILITY_EFFECTS = new Map<string, ActiveAbilityEffect>([['counter-attack', applyCounterAttackActiveText]]);
+const ACTIVE_ABILITY_EFFECTS = new Map<string, ActiveAbilityEffect>([
+  ['counter-attack', applyCounterAttackActiveText],
+  ['aerial-strike', applyAerialStrikeActiveText],
+  ['whirlwind', applyWhirlwindActiveText],
+]);
 
 export const applyActiveAbilityCardText = (
   actionList: ActionListItem[],

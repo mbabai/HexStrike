@@ -271,7 +271,7 @@
       "type": "ability",
       "priority": 68,
       "actions": [
-        "[m]",
+        "Bm",
         "a",
         "W",
         "W",
@@ -280,7 +280,7 @@
       "rotations": "*",
       "damage": 5,
       "kbf": 3,
-      "activeText": "{i}: Rotate after this move, not before.",
+      "activeText": "",
       "passiveText": "Convert the first {m} to {m-Ba} with damage 3 and KBF 3."
     },
     {
@@ -298,7 +298,7 @@
       "rotations": "0-2",
       "damage": 4,
       "kbf": 2,
-      "passiveText": "Replace all {m} with {m-La-Ra} with damage 2, KBF 1. Discard 1."
+      "passiveText": "Replace all {m} with {m-La-Ra} with damage 2, KBF 1. Take 1 damage."
     },
     {
       "id": "double-daggers",
@@ -861,105 +861,105 @@
         "spike"
       ]
     },
-    {
-      "id": "trigger-burning-strike-sinking-shot",
-      "name": "Burning Strike + Sinking Shot",
-      "characterId": "strylan",
-      "movement": [
-        "step",
-        "dash",
-        "advance",
-        "jump"
-      ],
-      "ability": [
-        "burning-strike",
-        "sinking-shot",
-        "guard",
-        "iron-will",
-        "bow-shot",
-        "healing-harmony",
-        "cross-slash",
-        "fumikomi",
-        "flying-knee",
-        "tackle",
-        "jab",
-        "smash-attack"
-      ]
-    },
-    {
-      "id": "trigger-vengeance-iron-will",
-      "name": "Vengeance + Iron Will",
-      "characterId": "strylan",
-      "movement": [
-        "step",
-        "dash",
-        "advance",
-        "jump"
-      ],
-      "ability": [
-        "vengeance",
-        "iron-will",
-        "guard",
-        "bow-shot",
-        "burning-strike",
-        "sinking-shot",
-        "healing-harmony",
-        "cross-slash",
-        "fumikomi",
-        "flying-knee",
-        "tackle",
-        "jab"
-      ]
-    },
-    {
-      "id": "discard-tester",
-      "name": "discard tester",
-      "characterId": "murelious",
-      "movement": [
-        "step",
-        "dash",
-        "jump",
-        "backflip"
-      ],
-      "ability": [
-        "down-slash",
-        "spike",
-        "sweeping-strike",
-        "trip",
-        "cross-slash",
-        "parry",
-        "feint",
-        "smoke-bomb",
-        "long-thrust",
-        "balestra-lunge",
-        "jab",
-        "counter-attack"
-      ]
-    },
-    {
-      "id": "aumandetta-bowfire-test",
-      "name": "Aumandetta Bowfire Test",
-      "characterId": "aumandetta",
-      "movement": [
-        "step",
-        "ninja-roll",
-        "grappling-hook",
-        "jump"
-      ],
-      "ability": [
-        "bow-shot",
-        "burning-strike",
-        "guard",
-        "iron-will",
-        "healing-harmony",
-        "cross-slash",
-        "fumikomi",
-        "flying-knee",
-        "tackle",
-        "jab",
-        "smash-attack",
-        "spike"
-      ]
-    }
-  ]
-}
+      {
+        "id": "test-absorb-parry-stab",
+        "name": "Test Absorb + Parry + Stab",
+        "characterId": "monkey-queen",
+        "movement": [
+          "step",
+          "dash",
+          "jump",
+          "backflip"
+        ],
+        "ability": [
+          "absorb",
+          "parry",
+          "stab",
+          "counter-attack",
+          "feint",
+          "reflex-dodge",
+          "smoke-bomb",
+          "long-thrust",
+          "balestra-lunge",
+          "trip",
+          "hip-throw",
+          "double-daggers"
+        ]
+      },
+      {
+        "id": "test-aerial-gigantic",
+        "name": "Test Aerial Strike + Gigantic Staff",
+        "characterId": "ryathan",
+        "movement": [
+          "step",
+          "advance",
+          "dash",
+          "jump"
+        ],
+        "ability": [
+          "aerial-strike",
+          "gigantic-staff",
+          "guard",
+          "iron-will",
+          "burning-strike",
+          "cross-slash",
+          "fumikomi",
+          "flying-knee",
+          "tackle",
+          "jab",
+          "smash-attack",
+          "spinning-back-kick"
+        ]
+      },
+      {
+        "id": "test-whirlwind-hammer",
+        "name": "Test Whirlwind + Hammer",
+        "characterId": "zenytha",
+        "movement": [
+          "step",
+          "advance",
+          "leap",
+          "backflip"
+        ],
+        "ability": [
+          "whirlwind",
+          "hammer",
+          "down-slash",
+          "spike",
+          "sweeping-strike",
+          "trip",
+          "cross-slash",
+          "feint",
+          "smoke-bomb",
+          "long-thrust",
+          "balestra-lunge",
+          "jab"
+        ]
+      },
+      {
+        "id": "test-healing-harmony",
+        "name": "Test Healing Harmony",
+        "characterId": "aumandetta",
+        "movement": [
+          "step",
+          "dash",
+          "advance",
+          "jump"
+        ],
+        "ability": [
+          "healing-harmony",
+          "guard",
+          "iron-will",
+          "burning-strike",
+          "cross-slash",
+          "fumikomi",
+          "flying-knee",
+          "tackle",
+          "jab",
+          "smash-attack",
+          "spinning-back-kick",
+          "spike"
+        ]
+      }
+    ]
+  }

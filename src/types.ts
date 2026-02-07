@@ -245,6 +245,9 @@ export interface CustomInteraction {
   drawCount?: number;
   drawMovementCount?: number;
   handTriggerOrder?: number;
+  damage?: number;
+  kbf?: number;
+  directionIndex?: number | null;
 }
 
 export interface MatchOutcome {
@@ -269,6 +272,7 @@ export interface GamePublicState {
   beats: BeatEntry[][];
   timeline?: BeatEntry[][];
   characters: PublicCharacter[];
+  startingCharacters?: PublicCharacter[];
   boardTokens?: BoardToken[];
   pendingActions?: PendingActions;
   customInteractions: CustomInteraction[];

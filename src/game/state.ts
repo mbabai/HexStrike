@@ -22,6 +22,12 @@ export const createInitialGameState = async (
     position: { ...STARTING_CHARACTERS[index].position },
     facing: STARTING_CHARACTERS[index].facing,
   }));
+  const startingCharacters = characters.map((character) => ({
+    ...character,
+    position: { q: character.position.q, r: character.position.r },
+    facing: character.facing,
+    damage: 0,
+  }));
   const land = buildDefaultLandHexes();
   const beats = Array.from({ length: characters.length ? DEFAULT_BEAT_COUNT : 0 }, () =>
     characters.map((character) => ({
@@ -43,6 +49,7 @@ export const createInitialGameState = async (
       beats,
       timeline: beats,
       characters,
+      startingCharacters,
       boardTokens: [],
       pendingActions: undefined,
       customInteractions: [],

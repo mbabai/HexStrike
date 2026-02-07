@@ -146,6 +146,18 @@ body {
     radial-gradient(circle at 85% 10%, var(--color-accent-glow), transparent 45%),
     linear-gradient(135deg, var(--color-bg-1) 0%, var(--color-bg-2) 60%, var(--color-bg-3) 100%);
   padding: 28px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea,
+select,
+option,
+[contenteditable='true'],
+.allow-text-select {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .ui-shell,
@@ -1865,6 +1877,10 @@ small {
   opacity: 0.7;
 }
 
+.action-card.is-shaking {
+  animation: cardShake 320ms ease-in-out;
+}
+
 .action-card.is-disabled {
   cursor: default;
   opacity: 1;
@@ -1922,6 +1938,25 @@ small {
   }
   50% {
     box-shadow: 0 0 0 2px rgba(211, 75, 66, 0.6), 0 0 18px rgba(211, 75, 66, 0.85);
+  }
+}
+
+@keyframes cardShake {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  20% {
+    translate: calc(-6px * var(--action-card-scale)) 0;
+  }
+  40% {
+    translate: calc(6px * var(--action-card-scale)) 0;
+  }
+  60% {
+    translate: calc(-4px * var(--action-card-scale)) 0;
+  }
+  80% {
+    translate: calc(4px * var(--action-card-scale)) 0;
   }
 }
 

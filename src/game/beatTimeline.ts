@@ -38,13 +38,15 @@ export const getCharacterLocationAtIndex = (
 
 export const getCharacterFirstEIndex = (beats: BeatEntry[][], character: PublicCharacter): number => {
   if (!Array.isArray(beats) || !beats.length) return 0;
-  for (let i = 0; i < beats.length; i += 1) {
+  const resolvedIndex = getTimelineResolvedIndex(beats);
+  const startIndex = Math.max(0, resolvedIndex + 1);
+  for (let i = startIndex; i < beats.length; i += 1) {
     const entry = getEntryForCharacter(beats[i], character);
     if (!entry || entry.action === DEFAULT_ACTION) {
       return i;
     }
   }
-  return Math.max(0, beats.length - 1);
+  return Math.max(0, Math.min(startIndex, beats.length - 1));
 };
 
 export const getTimelineEarliestEIndex = (beats: BeatEntry[][], characters: PublicCharacter[]): number => {

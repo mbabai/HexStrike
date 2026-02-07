@@ -1,6 +1,7 @@
 import { LAND_HEXES } from '../shared/hex.mjs';
 import { getPassiveKbfReduction, isThrowImmune } from './cardText/combatModifiers.js';
 import { shouldConvertKbfToDiscard } from './cardText/discardEffects.js';
+import { isBracketedAction as isBracketedTokenAction, normalizeActionToken } from './cardText/actionListTransforms.js';
 
 const DEFAULT_ACTION = 'E';
 const WAIT_ACTION = 'W';
@@ -17,6 +18,13 @@ const ARROW_LAND_DISTANCE_LIMIT = 5;
 const BOW_SHOT_CARD_ID = 'bow-shot';
 const BURNING_STRIKE_CARD_ID = 'burning-strike';
 const IRON_WILL_CARD_ID = 'iron-will';
+const ABSORB_CARD_ID = 'absorb';
+const GIGANTIC_STAFF_CARD_ID = 'gigantic-staff';
+const HAMMER_CARD_ID = 'hammer';
+const HEALING_HARMONY_CARD_ID = 'healing-harmony';
+const PARRY_CARD_ID = 'parry';
+const STAB_CARD_ID = 'stab';
+const CROSS_SLASH_CARD_ID = 'cross-slash';
 // Keep in sync with server-side throw detection.
 const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
 const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
@@ -180,6 +188,18 @@ const getFacingRotationSteps = (facing) => {
 
 const applyFacingToVector = (vector, facing) => rotateAxial(vector, getFacingRotationSteps(facing));
 
+const isBehindTarget = (attackerPosition, targetState) => {
+  if (!attackerPosition || !targetState?.position) return false;
+  const delta = {
+    q: attackerPosition.q - targetState.position.q,
+    r: attackerPosition.r - targetState.position.r,
+  };
+  const directionIndex = getDirectionIndex(delta);
+  if (directionIndex == null) return false;
+  const facingIndex = getFacingRotationSteps(targetState.facing ?? 0);
+  return directionIndex === (facingIndex + 3) % 6;
+};
+
 const coordKey = (coord) => `${coord.q},${coord.r}`;
 
 const sameCoord = (a, b) => a.q === b.q && a.r === b.r;
@@ -305,13 +325,11 @@ const normalizeActionLabel = (action) => {
   return trimmed;
 };
 
-const normalizeActionToken = (token) => {
-  const trimmed = `${token ?? ''}`.trim();
-  if (!trimmed) return '';
-  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-    return trimmed.slice(1, -1).trim();
-  }
-  return trimmed;
+const isActionActive = (action) => normalizeActionLabel(action ?? '').toUpperCase() !== DEFAULT_ACTION;
+
+const getHealingHarmonyReduction = (entry) => {
+  if (!entry || entry.passiveCardId !== HEALING_HARMONY_CARD_ID) return 0;
+  return isActionActive(entry.action) ? 2 : 0;
 };
 
 const parseActionTokens = (action) => {
@@ -327,6 +345,22 @@ const parseActionTokens = (action) => {
       return { type, path, steps: parsePath(path) };
     })
     .filter((token) => token.type);
+};
+
+const applyGiganticStaffAction = (action) => {
+  const trimmed = `${action ?? ''}`.trim();
+  if (!trimmed) return action;
+  const bracketed = isBracketedTokenAction(trimmed);
+  const label = normalizeActionToken(trimmed);
+  if (!label) return action;
+  if (label[label.length - 1]?.toLowerCase() !== 'm') return action;
+  const path = label.slice(0, -1);
+  const match = path.match(/^(.*?)(\d+)?$/);
+  const prefix = match?.[1] ?? '';
+  const distance = match?.[2] ? Math.max(2, Number(match[2])) : 2;
+  const nextPath = `${prefix}${distance || ''}`;
+  const nextLabel = `${nextPath}j`;
+  return bracketed ? `[${nextLabel}]` : nextLabel;
 };
 
 const applyRotationPhase = (entries, state, userLookup) => {
@@ -556,6 +590,106 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
 
   applyRotationPhase(ordered, state, userLookup);
 
+  const parryInteractions = (interactions ?? []).filter((interaction) => {
+    if (interaction?.type !== 'parry') return false;
+    if (interaction?.status !== 'resolved') return false;
+    const targetBeat = Number.isFinite(interaction?.beatIndex) ? Math.round(interaction.beatIndex) : null;
+    if (targetBeat == null) return false;
+    return targetBeat === beatIndex;
+  });
+
+  if (parryInteractions.length) {
+    parryInteractions.forEach((interaction) => {
+      const defenderId = interaction.actorUserId;
+      const attackerId = interaction.targetUserId;
+      if (!attackerId) return;
+      const targetState = state.get(attackerId);
+      if (!targetState) return;
+      const targetCharacter = characterById.get(attackerId);
+      const targetEntry = targetCharacter ? getBeatEntryForCharacter(beat, targetCharacter) : null;
+      const baseDamage = Number.isFinite(interaction.damage) ? Math.max(0, Math.floor(interaction.damage)) : 0;
+      const baseKbf = Number.isFinite(interaction.kbf) ? Math.max(0, Math.floor(interaction.kbf)) : 0;
+      const directionIndex = Number.isFinite(interaction.directionIndex) ? Math.round(interaction.directionIndex) : null;
+      const damageReduction = getHealingHarmonyReduction(targetEntry);
+      const adjustedDamage = Math.max(0, baseDamage - damageReduction);
+      const passiveKbfReduction = getPassiveKbfReduction(targetEntry);
+      const effectiveKbf = Math.max(0, baseKbf - passiveKbfReduction);
+      const baseKnockbackDistance = getKnockbackDistance((targetState.damage ?? 0) + adjustedDamage, effectiveKbf);
+      const knockbackDistance = shouldConvertKbfToDiscard(targetEntry) ? 0 : baseKnockbackDistance;
+      const knockbackDirection = directionIndex != null ? AXIAL_DIRECTIONS[directionIndex] : null;
+      const startPosition = { q: targetState.position.q, r: targetState.position.r };
+      let finalPosition = { ...targetState.position };
+      const hitPath = [{ q: finalPosition.q, r: finalPosition.r }];
+      if (knockbackDirection && knockbackDistance > 0) {
+        for (let step = 0; step < knockbackDistance; step += 1) {
+          const candidate = {
+            q: finalPosition.q + knockbackDirection.q,
+            r: finalPosition.r + knockbackDirection.r,
+          };
+          const occupant = occupancy.get(coordKey(candidate));
+          if (occupant && occupant !== attackerId) break;
+          finalPosition = candidate;
+          hitPath.push({ q: finalPosition.q, r: finalPosition.r });
+        }
+      }
+      if (!sameCoord(finalPosition, targetState.position)) {
+        occupancy.delete(coordKey(targetState.position));
+        occupancy.set(coordKey(finalPosition), attackerId);
+      }
+      targetState.position = { q: finalPosition.q, r: finalPosition.r };
+      targetState.damage = (targetState.damage ?? 0) + adjustedDamage;
+
+      const damageChanges = [];
+      const positionChanges = [];
+      if (adjustedDamage || knockbackDistance > 0) {
+        damageChanges.push({ targetId: attackerId, delta: adjustedDamage });
+      }
+      if (!sameCoord(finalPosition, startPosition)) {
+        positionChanges.push({
+          targetId: attackerId,
+          position: { q: finalPosition.q, r: finalPosition.r },
+          from: { q: startPosition.q, r: startPosition.r },
+          path: hitPath,
+        });
+      }
+      const hitTargets = [
+        {
+          targetId: attackerId,
+          from: { q: startPosition.q, r: startPosition.r },
+          to: { q: finalPosition.q, r: finalPosition.r },
+          path: hitPath,
+        },
+      ];
+      if (
+        defenderId &&
+        defenderId !== attackerId &&
+        targetEntry?.passiveCardId === HAMMER_CARD_ID &&
+        isActionActive(targetEntry.action)
+      ) {
+        const defenderState = state.get(defenderId);
+        if (defenderState) {
+          defenderState.damage = (defenderState.damage ?? 0) + 2;
+          damageChanges.push({ targetId: defenderId, delta: 2 });
+        }
+      }
+      steps.push({
+        actorId: defenderId ?? attackerId,
+        facingAfter: state.get(defenderId)?.facing ?? targetState.facing,
+        moveDestination: null,
+        moveType: null,
+        movePath: null,
+        damageChanges,
+        positionChanges,
+        attackOrigin: null,
+        attackTargets: [],
+        hitTargets,
+        blockHits: [],
+        effects: [],
+      });
+      disabledActors.add(attackerId);
+    });
+  }
+
   ordered.forEach((entry) => {
     const actorId = userLookup.get(entry.username);
     if (!actorId) return;
@@ -567,6 +701,10 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
     const entryDamage = Number.isFinite(entry?.attackDamage) ? entry.attackDamage : 0;
     const entryKbf = Number.isFinite(entry?.attackKbf) ? entry.attackKbf : 0;
     const hasGrapplingHookPassive = entry?.passiveCardId === GRAPPLING_HOOK_CARD_ID;
+    const hasGiganticStaffPassive =
+      entry?.passiveCardId === GIGANTIC_STAFF_CARD_ID && !isCoordOnLand(actorState.position, landTiles);
+    const action = hasGiganticStaffPassive ? applyGiganticStaffAction(entry.action ?? '') : entry.action ?? '';
+    const actionLabel = normalizeActionLabel(action);
 
     const effects = [];
     const damageChanges = [];
@@ -578,10 +716,27 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
     let moveType = null;
     let movePath = null;
 
-    const tokens = parseActionTokens(entry.action ?? '');
+      if (entry.cardId === HEALING_HARMONY_CARD_ID && actionLabel.toUpperCase() === 'X1') {
+        const beforeDamage = Number.isFinite(actorState.damage) ? actorState.damage : 0;
+        const nextDamage = Math.max(0, beforeDamage - 3);
+        const delta = nextDamage - beforeDamage;
+        if (delta) {
+          actorState.damage = nextDamage;
+          damageChanges.push({ targetId: actorId, delta });
+        } else {
+          actorState.damage = nextDamage;
+        }
+      }
+
+      if (entry.passiveCardId === CROSS_SLASH_CARD_ID && isActionSetStart(entry)) {
+        actorState.damage = (actorState.damage ?? 0) + 1;
+        damageChanges.push({ targetId: actorId, delta: 1 });
+      }
+
+      const tokens = parseActionTokens(action);
     tokens.forEach((token) => {
       const isGrapplingHookCharge =
-        entry.cardId === GRAPPLING_HOOK_CARD_ID && token.type === 'c' && isBracketedAction(entry.action ?? '');
+        entry.cardId === GRAPPLING_HOOK_CARD_ID && token.type === 'c' && isBracketedAction(action);
       const { positions, destination, lastStep } = isGrapplingHookCharge
         ? buildGrapplingHookPath(origin, token.steps, actorState.facing, landTiles, occupancy, actorId)
         : buildPath(origin, token.steps, actorState.facing);
@@ -643,8 +798,10 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
               const resolvedDirection = getResolvedDirectionIndex(interaction);
               const knockbackPath = [{ q: targetState.position.q, r: targetState.position.r }];
               if (interaction?.status === 'resolved' && resolvedDirection != null) {
-                targetState.damage += entryDamage;
-                damageChanges.push({ targetId, delta: entryDamage });
+                const damageReduction = getHealingHarmonyReduction(targetEntry);
+                const adjustedDamage = Math.max(0, entryDamage - damageReduction);
+                targetState.damage += adjustedDamage;
+                damageChanges.push({ targetId, delta: adjustedDamage });
                 const knockbackDirection = AXIAL_DIRECTIONS[resolvedDirection];
                 let finalPosition = { ...targetState.position };
                 if (knockbackDirection && THROW_DISTANCE > 0) {
@@ -679,6 +836,17 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
                   to: { q: finalPosition.q, r: finalPosition.r },
                   path: knockbackPath,
                 });
+                if (
+                  targetEntry?.passiveCardId === HAMMER_CARD_ID &&
+                  isActionActive(targetEntry.action) &&
+                  actorId !== targetId
+                ) {
+                  const attackerState = state.get(actorId);
+                  if (attackerState) {
+                    attackerState.damage = (attackerState.damage ?? 0) + 2;
+                    damageChanges.push({ targetId: actorId, delta: 2 });
+                  }
+                }
                 disabledActors.add(targetId);
               } else {
                 hitTargets.push({
@@ -695,8 +863,17 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
             if (ironWillInteraction?.status === 'pending') {
               return;
             }
-            targetState.damage += entryDamage;
-            damageChanges.push({ targetId, delta: entryDamage });
+            const isStabHit =
+              entry.cardId === STAB_CARD_ID &&
+              isBracketedAction(entry.action ?? '') &&
+              isBehindTarget(origin, targetState);
+            const stabBonus = isStabHit ? 3 : 0;
+            const rawDamage = entryDamage + stabBonus;
+            const rawKbf = entryKbf + stabBonus;
+            const damageReduction = getHealingHarmonyReduction(targetEntry);
+            const adjustedDamage = Math.max(0, rawDamage - damageReduction);
+            targetState.damage += adjustedDamage;
+            damageChanges.push({ targetId, delta: adjustedDamage });
             const usesGrapplingHookPassive = hasGrapplingHookPassive && token.type === 'a';
             const attackDirection = getKnockbackDirection(origin, destination, lastStep);
             const knockbackPath = [{ q: targetState.position.q, r: targetState.position.r }];
@@ -709,10 +886,11 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
               targetId,
             );
             const passiveKbfReduction = getPassiveKbfReduction(targetEntry);
-            const baseKbf = Math.max(0, entryKbf - passiveKbfReduction);
+            const baseKbf = Math.max(0, rawKbf - passiveKbfReduction);
             const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : baseKbf;
             const baseKnockbackDistance = getKnockbackDistance(targetState.damage, effectiveKbf);
             const knockbackDistance = shouldConvertKbfToDiscard(targetEntry) ? 0 : baseKnockbackDistance;
+            const shouldStun = effectiveKbf === 1 || (effectiveKbf > 1 && baseKnockbackDistance > 0);
             if (flipPosition) {
               knockbackPath.push({ q: flipPosition.q, r: flipPosition.r });
             }
@@ -748,7 +926,20 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
               to: { q: targetState.position.q, r: targetState.position.r },
               path: knockbackPath,
             });
-            disabledActors.add(targetId);
+            if (
+              targetEntry?.passiveCardId === HAMMER_CARD_ID &&
+              isActionActive(targetEntry.action) &&
+              actorId !== targetId
+            ) {
+              const attackerState = state.get(actorId);
+              if (attackerState) {
+                attackerState.damage = (attackerState.damage ?? 0) + 2;
+                damageChanges.push({ targetId: actorId, delta: 2 });
+              }
+            }
+            if (shouldStun) {
+              disabledActors.add(targetId);
+            }
           }
         }
       }
@@ -1223,7 +1414,9 @@ const buildTokenPlayback = (gameState, beatIndex) => {
       const passiveKbfReduction = getPassiveKbfReduction(targetEntry);
       const baseKbf = Math.max(0, ARROW_KBF - passiveKbfReduction);
       const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : baseKbf;
-      const updatedDamage = (targetState.damage ?? 0) + ARROW_DAMAGE;
+      const damageReduction = getHealingHarmonyReduction(targetEntry);
+      const adjustedDamage = Math.max(0, ARROW_DAMAGE - damageReduction);
+      const updatedDamage = (targetState.damage ?? 0) + adjustedDamage;
       const knockbackDistance = getKnockbackDistance(updatedDamage, effectiveKbf);
       let finalPosition = { q: startPosition.q, r: startPosition.r };
       const hitPath = [{ q: finalPosition.q, r: finalPosition.r }];
@@ -1246,6 +1439,25 @@ const buildTokenPlayback = (gameState, beatIndex) => {
         facing: targetState.facing,
         damage: updatedDamage,
       });
+      const arrowDamageChanges = [{ targetId, delta: adjustedDamage }];
+      if (
+        targetEntry?.passiveCardId === HAMMER_CARD_ID &&
+        isActionActive(targetEntry.action) &&
+        token.ownerUserId &&
+        token.ownerUserId !== targetId
+      ) {
+        const attackerState = endStateById.get(token.ownerUserId);
+        if (attackerState) {
+          endStateById.set(token.ownerUserId, {
+            position: { q: attackerState.position.q, r: attackerState.position.r },
+            facing: attackerState.facing,
+            damage: (attackerState.damage ?? 0) + 2,
+          });
+          if (applyNow) {
+            arrowDamageChanges.push({ targetId: token.ownerUserId, delta: 2 });
+          }
+        }
+      }
       if (applyNow) {
         tokenSteps.push({
           kind: 'token',
@@ -1257,7 +1469,7 @@ const buildTokenPlayback = (gameState, beatIndex) => {
           movePath: buildPathFromPositions(token.position, [nextPosition], nextPosition),
           attackOrigin: { q: token.position.q, r: token.position.r },
           attackTargets: [{ q: nextPosition.q, r: nextPosition.r }],
-          damageChanges: [{ targetId, delta: ARROW_DAMAGE }],
+          damageChanges: arrowDamageChanges,
           positionChanges: !sameCoord(finalPosition, targetState.position)
             ? [{ targetId, position: { q: finalPosition.q, r: finalPosition.r } }]
             : [],
@@ -1604,6 +1816,16 @@ export const createTimelinePlayback = () => {
       if (typeof patch.flashAlpha === 'number') {
         next.flashAlpha = Math.max(current.flashAlpha ?? 0, patch.flashAlpha);
       }
+      if (typeof patch.healFlashAlpha === 'number') {
+        next.healFlashAlpha = Math.max(current.healFlashAlpha ?? 0, patch.healFlashAlpha);
+      }
+      if (typeof patch.healPulseAlpha === 'number') {
+        next.healPulseAlpha = Math.max(current.healPulseAlpha ?? 0, patch.healPulseAlpha);
+      }
+      if (typeof patch.healPulseScale === 'number') {
+        const currentScale = typeof current.healPulseScale === 'number' ? current.healPulseScale : 1;
+        next.healPulseScale = Math.max(currentScale, patch.healPulseScale);
+      }
       renderCharacters[index] = next;
     };
     for (let i = 0; i < stepIndex; i += 1) {
@@ -1701,6 +1923,21 @@ export const createTimelinePlayback = () => {
             });
           }
         });
+      }
+
+      if (currentStep.damageChanges?.length) {
+        const healingPulse = Math.sin(stepProgress * Math.PI);
+        if (healingPulse > 0) {
+          currentStep.damageChanges.forEach((change) => {
+            if (!change || change.delta >= 0) return;
+            const healAlpha = healingPulse * 0.75;
+            applyCharacterUpdate(change.targetId, {
+              healFlashAlpha: healAlpha * 0.6,
+              healPulseAlpha: healAlpha,
+              healPulseScale: 1 + healingPulse * 0.35,
+            });
+          });
+        }
       }
 
       if (currentStep.blockHits?.length) {

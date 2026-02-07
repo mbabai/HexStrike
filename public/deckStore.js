@@ -62,20 +62,54 @@ const loadBaseDecks = async () => {
 const mergeBaseDecks = (storedDecks, baseDecks) => {
   if (!Array.isArray(storedDecks)) return baseDecks;
   const baseById = new Map(baseDecks.map((deck) => [deck.id, deck]));
-  const seen = new Set();
-  const merged = storedDecks.map((deck) => {
-    if (baseById.has(deck.id)) {
-      seen.add(deck.id);
-      return { ...deck, isBase: true };
+  const merged = [];
+  storedDecks.forEach((deck) => {
+    const base = baseById.get(deck.id);
+    if (base) {
+      merged.push({ ...base, isBase: true });
+      baseById.delete(deck.id);
+      return;
     }
-    return deck;
+    if (deck.isBase) {
+      return;
+    }
+    merged.push(deck);
   });
-  baseDecks.forEach((deck) => {
-    if (!seen.has(deck.id)) {
-      merged.push(deck);
-    }
+  baseById.forEach((deck) => {
+    merged.push(deck);
   });
   return merged;
+};
+
+const areArraysEqual = (a, b) => {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+};
+
+const areDecksEqual = (a, b) => {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.id === b.id &&
+    a.name === b.name &&
+    a.characterId === b.characterId &&
+    Boolean(a.isBase) === Boolean(b.isBase) &&
+    areArraysEqual(a.movement, b.movement) &&
+    areArraysEqual(a.ability, b.ability)
+  );
+};
+
+const areDeckListsEqual = (a, b) => {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (!areDecksEqual(a[i], b[i])) return false;
+  }
+  return true;
 };
 
 export const loadUserDecks = async (userId = getOrCreateUserId()) => {
@@ -83,12 +117,7 @@ export const loadUserDecks = async (userId = getOrCreateUserId()) => {
   const baseDecks = await loadBaseDecks();
   if (stored !== null) {
     const merged = mergeBaseDecks(stored, baseDecks);
-    if (merged.length !== stored.length) {
-      writeStoredDecks(userId, merged);
-      return merged;
-    }
-    const isBaseMismatch = merged.some((deck, index) => deck.isBase !== stored[index]?.isBase);
-    if (isBaseMismatch) {
+    if (!areDeckListsEqual(merged, stored)) {
       writeStoredDecks(userId, merged);
       return merged;
     }

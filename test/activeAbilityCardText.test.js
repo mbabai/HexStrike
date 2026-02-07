@@ -16,14 +16,33 @@ const buildActionList = (activeCardId, passiveCardId, rotation = 'R1') => {
   return result.actionList;
 };
 
-test('counter-attack active shifts rotation to after the bracketed move', () => {
+test('counter-attack active leaves rotation on the start action', () => {
   const actionList = buildActionList('counter-attack', 'step', 'R1');
   assert.deepEqual(
     actionList.map((entry) => entry.action),
-    ['[m]', 'a', 'W', 'W', 'E'],
+    ['Bm', 'a', 'W', 'W', 'E'],
   );
-  assert.equal(actionList[0].rotation, '');
+  assert.equal(actionList[0].rotation, 'R1');
   assert.equal(actionList[0].rotationSource, 'selected');
-  assert.equal(actionList[1].rotation, 'R1');
-  assert.equal(actionList[1].rotationSource, 'forced');
+  assert.equal(actionList[1].rotation, '');
+  assert.equal(actionList[1].rotationSource, undefined);
+});
+
+test('aerial-strike active forces a 3 rotation after the jump without clearing the start rotation', () => {
+  const actionList = buildActionList('aerial-strike', 'step', 'R2');
+  assert.deepEqual(
+    actionList.map((entry) => entry.action),
+    ['W', '[2j]', 'a', 'W', 'W', 'W', 'E'],
+  );
+  assert.equal(actionList[0].rotation, 'R2');
+  assert.equal(actionList[0].rotationSource, 'selected');
+  assert.equal(actionList[2].rotation, '3');
+  assert.equal(actionList[2].rotationSource, 'forced');
+});
+
+test('whirlwind active sets KBF to 3 on the bracketed action', () => {
+  const actionList = buildActionList('whirlwind', 'step', 'R1');
+  const bracketIndex = actionList.findIndex((entry) => entry.action.startsWith('['));
+  assert.notEqual(bracketIndex, -1);
+  assert.equal(actionList[bracketIndex].kbf, 3);
 });

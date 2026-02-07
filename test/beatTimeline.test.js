@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { getCharactersAtEarliestE, getTimelineEarliestEIndex } = require('../dist/game/beatTimeline.js');
+const { getCharacterFirstEIndex, getCharactersAtEarliestE, getTimelineEarliestEIndex } = require('../dist/game/beatTimeline.js');
 
 test('getTimelineEarliestEIndex finds the earliest shared open beat', () => {
   const characters = [
@@ -44,4 +44,33 @@ test('getCharactersAtEarliestE returns only players at the earliest E', () => {
 
   const atBat = getCharactersAtEarliestE(beats, characters).map((character) => character.userId);
   assert.deepEqual(atBat, ['player-b']);
+});
+
+test('earliest E ignores calculated history entries', () => {
+  const characters = [
+    { userId: 'def', username: 'Def' },
+    { userId: 'atk', username: 'Atk' },
+  ];
+  const beats = [
+    [
+      { username: 'Def', action: '[b]', calculated: true },
+      { username: 'Atk', action: 'a', calculated: true },
+    ],
+    [
+      { username: 'Def', action: 'E', calculated: true },
+      { username: 'Atk', action: 'DamageIcon', calculated: true },
+    ],
+    [
+      { username: 'Atk', action: 'DamageIcon', calculated: false },
+    ],
+    [
+      { username: 'Atk', action: 'E', calculated: false },
+    ],
+  ];
+
+  assert.equal(getCharacterFirstEIndex(beats, characters[0]), 2);
+  assert.equal(getCharacterFirstEIndex(beats, characters[1]), 3);
+  assert.equal(getTimelineEarliestEIndex(beats, characters), 2);
+  const atBat = getCharactersAtEarliestE(beats, characters).map((character) => character.userId);
+  assert.deepEqual(atBat, ['def']);
 });

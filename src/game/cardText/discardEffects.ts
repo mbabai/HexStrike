@@ -13,7 +13,7 @@ const ACTIVE_HIT_DISCARD_RULES = new Map<string, HitDiscardRule>([
 ]);
 
 const PASSIVE_BLOCK_DISCARD = new Map<string, number>([['sweeping-strike', 1]]);
-const PASSIVE_START_DISCARD = new Map<string, number>([['cross-slash', 1]]);
+const PASSIVE_START_DISCARD = new Map<string, number>();
 const PASSIVE_DISCARD_IMMUNE = new Set<string>(['spike']);
 const PASSIVE_CONVERT_KBF = new Set<string>(['trip']);
 

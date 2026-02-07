@@ -60,11 +60,24 @@ test('no-cards abyss loss only triggers when the player is at the earliest E', (
   ];
   const beats = [
     [
+      buildEntry('stalled', 'E', characters[0].position),
+      buildEntry('other', 'E', characters[1].position),
+    ],
+    [
       buildEntry('stalled', 'm', characters[0].position),
       buildEntry('other', 'E', characters[1].position),
     ],
-    [buildEntry('stalled', 'E', characters[0].position)],
+    [
+      buildEntry('stalled', 'E', characters[0].position),
+      buildEntry('other', 'E', characters[1].position),
+    ],
   ];
+  beats[1].forEach((entry) => {
+    entry.calculated = false;
+  });
+  beats[2].forEach((entry) => {
+    entry.calculated = false;
+  });
   const deckStates = new Map();
   deckStates.set(
     'stalled',
