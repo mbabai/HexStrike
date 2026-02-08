@@ -40,6 +40,31 @@ test('selectPendingInteraction returns pending draw even if beat is resolved', a
   assert.equal(pending?.id, 'draw:0:me:me');
 });
 
+test('selectPendingInteraction returns pending guard continue even if beat is resolved', async () => {
+  const { selectPendingInteraction } = await loadModule();
+  const interactions = [
+    {
+      id: 'guard-continue:0:me:me',
+      type: 'guard-continue',
+      status: 'pending',
+      actorUserId: 'me',
+      targetUserId: 'me',
+      beatIndex: 0,
+    },
+  ];
+  const beats = [[{ username: 'me', action: '[b-Lb-Rb]' }]];
+  const characters = [{ userId: 'me', username: 'me' }];
+  const pending = selectPendingInteraction({
+    interactions,
+    beats,
+    characters,
+    localUserId: 'me',
+    resolvedIndex: 0,
+  });
+
+  assert.equal(pending?.id, 'guard-continue:0:me:me');
+});
+
 test('selectPendingInteraction ignores combo without Co entry', async () => {
   const { selectPendingInteraction } = await loadModule();
   const interactions = [{ id: 'combo:0:me:me', type: 'combo', status: 'pending', actorUserId: 'me', beatIndex: 0 }];

@@ -27,8 +27,10 @@ const ARROW_DAMAGE = 4;
 const ARROW_KBF = 1;
 const ARROW_LAND_DISTANCE_LIMIT = 5;
 const HAVEN_PLATFORM_INTERACTION_TYPE = 'haven-platform';
+const GUARD_CONTINUE_INTERACTION_TYPE = 'guard-continue';
 const BOW_SHOT_CARD_ID = 'bow-shot';
 const BURNING_STRIKE_CARD_ID = 'burning-strike';
+const GUARD_CARD_ID = 'guard';
 const HAVEN_CARD_ID = 'haven';
 const SINKING_SHOT_CARD_ID = 'sinking-shot';
 const VENGEANCE_CARD_ID = 'vengeance';
@@ -510,6 +512,7 @@ export const executeBeatsWithInteractions = (
   comboAvailability?: Map<string, boolean>,
   initialTokens: BoardToken[] = [],
   handTriggerAvailability?: Map<string, Set<string>>,
+  guardContinueAvailability?: Map<string, boolean>,
 ): {
   beats: BeatEntry[][];
   characters: PublicCharacter[];
@@ -520,8 +523,13 @@ export const executeBeatsWithInteractions = (
   const landTiles = Array.isArray(land) && land.length ? land : DEFAULT_LAND_HEXES;
   const comboAvailabilityByUser = comboAvailability ?? new Map<string, boolean>();
   const handTriggerAvailabilityByUser = handTriggerAvailability ?? new Map<string, Set<string>>();
+  const guardContinueAvailabilityByUser = guardContinueAvailability ?? new Map<string, boolean>();
   const hasHandTriggerCard = (userId: string, cardId: string) =>
     Boolean(handTriggerAvailabilityByUser.get(userId)?.has(cardId));
+  const canOfferGuardContinue = (userId: string) => {
+    if (!guardContinueAvailabilityByUser.has(userId)) return true;
+    return Boolean(guardContinueAvailabilityByUser.get(userId));
+  };
   const resolvedIndex = getTimelineResolvedIndex(beats);
   const isHistoryIndex = (index: number) => resolvedIndex >= 0 && index <= resolvedIndex;
   const resolveTerrain = (position: { q: number; r: number }) =>
@@ -1042,6 +1050,79 @@ export const executeBeatsWithInteractions = (
     }
   };
 
+  const findCharacterFirstEIndexAfter = (character: PublicCharacter, startIndex: number): number => {
+    for (let i = startIndex + 1; i < normalizedBeats.length; i += 1) {
+      const beat = normalizedBeats[i];
+      const entry = beat ? findEntryForCharacter(beat, character) : null;
+      if (!entry || entry.action === DEFAULT_ACTION) {
+        return i;
+      }
+    }
+    // Missing beats beyond the current array are implicit E.
+    return normalizedBeats.length;
+  };
+
+  const forcedGuardDiscardByBeat = new Map<number, Set<string>>();
+
+  const scheduleForcedGuardDiscard = (actorId: string, beatIndex: number) => {
+    if (!actorId || !Number.isFinite(beatIndex)) return;
+    const safeBeatIndex = Math.max(0, Math.round(beatIndex));
+    const existing = forcedGuardDiscardByBeat.get(safeBeatIndex) ?? new Set<string>();
+    existing.add(actorId);
+    forcedGuardDiscardByBeat.set(safeBeatIndex, existing);
+  };
+
+  const applyGuardContinueLoop = (
+    actorId: string,
+    character: PublicCharacter,
+    continueBeatIndex: number,
+    eBeatIndex: number,
+  ): boolean => {
+    const actorState = state.get(actorId);
+    if (!actorState) return false;
+    if (eBeatIndex < continueBeatIndex) return false;
+
+    const buildImplicitEEntry = (seed: BeatEntry | null): BeatEntry => {
+      const next: BeatEntry = {
+        ...(seed ? { ...seed } : {}),
+        action: DEFAULT_ACTION,
+        rotation: '',
+        priority: 0,
+      } as BeatEntry;
+      if ('rotationSource' in next) delete next.rotationSource;
+      if ('interaction' in next) delete next.interaction;
+      if ('attackDamage' in next) delete next.attackDamage;
+      if ('attackKbf' in next) delete next.attackKbf;
+      if ('comboStarter' in next) delete next.comboStarter;
+      return next;
+    };
+
+    const pattern: BeatEntry[] = [];
+    let lastSource: BeatEntry | null = null;
+    for (let i = continueBeatIndex; i <= eBeatIndex; i += 1) {
+      const beat = normalizedBeats[i];
+      const entry = beat ? findEntryForCharacter(beat, character) : null;
+      if (entry) {
+        const source = { ...entry };
+        pattern.push(source);
+        lastSource = source;
+        continue;
+      }
+      if (i !== eBeatIndex) return false;
+      pattern.push(buildImplicitEEntry(lastSource));
+    }
+    if (!pattern.length) return false;
+    pattern.forEach((source, offset) => {
+      const targetBeatIndex = eBeatIndex + offset;
+      const target = getOrCreateEntryForCharacter(targetBeatIndex, character, actorState);
+      copyActionFields(target, source);
+      if ('consequences' in target) {
+        delete target.consequences;
+      }
+    });
+    return true;
+  };
+
   updatedInteractions.forEach((interaction) => {
     if (interaction.type !== 'combo' || interaction.status !== 'resolved') return;
     if (!Number.isFinite(interaction.beatIndex)) return;
@@ -1072,6 +1153,38 @@ export const executeBeatsWithInteractions = (
     }
     if (shouldContinue) {
       clearCharacterEntriesAfter(character, beatIndex);
+    }
+  });
+
+  updatedInteractions.forEach((interaction) => {
+    if (interaction.type !== GUARD_CONTINUE_INTERACTION_TYPE || interaction.status !== 'resolved') return;
+    if (!interaction.resolution?.continue) return;
+    const actorId = interaction.actorUserId;
+    const character = actorId ? characterById.get(actorId) : undefined;
+    if (!character) return;
+    if (!Number.isFinite(interaction.beatIndex)) return;
+    const beatIndex = Math.max(0, Math.round(interaction.beatIndex));
+    const storedRepeatBeat = Number(interaction.resolution?.guardRepeatBeatIndex);
+    const repeatBeatIndex = Number.isFinite(storedRepeatBeat) ? Math.max(0, Math.round(storedRepeatBeat)) : null;
+    const repeatApplied = Boolean(interaction.resolution?.guardRepeatApplied);
+    let nextRepeatBeat = repeatBeatIndex;
+    if (!repeatApplied) {
+      const eBeatIndex = findCharacterFirstEIndexAfter(character, beatIndex);
+      const applied = applyGuardContinueLoop(actorId, character, beatIndex, eBeatIndex);
+      if (!applied) return;
+      nextRepeatBeat = eBeatIndex;
+      interaction.resolution = {
+        ...(interaction.resolution ?? {}),
+        continue: true,
+        guardRepeatApplied: true,
+        guardRepeatBeatIndex: eBeatIndex,
+      };
+      interactionById.set(interaction.id, interaction);
+    }
+    if (nextRepeatBeat == null) return;
+    const discardInteractionId = buildInteractionId('discard', nextRepeatBeat, actorId, actorId);
+    if (!interactionById.has(discardInteractionId)) {
+      scheduleForcedGuardDiscard(actorId, nextRepeatBeat);
     }
   });
 
@@ -1298,7 +1411,8 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
     }
 
     const parryCounters = parryCountersByBeat.get(index);
-    const hasForcedResolution = Boolean(parryCounters?.length);
+    const scheduledForcedGuardDiscard = forcedGuardDiscardByBeat.get(index);
+    const hasForcedResolution = Boolean(parryCounters?.length || scheduledForcedGuardDiscard?.size);
 
     const allReady = characters.every((character) => {
       const entry = entriesByUser.get(character.userId);
@@ -1563,6 +1677,13 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
       const queue = options.force ? forcedDiscardQueue : discardQueue;
       queue.set(targetId, (queue.get(targetId) ?? 0) + safeCount);
     };
+    if (scheduledForcedGuardDiscard?.size) {
+      scheduledForcedGuardDiscard.forEach((targetId) => {
+        const targetCharacter = characterById.get(targetId);
+        const targetEntry = targetCharacter ? findEntryForCharacter(beat, targetCharacter) : null;
+        queueDiscard(targetId, 1, 'self', targetEntry, { force: true });
+      });
+    }
     if (parryCounters?.length) {
       parryCounters.forEach((counter) => {
         const targetState = state.get(counter.attackerId);
@@ -1768,6 +1889,37 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
         const startDiscard = getPassiveStartDiscardCount(entry.passiveCardId);
         if (startDiscard && entry.action !== DEFAULT_ACTION && isActionSetStart(entry)) {
           queueDiscard(actorId, startDiscard, 'self');
+        }
+
+        const isGuardReturnBeat = Boolean(scheduledForcedGuardDiscard?.has(actorId));
+        const canOpenOnResolvedBeat = resolvedIndex >= 0 && index === resolvedIndex;
+        const guardPromptAllowedAtIndex = !isHistoryIndex(index) || canOpenOnResolvedBeat;
+        if (
+          entry.cardId === GUARD_CARD_ID &&
+          isBracketedAction(entry.action ?? '') &&
+          guardPromptAllowedAtIndex &&
+          !isGuardReturnBeat &&
+          canOfferGuardContinue(actorId)
+        ) {
+          const interactionId = buildInteractionId(GUARD_CONTINUE_INTERACTION_TYPE, index, actorId, actorId);
+          const existing = interactionById.get(interactionId);
+          if (!existing) {
+            const created: CustomInteraction = {
+              id: interactionId,
+              type: GUARD_CONTINUE_INTERACTION_TYPE,
+              beatIndex: index,
+              actorUserId: actorId,
+              targetUserId: actorId,
+              status: 'pending',
+              resolution: undefined,
+            };
+            updatedInteractions.push(created);
+            interactionById.set(interactionId, created);
+          }
+          const pending = interactionById.get(interactionId);
+          if (pending?.status === 'pending' && (haltIndex == null || index < haltIndex)) {
+            haltIndex = index;
+          }
         }
 
       if (isComboAction(entry.action ?? '')) {

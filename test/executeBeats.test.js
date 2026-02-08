@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { executeBeats } = require('../dist/game/execute.js');
+const { executeBeats, executeBeatsWithInteractions } = require('../dist/game/execute.js');
 const { applyActionSetToBeats } = require('../dist/game/actionSets.js');
 const { getCharactersAtEarliestE, getTimelineEarliestEIndex } = require('../dist/game/beatTimeline.js');
 
@@ -110,6 +110,356 @@ test('executeBeats does not open combo on throw hits', () => {
 
   const result = executeBeats(beats, characters);
   assert.equal(result.interactions.some((interaction) => interaction.type === 'combo'), false);
+});
+
+test('executeBeats opens a guard continue interaction on Guard bracket frames', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'W', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', '[b-Lb-Rb]', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'b-Lb-Rb', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'E', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+  beats[1][0].cardId = 'guard';
+  beats[2][0].cardId = 'guard';
+  beats[3][0].cardId = 'guard';
+
+  const result = executeBeats(beats, characters);
+  const guardContinue = result.interactions.find((interaction) => interaction.type === 'guard-continue');
+
+  assert.ok(guardContinue);
+  assert.equal(guardContinue.status, 'pending');
+  assert.equal(guardContinue.actorUserId, 'alpha');
+  assert.equal(guardContinue.beatIndex, 1);
+  assert.equal(result.lastCalculated, 1);
+});
+
+test('executeBeatsWithInteractions forces a discard on Guard E after continue', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'W', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', '[b-Lb-Rb]', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'b-Lb-Rb', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'E', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+  beats[1][0].cardId = 'guard';
+  beats[2][0].cardId = 'guard';
+  beats[3][0].cardId = 'guard';
+
+  const interactions = [
+    {
+      id: 'guard-continue:1:alpha:alpha',
+      type: 'guard-continue',
+      beatIndex: 1,
+      actorUserId: 'alpha',
+      targetUserId: 'alpha',
+      status: 'resolved',
+      resolution: { continue: true },
+    },
+  ];
+
+  const result = executeBeatsWithInteractions(beats, characters, interactions);
+  const discard = result.interactions.find(
+    (interaction) => interaction.type === 'discard' && interaction.actorUserId === 'alpha' && interaction.beatIndex === 3,
+  );
+  const alphaBeat3 = (result.beats[3] || []).find((entry) => entry.username === 'alpha');
+  const alphaBeat4 = (result.beats[4] || []).find((entry) => entry.username === 'alpha');
+  const alphaBeat5 = (result.beats[5] || []).find((entry) => entry.username === 'alpha');
+
+  assert.ok(discard);
+  assert.equal(discard.status, 'pending');
+  assert.equal(discard.discardCount, 1);
+  assert.ok(alphaBeat3);
+  assert.ok(alphaBeat4);
+  assert.ok(alphaBeat5);
+  assert.equal(alphaBeat3.action, '[b-Lb-Rb]');
+  assert.equal(alphaBeat4.action, 'b-Lb-Rb');
+  assert.equal(alphaBeat5.action, 'E');
+});
+
+test('executeBeatsWithInteractions loops Guard when the trailing E is implicit', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'W', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', '[b-Lb-Rb]', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'b-Lb-Rb', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing)],
+  ];
+  beats[1][0].cardId = 'guard';
+  beats[2][0].cardId = 'guard';
+
+  const interactions = [
+    {
+      id: 'guard-continue:1:alpha:alpha',
+      type: 'guard-continue',
+      beatIndex: 1,
+      actorUserId: 'alpha',
+      targetUserId: 'alpha',
+      status: 'resolved',
+      resolution: { continue: true },
+    },
+  ];
+
+  const result = executeBeatsWithInteractions(beats, characters, interactions);
+  const discard = result.interactions.find(
+    (interaction) => interaction.type === 'discard' && interaction.actorUserId === 'alpha' && interaction.beatIndex === 3,
+  );
+  const alphaBeat3 = (result.beats[3] || []).find((entry) => entry.username === 'alpha');
+  const alphaBeat4 = (result.beats[4] || []).find((entry) => entry.username === 'alpha');
+  const alphaBeat5 = (result.beats[5] || []).find((entry) => entry.username === 'alpha');
+
+  assert.ok(discard);
+  assert.equal(discard.status, 'pending');
+  assert.equal(discard.discardCount, 1);
+  assert.ok(alphaBeat3);
+  assert.ok(alphaBeat4);
+  assert.ok(alphaBeat5);
+  assert.equal(alphaBeat3.action, '[b-Lb-Rb]');
+  assert.equal(alphaBeat4.action, 'b-Lb-Rb');
+  assert.equal(alphaBeat5.action, 'E');
+});
+
+test('executeBeatsWithInteractions applies Guard block on repeated implicit-E frames', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 0, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'W', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', '[b-Lb-Rb]', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'b-Lb-Rb', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [buildEntry('beta', 'a', 10, characters[1].position, characters[1].facing, '', 3, 1)],
+  ];
+  beats[1][0].cardId = 'guard';
+  beats[2][0].cardId = 'guard';
+
+  const interactions = [
+    {
+      id: 'guard-continue:1:alpha:alpha',
+      type: 'guard-continue',
+      beatIndex: 1,
+      actorUserId: 'alpha',
+      targetUserId: 'alpha',
+      status: 'resolved',
+      resolution: { continue: true },
+    },
+  ];
+
+  const result = executeBeatsWithInteractions(beats, characters, interactions);
+  const alphaBeat3 = (result.beats[3] || []).find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaBeat3);
+  assert.equal(alphaBeat3.action, '[b-Lb-Rb]');
+  assert.equal(alphaBeat3.damage, 0);
+  assert.equal(Array.isArray(alphaBeat3.consequences), false);
+});
+
+test('executeBeatsWithInteractions re-prompts Guard on repeated start frames at resolved index', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'W', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', '[b-Lb-Rb]', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'b-Lb-Rb', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', '[b-Lb-Rb]', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [buildEntry('alpha', 'b-Lb-Rb', 20, characters[0].position, characters[0].facing)],
+    [buildEntry('alpha', 'E', 0, characters[0].position, characters[0].facing)],
+  ];
+  beats[1][0].cardId = 'guard';
+  beats[2][0].cardId = 'guard';
+  beats[3][0].cardId = 'guard';
+  beats[4][0].cardId = 'guard';
+  beats[5][0].cardId = 'guard';
+  beats.slice(0, 4).forEach((beat) => beat.forEach((entry) => { entry.calculated = true; }));
+
+  const interactions = [
+    {
+      id: 'guard-continue:1:alpha:alpha',
+      type: 'guard-continue',
+      beatIndex: 1,
+      actorUserId: 'alpha',
+      targetUserId: 'alpha',
+      status: 'resolved',
+      resolution: { continue: true, guardRepeatApplied: true, guardRepeatBeatIndex: 3 },
+    },
+    {
+      id: 'discard:3:alpha:alpha',
+      type: 'discard',
+      beatIndex: 3,
+      actorUserId: 'alpha',
+      targetUserId: 'alpha',
+      status: 'resolved',
+      discardCount: 1,
+    },
+  ];
+
+  const guardContinueAvailability = new Map([['alpha', true]]);
+  const result = executeBeatsWithInteractions(
+    beats,
+    characters,
+    interactions,
+    undefined,
+    undefined,
+    [],
+    undefined,
+    guardContinueAvailability,
+  );
+  const repeatedPrompt = result.interactions.find(
+    (interaction) =>
+      interaction.type === 'guard-continue' &&
+      interaction.beatIndex === 3 &&
+      interaction.actorUserId === 'alpha' &&
+      interaction.status === 'pending',
+  );
+
+  assert.ok(repeatedPrompt);
+  assert.equal(result.lastCalculated, 3);
+});
+
+test('executeBeatsWithInteractions does not prompt Guard repeat when no cards are available to discard', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'W', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', '[b-Lb-Rb]', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'b-Lb-Rb', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', '[b-Lb-Rb]', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [buildEntry('alpha', 'b-Lb-Rb', 20, characters[0].position, characters[0].facing)],
+    [buildEntry('alpha', 'E', 0, characters[0].position, characters[0].facing)],
+  ];
+  beats[1][0].cardId = 'guard';
+  beats[2][0].cardId = 'guard';
+  beats[3][0].cardId = 'guard';
+  beats[4][0].cardId = 'guard';
+  beats[5][0].cardId = 'guard';
+  beats.slice(0, 4).forEach((beat) => beat.forEach((entry) => { entry.calculated = true; }));
+
+  const interactions = [
+    {
+      id: 'guard-continue:1:alpha:alpha',
+      type: 'guard-continue',
+      beatIndex: 1,
+      actorUserId: 'alpha',
+      targetUserId: 'alpha',
+      status: 'resolved',
+      resolution: { continue: true, guardRepeatApplied: true, guardRepeatBeatIndex: 3 },
+    },
+    {
+      id: 'discard:3:alpha:alpha',
+      type: 'discard',
+      beatIndex: 3,
+      actorUserId: 'alpha',
+      targetUserId: 'alpha',
+      status: 'resolved',
+      discardCount: 1,
+    },
+  ];
+
+  const guardContinueAvailability = new Map([['alpha', false]]);
+  const result = executeBeatsWithInteractions(
+    beats,
+    characters,
+    interactions,
+    undefined,
+    undefined,
+    [],
+    undefined,
+    guardContinueAvailability,
+  );
+  const repeatedPrompt = result.interactions.find(
+    (interaction) =>
+      interaction.type === 'guard-continue' &&
+      interaction.beatIndex === 3 &&
+      interaction.actorUserId === 'alpha' &&
+      interaction.status === 'pending',
+  );
+
+  assert.equal(Boolean(repeatedPrompt), false);
 });
 
 test('executeBeats treats Grappling Hook as a throw only when starting on land', () => {

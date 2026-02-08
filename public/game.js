@@ -36,7 +36,16 @@ const HOLD_INITIAL_DELAY = 320;
 const HOLD_REPEAT_DELAY = 90;
 const LOG_PREFIX = '[hexstrike]';
 const COMBO_ACTION = 'CO';
+const GUARD_CONTINUE_INTERACTION_TYPE = 'guard-continue';
 const MAX_HAND_SIZE = 4;
+const AXIAL_DIRECTIONS = [
+  { q: 1, r: 0 },
+  { q: 1, r: -1 },
+  { q: 0, r: -1 },
+  { q: -1, r: 0 },
+  { q: -1, r: 1 },
+  { q: 0, r: 1 },
+];
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -189,6 +198,9 @@ export const initGame = () => {
   const throwModal = document.getElementById('throwModal');
   const throwButtons = throwModal ? Array.from(throwModal.querySelectorAll('.throw-arrow')) : [];
   const comboModal = document.getElementById('comboModal');
+  const comboEyebrow = comboModal?.querySelector('.combo-modal-eyebrow') ?? null;
+  const comboTitle = document.getElementById('comboModalTitle');
+  const comboCopy = comboModal?.querySelector('.combo-modal-copy') ?? null;
   const comboAccept = document.getElementById('comboAccept');
   const comboDecline = document.getElementById('comboDecline');
   const handTriggerModal = document.getElementById('handTriggerModal');
@@ -270,6 +282,21 @@ export const initGame = () => {
       button.disabled = !enabled;
       button.classList.toggle('is-disabled', !enabled);
     });
+  };
+
+  const setChoiceModalContent = (interactionType) => {
+    const isGuard = interactionType === GUARD_CONTINUE_INTERACTION_TYPE;
+    if (comboEyebrow) {
+      comboEyebrow.textContent = isGuard ? 'Guard' : 'Combo';
+    }
+    if (comboTitle) {
+      comboTitle.textContent = isGuard ? 'Continue Guard?' : 'Continue Combo?';
+    }
+    if (comboCopy) {
+      comboCopy.textContent = isGuard
+        ? "Choose Yes to continue Guard and force a discard of 1 on Guard's E frame."
+        : 'Your hit opens a combo window. Continue with another combo card?';
+    }
   };
 
   const getPendingInteractionForUser = () => {
@@ -444,8 +471,9 @@ export const initGame = () => {
       applyThrowLayout(pending);
       return;
     }
-    if (pending.type === 'combo') {
+    if (pending.type === 'combo' || pending.type === GUARD_CONTINUE_INTERACTION_TYPE) {
       clearHavenHover();
+      setChoiceModalContent(pending.type);
       setModalVisibility(comboModal, true);
       setModalVisibility(throwModal, false);
       setModalVisibility(handTriggerModal, false);
@@ -778,9 +806,11 @@ export const initGame = () => {
     }
   };
 
-  const handleComboSubmit = async (continueCombo) => {
+  const handleChoiceSubmit = async (continueChoice) => {
     if (!gameState?.id || !pendingInteractionId || interactionSubmitInFlight) return;
-    if (pendingInteractionType !== 'combo') return;
+    const isCombo = pendingInteractionType === 'combo';
+    const isGuard = pendingInteractionType === GUARD_CONTINUE_INTERACTION_TYPE;
+    if (!isCombo && !isGuard) return;
     if (getMatchOutcome(gameState?.state?.public)) return;
     interactionSubmitInFlight = true;
     setComboButtonsEnabled(false);
@@ -788,9 +818,11 @@ export const initGame = () => {
       userId: localUserId,
       gameId: gameState.id,
       interactionId: pendingInteractionId,
-      continueCombo,
+      continueChoice,
+      interactionType: pendingInteractionType,
     });
     try {
+      const shouldContinue = Boolean(continueChoice);
       const response = await fetch('/api/v1/game/interaction', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -798,12 +830,18 @@ export const initGame = () => {
           userId: localUserId,
           gameId: gameState.id,
           interactionId: pendingInteractionId,
-          continueCombo: Boolean(continueCombo),
+          continue: shouldContinue,
+          continueCombo: isCombo ? shouldContinue : undefined,
+          continueGuard: isGuard ? shouldContinue : undefined,
         }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const message = payload?.error ? `${payload.error}` : 'Failed to resolve combo.';
+        const message = payload?.error
+          ? `${payload.error}`
+          : isGuard
+            ? 'Failed to resolve guard choice.'
+            : 'Failed to resolve combo.';
         console.warn(`${LOG_PREFIX} interaction:rejected`, {
           status: response.status,
           error: payload?.error,
@@ -816,8 +854,12 @@ export const initGame = () => {
         interactionId: pendingInteractionId,
       });
     } catch (err) {
-      console.error('Failed to resolve combo', err);
-      const message = err instanceof Error ? err.message : 'Failed to resolve combo.';
+      console.error('Failed to resolve interaction choice', err);
+      const message = err instanceof Error
+        ? err.message
+        : isGuard
+          ? 'Failed to resolve guard choice.'
+          : 'Failed to resolve combo.';
       window.alert(message);
     } finally {
       interactionSubmitInFlight = false;
@@ -1108,12 +1150,12 @@ export const initGame = () => {
   });
   if (comboAccept) {
     comboAccept.addEventListener('click', () => {
-      void handleComboSubmit(true);
+      void handleChoiceSubmit(true);
     });
   }
   if (comboDecline) {
     comboDecline.addEventListener('click', () => {
-      void handleComboSubmit(false);
+      void handleChoiceSubmit(false);
     });
   }
   const clampTimeline = () => {

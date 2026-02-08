@@ -1,20 +1,20 @@
 {
-    "generatedAt": "2026-02-07",
+    "generatedAt": "2026-02-08",
     "movement": {
         "advance": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "backflip": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "dash": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "fleche": {
-            "active": false,
+            "active": true,
             "passive": true
         },
         "grappling-hook": {
@@ -22,11 +22,11 @@
             "passive": true
         },
         "jump": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "leap": {
-            "active": false,
+            "active": true,
             "passive": true
         },
         "ninja-roll": {
@@ -34,8 +34,8 @@
             "passive": true
         },
         "step": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         }
     },
     "ability": {
@@ -48,8 +48,8 @@
             "passive": true
         },
         "balestra-lunge": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "bow-shot": {
             "active": true,
@@ -60,7 +60,7 @@
             "passive": true
         },
         "chase": {
-            "active": false,
+            "active": true,
             "passive": true
         },
         "counter-attack": {
@@ -68,35 +68,35 @@
             "passive": true
         },
         "cross-slash": {
-            "active": false,
+            "active": true,
             "passive": true
         },
         "double-daggers": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "down-slash": {
             "active": true,
-            "passive": false
+            "passive": true
         },
         "feint": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "flying-knee": {
-            "active": false,
+            "active": true,
             "passive": true
         },
         "fumikomi": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "gigantic-staff": {
             "active": true,
             "passive": true
         },
         "guard": {
-            "active": false,
+            "active": true,
             "passive": true
         },
         "hammer": {
@@ -124,15 +124,15 @@
             "passive": true
         },
         "long-thrust": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "parry": {
             "active": true,
             "passive": true
         },
         "push-kick": {
-            "active": false,
+            "active": true,
             "passive": true
         },
         "reflex-dodge": {
@@ -141,14 +141,14 @@
         },
         "rewind": {
             "active": false,
-            "passive": false
+            "passive": true
         },
         "sinking-shot": {
             "active": true,
-            "passive": false
+            "passive": true
         },
         "smash-attack": {
-            "active": false,
+            "active": true,
             "passive": true
         },
         "smoke-bomb": {
@@ -160,8 +160,8 @@
             "passive": true
         },
         "spinning-back-kick": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "stab": {
             "active": true,
@@ -181,7 +181,7 @@
         },
         "vengeance": {
             "active": true,
-            "passive": false
+            "passive": true
         },
         "whirlwind": {
             "active": true,

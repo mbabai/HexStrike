@@ -35,6 +35,12 @@
 - The counter applies on the following beat: reflect damage/KBF back to the attacker, end the parry user's action set (`E`), and disable the attacker for that beat.
 - In code: `src/game/execute.ts` + `public/game/timelinePlayback.js`.
 
+## Guard continue interaction
+- Guard active opens a pending `customInteractions` entry of type `guard-continue` on Guard bracket frames (`[b-Lb-Rb]`).
+- Resolving `continue: true` repeats the Guard segment from the bracket start through the first trailing `E` (including implicit/missing `E` beats), replaces that `E`, and schedules a forced self-discard at the repeat-start beat.
+- Guard prompts may re-open on repeated Guard start beats at the current resolved frame, but only when the actor still has cards in hand (movement + ability > 0).
+- In code: `src/game/execute.ts` (loop + prompt creation), `src/server.ts` (hand-availability gating), UI prompt in `public/game.js`.
+
 ## Action list transforms
 - Card text that modifies the action list (add/remove/replace) should use the shared helpers in
   `src/game/cardText/actionListTransforms.ts` and `public/game/cardText/actionListTransforms.js` to keep behavior precise and mirrored.

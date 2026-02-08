@@ -97,6 +97,7 @@ const resetCharactersToBaseline = (publicState: GameStateDoc['public']) => {
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const LOG_PREFIX = '[hexstrike]';
 const COMBO_ACTION = 'CO';
+const GUARD_CONTINUE_INTERACTION_TYPE = 'guard-continue';
 const WHIRLWIND_CARD_ID = 'whirlwind';
 const WHIRLWIND_MIN_DAMAGE = 12;
 
@@ -144,6 +145,16 @@ const buildHandTriggerAvailability = (deckStates: Map<string, DeckState>) => {
     if (available.size) {
       availability.set(userId, available);
     }
+  });
+  return availability;
+};
+
+const buildGuardContinueAvailability = (deckStates: Map<string, DeckState>) => {
+  const availability = new Map<string, boolean>();
+  deckStates.forEach((deckState, userId) => {
+    const movementHandSize = getMovementHandIds(deckState).length;
+    const abilityHandSize = Array.isArray(deckState.abilityHand) ? deckState.abilityHand.length : 0;
+    availability.set(userId, movementHandSize + abilityHandSize > 0);
   });
   return availability;
 };
@@ -1138,6 +1149,7 @@ export function buildServer(port: number) {
       const updatedBeats = applyActionSetToBeats(beats, characters, userId, actionList, [actionPlay]);
       const comboAvailability = buildComboAvailability(deckStates, catalog);
       const handTriggerAvailability = buildHandTriggerAvailability(deckStates);
+      const guardContinueAvailability = buildGuardContinueAvailability(deckStates);
       const executed = executeBeatsWithInteractions(
         updatedBeats,
         characters,
@@ -1146,6 +1158,7 @@ export function buildServer(port: number) {
         comboAvailability,
         [],
         handTriggerAvailability,
+        guardContinueAvailability,
       );
       game.state.public.beats = executed.beats;
       game.state.public.timeline = executed.beats;
@@ -1269,6 +1282,7 @@ export function buildServer(port: number) {
     });
     const comboAvailability = buildComboAvailability(deckStates, catalog);
     const handTriggerAvailability = buildHandTriggerAvailability(deckStates);
+    const guardContinueAvailability = buildGuardContinueAvailability(deckStates);
     const executed = executeBeatsWithInteractions(
       updatedBeats,
       characters,
@@ -1277,6 +1291,7 @@ export function buildServer(port: number) {
       comboAvailability,
       [],
       handTriggerAvailability,
+      guardContinueAvailability,
     );
     game.state.public.beats = executed.beats;
     game.state.public.timeline = executed.beats;
@@ -1358,21 +1373,29 @@ export function buildServer(port: number) {
       }
       interaction.status = 'resolved';
       interaction.resolution = { directionIndex: Math.round(resolvedDirection) };
-    } else if (interaction.type === 'combo') {
+    } else if (interaction.type === 'combo' || interaction.type === GUARD_CONTINUE_INTERACTION_TYPE) {
       const rawContinue = (body as { continueCombo?: unknown; comboContinue?: unknown })?.continueCombo;
       const altContinue = (body as { comboContinue?: unknown })?.comboContinue;
+      const rawGuardContinue = (body as { continueGuard?: unknown; guardContinue?: unknown })?.continueGuard;
+      const altGuardContinue = (body as { guardContinue?: unknown })?.guardContinue;
       const fallbackContinue = (body as { continue?: unknown })?.continue;
       const resolvedContinue =
         typeof rawContinue === 'boolean'
           ? rawContinue
           : typeof altContinue === 'boolean'
             ? altContinue
-            : typeof fallbackContinue === 'boolean'
-              ? fallbackContinue
-              : null;
+            : typeof rawGuardContinue === 'boolean'
+              ? rawGuardContinue
+              : typeof altGuardContinue === 'boolean'
+                ? altGuardContinue
+                : typeof fallbackContinue === 'boolean'
+                  ? fallbackContinue
+                  : null;
       if (resolvedContinue === null) {
-        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'invalid-combo-choice' });
-        return { ok: false, status: 400, error: 'Invalid combo choice' };
+        const reason = interaction.type === 'combo' ? 'invalid-combo-choice' : 'invalid-guard-choice';
+        const error = interaction.type === 'combo' ? 'Invalid combo choice' : 'Invalid guard choice';
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason });
+        return { ok: false, status: 400, error };
       }
       interaction.status = 'resolved';
       interaction.resolution = { continue: resolvedContinue };
@@ -1641,6 +1664,7 @@ export function buildServer(port: number) {
     }
 
     const handTriggerAvailability = buildHandTriggerAvailability(deckStates);
+    const guardContinueAvailability = buildGuardContinueAvailability(deckStates);
     const executed = executeBeatsWithInteractions(
       beats,
       characters,
@@ -1649,6 +1673,7 @@ export function buildServer(port: number) {
       comboAvailability,
       [],
       handTriggerAvailability,
+      guardContinueAvailability,
     );
     game.state.public.beats = executed.beats;
     game.state.public.timeline = executed.beats;
