@@ -243,6 +243,14 @@ const buildHandTriggerOrder = (
 };
 
 const DRAW_SELECTION_MAX_MOVEMENT = 3;
+const AXIAL_DIRECTIONS = [
+  { q: 1, r: 0 },
+  { q: 1, r: -1 },
+  { q: 0, r: -1 },
+  { q: -1, r: 0 },
+  { q: -1, r: 1 },
+  { q: 0, r: 1 },
+];
 
 const getDrawSelectionRequirement = (deckState: DeckState, drawCount: number) => {
   const requested = Number.isFinite(drawCount) ? Math.max(0, Math.floor(drawCount)) : 0;
@@ -1057,7 +1065,15 @@ export function buildServer(port: number) {
     const catalog = await loadCardCatalog();
     const deckStates = await ensureDeckStatesForGame(game, match);
     const land = game.state?.public?.land ?? [];
-    resolveLandRefreshes(deckStates, beats, characters, land, interactions, game.state?.public?.pendingActions);
+    resolveLandRefreshes(
+      deckStates,
+      beats,
+      characters,
+      land,
+      interactions,
+      game.state?.public?.pendingActions,
+      game.state?.public?.boardTokens ?? [],
+    );
     const deckState = deckStates.get(userId);
     if (!deckState) {
       console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'missing-deck-state' });
@@ -1137,7 +1153,15 @@ export function buildServer(port: number) {
       game.state.public.customInteractions = executed.interactions;
       game.state.public.boardTokens = executed.boardTokens;
       applyDrawInteractions(deckStates, executed.interactions);
-      resolveLandRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
+      resolveLandRefreshes(
+        deckStates,
+        executed.beats,
+        executed.characters,
+        land,
+        executed.interactions,
+        undefined,
+        game.state.public.boardTokens ?? [],
+      );
       applyMatchOutcome(game, deckStates);
       console.log(`${LOG_PREFIX} action:set post`, {
         userId,
@@ -1260,7 +1284,15 @@ export function buildServer(port: number) {
     game.state.public.customInteractions = executed.interactions;
     game.state.public.boardTokens = executed.boardTokens;
     applyDrawInteractions(deckStates, executed.interactions);
-    resolveLandRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
+    resolveLandRefreshes(
+      deckStates,
+      executed.beats,
+      executed.characters,
+      land,
+      executed.interactions,
+      undefined,
+      game.state.public.boardTokens ?? [],
+    );
     game.state.public.pendingActions = undefined;
     pendingActionSets.delete(game.id);
     applyMatchOutcome(game, deckStates);
@@ -1344,6 +1376,71 @@ export function buildServer(port: number) {
       }
       interaction.status = 'resolved';
       interaction.resolution = { continue: resolvedContinue };
+    } else if (interaction.type === 'haven-platform') {
+      const rawTargetHex = (body as { targetHex?: unknown })?.targetHex;
+      const fallbackQ = (body as { q?: unknown; targetQ?: unknown; hexQ?: unknown })?.q ??
+        (body as { targetQ?: unknown })?.targetQ ??
+        (body as { hexQ?: unknown })?.hexQ;
+      const fallbackR = (body as { r?: unknown; targetR?: unknown; hexR?: unknown })?.r ??
+        (body as { targetR?: unknown })?.targetR ??
+        (body as { hexR?: unknown })?.hexR;
+      const parsedTarget = (() => {
+        if (rawTargetHex && typeof rawTargetHex === 'object') {
+          const raw = rawTargetHex as { q?: unknown; r?: unknown };
+          const q = Number(raw.q);
+          const r = Number(raw.r);
+          if (Number.isFinite(q) && Number.isFinite(r)) {
+            return { q: Math.round(q), r: Math.round(r) };
+          }
+        }
+        const q = Number(fallbackQ);
+        const r = Number(fallbackR);
+        if (Number.isFinite(q) && Number.isFinite(r)) {
+          return { q: Math.round(q), r: Math.round(r) };
+        }
+        return null;
+      })();
+      if (!parsedTarget) {
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'invalid-target-hex' });
+        return { ok: false, status: 400, error: 'Invalid ethereal platform target.' };
+      }
+
+      const actor = characters.find((candidate) => candidate.userId === userId || candidate.username === userId);
+      if (!actor) {
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'missing-actor' });
+        return { ok: false, status: 400, error: 'Missing interaction actor.' };
+      }
+      const interactionBeat = Number.isFinite(interaction.beatIndex) ? Math.max(0, Math.round(interaction.beatIndex)) : 0;
+      const beat = beats[interactionBeat] ?? [];
+      const beatEntry =
+        beat.find((entry) => {
+          const key = entry?.username ?? entry?.userId ?? entry?.userID;
+          return key === actor.userId || key === actor.username;
+        }) ?? null;
+      const actorOrigin =
+        beatEntry?.location ??
+        getCharacterLocationAtIndex(beats, actor, interactionBeat) ??
+        actor.position;
+      const touching = [
+        { q: Math.round(actorOrigin.q), r: Math.round(actorOrigin.r) },
+        ...AXIAL_DIRECTIONS.map((direction) => ({
+          q: Math.round(actorOrigin.q + direction.q),
+          r: Math.round(actorOrigin.r + direction.r),
+        })),
+      ];
+      const touchingKeys = new Set(touching.map((coord) => `${coord.q},${coord.r}`));
+      const targetKey = `${parsedTarget.q},${parsedTarget.r}`;
+      if (!touchingKeys.has(targetKey)) {
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'out-of-range-target-hex' });
+        return { ok: false, status: 400, error: 'Target must be touching your character.' };
+      }
+
+      interaction.status = 'resolved';
+      interaction.touchingHexes = touching;
+      interaction.resolution = {
+        ...(interaction.resolution ?? {}),
+        targetHex: parsedTarget,
+      };
     } else if (interaction.type === 'draw') {
       const deckState = deckStates.get(userId);
       if (!deckState) {
@@ -1559,7 +1656,15 @@ export function buildServer(port: number) {
     game.state.public.customInteractions = executed.interactions;
     game.state.public.boardTokens = executed.boardTokens;
     applyDrawInteractions(deckStates, executed.interactions);
-    resolveLandRefreshes(deckStates, executed.beats, executed.characters, land, executed.interactions);
+    resolveLandRefreshes(
+      deckStates,
+      executed.beats,
+      executed.characters,
+      land,
+      executed.interactions,
+      undefined,
+      game.state.public.boardTokens ?? [],
+    );
     applyMatchOutcome(game, deckStates);
     console.log(`${LOG_PREFIX} interaction:resolve post`, {
       userId,

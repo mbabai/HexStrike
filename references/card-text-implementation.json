@@ -1,5 +1,5 @@
 {
-    "generatedAt": "2026-02-05",
+    "generatedAt": "2026-02-07",
     "movement": {
         "advance": {
             "active": false,
@@ -104,8 +104,8 @@
             "passive": true
         },
         "haven": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "healing-harmony": {
             "active": true,

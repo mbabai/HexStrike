@@ -7,6 +7,7 @@ import {
   CardValidationError,
   DeckDefinition,
   DeckState,
+  BoardToken,
   PlayerCardState,
   PublicCharacter,
   BeatEntry,
@@ -113,6 +114,54 @@ const isCoordOnLand = (location: HexCoord | undefined, land: HexCoord[]): boolea
   const key = buildCoordKey(location);
   if (!key) return false;
   return land.some((tile) => buildCoordKey(tile) === key);
+};
+
+const ETHEREAL_PLATFORM_TOKEN_TYPE = 'ethereal-platform';
+const HAVEN_PLATFORM_INTERACTION_TYPE = 'haven-platform';
+
+const normalizeHexCoord = (value: unknown): HexCoord | null => {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as { q?: unknown; r?: unknown };
+  const q = Number(raw.q);
+  const r = Number(raw.r);
+  if (!Number.isFinite(q) || !Number.isFinite(r)) return null;
+  return { q: Math.round(q), r: Math.round(r) };
+};
+
+const getHavenTargetHex = (interaction: CustomInteraction): HexCoord | null => {
+  const fromResolution = normalizeHexCoord(interaction?.resolution?.targetHex);
+  if (fromResolution) return fromResolution;
+  return normalizeHexCoord(interaction?.targetHex);
+};
+
+const markConsumedHavenPlatform = (
+  interactions: CustomInteraction[],
+  actorUserId: string,
+  location: HexCoord,
+  consumedBeatIndex: number,
+) => {
+  if (!Array.isArray(interactions) || !interactions.length) return;
+  const locationKey = buildCoordKey(location);
+  if (!locationKey) return;
+  const candidates = interactions
+    .filter((interaction) => {
+      if (!interaction || interaction.type !== HAVEN_PLATFORM_INTERACTION_TYPE) return false;
+      if (interaction.status !== 'resolved') return false;
+      if (interaction.actorUserId !== actorUserId) return false;
+      if (!Number.isFinite(interaction.beatIndex)) return false;
+      if (Math.round(interaction.beatIndex) > consumedBeatIndex) return false;
+      const consumed = interaction.resolution?.consumedBeatIndex;
+      if (Number.isFinite(consumed) && Math.round(consumed as number) <= consumedBeatIndex) return false;
+      const target = getHavenTargetHex(interaction);
+      return Boolean(target && buildCoordKey(target) === locationKey);
+    })
+    .sort((a, b) => Math.round((b.beatIndex as number) - (a.beatIndex as number)));
+  const selected = candidates[0];
+  if (!selected) return;
+  selected.resolution = {
+    ...(selected.resolution ?? {}),
+    consumedBeatIndex,
+  };
 };
 
 const normalizeActionToken = (token: string) => {
@@ -370,6 +419,7 @@ export const resolveLandRefreshes = (
   land: HexCoord[],
   interactions: CustomInteraction[] = [],
   pendingActions?: PendingActions,
+  boardTokens: BoardToken[] = [],
 ): void => {
   if (!deckStates.size) return;
   if (interactions.some((interaction) => interaction.status === 'pending')) return;
@@ -404,8 +454,17 @@ export const resolveLandRefreshes = (
     if (entry && entry.action !== 'E') return;
     const location = getCharacterLocationAtIndex(beats, character, firstEIndex);
     if (!location) return;
+    const locationKey = buildCoordKey(location);
+    const platformTokenIndex =
+      locationKey == null
+        ? -1
+        : boardTokens.findIndex((token) => {
+            if (!token || token.type !== ETHEREAL_PLATFORM_TOKEN_TYPE) return false;
+            return buildCoordKey(token.position) === locationKey;
+          });
+    const onPlatform = platformTokenIndex >= 0;
     const terrain = entry?.terrain;
-    const onLand = terrain === 'land' ? true : terrain === 'abyss' ? false : isCoordOnLand(location, land);
+    const onLand = onPlatform || (terrain === 'land' ? true : terrain === 'abyss' ? false : isCoordOnLand(location, land));
     if (!onLand) return;
     const drawCount = Math.max(0, MAX_HAND_SIZE - deckState.abilityHand.length);
     const drawResult = drawAbilityCards(deckState, drawCount, { mode: 'auto' });
@@ -413,5 +472,9 @@ export const resolveLandRefreshes = (
       return;
     }
     deckState.lastRefreshIndex = firstEIndex;
+    if (onPlatform && platformTokenIndex >= 0) {
+      boardTokens.splice(platformTokenIndex, 1);
+      markConsumedHavenPlatform(interactions, userId, location, firstEIndex);
+    }
   });
 };

@@ -14,6 +14,11 @@
 - `cardStartTerrain` is stamped on beat entries during execution to capture the terrain at the start of the action set.
 - Grappling Hook: the `{i}` (bracketed) charge step stops at the first land tile or target in front, and its throw interaction only applies when `cardStartTerrain === 'land'`.
 
+## Targeting keywords
+- `touching` means the actor's current hex or any of the six adjacent hexes.
+- Haven active opens a pending `customInteractions` entry of type `haven-platform`, with `touchingHexes` used for client highlight + selection.
+- Haven pointer/hover resolution (self-click + adjacent hex pick) is centralized in `public/game/havenInteraction.mjs`.
+
 ## Passive movement effects
 - Fleche passive: remove the final `{W}` from the active ability action list when an attack token appears before it.
 - Ninja Roll passive: only `{a}` (or `[a]`) becomes `{a-La-Ra}`; other attack tokens are unchanged. Halve damage/KBF (rounded down) on the affected step.
@@ -53,7 +58,9 @@
 - Timeline: mini card marker is drawn between beats in `public/game/timeIndicatorView.js`; tooltip uses `public/game/timelineTooltip.js` + `public/game/handTriggerText.mjs`.
 
 ## Board tokens
-- `boardTokens` live in `public.boardTokens` with types `fire-hex` and `arrow`.
+- `boardTokens` live in `public.boardTokens` with types `fire-hex`, `ethereal-platform`, and `arrow`.
 - Fire hex: persistent; deals 1 damage per beat to any character standing on the hex.
-- Arrow: advances 1 hex per beat (charge), deals 4 damage with KBF 1 on hit, and is removed on hit or when its distance to land is ≥ 5.
+- Ethereal platform: only persists on abyss; it enables land-style refresh on `E` and is consumed after that refresh resolves.
+- Arrow: advances 1 hex per beat (charge), deals 4 damage with KBF 1 on hit, and is removed on hit or when its distance to land is >= 5.
 - Rendering: tokens are drawn like character portraits (circle + facing triangle) with a black border in `public/game/renderer.js`.
+

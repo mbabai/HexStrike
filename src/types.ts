@@ -20,7 +20,7 @@ export interface HexCoord {
   r: number;
 }
 
-export type BoardTokenType = 'fire-hex' | 'arrow';
+export type BoardTokenType = 'fire-hex' | 'arrow' | 'ethereal-platform';
 
 export interface BoardToken {
   id: string;
@@ -248,6 +248,8 @@ export interface CustomInteraction {
   damage?: number;
   kbf?: number;
   directionIndex?: number | null;
+  touchingHexes?: HexCoord[];
+  targetHex?: HexCoord;
 }
 
 export interface MatchOutcome {

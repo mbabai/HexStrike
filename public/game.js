@@ -21,7 +21,15 @@ import { loadCardCatalog } from './shared/cardCatalog.js';
 import { createDiscardPrompt } from './game/discardPrompt.mjs';
 import { createDrawPrompt } from './game/drawPrompt.mjs';
 import { createHandTriggerPrompt } from './game/handTriggerPrompt.mjs';
-import { AXIAL_DIRECTIONS, axialToPixel, getHexSize } from './shared/hex.mjs';
+import { axialToPixel, getHexSize } from './shared/hex.mjs';
+import {
+  HAVEN_PLATFORM_INTERACTION_TYPE,
+  buildHavenHighlightState as buildHavenInteractionHighlightState,
+  getHavenHoverKeyFromPointer,
+  getPendingHavenInteraction as getPendingHavenInteractionType,
+  normalizeHexCoord as normalizeHavenHexCoord,
+  resolveHavenTargetFromPointer as resolveHavenPointerTarget,
+} from './game/havenInteraction.mjs';
 import { getOrCreateUserId } from './storage.js';
 
 const HOLD_INITIAL_DELAY = 320;
@@ -221,6 +229,7 @@ export const initGame = () => {
   let discardPrompt = null;
   let drawPrompt = null;
   let handTriggerPrompt = null;
+  let havenHoverKey = null;
   const pendingActionPreview = createPendingActionPreview();
 
   const getMaxIndex = () => {
@@ -280,6 +289,42 @@ export const initGame = () => {
   const getPendingThrowInteraction = () => {
     const pending = getPendingInteractionForUser();
     return pending?.type === 'throw' ? pending : null;
+  };
+
+  const getPendingHavenInteraction = () => getPendingHavenInteractionType(getPendingInteractionForUser());
+
+  const getSceneCharacters = () => timelinePlayback.getScene()?.characters ?? gameState?.state?.public?.characters ?? [];
+
+  const buildHavenHighlightState = (now) => {
+    return buildHavenInteractionHighlightState({
+      pending: getPendingHavenInteraction(),
+      sceneCharacters: getSceneCharacters(),
+      interactionSubmitInFlight,
+      hoverKey: havenHoverKey,
+      now,
+    });
+  };
+
+  const clearHavenHover = () => {
+    havenHoverKey = null;
+  };
+
+  const updateHavenHoverFromPointer = (event) => {
+    const pending = getPendingHavenInteraction();
+    if (!pending || interactionSubmitInFlight) {
+      clearHavenHover();
+      return;
+    }
+    havenHoverKey = getHavenHoverKeyFromPointer({
+      event,
+      pending,
+      sceneCharacters: getSceneCharacters(),
+      localUserId,
+      canvas,
+      viewState,
+      viewportWidth: renderer.viewport.width,
+      hexSizeFactor: GAME_CONFIG.hexSizeFactor,
+    });
   };
 
   const getThrowAnchor = (pending) => {
@@ -343,6 +388,7 @@ export const initGame = () => {
       interactionOverlay.setAttribute('aria-hidden', 'true');
       pendingInteractionId = null;
       pendingInteractionType = null;
+      clearHavenHover();
       interactionSubmitInFlight = false;
       setThrowButtonsEnabled(false);
       setComboButtonsEnabled(false);
@@ -363,6 +409,7 @@ export const initGame = () => {
     if (!shouldShow) {
       pendingInteractionId = null;
       pendingInteractionType = null;
+      clearHavenHover();
       interactionSubmitInFlight = false;
       setThrowButtonsEnabled(false);
       setComboButtonsEnabled(false);
@@ -383,6 +430,7 @@ export const initGame = () => {
     pendingInteractionType = pending.type;
     const playerCards = gameState?.state?.player?.cards ?? null;
     if (pending.type === 'throw') {
+      clearHavenHover();
       setModalVisibility(throwModal, true);
       setModalVisibility(comboModal, false);
       setModalVisibility(handTriggerModal, false);
@@ -397,6 +445,7 @@ export const initGame = () => {
       return;
     }
     if (pending.type === 'combo') {
+      clearHavenHover();
       setModalVisibility(comboModal, true);
       setModalVisibility(throwModal, false);
       setModalVisibility(handTriggerModal, false);
@@ -410,6 +459,7 @@ export const initGame = () => {
       return;
     }
     if (pending.type === 'hand-trigger') {
+      clearHavenHover();
       setModalVisibility(throwModal, false);
       setModalVisibility(comboModal, false);
       setModalVisibility(drawModal, false);
@@ -421,6 +471,7 @@ export const initGame = () => {
       return;
     }
     if (pending.type === 'discard') {
+      clearHavenHover();
       setModalVisibility(throwModal, false);
       setModalVisibility(comboModal, false);
       setModalVisibility(handTriggerModal, false);
@@ -433,6 +484,7 @@ export const initGame = () => {
       return;
     }
     if (pending.type === 'draw') {
+      clearHavenHover();
       setModalVisibility(throwModal, false);
       setModalVisibility(comboModal, false);
       setModalVisibility(handTriggerModal, false);
@@ -444,6 +496,19 @@ export const initGame = () => {
       drawPrompt?.sync({ pending, playerCards, inFlight: interactionSubmitInFlight });
       return;
     }
+    if (pending.type === HAVEN_PLATFORM_INTERACTION_TYPE) {
+      setModalVisibility(throwModal, false);
+      setModalVisibility(comboModal, false);
+      setModalVisibility(handTriggerModal, false);
+      setModalVisibility(discardModal, false);
+      setModalVisibility(drawModal, false);
+      setThrowButtonsEnabled(false);
+      setComboButtonsEnabled(false);
+      discardPrompt?.sync();
+      drawPrompt?.sync();
+      handTriggerPrompt?.sync();
+      return;
+    }
     setModalVisibility(throwModal, false);
     setModalVisibility(comboModal, false);
     setModalVisibility(handTriggerModal, false);
@@ -451,6 +516,7 @@ export const initGame = () => {
     setModalVisibility(drawModal, false);
     setThrowButtonsEnabled(false);
     setComboButtonsEnabled(false);
+    clearHavenHover();
     discardPrompt?.sync();
     drawPrompt?.sync();
     handTriggerPrompt?.sync();
@@ -903,6 +969,55 @@ export const initGame = () => {
     }
   };
 
+  const handleHavenPlatformSubmit = async (targetHex) => {
+    if (!gameState?.id || !pendingInteractionId || interactionSubmitInFlight) return;
+    if (pendingInteractionType !== HAVEN_PLATFORM_INTERACTION_TYPE) return;
+    if (getMatchOutcome(gameState?.state?.public)) return;
+    const target = normalizeHavenHexCoord(targetHex);
+    if (!target) return;
+    interactionSubmitInFlight = true;
+    console.log(`${LOG_PREFIX} interaction:submit`, {
+      userId: localUserId,
+      gameId: gameState.id,
+      interactionId: pendingInteractionId,
+      targetHex: target,
+    });
+    try {
+      const response = await fetch('/api/v1/game/interaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: localUserId,
+          gameId: gameState.id,
+          interactionId: pendingInteractionId,
+          targetHex: target,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = payload?.error ? `${payload.error}` : 'Failed to place ethereal platform.';
+        console.warn(`${LOG_PREFIX} interaction:rejected`, {
+          status: response.status,
+          error: payload?.error,
+          code: payload?.code,
+        });
+        throw new Error(message);
+      }
+      console.log(`${LOG_PREFIX} interaction:ack`, {
+        status: response.status,
+        interactionId: pendingInteractionId,
+      });
+    } catch (err) {
+      console.error('Failed to resolve Haven platform', err);
+      const message = err instanceof Error ? err.message : 'Failed to place ethereal platform.';
+      window.alert(message);
+    } finally {
+      interactionSubmitInFlight = false;
+      clearHavenHover();
+      refreshInteractionOverlay();
+    }
+  };
+
   const handleGameOverDone = async () => {
     const outcome = getMatchOutcome(gameState?.state?.public);
     if (!outcome || !gameState?.matchId || gameOverInFlight) return;
@@ -1030,6 +1145,7 @@ export const initGame = () => {
     lastTurnActive = false;
     pendingInteractionId = null;
     pendingInteractionType = null;
+    clearHavenHover();
     interactionSubmitInFlight = false;
     gameOverInFlight = false;
     didInitTimelinePosition = false;
@@ -1058,6 +1174,7 @@ export const initGame = () => {
     pendingActionPreview.syncWithState(nextState, localUserId);
     if (!gameState) {
       didInitTimelinePosition = false;
+      clearHavenHover();
     }
     if (!didInitTimelinePosition && gameState) {
       const beats = gameState?.state?.public?.beats ?? [];
@@ -1087,9 +1204,42 @@ export const initGame = () => {
 
   bindControls(canvas, viewState, pointerState, undefined, timeIndicatorViewModel, gameArea);
 
-  canvas.addEventListener('pointermove', (event) => tooltip.update(event));
-  canvas.addEventListener('pointerleave', () => tooltip.hide());
-  canvas.addEventListener('pointerdown', () => tooltip.hide());
+  canvas.addEventListener('pointermove', (event) => {
+    tooltip.update(event);
+    updateHavenHoverFromPointer(event);
+  });
+  canvas.addEventListener('pointerleave', () => {
+    tooltip.hide();
+    clearHavenHover();
+  });
+  canvas.addEventListener('pointerdown', (event) => {
+    const pending = getPendingHavenInteraction();
+    if (
+      event.button === 0 &&
+      pending &&
+      pendingInteractionId &&
+      pendingInteractionType === HAVEN_PLATFORM_INTERACTION_TYPE &&
+      !interactionSubmitInFlight
+    ) {
+      const targetHex = resolveHavenPointerTarget({
+        event,
+        pending,
+        sceneCharacters: getSceneCharacters(),
+        localUserId,
+        canvas,
+        viewState,
+        viewportWidth: renderer.viewport.width,
+        hexSizeFactor: GAME_CONFIG.hexSizeFactor,
+      });
+      if (targetHex) {
+        event.preventDefault();
+        event.stopPropagation();
+        void handleHavenPlatformSubmit(targetHex);
+        return;
+      }
+    }
+    tooltip.hide();
+  });
 
   window.addEventListener('resize', () => {
     if (gameArea.hidden) return;
@@ -1135,7 +1285,16 @@ export const initGame = () => {
     refreshGameOver();
     const scene = timelinePlayback.getScene();
     const pendingPreview = pendingActionPreview.getTimelinePreview(gameState, localUserId);
-    renderer.draw(viewState, gameState, timeIndicatorViewModel, scene, localUserId, pendingPreview);
+    const interactionHighlightState = buildHavenHighlightState(now);
+    renderer.draw(
+      viewState,
+      gameState,
+      timeIndicatorViewModel,
+      scene,
+      localUserId,
+      pendingPreview,
+      interactionHighlightState,
+    );
     requestAnimationFrame(renderFrame);
   };
 

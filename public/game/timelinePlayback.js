@@ -11,12 +11,15 @@ const KNOCKBACK_DIVISOR = 10;
 const ACTION_DURATION_MS = 1200;
 const THROW_DISTANCE = 2;
 const FIRE_HEX_TOKEN_TYPE = 'fire-hex';
+const ETHEREAL_PLATFORM_TOKEN_TYPE = 'ethereal-platform';
 const ARROW_TOKEN_TYPE = 'arrow';
 const ARROW_DAMAGE = 4;
 const ARROW_KBF = 1;
 const ARROW_LAND_DISTANCE_LIMIT = 5;
+const HAVEN_PLATFORM_INTERACTION_TYPE = 'haven-platform';
 const BOW_SHOT_CARD_ID = 'bow-shot';
 const BURNING_STRIKE_CARD_ID = 'burning-strike';
+const HAVEN_CARD_ID = 'haven';
 const IRON_WILL_CARD_ID = 'iron-will';
 const ABSORB_CARD_ID = 'absorb';
 const GIGANTIC_STAFF_CARD_ID = 'gigantic-staff';
@@ -455,6 +458,8 @@ const applyGrapplingHookPassiveFlip = (enabled, origin, attackDirection, targetS
 };
 
 const buildInteractionId = (beatIndex, actorId, targetId) => `throw:${beatIndex}:${actorId}:${targetId}`;
+const buildHavenInteractionId = (beatIndex, actorId) =>
+  `${HAVEN_PLATFORM_INTERACTION_TYPE}:${beatIndex}:${actorId}:${actorId}`;
 
 const getHandTriggerCardId = (interaction) => interaction?.cardId ?? interaction?.abilityCardId ?? '';
 
@@ -473,6 +478,20 @@ const getResolvedDirectionIndex = (interaction) => {
   const rounded = Math.round(direction);
   if (rounded < 0 || rounded >= AXIAL_DIRECTIONS.length) return null;
   return rounded;
+};
+
+const normalizeHexCoord = (value) => {
+  if (!value || typeof value !== 'object') return null;
+  const q = Number(value.q);
+  const r = Number(value.r);
+  if (!Number.isFinite(q) || !Number.isFinite(r)) return null;
+  return { q: Math.round(q), r: Math.round(r) };
+};
+
+const getHavenTargetHex = (interaction) => {
+  const fromResolution = normalizeHexCoord(interaction?.resolution?.targetHex);
+  if (fromResolution) return fromResolution;
+  return normalizeHexCoord(interaction?.targetHex);
 };
 
 const resolveEntryKey = (entry) => entry?.username ?? entry?.userId ?? entry?.userID ?? '';
@@ -1089,6 +1108,11 @@ const buildTokenPlayback = (gameState, beatIndex) => {
   const characters = gameState?.state?.public?.characters ?? [];
   const interactions = gameState?.state?.public?.customInteractions ?? [];
   const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
+  const interactionById = new Map();
+  interactions.forEach((interaction) => {
+    if (!interaction?.id) return;
+    interactionById.set(interaction.id, interaction);
+  });
 
   const userLookup = new Map();
   const rosterOrder = new Map();
@@ -1114,6 +1138,7 @@ const buildTokenPlayback = (gameState, beatIndex) => {
 
   const tokens = [];
   const fireTokenKeys = new Set();
+  const platformTokenKeys = new Set();
   let ephemeralFireKeys = new Set();
   let tokenCounter = 0;
 
@@ -1183,6 +1208,56 @@ const buildTokenPlayback = (gameState, beatIndex) => {
       ownerUserId: ownerId,
     };
     scheduleSpawnForActor(ownerId, token, isCurrentBeat);
+  };
+
+  const addEtherealPlatformToken = (coord, ownerId, isCurrentBeat, spawnAtEnd = false) => {
+    if (!coord || isCoordOnLand(coord, land)) return;
+    const key = coordKey(coord);
+    if (platformTokenKeys.has(key)) return;
+    platformTokenKeys.add(key);
+    const token = {
+      id: nextTokenId(ETHEREAL_PLATFORM_TOKEN_TYPE),
+      type: ETHEREAL_PLATFORM_TOKEN_TYPE,
+      position: { q: coord.q, r: coord.r },
+      facing: 0,
+      ownerUserId: ownerId,
+    };
+    if (spawnAtEnd && isCurrentBeat) {
+      tokenSpawnsAtEnd.push(token);
+      return;
+    }
+    scheduleSpawnForActor(ownerId, token, isCurrentBeat);
+  };
+
+  const removeEtherealPlatformToken = (coord, isCurrentBeat) => {
+    if (!coord) return;
+    const key = coordKey(coord);
+    if (!platformTokenKeys.has(key)) return;
+    platformTokenKeys.delete(key);
+    for (let i = tokens.length - 1; i >= 0; i -= 1) {
+      const token = tokens[i];
+      if (token?.type !== ETHEREAL_PLATFORM_TOKEN_TYPE) continue;
+      if (coordKey(token.position) !== key) continue;
+      if (isCurrentBeat) {
+        tokenSteps.push({
+          kind: 'token',
+          tokenId: token.id,
+          tokenType: token.type,
+          facingAfter: token.facing,
+          moveDestination: token.position,
+          moveType: null,
+          movePath: [],
+          attackOrigin: null,
+          attackTargets: [],
+          damageChanges: [],
+          positionChanges: [],
+          hitTargets: [],
+          removeToken: true,
+        });
+      }
+      tokens.splice(i, 1);
+      break;
+    }
   };
 
   const buildEntriesByUser = (beat) => {
@@ -1532,6 +1607,19 @@ const buildTokenPlayback = (gameState, beatIndex) => {
           addArrowToken(spawnCoord, facing, actorId, isCurrentBeat);
         }
       }
+      if (entry.cardId === HAVEN_CARD_ID && actionLabel.toUpperCase() === 'X1') {
+        const interaction = interactionById.get(buildHavenInteractionId(index, actorId));
+        if (interaction?.status === 'resolved') {
+          const consumedBeat = interaction?.resolution?.consumedBeatIndex;
+          const consumedAlready = Number.isFinite(consumedBeat) && Math.round(consumedBeat) <= index;
+          if (!consumedAlready) {
+            const targetHex = getHavenTargetHex(interaction);
+            if (targetHex) {
+              addEtherealPlatformToken(targetHex, actorId, isCurrentBeat);
+            }
+          }
+        }
+      }
 
       const actionTokens = parseActionTokens(entry.action ?? '');
 
@@ -1594,6 +1682,16 @@ const buildTokenPlayback = (gameState, beatIndex) => {
       hexes.forEach((coord) => {
         addFireToken(coord, interaction.actorUserId, isCurrentBeat, true);
       });
+    });
+
+    interactions.forEach((interaction) => {
+      if (interaction?.type !== HAVEN_PLATFORM_INTERACTION_TYPE) return;
+      if (interaction?.status !== 'resolved') return;
+      const consumedBeat = interaction?.resolution?.consumedBeatIndex;
+      if (!Number.isFinite(consumedBeat) || Math.round(consumedBeat) !== index) return;
+      const targetHex = getHavenTargetHex(interaction);
+      if (!targetHex) return;
+      removeEtherealPlatformToken(targetHex, isCurrentBeat);
     });
 
     const nextTokens = [];

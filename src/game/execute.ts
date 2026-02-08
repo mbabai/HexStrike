@@ -21,12 +21,15 @@ const DAMAGE_ICON_ACTION = 'DamageIcon';
 const KNOCKBACK_DIVISOR = 10;
 const THROW_DISTANCE = 2;
 const FIRE_HEX_TOKEN_TYPE = 'fire-hex';
+const ETHEREAL_PLATFORM_TOKEN_TYPE = 'ethereal-platform';
 const ARROW_TOKEN_TYPE = 'arrow';
 const ARROW_DAMAGE = 4;
 const ARROW_KBF = 1;
 const ARROW_LAND_DISTANCE_LIMIT = 5;
+const HAVEN_PLATFORM_INTERACTION_TYPE = 'haven-platform';
 const BOW_SHOT_CARD_ID = 'bow-shot';
 const BURNING_STRIKE_CARD_ID = 'burning-strike';
+const HAVEN_CARD_ID = 'haven';
 const SINKING_SHOT_CARD_ID = 'sinking-shot';
 const VENGEANCE_CARD_ID = 'vengeance';
 const IRON_WILL_CARD_ID = 'iron-will';
@@ -410,6 +413,29 @@ const getResolvedDirectionIndex = (interaction: CustomInteraction | undefined) =
 
 const resolveEntryKey = (entry: BeatEntry) => entry.username ?? entry.userId ?? entry.userID ?? '';
 
+const normalizeHexCoord = (value: unknown): { q: number; r: number } | null => {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as { q?: unknown; r?: unknown };
+  const q = Number(raw.q);
+  const r = Number(raw.r);
+  if (!Number.isFinite(q) || !Number.isFinite(r)) return null;
+  return { q: Math.round(q), r: Math.round(r) };
+};
+
+const buildTouchingHexes = (origin: { q: number; r: number }) => [
+  { q: origin.q, r: origin.r },
+  ...AXIAL_DIRECTIONS.map((direction) => ({
+    q: origin.q + direction.q,
+    r: origin.r + direction.r,
+  })),
+];
+
+const getHavenTargetHex = (interaction: CustomInteraction | undefined): { q: number; r: number } | null => {
+  const fromResolution = normalizeHexCoord(interaction?.resolution?.targetHex);
+  if (fromResolution) return fromResolution;
+  return normalizeHexCoord(interaction?.targetHex);
+};
+
 const isEntryThrow = (entry: BeatEntry | null | undefined) => {
   if (!entry) return false;
   if (entry.interaction?.type === 'throw') return true;
@@ -510,14 +536,23 @@ export const executeBeatsWithInteractions = (
     const token = boardTokens[i];
     if (token.type === FIRE_HEX_TOKEN_TYPE && resolveTerrain(token.position) === 'abyss') {
       boardTokens.splice(i, 1);
+      continue;
+    }
+    if (token.type === ETHEREAL_PLATFORM_TOKEN_TYPE && resolveTerrain(token.position) !== 'abyss') {
+      boardTokens.splice(i, 1);
     }
   }
   let tokenCounter = boardTokens.length;
   const fireTokenKeys = new Set<string>();
+  const platformTokenKeys = new Set<string>();
   let ephemeralFireKeys = new Set<string>();
   boardTokens.forEach((token) => {
     if (token.type === FIRE_HEX_TOKEN_TYPE) {
       fireTokenKeys.add(coordKey(token.position));
+      return;
+    }
+    if (token.type === ETHEREAL_PLATFORM_TOKEN_TYPE) {
+      platformTokenKeys.add(coordKey(token.position));
     }
   });
   const userLookup = new Map<string, string>();
@@ -616,6 +651,33 @@ export const executeBeatsWithInteractions = (
     });
   };
 
+  const addEtherealPlatformToken = (coord: { q: number; r: number }, ownerId?: string) => {
+    if (resolveTerrain(coord) !== 'abyss') return;
+    const key = coordKey(coord);
+    if (platformTokenKeys.has(key)) return;
+    platformTokenKeys.add(key);
+    boardTokens.push({
+      id: nextTokenId(ETHEREAL_PLATFORM_TOKEN_TYPE),
+      type: ETHEREAL_PLATFORM_TOKEN_TYPE,
+      position: { q: coord.q, r: coord.r },
+      facing: 0,
+      ownerUserId: ownerId,
+    });
+  };
+
+  const removeEtherealPlatformToken = (coord: { q: number; r: number }) => {
+    const key = coordKey(coord);
+    if (!platformTokenKeys.has(key)) return;
+    platformTokenKeys.delete(key);
+    for (let i = boardTokens.length - 1; i >= 0; i -= 1) {
+      const token = boardTokens[i];
+      if (token.type !== ETHEREAL_PLATFORM_TOKEN_TYPE) continue;
+      if (coordKey(token.position) !== key) continue;
+      boardTokens.splice(i, 1);
+      break;
+    }
+  };
+
   const getRosterIndex = (entry: BeatEntry) => {
     const key = resolveEntryKey(entry);
     const resolved = userLookup.get(key) ?? key;
@@ -703,6 +765,89 @@ export const executeBeatsWithInteractions = (
 
   const findEntryForCharacter = (beat: BeatEntry[], character: PublicCharacter) =>
     beat.find((item) => matchesEntryForCharacter(item, character)) ?? null;
+
+  const clearActionFields = (entry: BeatEntry) => {
+    entry.action = DEFAULT_ACTION;
+    entry.rotation = '';
+    entry.priority = 0;
+    if ('rotationSource' in entry) delete entry.rotationSource;
+    if ('interaction' in entry) delete entry.interaction;
+    if ('attackDamage' in entry) delete entry.attackDamage;
+    if ('attackKbf' in entry) delete entry.attackKbf;
+    if ('comboStarter' in entry) delete entry.comboStarter;
+    if ('cardId' in entry) delete entry.cardId;
+    if ('passiveCardId' in entry) delete entry.passiveCardId;
+  };
+
+  const copyActionFields = (
+    target: BeatEntry,
+    source: BeatEntry,
+    options: { preserveSelectedRotation?: boolean } = {},
+  ) => {
+    const preserveSelectedRotation = Boolean(options.preserveSelectedRotation);
+    target.action = source.action ?? DEFAULT_ACTION;
+    if (preserveSelectedRotation && `${target.rotationSource ?? ''}`.trim() === 'selected') {
+      // Keep the player's selected rotation on the shifted first entry.
+      target.rotation = target.rotation ?? '';
+      target.rotationSource = 'selected';
+    } else {
+      target.rotation = source.rotation ?? '';
+      if (source.rotationSource) {
+        target.rotationSource = source.rotationSource;
+      } else if ('rotationSource' in target) {
+        delete target.rotationSource;
+      }
+    }
+    target.priority = Number.isFinite(source.priority) ? source.priority : 0;
+    if (source.interaction) {
+      target.interaction = source.interaction;
+    } else if ('interaction' in target) {
+      delete target.interaction;
+    }
+    if (Number.isFinite(source.attackDamage)) {
+      target.attackDamage = source.attackDamage;
+    } else if ('attackDamage' in target) {
+      delete target.attackDamage;
+    }
+    if (Number.isFinite(source.attackKbf)) {
+      target.attackKbf = source.attackKbf;
+    } else if ('attackKbf' in target) {
+      delete target.attackKbf;
+    }
+    if (source.comboStarter) {
+      target.comboStarter = true;
+    } else if ('comboStarter' in target) {
+      delete target.comboStarter;
+    }
+    if (source.cardId) {
+      target.cardId = source.cardId;
+    } else if ('cardId' in target) {
+      delete target.cardId;
+    }
+    if (source.passiveCardId) {
+      target.passiveCardId = source.passiveCardId;
+    } else if ('passiveCardId' in target) {
+      delete target.passiveCardId;
+    }
+  };
+
+  const shiftCharacterActionSetLeft = (character: PublicCharacter, fromBeatIndex: number) => {
+    const sequence: BeatEntry[] = [];
+    for (let i = fromBeatIndex; i < normalizedBeats.length; i += 1) {
+      const beat = normalizedBeats[i];
+      const entry = findEntryForCharacter(beat, character);
+      if (!entry) break;
+      sequence.push(entry);
+      if ((entry.action ?? DEFAULT_ACTION) === DEFAULT_ACTION) {
+        break;
+      }
+    }
+    if (sequence.length < 2) return;
+    for (let i = 0; i < sequence.length - 1; i += 1) {
+      copyActionFields(sequence[i], sequence[i + 1], { preserveSelectedRotation: i === 0 });
+    }
+    clearActionFields(sequence[sequence.length - 1]);
+  };
 
   const applyStateSnapshotToEntry = (
     entry: BeatEntry,
@@ -933,6 +1078,7 @@ export const executeBeatsWithInteractions = (
   const comboStates = new Map<string, { coIndex: number; hit: boolean; cardId: string; throwInteraction: boolean }>();
   const lastActionByUser = new Map<string, string>();
   const cardStartTerrainByUser = new Map<string, 'land' | 'abyss'>();
+  const havenPassiveSkipByUser = new Map<string, boolean>();
   const actionSetFacingByUser = new Map<string, number>();
   const actionSetRotationByUser = new Map<string, string>();
 
@@ -1050,6 +1196,7 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
         }
         comboStates.delete(actorId);
         cardStartTerrainByUser.delete(actorId);
+        havenPassiveSkipByUser.delete(actorId);
         actionSetFacingByUser.delete(actorId);
         actionSetRotationByUser.delete(actorId);
         if (entry && 'cardStartTerrain' in entry) {
@@ -1061,6 +1208,11 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
           if (actorState) {
             cardStartTerrainByUser.set(actorId, resolveTerrain(actorState.position));
           }
+        }
+        if (comboStart) {
+          const startTerrain = cardStartTerrainByUser.get(actorId);
+          const shouldSkipFirstWait = entry?.passiveCardId === HAVEN_CARD_ID && startTerrain === 'abyss';
+          havenPassiveSkipByUser.set(actorId, shouldSkipFirstWait);
         }
         if (comboStart || !actionSetFacingByUser.has(actorId)) {
           const actorState = state.get(actorId);
@@ -1507,6 +1659,16 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
         comboState.throwInteraction = true;
       }
       const origin = { q: actorState.position.q, r: actorState.position.r };
+      if (havenPassiveSkipByUser.get(actorId)) {
+        const firstActionLabel = normalizeActionLabel(entry.action ?? '').toUpperCase();
+        if (firstActionLabel === WAIT_ACTION) {
+          const actorCharacter = characterById.get(actorId);
+          if (actorCharacter) {
+            shiftCharacterActionSetLeft(actorCharacter, index);
+          }
+        }
+        havenPassiveSkipByUser.set(actorId, false);
+      }
       const actionLabel = normalizeActionLabel(entry.action ?? '');
 
       if (entry.cardId === BOW_SHOT_CARD_ID && actionLabel.toUpperCase() === 'X1') {
@@ -1516,6 +1678,46 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
           actorState.facing,
           actorId,
         );
+      }
+      if (entry.cardId === HAVEN_CARD_ID && actionLabel.toUpperCase() === 'X1') {
+        const interactionId = buildInteractionId(HAVEN_PLATFORM_INTERACTION_TYPE, index, actorId, actorId);
+        const touchingHexes = buildTouchingHexes(origin);
+        const touchingKeys = new Set(touchingHexes.map((coord) => coordKey(coord)));
+        const existing = interactionById.get(interactionId);
+        if (!existing && !isHistoryIndex(index)) {
+          const created: CustomInteraction = {
+            id: interactionId,
+            type: HAVEN_PLATFORM_INTERACTION_TYPE,
+            beatIndex: index,
+            actorUserId: actorId,
+            targetUserId: actorId,
+            status: 'pending',
+            touchingHexes,
+          };
+          updatedInteractions.push(created);
+          interactionById.set(interactionId, created);
+          if (haltIndex == null || index < haltIndex) {
+            haltIndex = index;
+          }
+          return;
+        }
+        if (existing?.status === 'pending') {
+          if (haltIndex == null || index < haltIndex) {
+            haltIndex = index;
+          }
+          return;
+        }
+        if (existing?.status === 'resolved') {
+          const consumedBeatIndex = existing.resolution?.consumedBeatIndex;
+          const consumedAlready =
+            Number.isFinite(consumedBeatIndex) && Math.round(consumedBeatIndex as number) <= index;
+          if (!consumedAlready) {
+            const targetHex = getHavenTargetHex(existing);
+            if (targetHex && touchingKeys.has(coordKey(targetHex))) {
+              addEtherealPlatformToken(targetHex, actorId);
+            }
+          }
+        }
       }
       if (entry.cardId === IRON_WILL_CARD_ID && actionLabel.toUpperCase() === 'X1') {
         const interactionId = buildInteractionId('draw', index, actorId, actorId);
@@ -1990,6 +2192,16 @@ const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
         const targetEntry = targetCharacter ? findEntryForCharacter(beat, targetCharacter) : null;
         queueDiscard(interaction.targetUserId, 2, 'opponent', targetEntry, { force: true });
       }
+    });
+
+    updatedInteractions.forEach((interaction) => {
+      if (interaction.type !== HAVEN_PLATFORM_INTERACTION_TYPE) return;
+      if (interaction.status !== 'resolved') return;
+      const consumedBeat = interaction.resolution?.consumedBeatIndex;
+      if (!Number.isFinite(consumedBeat) || Math.round(consumedBeat as number) !== index) return;
+      const targetHex = getHavenTargetHex(interaction);
+      if (!targetHex) return;
+      removeEtherealPlatformToken(targetHex);
     });
 
     if (burningStrikeBeatData.size) {

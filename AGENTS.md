@@ -133,6 +133,8 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.
 - Arrow/projectile hits must respect block walls; client token playback derives block lookups from block effects to stop arrows on blocks.
 - Board tokens live in `public.boardTokens`; `executeBeatsWithInteractions` rebuilds fire/arrow tokens from beats, moves only pre-existing arrows each beat, and applies fire damage after arrow resolution.
+- Haven active uses a `customInteractions` entry of type `haven-platform`; client targeting/hover math is centralized in `public/game/havenInteraction.mjs` and renderer should stay draw-only via `interactionHighlightState`.
+- Ethereal platforms only persist on abyss, grant land-style refresh when a player has `E` on them, and are consumed during `resolveLandRefreshes` once refresh resolves.
 - Client board-token playback is derived from beats/interactions in `public/game/timelinePlayback.js` (`buildTokenPlayback`); keep token spawn logic in sync with server-side rules so timeline scrubbing matches resolution.
 - Fire hex tokens render as full-hex overlays (no facing arrow); keep `public/game/renderer.js` token drawing in sync with any token art changes.
 - Burning Strike optional ignites via a `customInteractions` entry of type `burning-strike` (discardCount `1`, `attackHexes`); avoid re-triggering if an interaction already exists for that beat.
@@ -173,6 +175,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Damage previews during hit shakes are drawn via `displayDamage` using pre-step damage to avoid double-counting when the step completes.
 - Map panning/zooming is bound to the game area and must ignore UI elements like action cards, slots, or rotation controls; update `PAN_BLOCK_SELECTORS` in `public/game/controls.js` when adding new HUD controls.
 - Find Game is disabled until a deck is selected; the selected deck ID is stored in cookies and its `characterId` plus movement/ability lists are sent with `/api/v1/lobby/join`.
+- `/api/v1/lobby/join` rejects decks unless they contain exactly 4 movement cards and exactly 12 ability cards; keep `public/cards/cards.json` base decks and deck-builder output aligned with this.
 - Base deck definitions from `public/cards/cards.json` are merged into each user's localStorage on load in `public/deckStore.js`; keep the merge logic when adding new base decks.
 
 ## PR expectations

@@ -38,9 +38,11 @@ const getTheme = () => {
 const TOKEN_IMAGE_SOURCES = {
   arrow: '/public/images/ArrowToken.png',
   'fire-hex': '/public/images/FireHexToken.png',
+  'ethereal-platform': '/public/images/EtherealPlatform.png',
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+const coordKey = (coord) => `${coord?.q},${coord?.r}`;
 
 const normalizeActionTag = (action) =>
   typeof action === 'string' ? action.trim().toLowerCase() : '';
@@ -192,7 +194,7 @@ const drawBoardTokens = (ctx, tokens, size, theme, getTokenArt) => {
     if (!token?.position) return;
     const { x, y } = axialToPixel(token.position.q, token.position.r, size);
     const image = getTokenArt(token.type);
-    if (token.type === 'fire-hex') {
+    if (token.type === 'fire-hex' || token.type === 'ethereal-platform') {
       ctx.save();
       drawHexPath(ctx, x, y, size);
       ctx.clip();
@@ -513,6 +515,36 @@ const drawActionEffects = (ctx, effects, size, theme) => {
   });
 };
 
+const drawInteractionHexHighlights = (ctx, size, overlayState) => {
+  const hexes = Array.isArray(overlayState?.touchingHexes) ? overlayState.touchingHexes : [];
+  if (!hexes.length) return;
+  const hoverKey = overlayState?.hoveredHex ? coordKey(overlayState.hoveredHex) : null;
+  const pulse = Number.isFinite(overlayState?.pulse) ? clamp(overlayState.pulse, 0, 1) : 0;
+  hexes.forEach((coord) => {
+    if (!coord) return;
+    const { x, y } = axialToPixel(coord.q, coord.r, size);
+    const isHovered = hoverKey != null && coordKey(coord) === hoverKey;
+    const fillAlpha = isHovered ? 0.34 + pulse * 0.2 : 0.16 + pulse * 0.14;
+    const strokeAlpha = 0.8;
+    const glow = size * 0.52;
+    ctx.save();
+    ctx.globalAlpha = clamp(fillAlpha, 0, 1);
+    ctx.fillStyle = isHovered ? '#ffbc4f' : '#ff8b2f';
+    drawHexPath(ctx, x, y, size * (isHovered ? 1.03 : 1));
+    ctx.fill();
+    ctx.restore();
+    if (!isHovered) return;
+    ctx.save();
+    ctx.shadowColor = 'rgba(255, 188, 79, 0.85)';
+    ctx.shadowBlur = glow;
+    ctx.strokeStyle = `rgba(255, 153, 51, ${strokeAlpha})`;
+    ctx.lineWidth = Math.max(1.5, size * 0.12);
+    drawHexPath(ctx, x, y, size * 1.04);
+    ctx.stroke();
+    ctx.restore();
+  });
+};
+
 export const createRenderer = (canvas, config = GAME_CONFIG) => {
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
@@ -561,7 +593,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     }
   };
 
-  const draw = (viewState, gameState, timeIndicatorViewModel, scene, localUserId, pendingPreview) => {
+  const draw = (viewState, gameState, timeIndicatorViewModel, scene, localUserId, pendingPreview, interactionOverlayState = null) => {
     if (!viewport.width || !viewport.height) return;
     const size = getHexSize(viewport.width, config.hexSizeFactor);
     const bounds = getWorldBounds(viewport, viewState);
@@ -629,6 +661,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     const boardTokens = scene?.boardTokens ?? gameState?.state?.public?.boardTokens ?? [];
     const abyssLabels = buildAbyssPathLabels(renderCharacters, land);
     drawAbyssPathLabels(ctx, abyssLabels, size, theme);
+    drawInteractionHexHighlights(ctx, size, interactionOverlayState);
     drawBoardTokens(ctx, boardTokens, size, theme, getTokenArt);
     drawActionEffects(ctx, effects, size, theme);
 
