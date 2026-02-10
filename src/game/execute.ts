@@ -1198,6 +1198,16 @@ export const executeBeatsWithInteractions = (
     return next;
   };
 
+  const clearBeatConsequences = (beatIndex: number) => {
+    const beat = normalizedBeats[beatIndex];
+    if (!beat?.length) return;
+    beat.forEach((entry) => {
+      if ('consequences' in entry) {
+        delete entry.consequences;
+      }
+    });
+  };
+
   const applyActionListFromIndex = (
     targetId: string,
     startIndex: number,
@@ -2367,6 +2377,8 @@ export const executeBeatsWithInteractions = (
       if (hasRestoredActionPhaseSnapshot) {
         restoreActionPhaseSnapshot(actionPhaseSnapshot);
       }
+      // Reruns replay the same beat and must replace, not append, hit summaries.
+      clearBeatConsequences(index);
       type BeatRerunRequest = {
         changedActorId: string;
         causeActorId: string;

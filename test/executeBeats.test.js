@@ -1544,10 +1544,12 @@ test('executeBeats resolves parry counters even when a defender is at E', () => 
   const result = executeBeats(beats, characters);
   const beat1 = result.beats[1] || [];
   const attackerEntry = beat1.find((entry) => entry.username === 'atk');
+  const hitConsequences = (attackerEntry?.consequences ?? []).filter((effect) => effect?.type === 'hit');
 
   assert.ok(attackerEntry);
   assert.equal(attackerEntry.action, 'DamageIcon');
-  assert.ok(attackerEntry.consequences?.some((effect) => effect.type === 'hit' && effect.damageDelta > 0));
+  assert.equal(hitConsequences.length, 1);
+  assert.deepEqual(hitConsequences[0], { type: 'hit', damageDelta: 4, knockbackDistance: 1 });
 });
 
 test('parry stun does not trap future submissions on calculated history E beats', () => {

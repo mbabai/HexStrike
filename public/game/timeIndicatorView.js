@@ -10,6 +10,7 @@ const EMPHASIS_ICON_KEY = 'i';
 const COMBO_ICON_KEY = 'Co';
 const FOCUS_ICON_KEY = 'F';
 const KNOCKBACK_ICON_KEY = 'KnockBackIcon';
+const DISCARD_ICON_KEY = 'DiscardIcon';
 const REWIND_RETURN_INTERACTION_TYPE = 'rewind-return';
 const VISIBLE_BEAT_RADIUS = 6;
 const TIMELINE_OFFSETS = Array.from({ length: VISIBLE_BEAT_RADIUS * 2 + 1 }, (_, index) => index - VISIBLE_BEAT_RADIUS);
@@ -101,9 +102,7 @@ const getPendingPreviewEntry = (preview, character, beatIndex) => {
   return actionList[offset] ?? null;
 };
 
-const buildHandTriggerLookup = (interactions, characters) => {
-  const lookup = new Map();
-  if (!Array.isArray(interactions) || !Array.isArray(characters) || !characters.length) return lookup;
+const buildActorKeyMap = (characters) => {
   const actorKeyMap = new Map();
   characters.forEach((character) => {
     const key = character.username ?? character.userId;
@@ -113,6 +112,13 @@ const buildHandTriggerLookup = (interactions, characters) => {
       actorKeyMap.set(character.username, key);
     }
   });
+  return actorKeyMap;
+};
+
+const buildHandTriggerLookup = (interactions, characters) => {
+  const lookup = new Map();
+  if (!Array.isArray(interactions) || !Array.isArray(characters) || !characters.length) return lookup;
+  const actorKeyMap = buildActorKeyMap(characters);
   interactions.forEach((interaction) => {
     if (!interaction || interaction.type !== 'hand-trigger') return;
     if (interaction.status === 'resolved' && interaction.resolution?.use === false) return;
@@ -131,16 +137,8 @@ const buildHandTriggerLookup = (interactions, characters) => {
 const buildRewindReturnLookup = (interactions, characters) => {
   const lookup = new Map();
   if (!Array.isArray(interactions) || !Array.isArray(characters) || !characters.length) return lookup;
-  const actorKeyMap = new Map();
+  const actorKeyMap = buildActorKeyMap(characters);
   const appliedReturnByFocus = new Set();
-  characters.forEach((character) => {
-    const key = character.username ?? character.userId;
-    if (!key) return;
-    actorKeyMap.set(character.userId, key);
-    if (character.username) {
-      actorKeyMap.set(character.username, key);
-    }
-  });
   interactions.forEach((interaction) => {
     if (!interaction || interaction.type !== REWIND_RETURN_INTERACTION_TYPE) return;
     if (interaction.status !== 'resolved') return;
@@ -168,6 +166,55 @@ const buildRewindReturnLookup = (interactions, characters) => {
     const list = lookup.get(key) ?? [];
     list.push(interaction);
     lookup.set(key, list);
+  });
+  return lookup;
+};
+
+const toDiscardCount = (value) => {
+  if (!Number.isFinite(value)) return null;
+  return Math.max(0, Math.round(value));
+};
+
+const getResolvedListCount = (value) => (Array.isArray(value) ? value.length : 0);
+
+const getInteractionDiscardCount = (interaction) => {
+  if (!interaction || typeof interaction !== 'object') return 0;
+  if (interaction.type === 'discard') {
+    const abilityCount = toDiscardCount(interaction.discardAbilityCount);
+    const movementCount = toDiscardCount(interaction.discardMovementCount);
+    if (abilityCount !== null || movementCount !== null) {
+      return (abilityCount ?? 0) + (movementCount ?? 0);
+    }
+    return toDiscardCount(interaction.discardCount) ?? 0;
+  }
+  if (interaction.type !== 'hand-trigger') return 0;
+  if (interaction.status !== 'resolved' || interaction.resolution?.use !== true) return 0;
+  const resolvedCount =
+    getResolvedListCount(interaction.resolution?.abilityCardIds) +
+    getResolvedListCount(interaction.resolution?.movementCardIds);
+  if (resolvedCount > 0) return resolvedCount;
+  return toDiscardCount(interaction.discardCount) ?? 0;
+};
+
+const buildDiscardLookup = (interactions, characters) => {
+  const lookup = new Map();
+  if (!Array.isArray(interactions) || !Array.isArray(characters) || !characters.length) return lookup;
+  const actorKeyMap = buildActorKeyMap(characters);
+  interactions.forEach((interaction) => {
+    if (!interaction) return;
+    if (interaction.type !== 'discard' && interaction.type !== 'hand-trigger') return;
+    const discardCount = getInteractionDiscardCount(interaction);
+    if (!discardCount) return;
+    const beatIndex = Number.isFinite(interaction.beatIndex) ? Math.round(interaction.beatIndex) : null;
+    if (beatIndex == null || beatIndex < 0) return;
+    const actorKey =
+      actorKeyMap.get(interaction.actorUserId) ??
+      actorKeyMap.get(interaction.targetUserId) ??
+      interaction.actorUserId ??
+      interaction.targetUserId;
+    if (!actorKey) return;
+    const key = `${actorKey}:${beatIndex}`;
+    lookup.set(key, (lookup.get(key) ?? 0) + discardCount);
   });
   return lookup;
 };
@@ -430,6 +477,7 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
   const highlightIndex = getTimelineStopIndex(beats, characters, interactions);
   const handTriggerLookup = buildHandTriggerLookup(interactions, characters);
   const rewindReturnLookup = buildRewindReturnLookup(interactions, characters);
+  const discardLookup = buildDiscardLookup(interactions, characters);
   const interactionStopIndex = getEarliestPendingInteractionIndex(interactions);
   const fadeAfterIndex =
     interactionStopIndex !== null && interactionStopIndex <= highlightIndex ? interactionStopIndex : null;
@@ -556,6 +604,8 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
         const cardAlpha = shouldFade ? 0.28 : 1;
         drawRewindReturnCards(ctx, row, xPos, rowCenterY, rowSpacing, iconSize, rewindReturns, theme, cardAlpha);
       }
+      const discardKey = `${lookupKey}:${beatIndex}`;
+      const discardCount = discardLookup.get(discardKey) ?? 0;
       const token = parseActionToken(action);
       const image = getActionArt(token.label);
       if (!image || !image.complete || image.naturalWidth === 0) return;
@@ -608,6 +658,9 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       if (hitSummary) {
         drawKnockbackBadge(ctx, imageX, imageY, drawSize, hitSummary.knockbackDistance, theme);
         drawDamageDeltaBadge(ctx, imageX, imageY, drawSize, hitSummary.damageDelta, theme);
+      }
+      if (discardCount > 0) {
+        drawDiscardBadge(ctx, imageX, imageY, drawSize, discardCount, theme);
       }
       const actionLabel = token.label;
       if (
@@ -921,13 +974,7 @@ const drawKnockbackBadge = (ctx, x, y, size, distance, theme) => {
 const drawDamageDeltaBadge = (ctx, x, y, size, delta, theme) => {
   if (!Number.isFinite(delta)) return;
   const safeDelta = Math.round(delta);
-  const badgeSize = Math.max(10, size * 0.34);
-  const padding = Math.max(4, size * 0.08);
-  const width = Math.max(18, size * 0.42);
-  const height = Math.max(12, size * 0.2);
-  const offsetOut = size * DAMAGE_BADGE_OUTSET;
-  const badgeX = x + size - width - padding + offsetOut + BADGE_NUDGE_X;
-  const badgeY = y + padding + badgeSize + padding - offsetOut;
+  const { x: badgeX, y: badgeY, width, height } = getDamageBadgeRect(x, y, size);
   const fill =
     safeDelta < 0 ? theme.actionMove || '#33d06b' : theme.damage || theme.actionAttack || '#d34b42';
   const textColor = theme.damageText || '#ffffff';
@@ -942,6 +989,43 @@ const drawDamageDeltaBadge = (ctx, x, y, size, delta, theme) => {
   ctx.textBaseline = 'middle';
   const label = `${safeDelta}`;
   ctx.fillText(label, badgeX + width / 2, badgeY + height / 2 + height * 0.05);
+  ctx.restore();
+};
+
+const getDamageBadgeRect = (x, y, size) => {
+  const badgeSize = Math.max(10, size * 0.34);
+  const padding = Math.max(4, size * 0.08);
+  const width = Math.max(18, size * 0.42);
+  const height = Math.max(12, size * 0.2);
+  const offsetOut = size * DAMAGE_BADGE_OUTSET;
+  const badgeX = x + size - width - padding + offsetOut + BADGE_NUDGE_X;
+  const badgeY = y + padding + badgeSize + padding - offsetOut;
+  return { x: badgeX, y: badgeY, width, height };
+};
+
+const drawDiscardBadge = (ctx, x, y, size, discardCount, theme) => {
+  const safeCount = Number.isFinite(discardCount) ? Math.max(0, Math.round(discardCount)) : 0;
+  if (!safeCount) return;
+  const icon = getActionArt(DISCARD_ICON_KEY);
+  if (!icon || !icon.complete || icon.naturalWidth === 0) return;
+  const damageBadge = getDamageBadgeRect(x, y, size);
+  const badgeSize = Math.max(14, size * 0.48);
+  const gap = Math.max(1, size * 0.03);
+  const rightShift = badgeSize * 0.1;
+  const badgeX = damageBadge.x + damageBadge.width / 2 - badgeSize / 2;
+  const badgeY = damageBadge.y + damageBadge.height + gap;
+  ctx.drawImage(icon, badgeX + rightShift, badgeY, badgeSize, badgeSize);
+
+  ctx.save();
+  ctx.fillStyle = theme.damageText || '#ffffff';
+  ctx.font = `700 ${Math.max(9, badgeSize * 0.4)}px ${theme.fontBody}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(
+    `-${safeCount}`,
+    badgeX + badgeSize / 2 + rightShift,
+    badgeY + badgeSize / 2 + badgeSize * 0.05,
+  );
   ctx.restore();
 };
 
