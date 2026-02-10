@@ -32,6 +32,20 @@ const applyRotationAfterIndex = (actionList, index, rotation, options = {}) => {
   });
 };
 
+const shiftSelectedRotationToIndex = (actionList, index) => {
+  if (!Number.isFinite(index) || index < 0 || index >= actionList.length) return actionList;
+  const selectedRotation = `${actionList[0]?.rotation ?? ''}`.trim();
+  if (!selectedRotation) return actionList;
+  const clearedStart = updateActionEntries(actionList, [0], (entry) => {
+    if (!entry) return entry;
+    return patchActionEntry(entry, { rotation: '', rotationSource: undefined });
+  });
+  return updateActionEntries(clearedStart, [index], (entry) => {
+    if (!entry) return entry;
+    return patchActionEntry(entry, { rotation: selectedRotation, rotationSource: 'selected' });
+  });
+};
+
 const applyCounterAttackActiveText = (actionList) => actionList;
 
 const applyAerialStrikeActiveText = (actionList, card) => {
@@ -50,9 +64,17 @@ const applyWhirlwindActiveText = (actionList, card) => {
   });
 };
 
+const applySmokeBombActiveText = (actionList, card) => {
+  const indices = getSymbolActionIndices(card?.actions ?? [], 'i');
+  const targetIndex = indices.length ? indices[0] + 1 : null;
+  if (targetIndex == null) return actionList;
+  return shiftSelectedRotationToIndex(actionList, targetIndex);
+};
+
 const ACTIVE_ABILITY_EFFECTS = new Map([
   ['counter-attack', applyCounterAttackActiveText],
   ['aerial-strike', applyAerialStrikeActiveText],
+  ['smoke-bomb', applySmokeBombActiveText],
   ['whirlwind', applyWhirlwindActiveText],
 ]);
 

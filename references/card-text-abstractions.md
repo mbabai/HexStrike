@@ -45,6 +45,18 @@
 - Card text that modifies the action list (add/remove/replace) should use the shared helpers in
   `src/game/cardText/actionListTransforms.ts` and `public/game/cardText/actionListTransforms.js` to keep behavior precise and mirrored.
 
+## Active/passive swap
+- `swap active with passive` means: at the trigger beat, rebuild the action set using the old passive as the new active card and the old active as the new passive card.
+- The swapped action list starts at that same beat (no delay), and carries only that trigger beat's `rotation`/`rotationSource` (if any); do not reapply the original action-set selected rotation on later beats.
+- Smoke Bomb `{X1}` uses this swap directly in shared list building (`src/game/cardText/actionListBuilder.ts` + `public/game/cardText/actionListBuilder.js`).
+- Reflex Dodge passive uses the same swap behavior at execution-time when hit during `W` (`src/game/execute.ts`).
+
+## Stun-only hit window
+- Smoke Bomb active hit stun uses the same timeline rewrite shape as knockback (`DamageIcon ... E`) but does not move the target.
+- `BeatEntry.stunOnly` marks those hit frames so timeline badges can render them as stun-only (greyed) instead of normal knockback damage windows.
+- Server applies this via `applyHitTimeline(..., { stunOnly: true })` in `src/game/execute.ts`; timeline rendering reads the flag in `public/game/timeIndicatorView.js`.
+- Smoke Bomb stun is keyed to hit confirmation (target in attacked hex), not damage/KBF values, and should still apply even when the attack token is marked as `throw`.
+
 ## Action icon assets
 - Any new action token label (ex: `2c`, `B2m`, `B3j`) must have a matching PNG in `public/images/{token}.png` or the HUD/icon renderer will show the empty fallback.
 - Generate missing icons with `scripts/hex_diagrams_creator.py` (default output is `public/images`).

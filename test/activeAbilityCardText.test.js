@@ -46,3 +46,17 @@ test('whirlwind active sets KBF to 3 on the bracketed action', () => {
   assert.notEqual(bracketIndex, -1);
   assert.equal(actionList[bracketIndex].kbf, 3);
 });
+
+test('smoke-bomb active swaps into the passive action list at X1 with selected rotation', () => {
+  const actionList = buildActionList('smoke-bomb', 'step', 'R2');
+  assert.deepEqual(
+    actionList.map((entry) => entry.action),
+    ['W', '[a-La-Ra]', 'W', 'Bm', 'W', 'E'],
+  );
+  assert.equal(actionList[0].rotation, '');
+  assert.equal(actionList[0].rotationSource, undefined);
+  assert.equal(actionList[2].rotation, 'R2');
+  assert.equal(actionList[2].rotationSource, 'selected');
+  assert.equal(actionList[2].cardId, 'step');
+  assert.equal(actionList[2].passiveCardId, 'smoke-bomb');
+});

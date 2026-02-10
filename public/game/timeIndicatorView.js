@@ -467,6 +467,7 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       const image = getActionArt(token.label);
       if (!image || !image.complete || image.naturalWidth === 0) return;
       const comboSkipped = entry?.comboSkipped && token.label === COMBO_ICON_KEY;
+      const stunOnlyHit = Boolean(entry?.stunOnly) && token.label === 'DamageIcon';
       const drawScale = usePreview ? previewScale : 1;
       const drawSize = iconSize * drawScale;
       const imageX = xPos - drawSize / 2;
@@ -475,12 +476,12 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
         (shouldFade ? 0.28 : 1) *
         (usePreview ? PREVIEW_ALPHA : 1) *
         (comboSkipped ? COMBO_SKIPPED_ALPHA : 1);
-      const restoreAfter = alpha !== 1;
+      const restoreAfter = alpha !== 1 || comboSkipped || stunOnlyHit;
       if (restoreAfter) {
         ctx.save();
         ctx.globalAlpha = alpha;
       }
-      if (comboSkipped) {
+      if (comboSkipped || stunOnlyHit) {
         ctx.filter = 'grayscale(1)';
       }
       const emphasisImage = token.emphasized ? getActionArt(EMPHASIS_ICON_KEY) : null;

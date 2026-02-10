@@ -38,6 +38,20 @@ const applyRotationAfterIndex = (
   });
 };
 
+const shiftSelectedRotationToIndex = (actionList: ActionListItem[], index: number): ActionListItem[] => {
+  if (!Number.isFinite(index) || index < 0 || index >= actionList.length) return actionList;
+  const selectedRotation = `${actionList[0]?.rotation ?? ''}`.trim();
+  if (!selectedRotation) return actionList;
+  const clearedStart = updateActionEntries(actionList, [0], (entry) => {
+    if (!entry) return entry;
+    return patchActionEntry(entry, { rotation: '', rotationSource: undefined });
+  });
+  return updateActionEntries(clearedStart, [index], (entry) => {
+    if (!entry) return entry;
+    return patchActionEntry(entry, { rotation: selectedRotation, rotationSource: 'selected' });
+  });
+};
+
 const applyCounterAttackActiveText = (
   actionList: ActionListItem[],
 ): ActionListItem[] => actionList;
@@ -58,11 +72,19 @@ const applyWhirlwindActiveText = (actionList: ActionListItem[], card: CardDefini
   });
 };
 
+const applySmokeBombActiveText = (actionList: ActionListItem[], card: CardDefinition): ActionListItem[] => {
+  const indices = getSymbolActionIndices(Array.isArray(card.actions) ? card.actions : [], 'i');
+  const targetIndex = indices.length ? indices[0] + 1 : null;
+  if (targetIndex == null) return actionList;
+  return shiftSelectedRotationToIndex(actionList, targetIndex);
+};
+
 type ActiveAbilityEffect = (actionList: ActionListItem[], card: CardDefinition, rotationLabel: string) => ActionListItem[];
 
 const ACTIVE_ABILITY_EFFECTS = new Map<string, ActiveAbilityEffect>([
   ['counter-attack', applyCounterAttackActiveText],
   ['aerial-strike', applyAerialStrikeActiveText],
+  ['smoke-bomb', applySmokeBombActiveText],
   ['whirlwind', applyWhirlwindActiveText],
 ]);
 

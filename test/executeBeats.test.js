@@ -873,6 +873,330 @@ test('executeBeats reduces KBF by 1 for iron will passive hits', () => {
   assert.equal(betaEntry.location.r, 0);
 });
 
+test('executeBeats swaps reflex dodge on incoming W-hit and ends the set on a successful avoid', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 0, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'a', 80, characters[0].position, characters[0].facing, '', 2, 1),
+      buildEntry('beta', 'W', 10, characters[1].position, characters[1].facing, '0', 0, 0),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  beats[0][1].cardId = 'dash';
+  beats[0][1].passiveCardId = 'reflex-dodge';
+  beats[0][1].rotationSource = 'selected';
+
+  const result = executeBeats(beats, characters);
+  const betaBeat0 = (result.beats[0] || []).find((entry) => entry.username === 'beta');
+  const betaBeat1 = (result.beats[1] || []).find((entry) => entry.username === 'beta');
+  const betaBeat2 = (result.beats[2] || []).find((entry) => entry.username === 'beta');
+  const betaCharacter = result.characters.find((entry) => entry.userId === 'beta');
+
+  assert.ok(betaBeat0);
+  assert.ok(betaBeat1);
+  assert.equal(betaBeat0.action, 'b-Lb-Rb');
+  assert.equal(betaBeat0.cardId, 'reflex-dodge');
+  assert.equal(betaBeat0.passiveCardId, 'dash');
+  assert.equal(betaBeat1.action, 'E');
+  assert.equal(betaBeat2, undefined);
+  assert.ok(betaCharacter);
+  assert.equal(betaCharacter.damage ?? 0, 0);
+});
+
+test('executeBeats reruns a frame when reflex dodge swaps during a later backflip W', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 0, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'Bm', 30, characters[1].position, characters[1].facing, '0', 0, 0),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 30, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', '2a', 80, characters[0].position, characters[0].facing, '', 2, 1),
+      buildEntry('beta', 'W', 30, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  beats[0][1].cardId = 'backflip';
+  beats[0][1].passiveCardId = 'reflex-dodge';
+  beats[0][1].rotationSource = 'selected';
+  beats[1][1].cardId = 'backflip';
+  beats[1][1].passiveCardId = 'reflex-dodge';
+  beats[2][1].cardId = 'backflip';
+  beats[2][1].passiveCardId = 'reflex-dodge';
+  beats[3][1].cardId = 'backflip';
+  beats[3][1].passiveCardId = 'reflex-dodge';
+  beats[4][1].cardId = 'backflip';
+  beats[4][1].passiveCardId = 'reflex-dodge';
+
+  const result = executeBeats(beats, characters);
+  const betaBeat2 = (result.beats[2] || []).find((entry) => entry.username === 'beta');
+  const betaBeat3 = (result.beats[3] || []).find((entry) => entry.username === 'beta');
+  const betaBeat4 = (result.beats[4] || []).find((entry) => entry.username === 'beta');
+  const betaCharacter = result.characters.find((entry) => entry.userId === 'beta');
+
+  assert.ok(betaBeat2);
+  assert.ok(betaBeat3);
+  assert.equal(betaBeat2.action, 'b-Lb-Rb');
+  assert.equal(betaBeat2.cardId, 'reflex-dodge');
+  assert.equal(betaBeat2.passiveCardId, 'backflip');
+  assert.equal(betaBeat2.location.q, 2);
+  assert.equal(betaBeat2.location.r, 0);
+  assert.equal(betaBeat3.action, 'E');
+  assert.equal(betaBeat4, undefined);
+  assert.ok(betaCharacter);
+  assert.equal(betaCharacter.damage ?? 0, 0);
+});
+
+test('executeBeats reflex dodge swap does not reapply prior selected rotation on later W hits', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 0, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 30, characters[1].position, characters[1].facing, 'R1', 0, 0),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 30, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'a', 80, characters[0].position, characters[0].facing, '', 2, 1),
+      buildEntry('beta', 'W', 30, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  beats[0][1].cardId = 'step';
+  beats[0][1].passiveCardId = 'reflex-dodge';
+  beats[0][1].rotationSource = 'selected';
+  beats[1][1].cardId = 'step';
+  beats[1][1].passiveCardId = 'reflex-dodge';
+  beats[2][1].cardId = 'step';
+  beats[2][1].passiveCardId = 'reflex-dodge';
+  beats[3][1].cardId = 'step';
+  beats[3][1].passiveCardId = 'reflex-dodge';
+  beats[4][1].cardId = 'step';
+  beats[4][1].passiveCardId = 'reflex-dodge';
+
+  const result = executeBeats(beats, characters);
+  const betaBeat2 = (result.beats[2] || []).find((entry) => entry.username === 'beta');
+  const betaBeat3 = (result.beats[3] || []).find((entry) => entry.username === 'beta');
+  const betaBeat4 = (result.beats[4] || []).find((entry) => entry.username === 'beta');
+  const betaCharacter = result.characters.find((entry) => entry.userId === 'beta');
+
+  assert.ok(betaBeat2);
+  assert.ok(betaBeat3);
+  assert.equal(betaBeat2.action, 'b-Lb-Rb');
+  assert.equal(betaBeat2.cardId, 'reflex-dodge');
+  assert.equal(betaBeat2.passiveCardId, 'step');
+  assert.equal(betaBeat2.rotation ?? '', '');
+  assert.equal(betaBeat3.action, 'E');
+  assert.equal(betaBeat4, undefined);
+  assert.ok(betaCharacter);
+  assert.equal(betaCharacter.damage ?? 0, 0);
+});
+
+test('executeBeats leaves the reflex dodge X1->E beat unresolved after rerun', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 0, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'a', 80, characters[0].position, characters[0].facing, '', 2, 1),
+      buildEntry('beta', 'b-Lb-Rb', 97, characters[1].position, characters[1].facing, '', 0, 0),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'X1', 97, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  beats[0][1].cardId = 'reflex-dodge';
+  beats[0][1].passiveCardId = 'step';
+  beats[1][1].cardId = 'reflex-dodge';
+  beats[1][1].passiveCardId = 'step';
+  beats[2][1].cardId = 'reflex-dodge';
+  beats[2][1].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters);
+  const betaBeat1 = (result.beats[1] || []).find((entry) => entry.username === 'beta');
+  const betaBeat2 = (result.beats[2] || []).find((entry) => entry.username === 'beta');
+
+  assert.ok(betaBeat1);
+  assert.equal(betaBeat1.action, 'E');
+  assert.equal(betaBeat1.calculated, false);
+  assert.equal(betaBeat2, undefined);
+  assert.equal(result.lastCalculated, 0);
+});
+
+test('executeBeats applies smoke-bomb stun as grey hit frames without knockback movement', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'W', 87, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 10, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', '[a-La-Ra]', 87, characters[0].position, characters[0].facing, '', 0, 0),
+      buildEntry('beta', 'm', 10, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 10, characters[0].position, characters[0].facing, 'R2'),
+      buildEntry('beta', 'm', 10, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'Bm', 10, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'm', 10, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 10, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'm', 10, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  beats[0][0].cardId = 'smoke-bomb';
+  beats[0][0].passiveCardId = 'step';
+  beats[1][0].cardId = 'smoke-bomb';
+  beats[1][0].passiveCardId = 'step';
+  beats[2][0].cardId = 'step';
+  beats[2][0].passiveCardId = 'smoke-bomb';
+  beats[2][0].rotationSource = 'selected';
+  beats[3][0].cardId = 'step';
+  beats[3][0].passiveCardId = 'smoke-bomb';
+
+  const result = executeBeats(beats, characters);
+  const betaBeat1 = (result.beats[1] || []).find((entry) => entry.username === 'beta');
+  const betaBeat2 = (result.beats[2] || []).find((entry) => entry.username === 'beta');
+  const betaBeat3 = (result.beats[3] || []).find((entry) => entry.username === 'beta');
+  const betaBeat4 = (result.beats[4] || []).find((entry) => entry.username === 'beta');
+  const betaCharacter = result.characters.find((entry) => entry.userId === 'beta');
+
+  assert.ok(betaBeat1);
+  assert.ok(betaBeat2);
+  assert.ok(betaBeat3);
+  assert.equal(betaBeat1.action, 'DamageIcon');
+  assert.equal(betaBeat1.stunOnly, true);
+  assert.equal(betaBeat1.location.q, 1);
+  assert.equal(betaBeat1.location.r, 0);
+  assert.equal(betaBeat2.action, 'DamageIcon');
+  assert.equal(betaBeat2.stunOnly, true);
+  assert.equal(betaBeat2.location.q, 1);
+  assert.equal(betaBeat2.location.r, 0);
+  assert.equal(betaBeat3.action, 'DamageIcon');
+  assert.equal(betaBeat3.stunOnly, true);
+  assert.equal(betaBeat4.action, 'E');
+  assert.equal(betaBeat4.stunOnly, undefined);
+  assert.ok(betaCharacter);
+  assert.equal(betaCharacter.damage ?? 0, 0);
+});
+
+test('executeBeats applies smoke-bomb stun even when the attack entry is tagged as throw', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', '[a-La-Ra]', 87, characters[0].position, characters[0].facing, '', 0, 0),
+      buildEntry('beta', 'm', 10, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 10, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'm', 10, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 10, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'm', 10, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 10, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'm', 10, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  beats[0][0].cardId = 'smoke-bomb';
+  beats[0][0].passiveCardId = 'leap';
+  beats[0][0].interaction = { type: 'throw' };
+  beats[0][0].rotation = '0';
+  beats[0][0].rotationSource = 'selected';
+
+  const result = executeBeats(beats, characters);
+  const betaBeat0 = (result.beats[0] || []).find((entry) => entry.username === 'beta');
+  const betaBeat1 = (result.beats[1] || []).find((entry) => entry.username === 'beta');
+  const betaBeat2 = (result.beats[2] || []).find((entry) => entry.username === 'beta');
+  const betaBeat3 = (result.beats[3] || []).find((entry) => entry.username === 'beta');
+  const betaBeat4 = (result.beats[4] || []).find((entry) => entry.username === 'beta');
+  const betaBeat5 = (result.beats[5] || []).find((entry) => entry.username === 'beta');
+
+  assert.ok(betaBeat0);
+  assert.ok(betaBeat1);
+  assert.ok(betaBeat2);
+  assert.ok(betaBeat3);
+  assert.ok(betaBeat4);
+  assert.ok(betaBeat5);
+  assert.equal(betaBeat0.action, 'DamageIcon');
+  assert.equal(betaBeat0.stunOnly, true);
+  assert.equal(betaBeat1.action, 'DamageIcon');
+  assert.equal(betaBeat1.stunOnly, true);
+  assert.equal(betaBeat2.action, 'DamageIcon');
+  assert.equal(betaBeat2.stunOnly, true);
+  assert.equal(betaBeat3.action, 'DamageIcon');
+  assert.equal(betaBeat3.stunOnly, true);
+  assert.equal(betaBeat4.action, 'DamageIcon');
+  assert.equal(betaBeat4.stunOnly, true);
+  assert.equal(betaBeat5.action, 'E');
+  assert.equal(result.interactions.some((interaction) => interaction.type === 'throw'), false);
+});
+
 test('executeBeats preserves character baseline state in returned characters', () => {
   const characters = [
     {

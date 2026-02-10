@@ -212,6 +212,7 @@ export interface BeatEntry {
   comboSkipped?: boolean;
   cardId?: string;
   passiveCardId?: string;
+  stunOnly?: boolean;
   consequences?: Array<{
     type: 'hit';
     damageDelta: number;

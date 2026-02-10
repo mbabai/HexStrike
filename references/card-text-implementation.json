@@ -136,8 +136,8 @@
             "passive": true
         },
         "reflex-dodge": {
-            "active": false,
-            "passive": false
+            "active": true,
+            "passive": true
         },
         "rewind": {
             "active": false,
@@ -152,7 +152,7 @@
             "passive": true
         },
         "smoke-bomb": {
-            "active": false,
+            "active": true,
             "passive": true
         },
         "spike": {

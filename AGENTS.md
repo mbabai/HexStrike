@@ -116,6 +116,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Keep beat arrays ordered by character roster when mutating to prevent UI rows from swapping entries.
 - Do not synthesize missing beat entries just to fill the timeline; missing entries count as `E` and prevent trailing-E spam.
 - Earliest-`E` lookups used for action submission/HUD gating must ignore calculated history (`calculated: true`) and start at the first unresolved beat (`resolvedIndex + 1`), or cards can be consumed into past beats (not inserted) after parry/damage rewrites.
+- If a rerun mutates the current beat into an `E` (ex: Reflex Dodge `{X1} -> {E}`), re-check beat readiness before finalizing the frame and halt it unresolved; otherwise the `E` can be marked calculated and the next submission skips to a later beat.
 - Parry cleanup must not wipe newly submitted future action-set starts: when forcing the defender to `E` on the counter beat, only clear stale continuation entries and preserve future entries tagged with `rotationSource: 'selected'`/`comboStarter`.
 - Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
 - Timeline gold highlight uses the earliest `E` beat across all players, not the currently viewed beat.
@@ -124,6 +125,9 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Timeline tooltips use `cardId`/`passiveCardId` on beat entries for active/passive names; symbol instructions still come from `{X1}/{X2}/{i}` fragments in `activeText`.
 - Timeline tooltip action-set start prefers `rotationSource: 'selected'` and falls back to non-empty `rotation` when the source flag is missing (legacy data).
 - Hit rewrites clear `cardId`/`passiveCardId` on `DamageIcon`/forced `E` entries, except the first `DamageIcon` keeps the active/passive ids so the tooltip can show the interrupted action set.
+- Swap effects that say "swap active with passive" should rebuild the action list with the old passive as new active and apply it immediately on the trigger beat; carry only the trigger beat's rotation/rotationSource (if present) and do not reapply the action-set's original selected rotation.
+- Smoke Bomb stun uses hit timeline frames without movement; mark those `DamageIcon` entries with `stunOnly` so timeline rendering can grey them differently from knockback hits.
+- Smoke Bomb stun should trigger on hit even with `attackDamage=0` and `attackKbf=0`, and it should resolve before throw handling (including throw-tagged attack entries).
 - Rotation restrictions like `0-2` are interpreted as rotation magnitude (both left/right labels plus `0`/`3` where applicable), not directional ranges.
 - Rotations resolve in a pre-action phase; apply them even if the actor's action is skipped/disabled, and keep `src/game/execute.ts` + `public/game/timelinePlayback.js` in sync.
 - When multiple players share the earliest `E`, the server batches action sets in `pendingActions` and reveals them simultaneously once all required players submit; timeline rings blink red for players still needed.

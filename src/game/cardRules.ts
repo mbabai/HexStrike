@@ -1,5 +1,4 @@
 import {
-  ActionListItem,
   ActionSubmission,
   ActionValidationResult,
   CardCatalog,
@@ -23,7 +22,7 @@ import {
   isMovementHandSyncFailure,
   syncMovementHand,
 } from './handRules';
-import { applyActiveCardTextEffects, applyPassiveCardTextEffects } from './cardText';
+import { buildCardActionList } from './cardText/actionListBuilder';
 
 const ROTATION_LABELS = ['0', 'R1', 'R2', '3', 'L2', 'L1'];
 
@@ -162,50 +161,6 @@ const markConsumedHavenPlatform = (
     ...(selected.resolution ?? {}),
     consumedBeatIndex,
   };
-};
-
-const normalizeActionToken = (token: string) => {
-  const trimmed = `${token ?? ''}`.trim();
-  if (!trimmed) return '';
-  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-    return trimmed.slice(1, -1).trim();
-  }
-  return trimmed;
-};
-
-const actionHasAttackToken = (action: string): boolean => {
-  if (!action) return false;
-  return action
-    .split('-')
-    .map((token) => normalizeActionToken(token))
-    .some((token) => {
-      if (!token) return false;
-      const type = token[token.length - 1]?.toLowerCase();
-      return type === 'a' || type === 'c';
-    });
-};
-
-const THROW_KEYWORD_REGEX = /\bthrow\b/i;
-// Conditional throw logic (ex: grappling hook) is resolved during execution.
-const THROW_IGNORED_CARD_IDS = new Set(['grappling-hook']);
-const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
-const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
-
-const hasThrowKeyword = (text: string | undefined): boolean => Boolean(text && THROW_KEYWORD_REGEX.test(text));
-
-const cardHasThrowKeyword = (
-  card: { id?: string; activeText?: string; passiveText?: string } | undefined,
-  role: 'active' | 'passive',
-): boolean => {
-  if (!card) return false;
-  const cardId = card.id;
-  if (cardId && THROW_IGNORED_CARD_IDS.has(cardId)) return false;
-  if (role === 'active' && cardId && ACTIVE_THROW_CARD_IDS.has(cardId)) return true;
-  if (role === 'passive' && cardId && PASSIVE_THROW_CARD_IDS.has(cardId)) return true;
-  if (role === 'active') {
-    return hasThrowKeyword(card.activeText) || hasThrowKeyword(card.passiveText);
-  }
-  return hasThrowKeyword(card.passiveText);
 };
 
 const getEntryForCharacter = (beat: BeatEntry[], character: PublicCharacter): BeatEntry | null =>
@@ -349,22 +304,7 @@ export const validateActionSubmission = (
     return { ok: false, error: { code: 'no-action-list', message: 'Active card has no actions.' } };
   }
 
-  const supportsThrow = cardHasThrowKeyword(activeCard, 'active') || cardHasThrowKeyword(passiveCard, 'passive');
-  const attackDamage = Number.isFinite(activeCard.damage) ? activeCard.damage : 0;
-  const attackKbf = Number.isFinite(activeCard.kbf) ? activeCard.kbf : 0;
-  const baseActionList: ActionListItem[] = activeCard.actions.map((action, index) => ({
-    action,
-    rotation: index === 0 ? rotation : '',
-    rotationSource: index === 0 ? 'selected' : undefined,
-    priority: activeCard.priority,
-    interaction: supportsThrow && actionHasAttackToken(action) ? { type: 'throw' } : undefined,
-    damage: attackDamage,
-    kbf: attackKbf,
-    cardId: activeCard.id,
-    passiveCardId: passiveCard.id,
-  }));
-  const activeTextList = applyActiveCardTextEffects(baseActionList, activeCard, rotation);
-  const actionList = applyPassiveCardTextEffects(activeTextList, activeCard, passiveCard, rotation);
+  const actionList = buildCardActionList(activeCard, passiveCard, rotation);
 
   const refreshOffset = getRefreshOffset(activeCard.actions);
   if (refreshOffset === null) {
