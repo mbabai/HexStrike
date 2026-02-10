@@ -74,3 +74,28 @@ test('earliest E ignores calculated history entries', () => {
   const atBat = getCharactersAtEarliestE(beats, characters).map((character) => character.userId);
   assert.deepEqual(atBat, ['def']);
 });
+
+test('focus F counts as an open beat for earliest index checks', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha' },
+    { userId: 'beta', username: 'beta' },
+  ];
+  const beats = [
+    [
+      { username: 'alpha', action: 'W', calculated: false },
+      { username: 'beta', action: 'W', calculated: false },
+    ],
+    [
+      { username: 'alpha', action: 'F', calculated: false },
+      { username: 'beta', action: 'W', calculated: false },
+    ],
+    [
+      { username: 'beta', action: 'E', calculated: false },
+    ],
+  ];
+
+  assert.equal(getCharacterFirstEIndex(beats, characters[0]), 1);
+  assert.equal(getTimelineEarliestEIndex(beats, characters), 1);
+  const atBat = getCharactersAtEarliestE(beats, characters).map((character) => character.userId);
+  assert.deepEqual(atBat, ['alpha']);
+});

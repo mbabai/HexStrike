@@ -8,7 +8,9 @@ const DEFAULT_ACTION = 'E';
 const ACTION_ICON_FALLBACK = 'empty';
 const EMPHASIS_ICON_KEY = 'i';
 const COMBO_ICON_KEY = 'Co';
+const FOCUS_ICON_KEY = 'F';
 const KNOCKBACK_ICON_KEY = 'KnockBackIcon';
+const REWIND_RETURN_INTERACTION_TYPE = 'rewind-return';
 const VISIBLE_BEAT_RADIUS = 6;
 const TIMELINE_OFFSETS = Array.from({ length: VISIBLE_BEAT_RADIUS * 2 + 1 }, (_, index) => index - VISIBLE_BEAT_RADIUS);
 const actionArt = new Map();
@@ -27,6 +29,9 @@ const BADGE_NUDGE_X = 5;
 const HAND_TRIGGER_CARD_HEIGHT = 0.62;
 const HAND_TRIGGER_CARD_ASPECT = 0.72;
 const HAND_TRIGGER_STACK_OFFSET = 0.22;
+const REWIND_RETURN_CARD_HEIGHT = 0.62;
+const REWIND_RETURN_CARD_ASPECT = 0.72;
+const REWIND_RETURN_STACK_OFFSET = 0.22;
 
 const getActionArt = (action) => {
   const key = action || ACTION_ICON_FALLBACK;
@@ -115,6 +120,50 @@ const buildHandTriggerLookup = (interactions, characters) => {
     if (beatIndex == null || beatIndex < 0) return;
     const actorKey = actorKeyMap.get(interaction.actorUserId) ?? interaction.actorUserId;
     if (!actorKey) return;
+    const key = `${actorKey}:${beatIndex}`;
+    const list = lookup.get(key) ?? [];
+    list.push(interaction);
+    lookup.set(key, list);
+  });
+  return lookup;
+};
+
+const buildRewindReturnLookup = (interactions, characters) => {
+  const lookup = new Map();
+  if (!Array.isArray(interactions) || !Array.isArray(characters) || !characters.length) return lookup;
+  const actorKeyMap = new Map();
+  const appliedReturnByFocus = new Set();
+  characters.forEach((character) => {
+    const key = character.username ?? character.userId;
+    if (!key) return;
+    actorKeyMap.set(character.userId, key);
+    if (character.username) {
+      actorKeyMap.set(character.username, key);
+    }
+  });
+  interactions.forEach((interaction) => {
+    if (!interaction || interaction.type !== REWIND_RETURN_INTERACTION_TYPE) return;
+    if (interaction.status !== 'resolved') return;
+    if (!interaction.resolution?.returnToAnchor || !interaction.resolution?.applied) return;
+    const actorKey = actorKeyMap.get(interaction.actorUserId) ?? interaction.actorUserId;
+    if (!actorKey) return;
+    const focusId = `${interaction?.resolution?.focusInteractionId ?? ''}`.trim();
+    if (!focusId) return;
+    appliedReturnByFocus.add(`${actorKey}:${focusId}`);
+  });
+  interactions.forEach((interaction) => {
+    if (!interaction || interaction.type !== REWIND_RETURN_INTERACTION_TYPE) return;
+    if (interaction.status !== 'resolved') return;
+    const beatIndex = Number.isFinite(interaction.beatIndex) ? Math.round(interaction.beatIndex) : null;
+    if (beatIndex == null || beatIndex < 0) return;
+    const actorKey = actorKeyMap.get(interaction.actorUserId) ?? interaction.actorUserId;
+    if (!actorKey) return;
+    const hasExplicitChoice = typeof interaction?.resolution?.returnToAnchor === 'boolean';
+    if (!hasExplicitChoice) return;
+    const focusId = `${interaction?.resolution?.focusInteractionId ?? ''}`.trim();
+    if (!interaction.resolution.returnToAnchor && focusId && appliedReturnByFocus.has(`${actorKey}:${focusId}`)) {
+      return;
+    }
     const key = `${actorKey}:${beatIndex}`;
     const list = lookup.get(key) ?? [];
     list.push(interaction);
@@ -247,6 +296,7 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
     return map;
   });
   const handTriggerLookup = buildHandTriggerLookup(interactions, characters);
+  const rewindReturnLookup = buildRewindReturnLookup(interactions, characters);
 
   for (let rowIndex = 0; rowIndex < characters.length; rowIndex += 1) {
     const character = characters[rowIndex];
@@ -261,6 +311,42 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
       if (beatIndex < 0) continue;
       const entry = beatLookup[beatIndex]?.get(lookupKey);
       const xPos = rowCenterX + offset * spacing;
+      const rewindReturnKey = `${lookupKey}:${beatIndex}`;
+      const rewindReturns = rewindReturnLookup.get(rewindReturnKey) ?? [];
+      if (rewindReturns.length) {
+        const cardHeight = iconSize * REWIND_RETURN_CARD_HEIGHT;
+        const cardWidth = cardHeight * REWIND_RETURN_CARD_ASPECT;
+        const cardCenterX = xPos - spacing * 0.5;
+        const minCenterX = row.numberArea.x + cardWidth / 2;
+        const maxCenterX = row.numberArea.x + row.numberArea.width - cardWidth / 2;
+        if (cardCenterX >= minCenterX && cardCenterX <= maxCenterX) {
+          const stackOffset = cardHeight * REWIND_RETURN_STACK_OFFSET;
+          const startOffset = -((rewindReturns.length - 1) * stackOffset) / 2;
+          for (let i = 0; i < rewindReturns.length; i += 1) {
+            const centerY = rowCenterY + startOffset + i * stackOffset;
+            const bounds = {
+              x: cardCenterX - cardWidth / 2,
+              y: centerY - cardHeight / 2,
+              width: cardWidth,
+              height: cardHeight,
+            };
+            if (!isPointInRect(x, y, bounds)) continue;
+            const interaction = rewindReturns[i];
+            const cardId =
+              interaction?.cardId ?? interaction?.abilityCardId ?? interaction?.movementCardId ?? 'rewind';
+            return {
+              kind: 'rewind-return',
+              beatIndex,
+              character,
+              interaction,
+              cardId,
+              cardType: interaction?.cardType ?? null,
+              center: { x: cardCenterX, y: centerY },
+              size: Math.max(cardWidth, cardHeight),
+            };
+          }
+        }
+      }
       const handTriggerKey = `${lookupKey}:${beatIndex}`;
       const handTriggers = handTriggerLookup.get(handTriggerKey) ?? [];
       if (handTriggers.length) {
@@ -343,6 +429,7 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
   const deathIndex = Number.isFinite(matchOutcome?.beatIndex) ? matchOutcome.beatIndex : null;
   const highlightIndex = getTimelineStopIndex(beats, characters, interactions);
   const handTriggerLookup = buildHandTriggerLookup(interactions, characters);
+  const rewindReturnLookup = buildRewindReturnLookup(interactions, characters);
   const interactionStopIndex = getEarliestPendingInteractionIndex(interactions);
   const fadeAfterIndex =
     interactionStopIndex !== null && interactionStopIndex <= highlightIndex ? interactionStopIndex : null;
@@ -463,6 +550,12 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
         const cardAlpha = shouldFade ? 0.28 : 1;
         drawHandTriggerCards(ctx, row, xPos, rowCenterY, rowSpacing, iconSize, handTriggers, theme, cardAlpha);
       }
+      const rewindReturnKey = `${lookupKey}:${beatIndex}`;
+      const rewindReturns = rewindReturnLookup.get(rewindReturnKey) ?? [];
+      if (rewindReturns.length) {
+        const cardAlpha = shouldFade ? 0.28 : 1;
+        drawRewindReturnCards(ctx, row, xPos, rowCenterY, rowSpacing, iconSize, rewindReturns, theme, cardAlpha);
+      }
       const token = parseActionToken(action);
       const image = getActionArt(token.label);
       if (!image || !image.complete || image.naturalWidth === 0) return;
@@ -497,6 +590,9 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
         );
       } else {
         ctx.drawImage(image, imageX, imageY, drawSize, drawSize);
+      }
+      if (entry?.focusCardId) {
+        drawFocusBadge(ctx, imageX, imageY, drawSize);
       }
       if (entry?.comboStarter) {
         const comboBadge = getActionArt(COMBO_ICON_KEY);
@@ -636,6 +732,13 @@ const getHandTriggerFill = (interaction, theme) => {
   return theme.cardAbility || theme.actionAttack || theme.accentStrong;
 };
 
+const getRewindReturnFill = (interaction, theme) => {
+  if (interaction?.resolution?.returnToAnchor) {
+    return theme.cardMovement || theme.actionMove || theme.accent;
+  }
+  return theme.cardAbility || theme.actionAttack || theme.accentStrong;
+};
+
 const drawHandTriggerCard = (ctx, centerX, centerY, width, height, interaction, theme, alpha = 1) => {
   const x = centerX - width / 2;
   const y = centerY - height / 2;
@@ -651,6 +754,37 @@ const drawHandTriggerCard = (ctx, centerX, centerY, width, height, interaction, 
   ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
   drawRoundedRect(ctx, x + width * 0.08, y + height * 0.1, width * 0.84, height * 0.26, radius * 0.8);
   ctx.fill();
+  ctx.restore();
+};
+
+const drawRewindReturnCard = (ctx, centerX, centerY, width, height, interaction, theme, alpha = 1) => {
+  const x = centerX - width / 2;
+  const y = centerY - height / 2;
+  const radius = Math.max(2, height * 0.18);
+  const returnToAnchor = Boolean(interaction?.resolution?.returnToAnchor);
+  const focusIcon = getActionArt(FOCUS_ICON_KEY);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.fillStyle = getRewindReturnFill(interaction, theme);
+  drawRoundedRect(ctx, x, y, width, height, radius);
+  ctx.fill();
+  ctx.strokeStyle = theme.panelStrong || theme.textDark || '#000000';
+  ctx.lineWidth = Math.max(1, height * 0.08);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+  drawRoundedRect(ctx, x + width * 0.08, y + height * 0.1, width * 0.84, height * 0.26, radius * 0.8);
+  ctx.fill();
+  if (focusIcon && focusIcon.complete && focusIcon.naturalWidth > 0) {
+    const iconSize = height * 0.46;
+    const iconX = x + width * 0.14;
+    const iconY = y + (height - iconSize) / 2;
+    ctx.drawImage(focusIcon, iconX, iconY, iconSize, iconSize);
+  }
+  ctx.fillStyle = theme.panelStrong || theme.textDark || '#000000';
+  ctx.font = `700 ${Math.max(8, height * 0.4)}px ${theme.fontBody}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(returnToAnchor ? 'Y' : 'N', x + width * 0.74, y + height * 0.54);
   ctx.restore();
 };
 
@@ -677,6 +811,32 @@ const drawHandTriggerCards = (
   handTriggers.forEach((interaction, index) => {
     const centerY = rowCenterY + startOffset + index * stackOffset;
     drawHandTriggerCard(ctx, cardCenterX, centerY, cardWidth, cardHeight, interaction, theme, alpha);
+  });
+};
+
+const drawRewindReturnCards = (
+  ctx,
+  row,
+  xPos,
+  rowCenterY,
+  rowSpacing,
+  iconSize,
+  rewindReturns,
+  theme,
+  alpha = 1,
+) => {
+  if (!rewindReturns.length) return;
+  const cardHeight = iconSize * REWIND_RETURN_CARD_HEIGHT;
+  const cardWidth = cardHeight * REWIND_RETURN_CARD_ASPECT;
+  const cardCenterX = xPos - rowSpacing * 0.5;
+  const minCenterX = row.numberArea.x + cardWidth / 2;
+  const maxCenterX = row.numberArea.x + row.numberArea.width - cardWidth / 2;
+  if (cardCenterX < minCenterX || cardCenterX > maxCenterX) return;
+  const stackOffset = cardHeight * REWIND_RETURN_STACK_OFFSET;
+  const startOffset = -((rewindReturns.length - 1) * stackOffset) / 2;
+  rewindReturns.forEach((interaction, index) => {
+    const centerY = rowCenterY + startOffset + index * stackOffset;
+    drawRewindReturnCard(ctx, cardCenterX, centerY, cardWidth, cardHeight, interaction, theme, alpha);
   });
 };
 
@@ -726,6 +886,15 @@ const drawPriorityBadge = (ctx, x, y, size, priority, theme) => {
   ctx.textBaseline = 'middle';
   ctx.fillText(`${priority}`, centerX, centerY + radius * 0.05);
   ctx.restore();
+};
+
+const drawFocusBadge = (ctx, x, y, size) => {
+  const icon = getActionArt(FOCUS_ICON_KEY);
+  if (!icon || !icon.complete || icon.naturalWidth === 0) return;
+  const badgeSize = Math.max(10, size * 0.34);
+  const badgeX = x + size / 2 - badgeSize / 2;
+  const badgeY = y + size - badgeSize * 0.2;
+  ctx.drawImage(icon, badgeX, badgeY, badgeSize, badgeSize);
 };
 
 const drawKnockbackBadge = (ctx, x, y, size, distance, theme) => {

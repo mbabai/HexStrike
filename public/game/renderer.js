@@ -39,6 +39,7 @@ const TOKEN_IMAGE_SOURCES = {
   arrow: '/public/images/ArrowToken.png',
   'fire-hex': '/public/images/FireHexToken.png',
   'ethereal-platform': '/public/images/EtherealPlatform.png',
+  'focus-anchor': '/public/images/F.png',
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -194,6 +195,21 @@ const drawBoardTokens = (ctx, tokens, size, theme, getTokenArt) => {
     if (!token?.position) return;
     const { x, y } = axialToPixel(token.position.q, token.position.r, size);
     const image = getTokenArt(token.type);
+    if (token.type === 'focus-anchor') {
+      const iconSize = size * 1.05;
+      if (image && image.complete && image.naturalWidth > 0) {
+        ctx.drawImage(image, x - iconSize / 2, y - iconSize / 2, iconSize, iconSize);
+      } else {
+        ctx.save();
+        ctx.fillStyle = theme.accentStrong || '#d5a34a';
+        ctx.font = `700 ${Math.max(12, size * 0.62)}px ${theme.fontBody}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('F', x, y);
+        ctx.restore();
+      }
+      return;
+    }
     if (token.type === 'fire-hex' || token.type === 'ethereal-platform') {
       ctx.save();
       drawHexPath(ctx, x, y, size);

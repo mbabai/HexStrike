@@ -1,4 +1,10 @@
 const DEFAULT_ACTION = 'E';
+const FOCUS_ACTION = 'F';
+
+const isOpenBeatAction = (action) => {
+  const normalized = `${action ?? ''}`.trim().toUpperCase();
+  return normalized === DEFAULT_ACTION || normalized === FOCUS_ACTION;
+};
 
 export const getBeatEntryForCharacter = (beat, character) => {
   if (!Array.isArray(beat) || !character) return null;
@@ -28,7 +34,7 @@ export const getCharacterFirstEIndex = (beats, character) => {
   const startIndex = Math.max(0, resolvedIndex + 1);
   for (let i = startIndex; i < beats.length; i += 1) {
     const entry = getBeatEntryForCharacter(beats[i], character);
-    if (!entry || entry.action === DEFAULT_ACTION) return i;
+    if (!entry || isOpenBeatAction(entry.action)) return i;
   }
   return Math.max(0, Math.min(startIndex, beats.length - 1));
 };
@@ -78,7 +84,7 @@ export const getTimelineStopIndex = (beats, characters, interactions = [], optio
   );
   const pendingIndex = pending.length ? Math.min(...pending.map((interaction) => interaction.beatIndex)) : null;
   const alwaysStopTypes = new Set(
-    options.alwaysStopTypes ?? ['throw', 'discard', 'hand-trigger', 'draw', 'haven-platform', 'guard-continue'],
+    options.alwaysStopTypes ?? ['throw', 'discard', 'hand-trigger', 'draw', 'haven-platform', 'guard-continue', 'rewind-return'],
   );
   const alwaysPending = pending.filter((interaction) => alwaysStopTypes.has(interaction?.type));
   const alwaysPendingIndex = alwaysPending.length

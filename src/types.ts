@@ -20,7 +20,7 @@ export interface HexCoord {
   r: number;
 }
 
-export type BoardTokenType = 'fire-hex' | 'arrow' | 'ethereal-platform';
+export type BoardTokenType = 'fire-hex' | 'arrow' | 'ethereal-platform' | 'focus-anchor';
 
 export interface BoardToken {
   id: string;
@@ -28,6 +28,7 @@ export interface BoardToken {
   position: HexCoord;
   facing: number;
   ownerUserId?: string;
+  cardId?: string;
 }
 
 export interface Player {
@@ -121,6 +122,7 @@ export interface DeckState {
   movement: string[];
   abilityHand: string[];
   abilityDeck: string[];
+  focusedAbilityCardIds: Set<string>;
   exhaustedMovementIds: Set<string>;
   lastRefreshIndex: number | null;
   activeCardId: string | null;
@@ -132,6 +134,8 @@ export interface PlayerCardState {
   movementDeck: string[];
   movementHand: string[];
   abilityHand: string[];
+  focusedAbilityCardIds?: string[];
+  maxHandSize?: number;
   activeCardId: string | null;
   passiveCardId: string | null;
   discardPile: string[];
@@ -210,6 +214,7 @@ export interface BeatEntry {
   status?: string;
   comboStarter?: boolean;
   comboSkipped?: boolean;
+  focusCardId?: string;
   cardId?: string;
   passiveCardId?: string;
   stunOnly?: boolean;

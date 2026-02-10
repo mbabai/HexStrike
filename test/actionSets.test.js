@@ -69,3 +69,28 @@ test('applyActionSetToBeats fills the first missing beat for a player', () => {
   ]);
   assert.equal(updated[2], undefined);
 });
+
+test('applyActionSetToBeats replaces a focus F beat as the next open slot', () => {
+  const characters = [
+    { userId: 'player-a', username: 'Player A', position: { q: 1, r: 0 }, facing: 0 },
+    { userId: 'player-b', username: 'Player B', position: { q: -1, r: 0 }, facing: 180 },
+  ];
+  const beats = [
+    [
+      { username: 'Player A', action: 'W', rotation: '', priority: 0, damage: 0, location: { q: 1, r: 0 }, facing: 0, calculated: false },
+      { username: 'Player B', action: 'W', rotation: '', priority: 0, damage: 0, location: { q: -1, r: 0 }, facing: 180, calculated: false },
+    ],
+    [
+      { username: 'Player A', action: 'F', rotation: '', priority: 0, damage: 0, location: { q: 1, r: 0 }, facing: 0, calculated: false },
+      { username: 'Player B', action: 'W', rotation: '', priority: 0, damage: 0, location: { q: -1, r: 0 }, facing: 180, calculated: false },
+    ],
+  ];
+
+  const updated = applyActionSetToBeats(beats, characters, 'player-a', [
+    { action: 'm', rotation: '', priority: 10 },
+    { action: 'E', rotation: '', priority: 0 },
+  ]);
+
+  assert.equal(updated[1][0].action, 'm');
+  assert.equal(updated[2][0].action, 'E');
+});

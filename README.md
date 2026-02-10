@@ -25,6 +25,12 @@ Set `PORT` to change the server port.
 ## Development
 `npm run dev` builds, runs tests, then starts the server with auto-reload. If tests fail, the server will not start.
 
+When started with `npm run dev` (or `npm run dev:watch`), server diagnostics are written to `temp-logs/`:
+- `temp-logs/server.log` mirrors server console output.
+- `temp-logs/events.jsonl` stores structured `action-set` / `interaction-resolve` snapshots (including before/after timeline state).
+
+`temp-logs/` is reset each time the dev server process starts.
+
 If you want TypeScript to rebuild on every change, run this in another terminal:
 ```bash
 npm run build -- --watch

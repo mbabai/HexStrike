@@ -25,6 +25,7 @@ import { getHandTriggerDefinition } from './handTriggers';
 declare const require: (id: string) => any;
 
 const DEFAULT_ACTION = 'E';
+const FOCUS_ACTION = 'F';
 const LOG_PREFIX = '[execute]';
 const WAIT_ACTION = 'W';
 const COMBO_ACTION = 'CO';
@@ -34,11 +35,14 @@ const THROW_DISTANCE = 2;
 const FIRE_HEX_TOKEN_TYPE = 'fire-hex';
 const ETHEREAL_PLATFORM_TOKEN_TYPE = 'ethereal-platform';
 const ARROW_TOKEN_TYPE = 'arrow';
+const FOCUS_ANCHOR_TOKEN_TYPE = 'focus-anchor';
 const ARROW_DAMAGE = 4;
 const ARROW_KBF = 1;
 const ARROW_LAND_DISTANCE_LIMIT = 5;
 const HAVEN_PLATFORM_INTERACTION_TYPE = 'haven-platform';
 const GUARD_CONTINUE_INTERACTION_TYPE = 'guard-continue';
+const REWIND_FOCUS_INTERACTION_TYPE = 'rewind-focus';
+const REWIND_RETURN_INTERACTION_TYPE = 'rewind-return';
 const BOW_SHOT_CARD_ID = 'bow-shot';
 const BURNING_STRIKE_CARD_ID = 'burning-strike';
 const GUARD_CARD_ID = 'guard';
@@ -56,6 +60,7 @@ const STAB_CARD_ID = 'stab';
 const CROSS_SLASH_CARD_ID = 'cross-slash';
 const REFLEX_DODGE_CARD_ID = 'reflex-dodge';
 const SMOKE_BOMB_CARD_ID = 'smoke-bomb';
+const REWIND_CARD_ID = 'rewind';
 // Keep in sync with cardRules/pendingActionPreview throw detection.
 const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
 const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
@@ -237,6 +242,10 @@ const normalizeActionLabel = (action: string) => {
 };
 
 const isActionActive = (action: string | null | undefined) => normalizeActionLabel(action ?? '').toUpperCase() !== DEFAULT_ACTION;
+const isOpenBeatAction = (action: string | null | undefined) => {
+  const label = normalizeActionLabel(action ?? '').toUpperCase();
+  return label === DEFAULT_ACTION || label === FOCUS_ACTION;
+};
 
 const getHealingHarmonyReduction = (entry: BeatEntry | null | undefined): number => {
   if (!entry || entry.passiveCardId !== HEALING_HARMONY_CARD_ID) return 0;
@@ -497,6 +506,25 @@ const getRuntimeCardLookup = (): Map<string, CardDefinition> => {
   return runtimeCardLookup;
 };
 
+const getRewindReturnActionList = (): ActionListItem[] => {
+  const rewindCard = getRuntimeCardLookup().get(REWIND_CARD_ID);
+  const actions = Array.isArray(rewindCard?.actions) ? rewindCard.actions : [];
+  const focusIndex = actions.findIndex((action) => normalizeActionLabel(action).toUpperCase() === FOCUS_ACTION);
+  const trailingActions = focusIndex >= 0 ? actions.slice(focusIndex + 1) : [];
+  const fallbackActions = trailingActions.length ? trailingActions : [DEFAULT_ACTION];
+  const priority = Number.isFinite(rewindCard?.priority) ? Number(rewindCard?.priority) : 0;
+  const damage = Number.isFinite(rewindCard?.damage) ? Number(rewindCard?.damage) : 0;
+  const kbf = Number.isFinite(rewindCard?.kbf) ? Number(rewindCard?.kbf) : 0;
+  return fallbackActions.map((action) => ({
+    action: `${action ?? ''}`,
+    rotation: '',
+    priority,
+    damage,
+    kbf,
+    cardId: REWIND_CARD_ID,
+  }));
+};
+
 const buildSwappedActionList = (
   currentActiveCardId: string | null | undefined,
   currentPassiveCardId: string | null | undefined,
@@ -647,6 +675,7 @@ export const executeBeatsWithInteractions = (
   let tokenCounter = boardTokens.length;
   const fireTokenKeys = new Set<string>();
   const platformTokenKeys = new Set<string>();
+  const focusTokenByOwner = new Map<string, string>();
   let ephemeralFireKeys = new Set<string>();
   boardTokens.forEach((token) => {
     if (token.type === FIRE_HEX_TOKEN_TYPE) {
@@ -655,6 +684,13 @@ export const executeBeatsWithInteractions = (
     }
     if (token.type === ETHEREAL_PLATFORM_TOKEN_TYPE) {
       platformTokenKeys.add(coordKey(token.position));
+      return;
+    }
+    if (token.type === FOCUS_ANCHOR_TOKEN_TYPE) {
+      const ownerId = `${token.ownerUserId ?? ''}`.trim();
+      if (ownerId) {
+        focusTokenByOwner.set(ownerId, token.id);
+      }
     }
   });
   const userLookup = new Map<string, string>();
@@ -689,8 +725,15 @@ export const executeBeatsWithInteractions = (
     resolution: interaction.resolution ? { ...interaction.resolution } : undefined,
   }));
   const interactionById = new Map<string, CustomInteraction>();
+  const activeRewindFocusByUser = new Map<string, CustomInteraction>();
   const handTriggerKeys = new Set<string>();
   const pendingIndices: number[] = [];
+  const getRewindFocusCardId = (interaction: CustomInteraction | undefined): string => {
+    if (!interaction) return '';
+    const cardId = `${interaction.cardId ?? interaction.resolution?.cardId ?? REWIND_CARD_ID}`.trim();
+    return cardId || REWIND_CARD_ID;
+  };
+  const normalizeInteractionHex = (value: unknown): { q: number; r: number } | null => normalizeHexCoord(value);
   updatedInteractions.forEach((interaction) => {
     interactionById.set(interaction.id, interaction);
     if (interaction.status === 'pending' && Number.isFinite(interaction.beatIndex)) {
@@ -703,7 +746,34 @@ export const executeBeatsWithInteractions = (
         handTriggerKeys.add(buildHandTriggerKey(cardId, beatIndex, interaction.actorUserId));
       }
     }
+    if (interaction.type === REWIND_FOCUS_INTERACTION_TYPE && interaction.status === 'resolved') {
+      const actorId = interaction.actorUserId;
+      if (!actorId) return;
+      const active = interaction.resolution?.active;
+      if (active === false) return;
+      activeRewindFocusByUser.set(actorId, interaction);
+    }
   });
+  const markRewindFocusInactive = (
+    actorId: string,
+    endedBeatIndex: number,
+    reason: 'returned' | 'knockback' | 'stun',
+  ): void => {
+    const focus = activeRewindFocusByUser.get(actorId);
+    if (!focus) return;
+    focus.resolution = {
+      ...(focus.resolution ?? {}),
+      active: false,
+      endedBeatIndex,
+      endReason: reason,
+    };
+    activeRewindFocusByUser.delete(actorId);
+  };
+  const getActiveFocusCardId = (actorId: string): string | null => {
+    const focus = activeRewindFocusByUser.get(actorId);
+    if (!focus) return null;
+    return getRewindFocusCardId(focus);
+  };
   let haltIndex = pendingIndices.length ? Math.min(...pendingIndices) : null;
   const characterById = new Map<string, PublicCharacter>();
   characters.forEach((character) => {
@@ -721,14 +791,15 @@ export const executeBeatsWithInteractions = (
   const parryCountersByBeat = new Map<number, ParryCounter[]>();
   const parryEndersByBeat = new Map<number, Set<string>>();
   const parryCounterKeys = new Set<string>();
+  const appliedRewindReturnsById = new Set<string>();
 
   const nextTokenId = (type: string) => `${type}:${tokenCounter++}`;
 
-  const addFireHexToken = (coord: { q: number; r: number }, ownerId?: string) => {
+  const addFireHexToken = (coord: { q: number; r: number }, ownerId?: string): boolean => {
     const key = coordKey(coord);
     const onLand = resolveTerrain(coord) === 'land';
     if (onLand) {
-      if (fireTokenKeys.has(key)) return;
+      if (fireTokenKeys.has(key)) return false;
       fireTokenKeys.add(key);
       boardTokens.push({
         id: nextTokenId(FIRE_HEX_TOKEN_TYPE),
@@ -737,10 +808,37 @@ export const executeBeatsWithInteractions = (
         facing: 0,
         ownerUserId: ownerId,
       });
+      return true;
+    }
+    if (ephemeralFireKeys.has(key)) return false;
+    ephemeralFireKeys.add(key);
+    return true;
+  };
+
+  type DelayedPassiveFireSpawn = { coord: { q: number; r: number }; ownerId?: string };
+  const delayedPassiveFireSpawnsByBeat = new Map<number, DelayedPassiveFireSpawn[]>();
+
+  const queueDelayedPassiveFireHex = (beatIndex: number, coord: { q: number; r: number }, ownerId?: string) => {
+    if (!Number.isFinite(beatIndex)) return;
+    const targetBeat = Math.max(0, Math.round(beatIndex));
+    const existing = delayedPassiveFireSpawnsByBeat.get(targetBeat) ?? [];
+    const targetKey = coordKey(coord);
+    if (existing.some((item) => coordKey(item.coord) === targetKey)) {
       return;
     }
-    if (ephemeralFireKeys.has(key)) return;
-    ephemeralFireKeys.add(key);
+    existing.push({ coord: { q: coord.q, r: coord.r }, ownerId });
+    delayedPassiveFireSpawnsByBeat.set(targetBeat, existing);
+  };
+
+  const applyDelayedPassiveFireHexes = (beatIndex: number) => {
+    if (!Number.isFinite(beatIndex)) return;
+    const targetBeat = Math.max(0, Math.round(beatIndex));
+    const queued = delayedPassiveFireSpawnsByBeat.get(targetBeat);
+    if (!queued?.length) return;
+    queued.forEach((spawn) => {
+      addFireHexToken(spawn.coord, spawn.ownerId);
+    });
+    delayedPassiveFireSpawnsByBeat.delete(targetBeat);
   };
 
   const addArrowToken = (coord: { q: number; r: number }, facing: number, ownerId?: string) => {
@@ -780,6 +878,50 @@ export const executeBeatsWithInteractions = (
     }
   };
 
+  const removeFocusAnchorToken = (ownerUserId: string) => {
+    const ownerId = `${ownerUserId ?? ''}`.trim();
+    if (!ownerId) return;
+    const tokenId = focusTokenByOwner.get(ownerId);
+    focusTokenByOwner.delete(ownerId);
+    if (!tokenId) return;
+    for (let i = boardTokens.length - 1; i >= 0; i -= 1) {
+      if (boardTokens[i]?.id !== tokenId) continue;
+      boardTokens.splice(i, 1);
+      break;
+    }
+  };
+
+  const addFocusAnchorToken = (
+    coord: { q: number; r: number },
+    ownerUserId: string,
+    cardId: string = REWIND_CARD_ID,
+  ) => {
+    const ownerId = `${ownerUserId ?? ''}`.trim();
+    if (!coord || !ownerId) return;
+    removeFocusAnchorToken(ownerId);
+    const token: BoardToken = {
+      id: nextTokenId(FOCUS_ANCHOR_TOKEN_TYPE),
+      type: FOCUS_ANCHOR_TOKEN_TYPE,
+      position: { q: coord.q, r: coord.r },
+      facing: 0,
+      ownerUserId: ownerId,
+      cardId,
+    };
+    boardTokens.push(token);
+    focusTokenByOwner.set(ownerId, token.id);
+  };
+
+  Array.from(focusTokenByOwner.keys()).forEach((ownerId) => {
+    if (!activeRewindFocusByUser.has(ownerId)) {
+      removeFocusAnchorToken(ownerId);
+    }
+  });
+  activeRewindFocusByUser.forEach((interaction, actorId) => {
+    const anchor = normalizeInteractionHex(interaction.resolution?.anchorHex);
+    if (!anchor) return;
+    addFocusAnchorToken(anchor, actorId, getRewindFocusCardId(interaction));
+  });
+
   const getRosterIndex = (entry: BeatEntry) => {
     const key = resolveEntryKey(entry);
     const resolved = userLookup.get(key) ?? key;
@@ -808,6 +950,12 @@ export const executeBeatsWithInteractions = (
         entry.terrain = resolveTerrain(entry.location);
       }
       entry.calculated = calculated;
+      const focusCardId = resolved ? getActiveFocusCardId(resolved) : null;
+      if (focusCardId) {
+        entry.focusCardId = focusCardId;
+      } else if ('focusCardId' in entry) {
+        delete entry.focusCardId;
+      }
     });
     beat.sort((a, b) => getRosterIndex(a) - getRosterIndex(b));
   };
@@ -880,6 +1028,7 @@ export const executeBeatsWithInteractions = (
     if ('cardId' in entry) delete entry.cardId;
     if ('passiveCardId' in entry) delete entry.passiveCardId;
     if ('stunOnly' in entry) delete entry.stunOnly;
+    if ('focusCardId' in entry) delete entry.focusCardId;
   };
 
   const copyActionFields = (
@@ -937,6 +1086,9 @@ export const executeBeatsWithInteractions = (
     } else if ('stunOnly' in target) {
       delete target.stunOnly;
     }
+    if ('focusCardId' in target) {
+      delete target.focusCardId;
+    }
   };
 
   const shiftCharacterActionSetLeft = (character: PublicCharacter, fromBeatIndex: number) => {
@@ -946,7 +1098,7 @@ export const executeBeatsWithInteractions = (
       const entry = findEntryForCharacter(beat, character);
       if (!entry) break;
       sequence.push(entry);
-      if ((entry.action ?? DEFAULT_ACTION) === DEFAULT_ACTION) {
+      if (isOpenBeatAction(entry.action ?? DEFAULT_ACTION)) {
         break;
       }
     }
@@ -1051,7 +1203,7 @@ export const executeBeatsWithInteractions = (
     startIndex: number,
     targetState: { position: { q: number; r: number }; damage: number; facing: number },
     actionList: ActionListItem[],
-    options: { markComboStarter?: boolean } = {},
+    options: { markComboStarter?: boolean; preserveEntriesAfterEnd?: boolean } = {},
   ): BeatEntry | null => {
     const character = characterById.get(targetId);
     if (!character || !Number.isFinite(startIndex) || startIndex < 0 || !Array.isArray(actionList) || !actionList.length) {
@@ -1126,15 +1278,62 @@ export const executeBeatsWithInteractions = (
       if (!firstEntry) firstEntry = entry;
     });
     const lastIndex = startIndex + actionList.length - 1;
-    for (let i = lastIndex + 1; i < normalizedBeats.length; i += 1) {
-      const beat = normalizedBeats[i];
-      if (!beat?.length) continue;
-      const filtered = beat.filter((entry) => !matchesEntryForCharacter(entry, character));
-      if (filtered.length !== beat.length) {
-        normalizedBeats[i] = filtered;
+    if (!options.preserveEntriesAfterEnd) {
+      for (let i = lastIndex + 1; i < normalizedBeats.length; i += 1) {
+        const beat = normalizedBeats[i];
+        if (!beat?.length) continue;
+        const filtered = beat.filter((entry) => !matchesEntryForCharacter(entry, character));
+        if (filtered.length !== beat.length) {
+          normalizedBeats[i] = filtered;
+        }
       }
     }
     return firstEntry;
+  };
+
+  const matchesActionListWindow = (targetId: string, startIndex: number, actionList: ActionListItem[]): boolean => {
+    const character = characterById.get(targetId);
+    if (!character || !Number.isFinite(startIndex) || startIndex < 0 || !Array.isArray(actionList) || !actionList.length) {
+      return false;
+    }
+    for (let offset = 0; offset < actionList.length; offset += 1) {
+      const beatIndex = startIndex + offset;
+      const beat = normalizedBeats[beatIndex];
+      const entry = beat ? findEntryForCharacter(beat, character) : null;
+      if (!entry) return false;
+      const expectedAction = `${actionList[offset]?.action ?? DEFAULT_ACTION}`;
+      const actualAction = `${entry.action ?? DEFAULT_ACTION}`;
+      if (actualAction !== expectedAction) return false;
+      const expectedCardId = `${actionList[offset]?.cardId ?? ''}`.trim();
+      if (expectedCardId && `${entry.cardId ?? ''}`.trim() !== expectedCardId) return false;
+      const expectedPassiveCardId = `${actionList[offset]?.passiveCardId ?? ''}`.trim();
+      if (expectedPassiveCardId && `${entry.passiveCardId ?? ''}`.trim() !== expectedPassiveCardId) return false;
+    }
+    return true;
+  };
+
+  const hasCommittedNonRewindActionInWindow = (
+    targetId: string,
+    startIndex: number,
+    windowLength: number,
+  ): boolean => {
+    const character = characterById.get(targetId);
+    if (!character || !Number.isFinite(startIndex) || startIndex < 0 || !Number.isFinite(windowLength) || windowLength <= 0) {
+      return false;
+    }
+    for (let offset = 0; offset < windowLength; offset += 1) {
+      const beatIndex = startIndex + offset;
+      const beat = normalizedBeats[beatIndex];
+      const entry = beat ? findEntryForCharacter(beat, character) : null;
+      if (!entry) continue;
+      const action = `${entry.action ?? DEFAULT_ACTION}`;
+      if (isOpenBeatAction(action)) continue;
+      const cardId = `${entry.cardId ?? ''}`.trim();
+      if (cardId && cardId !== REWIND_CARD_ID) {
+        return true;
+      }
+    }
+    return false;
   };
 
   const findActionSetRotationForCharacter = (
@@ -1149,7 +1348,7 @@ export const executeBeatsWithInteractions = (
     let start = Math.max(0, Math.round(beatIndex));
     for (let i = start; i >= 0; i -= 1) {
       const entry = findAt(i);
-      if (!entry || entry.action === DEFAULT_ACTION) {
+      if (!entry || isOpenBeatAction(entry.action)) {
         start = i + 1;
         break;
       }
@@ -1158,7 +1357,7 @@ export const executeBeatsWithInteractions = (
     let end = normalizedBeats.length - 1;
     for (let i = Math.max(start, Math.round(beatIndex)); i < normalizedBeats.length; i += 1) {
       const entry = findAt(i);
-      if (!entry || entry.action === DEFAULT_ACTION) {
+      if (!entry || isOpenBeatAction(entry.action)) {
         end = i;
         break;
       }
@@ -1211,7 +1410,7 @@ export const executeBeatsWithInteractions = (
     targetState: { position: { q: number; r: number }; damage: number; facing: number },
     knockbackOverride?: number,
     preserveAction = false,
-    options: { damageIconCount?: number; stunOnly?: boolean } = {},
+    options: { damageIconCount?: number; stunOnly?: boolean; preserveEntriesAfterEnd?: boolean } = {},
   ) => {
     const character = characterById.get(targetId);
     if (!character) return;
@@ -1277,7 +1476,7 @@ export const executeBeatsWithInteractions = (
         continue;
       }
       const entry = findEntryForCharacter(beat, character);
-      if (!knockbackApplied || extendedWindow || !entry || entry.action === DEFAULT_ACTION || entry.action === DAMAGE_ICON_ACTION) {
+      if (!knockbackApplied || extendedWindow || !entry || isOpenBeatAction(entry.action) || entry.action === DAMAGE_ICON_ACTION) {
         const next = upsertBeatEntry(beat, character, DEFAULT_ACTION, targetState);
         if ('stunOnly' in next) {
           delete next.stunOnly;
@@ -1291,7 +1490,8 @@ export const executeBeatsWithInteractions = (
         pruneDuplicateEntries(beat, character, entry);
       }
     }
-    if (!knockbackApplied || extendedWindow) {
+    const shouldPruneAfterEnd = (!knockbackApplied || extendedWindow) && !options.preserveEntriesAfterEnd;
+    if (shouldPruneAfterEnd) {
       for (let i = endIndex + 1; i < normalizedBeats.length; i += 1) {
         const beat = normalizedBeats[i];
         if (!beat?.length) continue;
@@ -1306,6 +1506,21 @@ export const executeBeatsWithInteractions = (
   const isActionSetStart = (entry: BeatEntry | null | undefined) =>
     `${entry?.rotationSource ?? ''}`.trim() === 'selected' || Boolean(entry?.comboStarter);
 
+  const isCommittedRewindReturnStart = (actorId: string, beatIndex: number): boolean => {
+    if (!actorId || !Number.isFinite(beatIndex)) return false;
+    const safeBeatIndex = Math.max(0, Math.round(beatIndex));
+    for (const interaction of updatedInteractions) {
+      if (interaction.type !== REWIND_RETURN_INTERACTION_TYPE) continue;
+      if (interaction.status !== 'resolved') continue;
+      if (!interaction.resolution?.returnToAnchor) continue;
+      if (interaction.actorUserId !== actorId) continue;
+      if (!Number.isFinite(interaction.beatIndex)) continue;
+      if (Math.max(0, Math.round(interaction.beatIndex)) !== safeBeatIndex) continue;
+      return true;
+    }
+    return false;
+  };
+
   const clearCharacterEntriesAfter = (
     character: PublicCharacter,
     startIndex: number,
@@ -1316,7 +1531,7 @@ export const executeBeatsWithInteractions = (
       if (!beat?.length) continue;
       if (options?.preserveFutureActionSetStarts) {
         const nextEntry = beat.find((entry) => matchesEntryForCharacter(entry, character));
-        if (isActionSetStart(nextEntry)) {
+        if (isActionSetStart(nextEntry) || isCommittedRewindReturnStart(character.userId, i)) {
           break;
         }
       }
@@ -1331,12 +1546,71 @@ export const executeBeatsWithInteractions = (
     for (let i = startIndex + 1; i < normalizedBeats.length; i += 1) {
       const beat = normalizedBeats[i];
       const entry = beat ? findEntryForCharacter(beat, character) : null;
-      if (!entry || entry.action === DEFAULT_ACTION) {
+      if (!entry || isOpenBeatAction(entry.action)) {
         return i;
       }
     }
     // Missing beats beyond the current array are implicit E.
     return normalizedBeats.length;
+  };
+
+  const ensureRewindFocusAtBeat = (actorId: string, beatIndex: number, entry: BeatEntry | null | undefined): boolean => {
+    if (!actorId || !Number.isFinite(beatIndex)) return false;
+    const cardId = `${entry?.cardId ?? ''}`.trim();
+    if (cardId !== REWIND_CARD_ID) return false;
+    const existingActive = activeRewindFocusByUser.get(actorId);
+    if (existingActive) return true;
+    const interactionId = buildInteractionId(REWIND_FOCUS_INTERACTION_TYPE, Math.max(0, Math.round(beatIndex)), actorId, actorId);
+    const existing = interactionById.get(interactionId);
+    if (existing && existing.type === REWIND_FOCUS_INTERACTION_TYPE && existing.status === 'resolved') {
+      const active = existing.resolution?.active;
+      if (active !== false) {
+        activeRewindFocusByUser.set(actorId, existing);
+        const anchor = normalizeInteractionHex(existing.resolution?.anchorHex);
+        if (anchor) {
+          addFocusAnchorToken(anchor, actorId, getRewindFocusCardId(existing));
+        }
+        return true;
+      }
+      return false;
+    }
+    if (isHistoryIndex(beatIndex)) return false;
+    const actorState = state.get(actorId);
+    const anchorHex = actorState?.position
+      ? { q: actorState.position.q, r: actorState.position.r }
+      : entry?.location
+        ? { q: entry.location.q, r: entry.location.r }
+        : null;
+    if (!anchorHex) return false;
+    const returnActions = getRewindReturnActionList().map((item) => ({
+      action: item.action,
+      rotation: item.rotation,
+      priority: item.priority,
+      damage: item.damage,
+      kbf: item.kbf,
+      cardId: item.cardId,
+    }));
+    const created: CustomInteraction = {
+      id: interactionId,
+      type: REWIND_FOCUS_INTERACTION_TYPE,
+      beatIndex: Math.max(0, Math.round(beatIndex)),
+      actorUserId: actorId,
+      targetUserId: actorId,
+      cardId: REWIND_CARD_ID,
+      status: 'resolved',
+      resolution: {
+        active: true,
+        cardId: REWIND_CARD_ID,
+        anchorHex,
+        focusStartBeatIndex: Math.max(0, Math.round(beatIndex)),
+        returnActions,
+      },
+    };
+    updatedInteractions.push(created);
+    interactionById.set(interactionId, created);
+    activeRewindFocusByUser.set(actorId, created);
+    addFocusAnchorToken(anchorHex, actorId, REWIND_CARD_ID);
+    return true;
   };
 
   const forcedGuardDiscardByBeat = new Map<number, Set<string>>();
@@ -1347,6 +1621,40 @@ export const executeBeatsWithInteractions = (
     const existing = forcedGuardDiscardByBeat.get(safeBeatIndex) ?? new Set<string>();
     existing.add(actorId);
     forcedGuardDiscardByBeat.set(safeBeatIndex, existing);
+  };
+
+  const ensurePendingRewindReturn = (actorId: string, beatIndex: number): boolean => {
+    const focus = activeRewindFocusByUser.get(actorId);
+    if (!focus) return false;
+    const safeBeatIndex = Math.max(0, Math.round(beatIndex));
+    const interactionId = buildInteractionId(REWIND_RETURN_INTERACTION_TYPE, safeBeatIndex, actorId, actorId);
+    const existing = interactionById.get(interactionId);
+    if (existing) {
+      if (existing.status === 'pending' && (haltIndex == null || safeBeatIndex < haltIndex)) {
+        haltIndex = safeBeatIndex;
+      }
+      return existing.status === 'pending';
+    }
+    if (isHistoryIndex(safeBeatIndex)) return false;
+    const created: CustomInteraction = {
+      id: interactionId,
+      type: REWIND_RETURN_INTERACTION_TYPE,
+      beatIndex: safeBeatIndex,
+      actorUserId: actorId,
+      targetUserId: actorId,
+      cardId: getRewindFocusCardId(focus),
+      status: 'pending',
+      resolution: {
+        focusInteractionId: focus.id,
+        anchorHex: focus.resolution?.anchorHex,
+      },
+    };
+    updatedInteractions.push(created);
+    interactionById.set(interactionId, created);
+    if (haltIndex == null || safeBeatIndex < haltIndex) {
+      haltIndex = safeBeatIndex;
+    }
+    return true;
   };
 
   const applyGuardContinueLoop = (
@@ -1477,7 +1785,7 @@ export const executeBeatsWithInteractions = (
     for (let i = startIndex; i < normalizedBeats.length; i += 1) {
       const beat = normalizedBeats[i];
       const entry = beat ? findEntryForCharacter(beat, character) : null;
-      if (!entry || entry.action === DEFAULT_ACTION) return null;
+      if (!entry || isOpenBeatAction(entry.action)) return null;
       if (isComboAction(entry.action)) {
         const cardId = entry.cardId ? `${entry.cardId}` : '';
         if (!cardId) return null;
@@ -1545,6 +1853,7 @@ export const executeBeatsWithInteractions = (
       parryEndersByBeat.delete(index);
     }
     ephemeralFireKeys = new Set<string>();
+    applyDelayedPassiveFireHexes(index);
     const existingArrowIds = new Set(
       boardTokens.filter((token) => token.type === ARROW_TOKEN_TYPE).map((token) => token.id),
     );
@@ -1560,11 +1869,11 @@ export const executeBeatsWithInteractions = (
       }
       const existingAction = existing.action ?? DEFAULT_ACTION;
       const nextAction = entry.action ?? DEFAULT_ACTION;
-      if (existingAction === DEFAULT_ACTION && nextAction !== DEFAULT_ACTION) {
+      if (isOpenBeatAction(existingAction) && !isOpenBeatAction(nextAction)) {
         entriesByUser.set(resolved, entry);
         return;
       }
-      if (existingAction !== DEFAULT_ACTION && nextAction === DEFAULT_ACTION) {
+      if (!isOpenBeatAction(existingAction) && isOpenBeatAction(nextAction)) {
         return;
       }
       if (existingAction !== nextAction) {
@@ -1576,6 +1885,131 @@ export const executeBeatsWithInteractions = (
         });
       }
     });
+    updatedInteractions.forEach((interaction) => {
+      if (interaction.type !== REWIND_RETURN_INTERACTION_TYPE) return;
+      if (interaction.status !== 'resolved') return;
+      if (!interaction.resolution?.returnToAnchor) return;
+      if (interaction.id && appliedRewindReturnsById.has(interaction.id)) return;
+      if (!Number.isFinite(interaction.beatIndex) || Math.max(0, Math.round(interaction.beatIndex)) !== index) return;
+      const actorId = interaction.actorUserId;
+      if (!actorId) return;
+      const actorState = state.get(actorId);
+      if (!actorState) return;
+      const focus = activeRewindFocusByUser.get(actorId);
+      const anchor =
+        normalizeInteractionHex(interaction.resolution?.anchorHex) ??
+        normalizeInteractionHex(focus?.resolution?.anchorHex) ??
+        { q: actorState.position.q, r: actorState.position.r };
+      const occupiedByUser = new Map<string, string>();
+      state.forEach((value, userId) => {
+        occupiedByUser.set(coordKey(value.position), userId);
+      });
+      const anchorKey = coordKey(anchor);
+      const anchorOccupant = occupiedByUser.get(anchorKey);
+      const blockedByOccupant = anchorOccupant && anchorOccupant !== actorId ? anchorOccupant : null;
+      const alreadyApplied = Boolean(interaction.resolution?.applied);
+      const rawReturnActions = (() => {
+        if (Array.isArray(interaction.resolution?.returnActions)) {
+          return interaction.resolution.returnActions;
+        }
+        if (Array.isArray(focus?.resolution?.returnActions)) {
+          return focus.resolution.returnActions;
+        }
+        return [];
+      })();
+      const normalizedReturnActions = rawReturnActions
+        .map((item) => {
+          if (!item || typeof item !== 'object') return null;
+          const action = `${(item as { action?: unknown }).action ?? ''}`.trim();
+          if (!action) return null;
+          const rotation = `${(item as { rotation?: unknown }).rotation ?? ''}`;
+          const priority = Number.isFinite((item as { priority?: unknown }).priority)
+            ? Number((item as { priority?: number }).priority)
+            : 0;
+          const damage = Number.isFinite((item as { damage?: unknown }).damage)
+            ? Number((item as { damage?: number }).damage)
+            : 0;
+          const kbf = Number.isFinite((item as { kbf?: unknown }).kbf)
+            ? Number((item as { kbf?: number }).kbf)
+            : 0;
+          const cardId = `${(item as { cardId?: unknown }).cardId ?? REWIND_CARD_ID}`.trim() || REWIND_CARD_ID;
+          const passiveCardId = `${(item as { passiveCardId?: unknown }).passiveCardId ?? ''}`.trim();
+          return {
+            action,
+            rotation,
+            priority,
+            damage,
+            kbf,
+            cardId,
+            ...(passiveCardId ? { passiveCardId } : {}),
+          } as ActionListItem;
+        })
+        .filter((item): item is ActionListItem => Boolean(item));
+      const returnActions = normalizedReturnActions.length ? normalizedReturnActions : getRewindReturnActionList();
+      let firstEntry: BeatEntry | null = null;
+      if (blockedByOccupant) {
+        const configuredStunDuration = Number(interaction.resolution?.stunDuration);
+        const stunDuration = Number.isFinite(configuredStunDuration)
+          ? Math.max(0, Math.round(configuredStunDuration))
+          : 3;
+        applyHitTimeline(actorId, index, actorState, 0, false, {
+          damageIconCount: stunDuration,
+          stunOnly: true,
+          preserveEntriesAfterEnd: alreadyApplied,
+        });
+        const actorCharacter = characterById.get(actorId);
+        firstEntry = actorCharacter ? findEntryForCharacter(beat, actorCharacter) : null;
+      } else {
+        actorState.position = { q: anchor.q, r: anchor.r };
+        const hasExpectedReturnWindow = matchesActionListWindow(actorId, index, returnActions);
+        const hasCommittedNonRewindWindow = hasCommittedNonRewindActionInWindow(actorId, index, returnActions.length);
+        if (!alreadyApplied || (!hasExpectedReturnWindow && !hasCommittedNonRewindWindow)) {
+          firstEntry = applyActionListFromIndex(actorId, index, actorState, returnActions, {
+            preserveEntriesAfterEnd: alreadyApplied,
+          });
+        } else {
+          const actorCharacter = characterById.get(actorId);
+          firstEntry = actorCharacter ? findEntryForCharacter(beat, actorCharacter) : null;
+        }
+      }
+      if (firstEntry) {
+        entriesByUser.set(actorId, firstEntry);
+      }
+      markRewindFocusInactive(actorId, index, 'returned');
+      removeFocusAnchorToken(actorId);
+      if (interaction.id) {
+        appliedRewindReturnsById.add(interaction.id);
+      }
+      const nextResolution: { [key: string]: unknown } = {
+        ...(interaction.resolution ?? {}),
+        returnToAnchor: true,
+        applied: true,
+        anchorHex: { q: anchor.q, r: anchor.r },
+        focusInteractionId: focus?.id ?? interaction.resolution?.focusInteractionId,
+      };
+      if (blockedByOccupant) {
+        nextResolution.blockedByOccupant = true;
+        nextResolution.blockedOccupantUserId = blockedByOccupant;
+        const configuredStunDuration = Number(interaction.resolution?.stunDuration);
+        nextResolution.stunDuration = Number.isFinite(configuredStunDuration)
+          ? Math.max(0, Math.round(configuredStunDuration))
+          : 3;
+      } else {
+        nextResolution.returnActions = returnActions.map((item) => ({
+          action: item.action,
+          rotation: item.rotation ?? '',
+          priority: Number.isFinite(item.priority) ? Number(item.priority) : 0,
+          damage: Number.isFinite(item.damage) ? Number(item.damage) : 0,
+          kbf: Number.isFinite(item.kbf) ? Number(item.kbf) : 0,
+          cardId: `${item.cardId ?? REWIND_CARD_ID}` || REWIND_CARD_ID,
+          ...(item.passiveCardId ? { passiveCardId: `${item.passiveCardId}` } : {}),
+        }));
+        if ('blockedByOccupant' in nextResolution) delete nextResolution.blockedByOccupant;
+        if ('blockedOccupantUserId' in nextResolution) delete nextResolution.blockedOccupantUserId;
+        if ('stunDuration' in nextResolution) delete nextResolution.stunDuration;
+      }
+      interaction.resolution = nextResolution;
+    });
     const actionSetEnders = new Map<string, BeatEntry>();
 
     characters.forEach((character) => {
@@ -1583,9 +2017,9 @@ export const executeBeatsWithInteractions = (
       const entry = entriesByUser.get(actorId);
       const action = entry?.action ?? DEFAULT_ACTION;
       const previous = lastActionByUser.get(actorId) ?? DEFAULT_ACTION;
-      const comboStart = previous === DEFAULT_ACTION || Boolean(entry?.comboStarter);
-      if (action === DEFAULT_ACTION) {
-        if (previous !== DEFAULT_ACTION && entry) {
+      const comboStart = isOpenBeatAction(previous) || Boolean(entry?.comboStarter);
+      if (isOpenBeatAction(action)) {
+        if (!isOpenBeatAction(previous) && entry) {
           actionSetEnders.set(actorId, entry);
         }
         comboStates.delete(actorId);
@@ -1711,7 +2145,7 @@ export const executeBeatsWithInteractions = (
         };
       });
     const isBeatReady = (readiness: BeatReadiness[]) =>
-      readiness.every((item) => item.action !== 'missing' && item.action !== DEFAULT_ACTION);
+      readiness.every((item) => item.action !== 'missing' && !isOpenBeatAction(item.action));
     const haltAtCurrentBeat = (readiness: BeatReadiness[]) => {
       console.log(LOG_PREFIX, 'halt', {
         index,
@@ -1725,7 +2159,18 @@ export const executeBeatsWithInteractions = (
     };
     const initialReadiness = getBeatReadiness();
     if (!isBeatReady(initialReadiness) && !hasForcedResolution) {
-      haltAtCurrentBeat(initialReadiness);
+      initialReadiness.forEach((item) => {
+        const actionLabel = normalizeActionLabel(item.action).toUpperCase();
+        const character = characterById.get(item.userId);
+        const entry = character ? findEntryForCharacter(beat, character) : null;
+        if (actionLabel === FOCUS_ACTION) {
+          ensureRewindFocusAtBeat(item.userId, index, entry);
+        }
+        if ((item.action === 'missing' || actionLabel === DEFAULT_ACTION) && activeRewindFocusByUser.has(item.userId)) {
+          ensurePendingRewindReturn(item.userId, index);
+        }
+      });
+      haltAtCurrentBeat(getBeatReadiness({ useCurrentBeatEntries: true }));
       break;
     }
     type ActionPhaseActorState = { position: { q: number; r: number }; damage: number; facing: number };
@@ -1737,6 +2182,8 @@ export const executeBeatsWithInteractions = (
       fireTokenKeys: Set<string>;
       platformTokenKeys: Set<string>;
       ephemeralFireKeys: Set<string>;
+      delayedPassiveFireSpawnsByBeat: Map<number, DelayedPassiveFireSpawn[]>;
+      appliedRewindReturnsById: Set<string>;
       interactions: CustomInteraction[];
       handTriggerKeys: Set<string>;
       haltIndex: number | null;
@@ -1802,6 +2249,16 @@ export const executeBeatsWithInteractions = (
       fireTokenKeys: new Set(fireTokenKeys),
       platformTokenKeys: new Set(platformTokenKeys),
       ephemeralFireKeys: new Set(ephemeralFireKeys),
+      delayedPassiveFireSpawnsByBeat: new Map(
+        Array.from(delayedPassiveFireSpawnsByBeat.entries()).map(([beatIndex, list]) => [
+          beatIndex,
+          list.map((item) => ({
+            coord: { q: item.coord.q, r: item.coord.r },
+            ownerId: item.ownerId,
+          })),
+        ]),
+      ),
+      appliedRewindReturnsById: new Set(appliedRewindReturnsById),
       interactions: updatedInteractions.map((interaction) => cloneInteraction(interaction)),
       handTriggerKeys: new Set(handTriggerKeys),
       haltIndex,
@@ -1844,6 +2301,18 @@ export const executeBeatsWithInteractions = (
       platformTokenKeys.clear();
       snapshot.platformTokenKeys.forEach((key) => platformTokenKeys.add(key));
       ephemeralFireKeys = new Set(snapshot.ephemeralFireKeys);
+      delayedPassiveFireSpawnsByBeat.clear();
+      snapshot.delayedPassiveFireSpawnsByBeat.forEach((list, beatIndex) => {
+        delayedPassiveFireSpawnsByBeat.set(
+          beatIndex,
+          list.map((item) => ({
+            coord: { q: item.coord.q, r: item.coord.r },
+            ownerId: item.ownerId,
+          })),
+        );
+      });
+      appliedRewindReturnsById.clear();
+      snapshot.appliedRewindReturnsById.forEach((id) => appliedRewindReturnsById.add(id));
       updatedInteractions.splice(
         0,
         updatedInteractions.length,
@@ -1998,7 +2467,18 @@ export const executeBeatsWithInteractions = (
       };
       const passReadiness = getBeatReadiness({ useCurrentBeatEntries: true });
       if (!isBeatReady(passReadiness) && !hasForcedResolution) {
-        rerunHaltReadiness = passReadiness;
+        passReadiness.forEach((item) => {
+          const actionLabel = normalizeActionLabel(item.action).toUpperCase();
+          const character = characterById.get(item.userId);
+          const entry = character ? findEntryForCharacter(beat, character) : null;
+          if (actionLabel === FOCUS_ACTION) {
+            ensureRewindFocusAtBeat(item.userId, index, entry);
+          }
+          if ((item.action === 'missing' || actionLabel === DEFAULT_ACTION) && activeRewindFocusByUser.has(item.userId)) {
+            ensurePendingRewindReturn(item.userId, index);
+          }
+        });
+        rerunHaltReadiness = getBeatReadiness({ useCurrentBeatEntries: true });
         haltForRerunReadiness = true;
         break;
       }
@@ -2246,6 +2726,10 @@ export const executeBeatsWithInteractions = (
         }
       }
       const shouldStun = effectiveKbf === 1 || (effectiveKbf > 1 && knockbackDistance > 0);
+      if (shouldStun || knockedSteps > 0) {
+        markRewindFocusInactive(targetId, index, shouldStun ? 'stun' : 'knockback');
+        removeFocusAnchorToken(targetId);
+      }
       if (shouldStun) {
         const beforeSignature = currentBeatActionSignature(targetId);
         applyHitTimeline(targetId, index, targetState, knockedSteps, true);
@@ -2373,6 +2857,10 @@ export const executeBeatsWithInteractions = (
           }
         }
         const shouldStun = baseKbf === 1 || (baseKbf > 1 && baseKnockbackDistance > 0);
+        if (shouldStun || knockedSteps > 0) {
+          markRewindFocusInactive(counter.attackerId, index, shouldStun ? 'stun' : 'knockback');
+          removeFocusAnchorToken(counter.attackerId);
+        }
         if (shouldStun) {
           const beforeSignature = currentBeatActionSignature(counter.attackerId);
           applyHitTimeline(counter.attackerId, index, targetState, knockedSteps, false);
@@ -2405,7 +2893,7 @@ export const executeBeatsWithInteractions = (
         const orderB = rosterOrder.get(resolveEntryKey(b)) ?? Number.MAX_SAFE_INTEGER;
         return orderA - orderB;
       })
-      .filter((entry) => entry.action !== DEFAULT_ACTION);
+      .filter((entry) => !isOpenBeatAction(entry.action));
 
     const burningStrikeBeatData = new Map<string, { attackedHexes: HexCoord[]; hasHit: boolean }>();
     const recordBurningStrikeAttack = (actorId: string, coord: { q: number; r: number }) => {
@@ -2474,7 +2962,7 @@ export const executeBeatsWithInteractions = (
       ) {
         forceActionSetEndAtBeat(actorId, index, actorState, entry);
       }
-      if ((entry.action ?? DEFAULT_ACTION) === DEFAULT_ACTION) {
+      if (isOpenBeatAction(entry.action ?? DEFAULT_ACTION)) {
         executedActors.add(actorId);
         return;
       }
@@ -2530,7 +3018,7 @@ export const executeBeatsWithInteractions = (
       }
       if (entry.cardId === IRON_WILL_CARD_ID && actionLabel.toUpperCase() === 'X1') {
         const interactionId = buildInteractionId('draw', index, actorId, actorId);
-        if (!interactionById.has(interactionId) && !isHistoryIndex(index)) {
+        if (!interactionById.has(interactionId)) {
           const created: CustomInteraction = {
             id: interactionId,
             type: 'draw',
@@ -2547,7 +3035,7 @@ export const executeBeatsWithInteractions = (
       }
       if (entry.cardId === JAB_CARD_ID && isBracketedAction(entry.action ?? '')) {
         const interactionId = buildInteractionId('draw', index, actorId, actorId);
-        if (!interactionById.has(interactionId) && !isHistoryIndex(index)) {
+        if (!interactionById.has(interactionId)) {
           const created: CustomInteraction = {
             id: interactionId,
             type: 'draw',
@@ -2569,13 +3057,13 @@ export const executeBeatsWithInteractions = (
           }
         }
 
-        if (entry.passiveCardId === CROSS_SLASH_CARD_ID && entry.action !== DEFAULT_ACTION && isActionSetStart(entry)) {
+        if (entry.passiveCardId === CROSS_SLASH_CARD_ID && !isOpenBeatAction(entry.action) && isActionSetStart(entry)) {
           actorState.damage += 1;
           recordHitConsequence(actorId, index, actorState, 1, 0);
         }
 
         const startDiscard = getPassiveStartDiscardCount(entry.passiveCardId);
-        if (startDiscard && entry.action !== DEFAULT_ACTION && isActionSetStart(entry)) {
+        if (startDiscard && !isOpenBeatAction(entry.action) && isActionSetStart(entry)) {
           queueDiscard(actorId, startDiscard, 'self');
         }
 
@@ -2791,6 +3279,8 @@ export const executeBeatsWithInteractions = (
                   isBracketedAction(entry.action ?? '') &&
                   (token.type === 'a' || token.type === 'c');
                 if (isSmokeBombStunHit) {
+                  markRewindFocusInactive(targetId, index, 'stun');
+                  removeFocusAnchorToken(targetId);
                   const beforeSignature = currentBeatActionSignature(targetId);
                   const actorCharacter = characterById.get(actorId);
                   const selectedRotation =
@@ -2857,6 +3347,10 @@ export const executeBeatsWithInteractions = (
                       occupancy.set(coordKey(targetState.position), targetId);
                     }
                   }
+                    if (knockedSteps > 0) {
+                      markRewindFocusInactive(targetId, index, 'knockback');
+                      removeFocusAnchorToken(targetId);
+                    }
                     applyHitTimeline(targetId, index, targetState, knockedSteps, preserveAction);
                     rerunIfCurrentFrameChanged(targetId, beforeSignature, {
                       causeActorId: actorId,
@@ -2940,7 +3434,7 @@ export const executeBeatsWithInteractions = (
                 if (discardRule && isBracketedAction(entry.action ?? '')) {
                   const isCenter = !discardRule.centerOnly || isCenterAttackPath(token.path);
                   if (isCenter) {
-                    queueDiscard(targetId, discardRule.count, 'opponent', resolvedTargetEntry);
+                    queueDiscard(targetId, discardRule.count, 'opponent', resolvedTargetEntry, { force: true });
                   }
                 }
 
@@ -2971,7 +3465,7 @@ export const executeBeatsWithInteractions = (
                 const baseKnockbackDistance = getKnockbackDistance(targetState.damage, effectiveKbf);
                 const convertKbf = shouldConvertKbfToDiscard(resolvedTargetEntry);
                 if (convertKbf && baseKnockbackDistance > 0) {
-                  queueDiscard(targetId, baseKnockbackDistance, 'self', resolvedTargetEntry);
+                  queueDiscard(targetId, baseKnockbackDistance, 'self', resolvedTargetEntry, { force: true });
                 }
                 const knockbackDistance = convertKbf ? 0 : baseKnockbackDistance;
                 let knockedSteps = 0;
@@ -2994,6 +3488,10 @@ export const executeBeatsWithInteractions = (
                   }
                 }
                 const shouldStun = effectiveKbf === 1 || (effectiveKbf > 1 && baseKnockbackDistance > 0);
+                if (shouldStun || knockedSteps > 0) {
+                  markRewindFocusInactive(targetId, index, shouldStun ? 'stun' : 'knockback');
+                  removeFocusAnchorToken(targetId);
+                }
                 if (shouldStun) {
                   const beforeSignature = currentBeatActionSignature(targetId);
                   applyHitTimeline(targetId, index, targetState, knockedSteps, preserveAction);
@@ -3086,7 +3584,7 @@ export const executeBeatsWithInteractions = (
           }
           if (token.type === 'm' && !sameCoord(finalPosition, origin)) {
             if (entry.passiveCardId === BURNING_STRIKE_CARD_ID) {
-              addFireHexToken(origin, actorId);
+              queueDelayedPassiveFireHex(index + 1, origin, actorId);
             }
             if (entry.passiveCardId === BOW_SHOT_CARD_ID && (rotationMagnitude === 1 || rotationMagnitude === 2)) {
               spawnArrowToken(finalPosition, actionSetFacing, actorId);

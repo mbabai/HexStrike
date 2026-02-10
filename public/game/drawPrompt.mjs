@@ -49,10 +49,13 @@ export const createDrawPrompt = ({
     }
     const abilityHandCount = Array.isArray(playerCards?.abilityHand) ? playerCards.abilityHand.length : 0;
     const abilityDeckCount = Array.isArray(playerCards?.deck) ? playerCards.deck.length : 0;
+    const effectiveMaxHandSize = Number.isFinite(playerCards?.maxHandSize)
+      ? Math.max(0, Math.floor(playerCards.maxHandSize))
+      : maxHandSize;
     const drawCount = Number.isFinite(pending?.drawCount) ? Math.max(0, Math.floor(pending.drawCount)) : 0;
     const actualDraw = Math.min(drawCount, abilityDeckCount);
     const abilityAfter = abilityHandCount + actualDraw;
-    const targetMovementSize = Math.min(abilityAfter, maxHandSize);
+    const targetMovementSize = Math.min(abilityAfter, effectiveMaxHandSize);
     const movementHandCount = Array.isArray(playerCards?.movementHand) ? playerCards.movementHand.length : 0;
     return Math.max(0, targetMovementSize - movementHandCount);
   };

@@ -56,9 +56,24 @@ const normalizeIdList = (value: unknown): string[] => {
   return ids;
 };
 
-export const getTargetMovementHandSize = (abilityCount: number): number => {
+export const getFocusedCardCount = (deckState: DeckState | null | undefined): number => {
+  const size = deckState?.focusedAbilityCardIds?.size;
+  if (!Number.isFinite(size)) return 0;
+  return Math.max(0, Math.floor(size as number));
+};
+
+export const getMaxAbilityHandSize = (deckState: DeckState | null | undefined): number => {
+  const reduced = MAX_HAND_SIZE - getFocusedCardCount(deckState);
+  return Math.max(0, reduced);
+};
+
+export const getTargetMovementHandSize = (
+  abilityCount: number,
+  maxHandSize: number = MAX_HAND_SIZE,
+): number => {
   const safeCount = Number.isFinite(abilityCount) ? Math.max(0, Math.floor(abilityCount)) : 0;
-  return safeCount > MAX_HAND_SIZE ? MAX_HAND_SIZE : safeCount;
+  const safeMax = Number.isFinite(maxHandSize) ? Math.max(0, Math.floor(maxHandSize)) : MAX_HAND_SIZE;
+  return safeCount > safeMax ? safeMax : safeCount;
 };
 
 export const getMovementHandIds = (deckState: DeckState): string[] =>
@@ -71,7 +86,7 @@ export const getDiscardRequirements = (
   const abilityCount = Array.isArray(deckState?.abilityHand) ? deckState.abilityHand.length : 0;
   const abilityDiscardCount = Math.min(Math.max(0, Math.floor(discardCount || 0)), abilityCount);
   const abilityAfter = abilityCount - abilityDiscardCount;
-  const targetMovementSize = getTargetMovementHandSize(abilityAfter);
+  const targetMovementSize = getTargetMovementHandSize(abilityAfter, getMaxAbilityHandSize(deckState));
   const movementCount = getMovementHandIds(deckState).length;
   const movementDiscardCount = Math.max(0, movementCount - targetMovementSize);
   return { abilityDiscardCount, movementDiscardCount };
@@ -85,7 +100,7 @@ export const syncMovementHand = (
   const movementIds = Array.isArray(deckState.movement) ? deckState.movement : [];
   const movementSet = new Set(movementIds);
   const exhausted = deckState.exhaustedMovementIds;
-  const targetSize = getTargetMovementHandSize(deckState.abilityHand.length);
+  const targetSize = getTargetMovementHandSize(deckState.abilityHand.length, getMaxAbilityHandSize(deckState));
   const inHand = getMovementHandIds(deckState);
   let currentSize = inHand.length;
   const restored: string[] = [];

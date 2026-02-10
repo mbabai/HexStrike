@@ -69,6 +69,9 @@ export const createHandTriggerPrompt = ({
   const computeRequirements = (pending, playerCards, cardType) => {
     const abilityHandCount = Array.isArray(playerCards?.abilityHand) ? playerCards.abilityHand.length : 0;
     const movementHandCount = Array.isArray(playerCards?.movementHand) ? playerCards.movementHand.length : 0;
+    const effectiveMaxHandSize = Number.isFinite(playerCards?.maxHandSize)
+      ? Math.max(0, Math.floor(playerCards.maxHandSize))
+      : maxHandSize;
     let requiredMovement = 0;
     let requiredAbility = 0;
     if (cardType === 'ability') {
@@ -76,7 +79,7 @@ export const createHandTriggerPrompt = ({
         requiredMovement = pending.discardMovementCount;
       } else {
         const abilityAfter = Math.max(0, abilityHandCount - 1);
-        const targetMovementSize = Math.min(abilityAfter, maxHandSize);
+        const targetMovementSize = Math.min(abilityAfter, effectiveMaxHandSize);
         requiredMovement = Math.max(0, movementHandCount - targetMovementSize);
       }
     } else if (cardType === 'movement') {

@@ -30,6 +30,10 @@ declare module 'url' {
 
 declare module 'fs' {
   export function readFile(path: string, cb: (err: any, data: any) => void): void;
+  export function mkdirSync(path: string, options?: any): void;
+  export function rmSync(path: string, options?: any): void;
+  export function writeFileSync(path: string, data: string | Uint8Array, options?: any): void;
+  export function appendFileSync(path: string, data: string | Uint8Array, options?: any): void;
 }
 
 declare module 'crypto' {

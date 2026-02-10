@@ -41,6 +41,17 @@
 - Guard prompts may re-open on repeated Guard start beats at the current resolved frame, but only when the actor still has cards in hand (movement + ability > 0).
 - In code: `src/game/execute.ts` (loop + prompt creation), `src/server.ts` (hand-availability gating), UI prompt in `public/game.js`.
 
+## Focus (`{F}`) / Rewind concentration
+- `F` is an open beat for turn gating and action-set insertion (same gating class as `E`, but no refresh by itself).
+- Rewind active creates a resolved `customInteractions` entry of type `rewind-focus` at `{F}` with `anchorHex` and trailing return actions.
+- While Rewind focus is active:
+  - timeline beat entries include `focusCardId` so UI can draw the `F` icon under actions and show focus text in tooltips,
+  - land refresh is disabled for that player,
+  - max hand size is reduced by focused-card count (`MAX_HAND_SIZE - focusedAbilityCardIds.size`) and movement hand size is synced to that reduced cap.
+- Rewind return choices are `customInteractions` of type `rewind-return` on focused `E` beats; `returnToAnchor: true` teleports to anchor, ends focus, and replays Rewind's post-`{F}` action list from that beat.
+- If a focused player has no playable action pair (ability + movement), the server force-resolves return to anchor.
+- Focus ends on knockback or stun and the focused card is cleared from `focusedAbilityCardIds` and returned under deck unless it ended by explicit return.
+
 ## Action list transforms
 - Card text that modifies the action list (add/remove/replace) should use the shared helpers in
   `src/game/cardText/actionListTransforms.ts` and `public/game/cardText/actionListTransforms.js` to keep behavior precise and mirrored.
@@ -76,9 +87,10 @@
 - Timeline: mini card marker is drawn between beats in `public/game/timeIndicatorView.js`; tooltip uses `public/game/timelineTooltip.js` + `public/game/handTriggerText.mjs`.
 
 ## Board tokens
-- `boardTokens` live in `public.boardTokens` with types `fire-hex`, `ethereal-platform`, and `arrow`.
+- `boardTokens` live in `public.boardTokens` with types `fire-hex`, `ethereal-platform`, `arrow`, and `focus-anchor`.
 - Fire hex: persistent; deals 1 damage per beat to any character standing on the hex.
 - Ethereal platform: only persists on abyss; it enables land-style refresh on `E` and is consumed after that refresh resolves.
 - Arrow: advances 1 hex per beat (charge), deals 4 damage with KBF 1 on hit, and is removed on hit or when its distance to land is >= 5.
+- Focus anchor: marks the Rewind return anchor hex with `F.png` while focus is active.
 - Rendering: tokens are drawn like character portraits (circle + facing triangle) with a black border in `public/game/renderer.js`.
 

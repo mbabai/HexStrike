@@ -4,6 +4,7 @@ import { shouldConvertKbfToDiscard } from './cardText/discardEffects.js';
 import { isBracketedAction as isBracketedTokenAction, normalizeActionToken } from './cardText/actionListTransforms.js';
 
 const DEFAULT_ACTION = 'E';
+const FOCUS_ACTION = 'F';
 const WAIT_ACTION = 'W';
 const COMBO_ACTION = 'CO';
 const DAMAGE_ICON_ACTION = 'DamageIcon';
@@ -13,10 +14,13 @@ const THROW_DISTANCE = 2;
 const FIRE_HEX_TOKEN_TYPE = 'fire-hex';
 const ETHEREAL_PLATFORM_TOKEN_TYPE = 'ethereal-platform';
 const ARROW_TOKEN_TYPE = 'arrow';
+const FOCUS_ANCHOR_TOKEN_TYPE = 'focus-anchor';
 const ARROW_DAMAGE = 4;
 const ARROW_KBF = 1;
 const ARROW_LAND_DISTANCE_LIMIT = 5;
 const HAVEN_PLATFORM_INTERACTION_TYPE = 'haven-platform';
+const REWIND_FOCUS_INTERACTION_TYPE = 'rewind-focus';
+const REWIND_RETURN_INTERACTION_TYPE = 'rewind-return';
 const BOW_SHOT_CARD_ID = 'bow-shot';
 const BURNING_STRIKE_CARD_ID = 'burning-strike';
 const HAVEN_CARD_ID = 'haven';
@@ -336,7 +340,14 @@ const normalizeActionLabel = (action) => {
   return trimmed;
 };
 
-const isActionActive = (action) => normalizeActionLabel(action ?? '').toUpperCase() !== DEFAULT_ACTION;
+const isOpenBeatAction = (action) => {
+  const label = normalizeActionLabel(action ?? '').toUpperCase();
+  return label === DEFAULT_ACTION || label === FOCUS_ACTION;
+};
+
+const isActionActive = (action) => !isOpenBeatAction(action);
+const isActionSetStart = (entry) =>
+  `${entry?.rotationSource ?? ''}`.trim() === 'selected' || Boolean(entry?.comboStarter);
 
 const getHealingHarmonyReduction = (entry) => {
   if (!entry || entry.passiveCardId !== HEALING_HARMONY_CARD_ID) return 0;
@@ -536,7 +547,7 @@ const getLastCalculatedEntryForCharacter = (beats, character, uptoIndex) => {
   return null;
 };
 
-const buildBaseState = (beats, beatIndex, characters) => {
+const buildCalculatedBaseState = (beats, beatIndex, characters) => {
   const lookupIndex = Number.isFinite(beatIndex) ? beatIndex - 1 : (beats?.length ?? 0) - 1;
   return characters.map((character) => {
     const entry = lookupIndex >= 0 ? getLastCalculatedEntryForCharacter(beats, character, lookupIndex) : null;
@@ -552,6 +563,51 @@ const buildBaseState = (beats, beatIndex, characters) => {
             : 0,
     };
   });
+};
+
+const buildResolvedRewindReturnOverrides = (interactions, beatIndex) => {
+  const overrides = new Map();
+  if (!Array.isArray(interactions) || !Number.isFinite(beatIndex)) return overrides;
+  interactions.forEach((interaction) => {
+    if (!interaction || interaction.type !== REWIND_RETURN_INTERACTION_TYPE) return;
+    if (interaction.status !== 'resolved') return;
+    if (!interaction.resolution?.returnToAnchor || !interaction.resolution?.applied) return;
+    if (interaction.resolution?.blockedByOccupant) return;
+    if (!Number.isFinite(interaction.beatIndex)) return;
+    const actorId = `${interaction.actorUserId ?? ''}`.trim();
+    if (!actorId) return;
+    const interactionBeat = Math.max(0, Math.round(interaction.beatIndex));
+    if (interactionBeat !== beatIndex) return;
+    const existing = overrides.get(actorId);
+    if (!existing || interactionBeat > existing.beatIndex) {
+      overrides.set(actorId, { beatIndex: interactionBeat });
+    }
+  });
+  return overrides;
+};
+
+const buildBaseStateWithInteractionOverrides = (beats, beatIndex, characters, interactions) => {
+  const baseState = buildCalculatedBaseState(beats, beatIndex, characters);
+  const rewindOverrides = buildResolvedRewindReturnOverrides(interactions, beatIndex);
+  if (!rewindOverrides.size) return baseState;
+  return baseState.map((character) => {
+    const override =
+      rewindOverrides.get(character.userId) ??
+      rewindOverrides.get(`${character.username ?? ''}`.trim());
+    if (!override) return character;
+    const entry = getBeatEntryForCharacter(beats?.[override.beatIndex], character);
+    if (!entry?.location) return character;
+    return {
+      ...character,
+      position: { q: entry.location.q, r: entry.location.r },
+      facing: Number.isFinite(entry?.facing) ? entry.facing : character.facing,
+      damage: typeof entry?.damage === 'number' ? entry.damage : character.damage,
+    };
+  });
+};
+
+const buildBaseState = (beats, beatIndex, characters, interactions) => {
+  return buildBaseStateWithInteractionOverrides(beats, beatIndex, characters, interactions);
 };
 
 const isBeatCalculated = (beat) =>
@@ -610,7 +666,7 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
       const orderB = rosterOrder.get(b.username) ?? Number.MAX_SAFE_INTEGER;
       return orderA - orderB;
     })
-    .filter((entry) => entry && entry.action !== DEFAULT_ACTION);
+    .filter((entry) => entry && !isOpenBeatAction(entry.action));
 
   const steps = [];
   const persistentEffects = [];
@@ -1151,7 +1207,9 @@ const buildTokenPlayback = (gameState, beatIndex) => {
   const tokens = [];
   const fireTokenKeys = new Set();
   const platformTokenKeys = new Set();
+  const focusTokenByOwner = new Map();
   let ephemeralFireKeys = new Set();
+  const delayedPassiveFireSpawnsByBeat = new Map();
   let tokenCounter = 0;
 
   const actionSetFacingByUser = new Map();
@@ -1210,6 +1268,29 @@ const buildTokenPlayback = (gameState, beatIndex) => {
     scheduleSpawnForActor(ownerId, token, isCurrentBeat);
   };
 
+  const queueDelayedPassiveFire = (targetBeatIndex, coord, ownerId) => {
+    if (!Number.isFinite(targetBeatIndex) || !coord) return;
+    const targetBeat = Math.max(0, Math.round(targetBeatIndex));
+    const existing = delayedPassiveFireSpawnsByBeat.get(targetBeat) ?? [];
+    const targetKey = coordKey(coord);
+    if (existing.some((item) => coordKey(item.coord) === targetKey)) {
+      return;
+    }
+    existing.push({ coord: { q: coord.q, r: coord.r }, ownerId });
+    delayedPassiveFireSpawnsByBeat.set(targetBeat, existing);
+  };
+
+  const applyDelayedPassiveFires = (index, isCurrentBeat) => {
+    if (!Number.isFinite(index)) return;
+    const targetBeat = Math.max(0, Math.round(index));
+    const queued = delayedPassiveFireSpawnsByBeat.get(targetBeat);
+    if (!queued?.length) return;
+    queued.forEach((item) => {
+      addFireToken(item.coord, item.ownerId, isCurrentBeat);
+    });
+    delayedPassiveFireSpawnsByBeat.delete(targetBeat);
+  };
+
   const addArrowToken = (coord, facing, ownerId, isCurrentBeat) => {
     if (!coord) return;
     const token = {
@@ -1239,6 +1320,22 @@ const buildTokenPlayback = (gameState, beatIndex) => {
       return;
     }
     scheduleSpawnForActor(ownerId, token, isCurrentBeat);
+  };
+
+  const addFocusAnchorToken = (coord, ownerId, cardId) => {
+    const ownerKey = `${ownerId ?? ''}`.trim();
+    if (!coord || !ownerKey) return;
+    removeFocusAnchorToken(ownerKey);
+    const token = {
+      id: nextTokenId(FOCUS_ANCHOR_TOKEN_TYPE),
+      type: FOCUS_ANCHOR_TOKEN_TYPE,
+      position: { q: coord.q, r: coord.r },
+      facing: 0,
+      ownerUserId: ownerKey,
+      cardId: cardId || 'rewind',
+    };
+    focusTokenByOwner.set(ownerKey, token.id);
+    tokens.push(token);
   };
 
   const removeEtherealPlatformToken = (coord, isCurrentBeat) => {
@@ -1272,6 +1369,20 @@ const buildTokenPlayback = (gameState, beatIndex) => {
     }
   };
 
+  const removeFocusAnchorToken = (ownerId) => {
+    const ownerKey = `${ownerId ?? ''}`.trim();
+    if (!ownerKey) return;
+    const tokenId = focusTokenByOwner.get(ownerKey);
+    if (!tokenId) return;
+    focusTokenByOwner.delete(ownerKey);
+    for (let i = tokens.length - 1; i >= 0; i -= 1) {
+      const token = tokens[i];
+      if (!token || token.id !== tokenId) continue;
+      tokens.splice(i, 1);
+      break;
+    }
+  };
+
   const buildEntriesByUser = (beat) => {
     const entriesByUser = new Map();
     (beat ?? []).forEach((entry) => {
@@ -1285,11 +1396,11 @@ const buildTokenPlayback = (gameState, beatIndex) => {
       }
       const existingAction = existing.action ?? DEFAULT_ACTION;
       const nextAction = entry.action ?? DEFAULT_ACTION;
-      if (existingAction === DEFAULT_ACTION && nextAction !== DEFAULT_ACTION) {
+      if (isOpenBeatAction(existingAction) && !isOpenBeatAction(nextAction)) {
         entriesByUser.set(resolved, entry);
         return;
       }
-      if (existingAction !== DEFAULT_ACTION && nextAction === DEFAULT_ACTION) {
+      if (!isOpenBeatAction(existingAction) && isOpenBeatAction(nextAction)) {
         return;
       }
     });
@@ -1311,9 +1422,6 @@ const buildTokenPlayback = (gameState, beatIndex) => {
     });
   };
 
-  const isActionSetStart = (entry) =>
-    `${entry?.rotationSource ?? ''}`.trim() === 'selected' || Boolean(entry?.comboStarter);
-
   const buildCharacterSnapshot = () =>
     characters.map((character) => {
       const stored = state.get(character.userId);
@@ -1330,15 +1438,39 @@ const buildTokenPlayback = (gameState, beatIndex) => {
       };
     });
 
+  const applyFocusTokenUpdates = (index) => {
+    interactions.forEach((interaction) => {
+      if (!interaction || interaction.type !== REWIND_FOCUS_INTERACTION_TYPE) return;
+      if (interaction.status !== 'resolved') return;
+      const ownerId = interaction.actorUserId;
+      if (!ownerId) return;
+      const startBeat = Number.isFinite(interaction.beatIndex) ? Math.max(0, Math.round(interaction.beatIndex)) : null;
+      if (startBeat != null && startBeat === index) {
+        const anchor = normalizeHexCoord(interaction.resolution?.anchorHex);
+        if (anchor) {
+          addFocusAnchorToken(anchor, ownerId, interaction.cardId ?? interaction.resolution?.cardId);
+        }
+      }
+      const endedBeat = Number.isFinite(interaction?.resolution?.endedBeatIndex)
+        ? Math.max(0, Math.round(interaction.resolution.endedBeatIndex))
+        : null;
+      if (endedBeat != null && endedBeat === index) {
+        removeFocusAnchorToken(ownerId);
+      }
+    });
+  };
+
   for (let index = 0; index < beats.length; index += 1) {
     if (!Number.isFinite(beatIndex) || index > beatIndex) break;
     const beat = beats[index] ?? [];
+    const isCurrentBeat = index === beatIndex;
     ephemeralFireKeys = new Set();
+    applyFocusTokenUpdates(index);
+    applyDelayedPassiveFires(index, isCurrentBeat);
     if (!isBeatCalculated(beat)) {
       baseTokens = tokens.map(cloneToken);
       break;
     }
-    const isCurrentBeat = index === beatIndex;
 
     if (isCurrentBeat) {
       baseTokens = tokens.map(cloneToken);
@@ -1394,8 +1526,8 @@ const buildTokenPlayback = (gameState, beatIndex) => {
       const entry = entriesByUser.get(actorId);
       const action = entry?.action ?? DEFAULT_ACTION;
       const previous = lastActionByUser.get(actorId) ?? DEFAULT_ACTION;
-      const comboStart = previous === DEFAULT_ACTION || Boolean(entry?.comboStarter);
-      if (action === DEFAULT_ACTION) {
+      const comboStart = isOpenBeatAction(previous) || Boolean(entry?.comboStarter);
+      if (isOpenBeatAction(action)) {
         actionSetFacingByUser.delete(actorId);
         actionSetRotationByUser.delete(actorId);
       } else {
@@ -1438,7 +1570,7 @@ const buildTokenPlayback = (gameState, beatIndex) => {
         const orderB = rosterOrder.get(resolveEntryKey(b)) ?? Number.MAX_SAFE_INTEGER;
         return orderA - orderB;
       })
-      .filter((entry) => entry.action !== DEFAULT_ACTION);
+      .filter((entry) => !isOpenBeatAction(entry.action));
 
     const applyArrowHit = ({ token, nextPosition, targetId, forward, isCurrentBeat: applyNow }) => {
       const targetState = endStateById.get(targetId);
@@ -1647,7 +1779,7 @@ const buildTokenPlayback = (gameState, beatIndex) => {
       if (entry.passiveCardId === BURNING_STRIKE_CARD_ID) {
         const hasMoveToken = actionTokens.some((token) => token.type === 'm');
         if (hasMoveToken && !sameCoord(endPosition, origin)) {
-          addFireToken(origin, actorId, isCurrentBeat);
+          queueDelayedPassiveFire(index + 1, origin, actorId);
         }
       }
 
@@ -1810,8 +1942,9 @@ export const createTimelinePlayback = () => {
   const buildPlayback = (gameState, beatIndex, now) => {
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
+    const interactions = gameState?.state?.public?.customInteractions ?? [];
     const beat = beats[beatIndex] ?? [];
-    const baseState = buildBaseState(beats, beatIndex, characters);
+    const baseState = buildBaseState(beats, beatIndex, characters, interactions);
     const tokenPlayback = buildTokenPlayback(gameState, beatIndex);
     const baseTokens = tokenPlayback?.baseTokens ?? [];
 
@@ -1828,7 +1961,6 @@ export const createTimelinePlayback = () => {
       return;
     }
 
-    const interactions = gameState?.state?.public?.customInteractions ?? [];
     const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
     const { steps: characterSteps, persistentEffects } = buildActionSteps(
       beat,

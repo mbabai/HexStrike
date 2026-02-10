@@ -37,6 +37,7 @@ const HOLD_REPEAT_DELAY = 90;
 const LOG_PREFIX = '[hexstrike]';
 const COMBO_ACTION = 'CO';
 const GUARD_CONTINUE_INTERACTION_TYPE = 'guard-continue';
+const REWIND_RETURN_INTERACTION_TYPE = 'rewind-return';
 const MAX_HAND_SIZE = 4;
 const AXIAL_DIRECTIONS = [
   { q: 1, r: 0 },
@@ -286,16 +287,23 @@ export const initGame = () => {
 
   const setChoiceModalContent = (interactionType) => {
     const isGuard = interactionType === GUARD_CONTINUE_INTERACTION_TYPE;
+    const isRewind = interactionType === REWIND_RETURN_INTERACTION_TYPE;
     if (comboEyebrow) {
-      comboEyebrow.textContent = isGuard ? 'Guard' : 'Combo';
+      comboEyebrow.textContent = isGuard ? 'Guard' : isRewind ? 'Focus' : 'Combo';
     }
     if (comboTitle) {
-      comboTitle.textContent = isGuard ? 'Continue Guard?' : 'Continue Combo?';
+      comboTitle.textContent = isGuard
+        ? 'Continue Guard?'
+        : isRewind
+          ? 'Return To Rewind Anchor?'
+          : 'Continue Combo?';
     }
     if (comboCopy) {
       comboCopy.textContent = isGuard
         ? "Choose Yes to continue Guard and force a discard of 1 on Guard's E frame."
-        : 'Your hit opens a combo window. Continue with another combo card?';
+        : isRewind
+          ? 'Choose Yes to end Rewind focus and return to your anchored hex.'
+          : 'Your hit opens a combo window. Continue with another combo card?';
     }
   };
 
@@ -471,7 +479,11 @@ export const initGame = () => {
       applyThrowLayout(pending);
       return;
     }
-    if (pending.type === 'combo' || pending.type === GUARD_CONTINUE_INTERACTION_TYPE) {
+    if (
+      pending.type === 'combo' ||
+      pending.type === GUARD_CONTINUE_INTERACTION_TYPE ||
+      pending.type === REWIND_RETURN_INTERACTION_TYPE
+    ) {
       clearHavenHover();
       setChoiceModalContent(pending.type);
       setModalVisibility(comboModal, true);
@@ -810,7 +822,8 @@ export const initGame = () => {
     if (!gameState?.id || !pendingInteractionId || interactionSubmitInFlight) return;
     const isCombo = pendingInteractionType === 'combo';
     const isGuard = pendingInteractionType === GUARD_CONTINUE_INTERACTION_TYPE;
-    if (!isCombo && !isGuard) return;
+    const isRewind = pendingInteractionType === REWIND_RETURN_INTERACTION_TYPE;
+    if (!isCombo && !isGuard && !isRewind) return;
     if (getMatchOutcome(gameState?.state?.public)) return;
     interactionSubmitInFlight = true;
     setComboButtonsEnabled(false);
@@ -833,6 +846,8 @@ export const initGame = () => {
           continue: shouldContinue,
           continueCombo: isCombo ? shouldContinue : undefined,
           continueGuard: isGuard ? shouldContinue : undefined,
+          returnToAnchor: isRewind ? shouldContinue : undefined,
+          rewindReturn: isRewind ? shouldContinue : undefined,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -841,7 +856,9 @@ export const initGame = () => {
           ? `${payload.error}`
           : isGuard
             ? 'Failed to resolve guard choice.'
-            : 'Failed to resolve combo.';
+            : isRewind
+              ? 'Failed to resolve rewind choice.'
+              : 'Failed to resolve combo.';
         console.warn(`${LOG_PREFIX} interaction:rejected`, {
           status: response.status,
           error: payload?.error,
@@ -859,7 +876,9 @@ export const initGame = () => {
         ? err.message
         : isGuard
           ? 'Failed to resolve guard choice.'
-          : 'Failed to resolve combo.';
+          : isRewind
+            ? 'Failed to resolve rewind choice.'
+            : 'Failed to resolve combo.';
       window.alert(message);
     } finally {
       interactionSubmitInFlight = false;
@@ -1136,6 +1155,7 @@ export const initGame = () => {
     canvas,
     viewState,
     timeIndicatorViewModel,
+    getScene: () => timelinePlayback.getScene(),
   });
 
   applyThrowLayout(null);

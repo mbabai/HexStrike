@@ -2,6 +2,8 @@ import { getBeatEntryForCharacter } from './beatTimeline.js';
 import { getTimeIndicatorActionTarget, getTimeIndicatorLayout } from './timeIndicatorView.js';
 import { extractHandTriggerText } from './handTriggerText.mjs';
 import { appendInlineText } from '../shared/cardRenderer.js';
+import { axialToPixel, getHexSize } from '../shared/hex.mjs';
+import { GAME_CONFIG } from './config.js';
 
 const normalizeSymbolText = (text) => {
   const raw = `${text ?? ''}`.trim();
@@ -19,7 +21,7 @@ const parseSymbolInstructions = (text) => {
   const map = new Map();
   const paragraphs = splitParagraphs(text);
   if (!paragraphs.length) return map;
-  const pattern = /\{(X1|X2|i)\}/g;
+  const pattern = /\{(X1|X2|i|F)\}/g;
   for (const paragraph of paragraphs) {
     pattern.lastIndex = 0;
     let match = pattern.exec(paragraph);
@@ -115,7 +117,36 @@ const findCardForTimelineEntry = (beats, character, beatIndex, priority, cardMet
   return null;
 };
 
-export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicatorViewModel } = {}) => {
+const getFocusAnchorTarget = ({ event, canvas, viewState, sceneTokens }) => {
+  if (!event || !canvas || !viewState || !Array.isArray(sceneTokens) || !sceneTokens.length) return null;
+  const focusTokens = sceneTokens.filter((token) => token?.type === 'focus-anchor' && token?.position);
+  if (!focusTokens.length) return null;
+  const rect = canvas.getBoundingClientRect();
+  const pointerX = event.clientX - rect.left;
+  const pointerY = event.clientY - rect.top;
+  const size = getHexSize(rect.width || canvas.clientWidth || 1, GAME_CONFIG.hexSizeFactor);
+  const hitRadius = Math.max(10, size * viewState.scale * 0.55);
+  let best = null;
+  focusTokens.forEach((token) => {
+    const world = axialToPixel(token.position.q, token.position.r, size);
+    const screenX = viewState.offset.x + world.x * viewState.scale;
+    const screenY = viewState.offset.y + world.y * viewState.scale;
+    const dx = pointerX - screenX;
+    const dy = pointerY - screenY;
+    const distance = Math.hypot(dx, dy);
+    if (distance > hitRadius) return;
+    if (!best || distance < best.distance) {
+      best = {
+        distance,
+        token,
+        center: { x: screenX, y: screenY },
+      };
+    }
+  });
+  return best ? { kind: 'focus-anchor', token: best.token, center: best.center } : null;
+};
+
+export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicatorViewModel, getScene } = {}) => {
   if (!gameArea || !canvas) {
     return {
       setCardCatalog: () => {},
@@ -140,7 +171,11 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
   passive.className = 'timeline-tooltip-passive';
   const passiveText = document.createElement('div');
   passiveText.className = 'timeline-tooltip-passive-text';
-  text.append(title, instruction, divider, passive, passiveText);
+  const focus = document.createElement('div');
+  focus.className = 'timeline-tooltip-passive';
+  const focusText = document.createElement('div');
+  focusText.className = 'timeline-tooltip-passive-text';
+  text.append(title, instruction, divider, passive, passiveText, focus, focusText);
   tooltip.appendChild(text);
   gameArea.appendChild(tooltip);
 
@@ -188,7 +223,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     }
     const rect = canvas.getBoundingClientRect();
     const layout = getTimeIndicatorLayout({ width: rect.width, height: rect.height });
-    const target = getTimeIndicatorActionTarget(
+    let target = getTimeIndicatorActionTarget(
       layout,
       timeIndicatorViewModel,
       gameState,
@@ -196,7 +231,47 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       event.clientY - rect.top,
     );
     if (!target) {
+      const sceneTokens = getScene?.()?.boardTokens ?? gameState?.state?.public?.boardTokens ?? [];
+      target = getFocusAnchorTarget({ event, canvas, viewState, sceneTokens });
+    }
+    if (!target) {
       hide();
+      return;
+    }
+    if (target.kind === 'focus-anchor') {
+      const cardId = `${target.token?.cardId ?? ''}`.trim();
+      const card = cardId ? cardMetadata.byId.get(cardId) : null;
+      const titleText = card?.name ?? cardId;
+      const focusInstruction = card?.symbolText?.get('F') ?? '';
+      const focusLine = focusInstruction ? `{F}: ${focusInstruction}` : card?.activeText ?? '';
+      if (!titleText && !focusLine) {
+        hide();
+        return;
+      }
+      const key = ['focus-anchor', cardId, focusLine].join(':');
+      if (key !== lastTooltipKey) {
+        title.textContent = titleText;
+        title.hidden = !titleText;
+        instruction.hidden = true;
+        instruction.textContent = '';
+        divider.hidden = false;
+        passive.hidden = true;
+        passiveText.hidden = true;
+        passive.textContent = '';
+        passiveText.textContent = '';
+        focus.textContent = 'Focus';
+        focus.hidden = false;
+        if (focusLine) {
+          focusText.hidden = false;
+          appendInlineText(focusText, focusLine);
+        } else {
+          focusText.hidden = true;
+          focusText.textContent = '';
+        }
+        lastTooltipKey = key;
+      }
+      tooltip.hidden = false;
+      positionTooltip(target.center.x, target.center.y);
       return;
     }
     if (target.kind === 'hand-trigger') {
@@ -224,6 +299,48 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
         passiveText.hidden = true;
         passive.textContent = '';
         passiveText.textContent = '';
+        focus.hidden = true;
+        focusText.hidden = true;
+        focus.textContent = '';
+        focusText.textContent = '';
+        lastTooltipKey = key;
+      }
+      tooltip.hidden = false;
+      positionTooltip(target.center.x, target.center.y);
+      return;
+    }
+    if (target.kind === 'rewind-return') {
+      const cardId = target.cardId ? `${target.cardId}` : 'rewind';
+      const card = cardId ? cardMetadata.byId.get(cardId) : null;
+      const titleText = card?.name ?? cardId;
+      const focusInstruction = card?.symbolText?.get('F') ?? '';
+      const focusLine = focusInstruction ? `{F}: ${focusInstruction}` : card?.activeText ?? '';
+      const returnToAnchor = Boolean(target.interaction?.resolution?.returnToAnchor);
+      const choiceLine = returnToAnchor ? 'Choice: Yes (return to anchor)' : 'Choice: No (stay focused)';
+      if (!titleText && !focusLine) {
+        hide();
+        return;
+      }
+      const key = ['rewind-return', cardId, target.beatIndex, returnToAnchor, focusLine].join(':');
+      if (key !== lastTooltipKey) {
+        title.textContent = titleText;
+        title.hidden = !titleText;
+        instruction.hidden = false;
+        appendInlineText(instruction, choiceLine);
+        divider.hidden = !focusLine;
+        passive.hidden = true;
+        passiveText.hidden = true;
+        passive.textContent = '';
+        passiveText.textContent = '';
+        focus.textContent = 'Focus';
+        focus.hidden = !focusLine;
+        if (focusLine) {
+          focusText.hidden = false;
+          appendInlineText(focusText, focusLine);
+        } else {
+          focusText.hidden = true;
+          focusText.textContent = '';
+        }
         lastTooltipKey = key;
       }
       tooltip.hidden = false;
@@ -235,6 +352,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     const entry = target.entry;
     const activeCardId = entry?.cardId ? `${entry.cardId}` : null;
     const passiveCardId = entry?.passiveCardId ? `${entry.passiveCardId}` : null;
+    const focusCardId = entry?.focusCardId ? `${entry.focusCardId}` : null;
     let activeCard = activeCardId ? cardMetadata.byId.get(activeCardId) : null;
     if (!activeCard) {
       activeCard = findCardForTimelineEntry(
@@ -246,12 +364,15 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       );
     }
     const passiveCard = passiveCardId ? cardMetadata.byId.get(passiveCardId) : null;
+    const focusCard = focusCardId ? cardMetadata.byId.get(focusCardId) : null;
     const activeName = activeCard?.name ?? '';
     const passiveName = passiveCard?.name ?? '';
     const instructionText = activeCard?.symbolText?.get(target.symbol) ?? '';
     const instructionLine = instructionText ? `{${target.symbol}}: ${instructionText}` : '';
     const passiveTextValue = passiveCard?.passiveText ?? '';
-    if (!activeName && !passiveName && !instructionLine && !passiveTextValue) {
+    const focusInstruction = focusCard?.symbolText?.get('F') ?? '';
+    const focusLine = focusInstruction ? `{F}: ${focusInstruction}` : '';
+    if (!activeName && !passiveName && !instructionLine && !passiveTextValue && !focusLine) {
       hide();
       return;
     }
@@ -263,6 +384,8 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       passiveCardId ?? 'none',
       instructionLine,
       passiveTextValue,
+      focusCardId ?? 'none',
+      focusLine,
     ].join(':');
     if (key !== lastTooltipKey) {
       title.textContent = activeName;
@@ -274,7 +397,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
         instruction.hidden = true;
         instruction.textContent = '';
       }
-      const showDivider = Boolean(passiveName || passiveTextValue);
+      const showDivider = Boolean(passiveName || passiveTextValue || focusLine);
       divider.hidden = !showDivider;
       passive.textContent = passiveName;
       passive.hidden = !passiveName;
@@ -284,6 +407,15 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       } else {
         passiveText.hidden = true;
         passiveText.textContent = '';
+      }
+      focus.textContent = focusCard?.name ? `Focus: ${focusCard.name}` : 'Focus';
+      focus.hidden = !focusLine;
+      if (focusLine) {
+        focusText.hidden = false;
+        appendInlineText(focusText, focusLine);
+      } else {
+        focusText.hidden = true;
+        focusText.textContent = '';
       }
       lastTooltipKey = key;
     }

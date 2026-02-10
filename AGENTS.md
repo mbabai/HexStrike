@@ -59,6 +59,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 ## Testing and validation (current)
 - Use the Node.js built-in test runner (`npm run test`).
 - `npm run dev` builds, runs tests, and only starts the server when tests pass.
+- `npm run dev` writes verbose diagnostics to `temp-logs/` (`server.log` + `events.jsonl`); for timeline/token regressions, inspect those logs first before patching.
 - Any new or edited card in `public/cards/cards.json` must include simulation tests that validate both roles (card as `activeCardId` and as `passiveCardId`) by executing timelines and asserting beat entries; action-list-only coverage is not sufficient.
 
 ## Planned gameplay architecture (future)
@@ -137,19 +138,26 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.
 - Arrow/projectile hits must respect block walls; client token playback derives block lookups from block effects to stop arrows on blocks.
 - Board tokens live in `public.boardTokens`; `executeBeatsWithInteractions` rebuilds fire/arrow tokens from beats, moves only pre-existing arrows each beat, and applies fire damage after arrow resolution.
+- Server re-execution must seed token playback from timeline state (empty replay seed today), not from the latest `public.boardTokens`, or historical beats will be contaminated by future fire/arrow tokens.
 - Haven active uses a `customInteractions` entry of type `haven-platform`; client targeting/hover math is centralized in `public/game/havenInteraction.mjs` and renderer should stay draw-only via `interactionHighlightState`.
 - Ethereal platforms only persist on abyss, grant land-style refresh when a player has `E` on them, and are consumed during `resolveLandRefreshes` once refresh resolves.
 - Client board-token playback is derived from beats/interactions in `public/game/timelinePlayback.js` (`buildTokenPlayback`); keep token spawn logic in sync with server-side rules so timeline scrubbing matches resolution.
 - Fire hex tokens render as full-hex overlays (no facing arrow); keep `public/game/renderer.js` token drawing in sync with any token art changes.
+- Burning Strike passive fire from movement must be queued to the next beat after a successful move; do not spawn it in the same beat or the mover gets incorrectly hit before/while moving away.
 - Burning Strike optional ignites via a `customInteractions` entry of type `burning-strike` (discardCount `1`, `attackHexes`); avoid re-triggering if an interaction already exists for that beat.
 - Guard active uses `customInteractions` of type `guard-continue`; choosing continue repeats from the bracketed Guard start through the first trailing `E` (explicit or implicit/missing entry), replaces that `E`, and schedules a forced discard on the repeat-start beat.
 - Guard continue prompts can re-open on repeated Guard start frames even when that frame is the current `resolvedIndex`; only create the prompt when the actor still has at least one card in hand (movement + ability) so the forced discard is possible.
+- Focus (`F`) beats are open beats for earliest-open/action-set insertion, but Rewind return choices (`rewind-return`) should only prompt on focused `E`/implicit-open beats, not on the `{F}` beat itself.
+- Rewind focus is tracked through `customInteractions` type `rewind-focus`; while active, timeline entries carry `focusCardId`, board tokens include `focus-anchor`, and tooltips should show `{F}` text from the focused card.
+- If a focused player has no playable pair (movement + ability), the server must force-resolve return-to-anchor so focus cannot deadlock at an open beat.
 - Combo prompts pause on the `Co` beat before any action/E resolution, and choosing to continue skips land refresh/draw for that player at that beat.
 - Combo continuation is tied to a specific active card (`cardId` on action list/beat entry); only hits from that card can open the combo prompt.
 - Throw interactions are tagged from card text (`throw` keyword in the active card's active/passive text and the passive card's passive text only); combo prompts only open on non-throw hits.
 - Hip Throw/Tackle passives grant throw immunity while their action set is active (non-`E`), blocking throws from any direction; keep `cardText/combatModifiers` mirrored server/client.
 - Iron Will passive reduces KBF by 1 (min 0) on hits, including projectiles, while the action set is active; hand-trigger use still sets KBF to 0.
 - Jab active `{i}` draws 1 by emitting a `draw` interaction on the bracketed attack step.
+- Hit-driven discard effects (ex: Trip active hit discard, Trip passive KBF->discard) must still enqueue discard interactions when that beat later replays as resolved history after a hand-trigger pause; do not drop them solely because `beatIndex <= resolvedIndex`.
+- Iron Will/Jab draw interactions may need to be reconstructed on resolved-history replays when missing (for example after hand-trigger pauses), so draws are not silently lost.
 - Active ability card text is handled in `src/game/cardText/activeAbility.ts` + `public/game/cardText/activeAbility.js`; Counter Attack shifts the selected rotation to after `{i}` by clearing the start rotation and applying a forced rotation on the next entry.
 - The combo modal is filtered to the actor's beat entry by userId/username; keep interaction actor resolution aligned with roster identifiers.
 - Cards can opt out of throw keyword detection by id (e.g., `grappling-hook`).
@@ -158,6 +166,8 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Pending throw interactions must surface the throw modal even if the beat is already resolved; don't filter throws by resolved index in the UI selector.
 - Skipped combos keep the `Co` symbol on the timeline and are marked with `comboSkipped` for UI greying; do not replace with `W`.
 - Server-side deck state is tracked per game (in memory); refreshes resolve only when the earliest `E` is on land (gated by `lastRefreshIndex`), clearing movement exhaustion and drawing up to max hand size.
+- Focused cards reduce max hand size (`MAX_HAND_SIZE - focusedAbilityCardIds.size`, floored at 0) and movement hand size must be synced using that reduced cap.
+- Rewind focus blocks land refresh entirely until focus ends (return/knockback/stun), even if the earliest `E` is on land.
 - Land refresh checks should use the last known beat location at/ before the earliest `E`; avoid `public.characters` positions or you will refresh on abyss.
 - Land refresh should be keyed only by `lastRefreshIndex` + earliest `E` beat; skip refresh entirely while `pendingActions.beatIndex` matches the earliest `E`.
 - If a hit or custom interaction rewrites a player timeline forward, clamp that player's pending refresh beat to their current first `E` or it will block subsequent action submissions.

@@ -607,7 +607,7 @@
       "rotations": "*",
       "damage": 0,
       "kbf": 0,
-      "activeText": "{F}: Note your current hex location. At any {E}, you may end Rewind's concentration to return to that location. While Rewind is concentrated, you cannot refresh, even on land."
+      "activeText": "{F}: Note your current hex location. At any {E}, you may end Rewind's concentration to return to that location. While Rewind is concentrated, you cannot refresh, even on land. When returning back, if an obstacle is on that location, you are instead stunned 3."
     },
     {
       "id": "sinking-shot",
@@ -882,6 +882,31 @@
         "jab",
         "smash-attack",
         "spike"
+      ]
+    },
+    {
+      "id": "rewind-test-shared",
+      "name": "Rewind Test Shared",
+      "characterId": "murelious",
+      "movement": [
+        "step",
+        "ninja-roll",
+        "backflip",
+        "grappling-hook"
+      ],
+      "ability": [
+        "rewind",
+        "parry",
+        "feint",
+        "reflex-dodge",
+        "smoke-bomb",
+        "long-thrust",
+        "balestra-lunge",
+        "trip",
+        "hip-throw",
+        "aerial-strike",
+        "stab",
+        "counter-attack"
       ]
     }
   ]

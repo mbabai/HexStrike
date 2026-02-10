@@ -26,13 +26,16 @@ export const getDiscardStatus = ({
 export const getDiscardCounts = (pending, playerCards, maxHandSize = 4) => {
   const abilityHandCount = Array.isArray(playerCards?.abilityHand) ? playerCards.abilityHand.length : 0;
   const movementHandCount = Array.isArray(playerCards?.movementHand) ? playerCards.movementHand.length : 0;
+  const effectiveMaxHandSize = Number.isFinite(playerCards?.maxHandSize)
+    ? Math.max(0, Math.floor(playerCards.maxHandSize))
+    : maxHandSize;
   const rawCount = Number.isFinite(pending?.discardCount) ? Math.max(0, pending.discardCount) : 0;
   const abilityCount = Number.isFinite(pending?.discardAbilityCount) && pending.discardAbilityCount >= 0
     ? Math.min(pending.discardAbilityCount, abilityHandCount)
     : Math.min(rawCount, abilityHandCount);
   const movementCount = Number.isFinite(pending?.discardMovementCount) && pending.discardMovementCount >= 0
     ? Math.min(pending.discardMovementCount, movementHandCount)
-    : Math.max(0, movementHandCount - Math.min(abilityHandCount - abilityCount, maxHandSize));
+    : Math.max(0, movementHandCount - Math.min(abilityHandCount - abilityCount, effectiveMaxHandSize));
   return { ability: abilityCount, movement: movementCount, total: rawCount };
 };
 

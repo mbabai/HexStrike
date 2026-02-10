@@ -2,7 +2,13 @@ import { ActionListItem, BeatEntry, PublicCharacter } from '../types';
 import { getTimelineResolvedIndex } from './beatTimeline';
 
 const DEFAULT_ACTION = 'E';
+const FOCUS_ACTION = 'F';
 const LOG_PREFIX = '[actionSets]';
+
+const isOpenBeatAction = (action: string | undefined) => {
+  const normalized = `${action ?? ''}`.trim().toUpperCase();
+  return normalized === DEFAULT_ACTION || normalized === FOCUS_ACTION;
+};
 
 const cloneLocation = (location?: { q: number; r: number }) =>
   location ? { q: location.q, r: location.r } : { q: 0, r: 0 };
@@ -121,7 +127,7 @@ export const applyActionSetToBeats = (
       startIndex = i;
       break;
     }
-    if (entry.action === DEFAULT_ACTION) {
+    if (isOpenBeatAction(entry.action)) {
       startIndex = i;
       break;
     }

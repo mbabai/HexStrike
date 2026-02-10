@@ -8,6 +8,7 @@ import { CHARACTER_IDS } from './game/characters';
 import { createInitialGameState } from './game/state';
 import { applyActionSetToBeats } from './game/actionSets';
 import { executeBeatsWithInteractions } from './game/execute';
+import { buildReplaySeedTokens } from './game/tokenReplay';
 import { applyDeathToBeats, evaluateMatchOutcome } from './game/matchEndRules';
 import {
   getCharacterFirstEIndex,
@@ -23,25 +24,29 @@ import {
   applyCardUse,
   buildDefaultDeckDefinition,
   buildPlayerCardState,
+  clearFocusedAbilityCard,
   createDeckState,
   drawAbilityCards,
   discardAbilityCards,
   isAbilityDiscardFailure,
   getDiscardRequirements,
   getMovementHandIds,
+  setFocusedAbilityCard,
   isActionValidationFailure,
   parseDeckDefinition,
   resolveLandRefreshes,
   validateActionSubmission,
 } from './game/cardRules';
-import { getTargetMovementHandSize } from './game/handRules';
+import { getMaxAbilityHandSize, getTargetMovementHandSize } from './game/handRules';
 import { HAND_TRIGGER_BY_ID, HAND_TRIGGER_DEFINITIONS } from './game/handTriggers';
+import { writeDevTempEvent } from './dev/tempLogs';
 import {
   ActionListItem,
   BeatEntry,
   CardCatalog,
   CharacterId,
   CustomInteraction,
+  BoardToken,
   DeckDefinition,
   DeckState,
   GameDoc,
@@ -98,6 +103,8 @@ const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const LOG_PREFIX = '[hexstrike]';
 const COMBO_ACTION = 'CO';
 const GUARD_CONTINUE_INTERACTION_TYPE = 'guard-continue';
+const REWIND_FOCUS_INTERACTION_TYPE = 'rewind-focus';
+const REWIND_RETURN_INTERACTION_TYPE = 'rewind-return';
 const WHIRLWIND_CARD_ID = 'whirlwind';
 const WHIRLWIND_MIN_DAMAGE = 12;
 
@@ -157,6 +164,52 @@ const buildGuardContinueAvailability = (deckStates: Map<string, DeckState>) => {
     availability.set(userId, movementHandSize + abilityHandSize > 0);
   });
   return availability;
+};
+
+const cloneForLog = <T>(value: T): T => {
+  if (value === undefined || value === null) return value;
+  try {
+    return JSON.parse(JSON.stringify(value)) as T;
+  } catch {
+    return value;
+  }
+};
+
+const buildPublicStateSnapshotForLog = (publicState: GameStateDoc['public'] | undefined) => {
+  if (!publicState) return null;
+  const beats = publicState.beats ?? publicState.timeline ?? [];
+  const characters = Array.isArray(publicState.characters) ? publicState.characters : [];
+  return {
+    earliestIndex: getTimelineEarliestEIndex(beats, characters),
+    resolvedIndex: getTimelineResolvedIndex(beats),
+    characters: cloneForLog(characters),
+    beats: cloneForLog(beats),
+    customInteractions: cloneForLog(publicState.customInteractions ?? []),
+    pendingActions: cloneForLog(publicState.pendingActions ?? null),
+    boardTokens: cloneForLog(publicState.boardTokens ?? []),
+    matchOutcome: cloneForLog(publicState.matchOutcome ?? null),
+  };
+};
+
+const buildDeckStatesSnapshotForLog = (deckStates?: Map<string, DeckState>) => {
+  if (!deckStates) return null;
+  const snapshot: Record<string, unknown> = {};
+  deckStates.forEach((deckState, userId) => {
+    snapshot[userId] = {
+      movement: [...deckState.movement],
+      exhaustedMovementIds: Array.from(deckState.exhaustedMovementIds),
+      movementHand: getMovementHandIds(deckState),
+      targetMovementHandSize: getTargetMovementHandSize(deckState.abilityHand.length, getMaxAbilityHandSize(deckState)),
+      abilityHand: [...deckState.abilityHand],
+      abilityDeck: [...deckState.abilityDeck],
+      focusedAbilityCardIds: Array.from(deckState.focusedAbilityCardIds),
+      maxAbilityHandSize: getMaxAbilityHandSize(deckState),
+      activeCardId: deckState.activeCardId,
+      passiveCardId: deckState.passiveCardId,
+      lastRefreshIndex: deckState.lastRefreshIndex,
+    };
+  });
+  return snapshot;
 };
 
 const hashString = (value: string): number => {
@@ -267,7 +320,7 @@ const getDrawSelectionRequirement = (deckState: DeckState, drawCount: number) =>
   const requested = Number.isFinite(drawCount) ? Math.max(0, Math.floor(drawCount)) : 0;
   const actualDraw = Math.min(requested, deckState.abilityDeck.length);
   const abilityAfter = deckState.abilityHand.length + actualDraw;
-  const targetMovementSize = getTargetMovementHandSize(abilityAfter);
+  const targetMovementSize = getTargetMovementHandSize(abilityAfter, getMaxAbilityHandSize(deckState));
   const movementHandSize = getMovementHandIds(deckState).length;
   const requiredRestore = Math.max(0, targetMovementSize - movementHandSize);
   const requiresSelection = requiredRestore > 0 && targetMovementSize <= DRAW_SELECTION_MAX_MOVEMENT;
@@ -301,6 +354,184 @@ const applyDrawInteractions = (deckStates: Map<string, DeckState>, interactions:
     }
     interaction.resolution = { ...(interaction.resolution ?? {}), applied: true };
   });
+};
+
+const getFocusedCardIdFromInteraction = (interaction: CustomInteraction): string => {
+  const raw = `${interaction.cardId ?? interaction.resolution?.cardId ?? 'rewind'}`.trim();
+  return raw || 'rewind';
+};
+
+const syncFocusedCardsFromInteractions = (
+  deckStates: Map<string, DeckState>,
+  interactions: CustomInteraction[],
+) => {
+  if (!deckStates?.size) return;
+  const desiredByUser = new Map<string, Set<string>>();
+  interactions.forEach((interaction) => {
+    if (!interaction || interaction.type !== REWIND_FOCUS_INTERACTION_TYPE) return;
+    if (interaction.status !== 'resolved') return;
+    if (interaction.resolution?.active === false) return;
+    const actorId = `${interaction.actorUserId ?? ''}`.trim();
+    if (!actorId) return;
+    const cardId = getFocusedCardIdFromInteraction(interaction);
+    const desired = desiredByUser.get(actorId) ?? new Set<string>();
+    desired.add(cardId);
+    desiredByUser.set(actorId, desired);
+  });
+
+  deckStates.forEach((deckState, userId) => {
+    const desired = desiredByUser.get(userId) ?? new Set<string>();
+    const current = Array.from(deckState.focusedAbilityCardIds ?? []);
+    current.forEach((cardId) => {
+      if (desired.has(cardId)) return;
+      clearFocusedAbilityCard(deckState, cardId, { returnToDeck: true });
+    });
+    desired.forEach((cardId) => {
+      if (deckState.focusedAbilityCardIds.has(cardId)) return;
+      setFocusedAbilityCard(deckState, cardId);
+    });
+  });
+};
+
+const hasPlayableCards = (deckState?: DeckState): boolean => {
+  if (!deckState) return true;
+  const hasAbility = Array.isArray(deckState.abilityHand) && deckState.abilityHand.length > 0;
+  const hasMovement = getMovementHandIds(deckState).length > 0;
+  return hasAbility && hasMovement;
+};
+
+const autoResolveForcedRewindReturns = (
+  beats: BeatEntry[][],
+  characters: PublicCharacter[],
+  interactions: CustomInteraction[],
+  deckStates: Map<string, DeckState>,
+): boolean => {
+  let updated = false;
+  const activeFocusByUser = new Map<string, CustomInteraction>();
+  interactions.forEach((interaction) => {
+    if (!interaction || interaction.type !== REWIND_FOCUS_INTERACTION_TYPE) return;
+    if (interaction.status !== 'resolved') return;
+    if (interaction.resolution?.active === false) return;
+    const actorId = `${interaction.actorUserId ?? ''}`.trim();
+    if (!actorId) return;
+    activeFocusByUser.set(actorId, interaction);
+  });
+  const characterByUserId = new Map<string, PublicCharacter>();
+  characters.forEach((character) => {
+    characterByUserId.set(character.userId, character);
+  });
+
+  interactions.forEach((interaction) => {
+    if (!interaction || interaction.type !== REWIND_RETURN_INTERACTION_TYPE) return;
+    if (interaction.status !== 'pending') return;
+    const actorId = `${interaction.actorUserId ?? ''}`.trim();
+    if (!actorId) return;
+    const deckState = deckStates.get(actorId);
+    if (hasPlayableCards(deckState)) return;
+    interaction.status = 'resolved';
+    interaction.resolution = {
+      ...(interaction.resolution ?? {}),
+      returnToAnchor: true,
+      forced: true,
+    };
+    updated = true;
+  });
+
+  activeFocusByUser.forEach((focusInteraction, actorId) => {
+    const deckState = deckStates.get(actorId);
+    if (hasPlayableCards(deckState)) return;
+    const hasPending = interactions.some(
+      (interaction) =>
+        interaction?.type === REWIND_RETURN_INTERACTION_TYPE &&
+        interaction?.status === 'pending' &&
+        interaction?.actorUserId === actorId,
+    );
+    if (hasPending) return;
+    const hasUnappliedResolved = interactions.some(
+      (interaction) =>
+        interaction?.type === REWIND_RETURN_INTERACTION_TYPE &&
+        interaction?.status === 'resolved' &&
+        interaction?.actorUserId === actorId &&
+        Boolean(interaction?.resolution?.returnToAnchor) &&
+        !interaction?.resolution?.applied,
+    );
+    if (hasUnappliedResolved) return;
+    const character = characterByUserId.get(actorId);
+    if (!character) return;
+    const beatIndex = getCharacterFirstEIndex(beats, character);
+    const safeBeatIndex = Number.isFinite(beatIndex) ? Math.max(0, Math.round(beatIndex)) : 0;
+    const interactionId = `${REWIND_RETURN_INTERACTION_TYPE}:${safeBeatIndex}:${actorId}:${actorId}`;
+    const cardId = getFocusedCardIdFromInteraction(focusInteraction);
+    interactions.push({
+      id: interactionId,
+      type: REWIND_RETURN_INTERACTION_TYPE,
+      beatIndex: safeBeatIndex,
+      actorUserId: actorId,
+      targetUserId: actorId,
+      cardId,
+      status: 'resolved',
+      resolution: {
+        returnToAnchor: true,
+        forced: true,
+        focusInteractionId: focusInteraction.id,
+        anchorHex: focusInteraction.resolution?.anchorHex,
+      },
+    });
+    updated = true;
+  });
+
+  return updated;
+};
+
+const executeWithForcedRewindReturns = ({
+  beats,
+  characters,
+  interactions,
+  land,
+  comboAvailability,
+  handTriggerAvailability,
+  guardContinueAvailability,
+  deckStates,
+  initialTokens = [],
+}: {
+  beats: BeatEntry[][];
+  characters: PublicCharacter[];
+  interactions: CustomInteraction[];
+  land: HexCoord[];
+  comboAvailability: Map<string, boolean>;
+  handTriggerAvailability: Map<string, Set<string>>;
+  guardContinueAvailability: Map<string, boolean>;
+  deckStates: Map<string, DeckState>;
+  initialTokens?: BoardToken[];
+}) => {
+  // Replay execution must seed tokens from timeline/interactions, not the current
+  // public board token snapshot, or old fire/arrow states get projected into beat 0.
+  const replaySeedTokens = buildReplaySeedTokens(initialTokens);
+  let executed = executeBeatsWithInteractions(
+    beats,
+    characters,
+    interactions,
+    land,
+    comboAvailability,
+    replaySeedTokens,
+    handTriggerAvailability,
+    guardContinueAvailability,
+  );
+  syncFocusedCardsFromInteractions(deckStates, executed.interactions);
+  while (autoResolveForcedRewindReturns(executed.beats, executed.characters, executed.interactions, deckStates)) {
+    executed = executeBeatsWithInteractions(
+      executed.beats,
+      characters,
+      executed.interactions,
+      land,
+      comboAvailability,
+      replaySeedTokens,
+      handTriggerAvailability,
+      guardContinueAvailability,
+    );
+    syncFocusedCardsFromInteractions(deckStates, executed.interactions);
+  }
+  return executed;
 };
 
 const findComboContinuation = (
@@ -554,6 +785,10 @@ export function buildServer(port: number) {
 
   const buildGameViewForPlayer = (game: GameDoc, userId: string, deckStates?: Map<string, DeckState>) => {
     const resolvedDeckStates = deckStates ?? gameDeckStates.get(game.id);
+    if (resolvedDeckStates) {
+      const focusInteractions = game.state?.public?.customInteractions ?? [];
+      syncFocusedCardsFromInteractions(resolvedDeckStates, focusInteractions);
+    }
     const playerDeckState = resolvedDeckStates?.get(userId) ?? null;
     const playerCards = playerDeckState ? buildPlayerCardState(playerDeckState) : null;
     const publicState = game.state.public;
@@ -1016,8 +1251,29 @@ export function buildServer(port: number) {
     if (!game) {
       return { ok: false, status: 404, error: 'Not found' };
     }
+    const logActionSetEvent = (
+      stage: string,
+      extra: Record<string, unknown> = {},
+      deckStates?: Map<string, DeckState>,
+    ) => {
+      writeDevTempEvent('action-set', {
+        stage,
+        userId,
+        gameId,
+        request: {
+          activeCardId: activeCardId ?? null,
+          passiveCardId: passiveCardId ?? null,
+          rotation: rotation ?? '',
+        },
+        ...extra,
+        publicState: buildPublicStateSnapshotForLog(game.state?.public),
+        deckStates: buildDeckStatesSnapshotForLog(deckStates),
+      });
+    };
+    logActionSetEvent('request');
     if (game.state?.public?.matchOutcome) {
       console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'match-ended' });
+      logActionSetEvent('rejected', { reason: 'match-ended' });
       return { ok: false, status: 409, error: 'Match is already over' };
     }
     const characters = game.state?.public ? ensureBaselineCharacters(game.state.public) : [];
@@ -1025,12 +1281,14 @@ export function buildServer(port: number) {
     const hasCharacter = characters.some((character) => character.userId === userId);
     if (!isPlayer || !hasCharacter) {
       console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'not-in-game' });
+      logActionSetEvent('rejected', { reason: 'not-in-game' });
       return { ok: false, status: 403, error: 'User not in game' };
     }
     let interactions = game.state?.public?.customInteractions ?? [];
     const hasPendingInteractions = interactions.some((interaction) => interaction.status === 'pending');
     if (hasPendingInteractions) {
       console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'pending-interaction' });
+      logActionSetEvent('rejected', { reason: 'pending-interaction' });
       return { ok: false, status: 409, error: 'Action set rejected: pending interaction in progress' };
     }
       const beats = game.state?.public?.beats ?? game.state?.public?.timeline ?? [];
@@ -1044,6 +1302,7 @@ export function buildServer(port: number) {
             : character?.damage ?? 0;
         if (currentDamage < WHIRLWIND_MIN_DAMAGE) {
         console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'whirlwind-damage' });
+        logActionSetEvent('rejected', { reason: 'whirlwind-damage', currentDamage });
         return {
           ok: false,
           status: 409,
@@ -1061,6 +1320,7 @@ export function buildServer(port: number) {
     });
     if (!isCharacterAtEarliestE(beats, characters, character)) {
       console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'behind-earliest-e' });
+      logActionSetEvent('rejected', { reason: 'behind-earliest-e' });
       return {
         ok: false,
         status: 409,
@@ -1075,6 +1335,7 @@ export function buildServer(port: number) {
     const match = await db.findMatch(game.matchId);
     const catalog = await loadCardCatalog();
     const deckStates = await ensureDeckStatesForGame(game, match);
+    syncFocusedCardsFromInteractions(deckStates, interactions);
     const land = game.state?.public?.land ?? [];
     resolveLandRefreshes(
       deckStates,
@@ -1088,6 +1349,7 @@ export function buildServer(port: number) {
     const deckState = deckStates.get(userId);
     if (!deckState) {
       console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'missing-deck-state' });
+      logActionSetEvent('rejected', { reason: 'missing-deck-state' }, deckStates);
       return { ok: false, status: 500, error: 'Missing deck state for player' };
     }
     if (atBatUserIds.length <= 1) {
@@ -1113,6 +1375,22 @@ export function buildServer(port: number) {
         }
       }
       const actionList = comboRequired ? withComboStarter(validation.actionList) : validation.actionList;
+      logActionSetEvent(
+        'before-execute-single',
+        {
+          comboRequired,
+          atBatUserIds,
+          actionList: actionList.map((item) => ({
+            action: item.action,
+            rotation: item.rotation,
+            priority: item.priority,
+            cardId: item.cardId ?? null,
+            passiveCardId: item.passiveCardId ?? null,
+            interaction: item.interaction?.type ?? null,
+          })),
+        },
+        deckStates,
+      );
       console.log(`${LOG_PREFIX} action:set actionList`, {
         userId,
         gameId,
@@ -1150,16 +1428,17 @@ export function buildServer(port: number) {
       const comboAvailability = buildComboAvailability(deckStates, catalog);
       const handTriggerAvailability = buildHandTriggerAvailability(deckStates);
       const guardContinueAvailability = buildGuardContinueAvailability(deckStates);
-      const executed = executeBeatsWithInteractions(
-        updatedBeats,
+      const executed = executeWithForcedRewindReturns({
+        beats: updatedBeats,
         characters,
         interactions,
         land,
         comboAvailability,
-        [],
         handTriggerAvailability,
         guardContinueAvailability,
-      );
+        deckStates,
+        initialTokens: game.state.public.boardTokens ?? [],
+      });
       game.state.public.beats = executed.beats;
       game.state.public.timeline = executed.beats;
       resetCharactersToBaseline(game.state.public);
@@ -1183,6 +1462,14 @@ export function buildServer(port: number) {
         lastCalculated: executed.lastCalculated,
         pendingInteractions: executed.interactions.filter((item) => item.status === 'pending').length,
       });
+      logActionSetEvent(
+        'after-execute-single',
+        {
+          lastCalculated: executed.lastCalculated,
+          pendingInteractions: executed.interactions.filter((item) => item.status === 'pending').length,
+        },
+        deckStates,
+      );
       const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
       sendGameUpdate(match, updatedGame, deckStates);
       const view = buildGameViewForPlayer(updatedGame, userId, deckStates);
@@ -1261,6 +1548,15 @@ export function buildServer(port: number) {
       requiredUserIds: [...batch.requiredUserIds],
       submittedUserIds: Array.from(batch.submitted.keys()),
     };
+    logActionSetEvent(
+      'pending-batch',
+      {
+        beatIndex: batch.beatIndex,
+        requiredUserIds: [...batch.requiredUserIds],
+        submittedUserIds: Array.from(batch.submitted.keys()),
+      },
+      deckStates,
+    );
     console.log(`${LOG_PREFIX} action:set pending`, {
       gameId,
       beatIndex: batch.beatIndex,
@@ -1274,6 +1570,15 @@ export function buildServer(port: number) {
       return { ok: true, status: 200, payload: view };
     }
     let updatedBeats = beats;
+    logActionSetEvent(
+      'before-execute-batch',
+      {
+        beatIndex: batch.beatIndex,
+        requiredUserIds: [...batch.requiredUserIds],
+        submittedUserIds: Array.from(batch.submitted.keys()),
+      },
+      deckStates,
+    );
     batch.requiredUserIds.forEach((requiredId) => {
       const submission = batch?.submitted.get(requiredId);
       if (submission) {
@@ -1283,16 +1588,17 @@ export function buildServer(port: number) {
     const comboAvailability = buildComboAvailability(deckStates, catalog);
     const handTriggerAvailability = buildHandTriggerAvailability(deckStates);
     const guardContinueAvailability = buildGuardContinueAvailability(deckStates);
-    const executed = executeBeatsWithInteractions(
-      updatedBeats,
+    const executed = executeWithForcedRewindReturns({
+      beats: updatedBeats,
       characters,
       interactions,
       land,
       comboAvailability,
-      [],
       handTriggerAvailability,
       guardContinueAvailability,
-    );
+      deckStates,
+      initialTokens: game.state.public.boardTokens ?? [],
+    });
     game.state.public.beats = executed.beats;
     game.state.public.timeline = executed.beats;
     resetCharactersToBaseline(game.state.public);
@@ -1318,6 +1624,15 @@ export function buildServer(port: number) {
       lastCalculated: executed.lastCalculated,
       pendingInteractions: executed.interactions.filter((item) => item.status === 'pending').length,
     });
+    logActionSetEvent(
+      'after-execute-batch',
+      {
+        beatIndex: batch.beatIndex,
+        lastCalculated: executed.lastCalculated,
+        pendingInteractions: executed.interactions.filter((item) => item.status === 'pending').length,
+      },
+      deckStates,
+    );
     const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
     sendGameUpdate(match, updatedGame, deckStates);
     const view = buildGameViewForPlayer(updatedGame, userId, deckStates);
@@ -1337,8 +1652,28 @@ export function buildServer(port: number) {
     if (!game) {
       return { ok: false, status: 404, error: 'Not found' };
     }
+    const logInteractionEvent = (
+      stage: string,
+      extra: Record<string, unknown> = {},
+      deckStates?: Map<string, DeckState>,
+    ) => {
+      writeDevTempEvent('interaction-resolve', {
+        stage,
+        userId,
+        gameId,
+        interactionId,
+        request: {
+          directionIndex: directionIndex ?? null,
+        },
+        ...extra,
+        publicState: buildPublicStateSnapshotForLog(game.state?.public),
+        deckStates: buildDeckStatesSnapshotForLog(deckStates),
+      });
+    };
+    logInteractionEvent('request');
     if (game.state?.public?.matchOutcome) {
       console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'match-ended' });
+      logInteractionEvent('rejected', { reason: 'match-ended' });
       return { ok: false, status: 409, error: 'Match is already over' };
     }
     const characters = game.state?.public ? ensureBaselineCharacters(game.state.public) : [];
@@ -1346,24 +1681,36 @@ export function buildServer(port: number) {
     const hasCharacter = characters.some((character) => character.userId === userId);
     if (!isPlayer || !hasCharacter) {
       console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'not-in-game' });
+      logInteractionEvent('rejected', { reason: 'not-in-game' });
       return { ok: false, status: 403, error: 'User not in game' };
     }
     const interactions = game.state?.public?.customInteractions ?? [];
     const interaction = interactions.find((item) => item.id === interactionId);
     if (!interaction || interaction.status !== 'pending') {
       console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'not-pending' });
+      logInteractionEvent('rejected', { reason: 'not-pending' });
       return { ok: false, status: 409, error: 'Interaction is no longer pending' };
     }
     if (interaction.actorUserId !== userId) {
       console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'not-authorized' });
+      logInteractionEvent('rejected', { reason: 'not-authorized' });
       return { ok: false, status: 403, error: 'User is not authorized to resolve this interaction' };
     }
     const beats = game.state?.public?.beats ?? game.state?.public?.timeline ?? [];
     const land = game.state?.public?.land ?? [];
     const match = await db.findMatch(game.matchId);
     const deckStates = await ensureDeckStatesForGame(game, match);
+    syncFocusedCardsFromInteractions(deckStates, interactions);
     const catalog = await loadCardCatalog();
     const comboAvailability = buildComboAvailability(deckStates, catalog);
+    logInteractionEvent(
+      'before-resolve',
+      {
+        interactionType: interaction.type,
+        interactionStatus: interaction.status,
+      },
+      deckStates,
+    );
 
     if (interaction.type === 'throw') {
       const resolvedDirection = Number(directionIndex);
@@ -1373,12 +1720,19 @@ export function buildServer(port: number) {
       }
       interaction.status = 'resolved';
       interaction.resolution = { directionIndex: Math.round(resolvedDirection) };
-    } else if (interaction.type === 'combo' || interaction.type === GUARD_CONTINUE_INTERACTION_TYPE) {
+    } else if (
+      interaction.type === 'combo' ||
+      interaction.type === GUARD_CONTINUE_INTERACTION_TYPE ||
+      interaction.type === REWIND_RETURN_INTERACTION_TYPE
+    ) {
       const rawContinue = (body as { continueCombo?: unknown; comboContinue?: unknown })?.continueCombo;
       const altContinue = (body as { comboContinue?: unknown })?.comboContinue;
       const rawGuardContinue = (body as { continueGuard?: unknown; guardContinue?: unknown })?.continueGuard;
       const altGuardContinue = (body as { guardContinue?: unknown })?.guardContinue;
+      const rawRewindReturn = (body as { returnToAnchor?: unknown; rewindReturn?: unknown })?.returnToAnchor;
+      const altRewindReturn = (body as { rewindReturn?: unknown })?.rewindReturn;
       const fallbackContinue = (body as { continue?: unknown })?.continue;
+      const fallbackReturn = (body as { return?: unknown })?.return;
       const resolvedContinue =
         typeof rawContinue === 'boolean'
           ? rawContinue
@@ -1390,15 +1744,38 @@ export function buildServer(port: number) {
                 ? altGuardContinue
                 : typeof fallbackContinue === 'boolean'
                   ? fallbackContinue
-                  : null;
+                  : typeof rawRewindReturn === 'boolean'
+                    ? rawRewindReturn
+                    : typeof altRewindReturn === 'boolean'
+                      ? altRewindReturn
+                      : typeof fallbackReturn === 'boolean'
+                        ? fallbackReturn
+                        : null;
       if (resolvedContinue === null) {
-        const reason = interaction.type === 'combo' ? 'invalid-combo-choice' : 'invalid-guard-choice';
-        const error = interaction.type === 'combo' ? 'Invalid combo choice' : 'Invalid guard choice';
+        const reason =
+          interaction.type === 'combo'
+            ? 'invalid-combo-choice'
+            : interaction.type === GUARD_CONTINUE_INTERACTION_TYPE
+              ? 'invalid-guard-choice'
+              : 'invalid-rewind-choice';
+        const error =
+          interaction.type === 'combo'
+            ? 'Invalid combo choice'
+            : interaction.type === GUARD_CONTINUE_INTERACTION_TYPE
+              ? 'Invalid guard choice'
+              : 'Invalid rewind choice';
         console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason });
         return { ok: false, status: 400, error };
       }
       interaction.status = 'resolved';
-      interaction.resolution = { continue: resolvedContinue };
+      if (interaction.type === REWIND_RETURN_INTERACTION_TYPE) {
+        interaction.resolution = {
+          ...(interaction.resolution ?? {}),
+          returnToAnchor: resolvedContinue,
+        };
+      } else {
+        interaction.resolution = { continue: resolvedContinue };
+      }
     } else if (interaction.type === 'haven-platform') {
       const rawTargetHex = (body as { targetHex?: unknown })?.targetHex;
       const fallbackQ = (body as { q?: unknown; targetQ?: unknown; hexQ?: unknown })?.q ??
@@ -1665,16 +2042,18 @@ export function buildServer(port: number) {
 
     const handTriggerAvailability = buildHandTriggerAvailability(deckStates);
     const guardContinueAvailability = buildGuardContinueAvailability(deckStates);
-    const executed = executeBeatsWithInteractions(
+    logInteractionEvent('before-execute', { interactionType: interaction.type }, deckStates);
+    const executed = executeWithForcedRewindReturns({
       beats,
       characters,
       interactions,
       land,
       comboAvailability,
-      [],
       handTriggerAvailability,
       guardContinueAvailability,
-    );
+      deckStates,
+      initialTokens: game.state.public.boardTokens ?? [],
+    });
     game.state.public.beats = executed.beats;
     game.state.public.timeline = executed.beats;
     resetCharactersToBaseline(game.state.public);
@@ -1697,6 +2076,15 @@ export function buildServer(port: number) {
       timeline: buildTimelineSummary(executed.beats, executed.characters),
       lastCalculated: executed.lastCalculated,
     });
+    logInteractionEvent(
+      'after-execute',
+      {
+        interactionType: interaction.type,
+        lastCalculated: executed.lastCalculated,
+        pendingInteractions: executed.interactions.filter((item) => item.status === 'pending').length,
+      },
+      deckStates,
+    );
     const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
     sendGameUpdate(match, updatedGame, deckStates);
     const view = buildGameViewForPlayer(updatedGame, userId, deckStates);

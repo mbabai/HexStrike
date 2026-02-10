@@ -65,6 +65,31 @@ test('selectPendingInteraction returns pending guard continue even if beat is re
   assert.equal(pending?.id, 'guard-continue:0:me:me');
 });
 
+test('selectPendingInteraction returns pending rewind return even if beat is resolved', async () => {
+  const { selectPendingInteraction } = await loadModule();
+  const interactions = [
+    {
+      id: 'rewind-return:0:me:me',
+      type: 'rewind-return',
+      status: 'pending',
+      actorUserId: 'me',
+      targetUserId: 'me',
+      beatIndex: 0,
+    },
+  ];
+  const beats = [[{ username: 'me', action: 'E' }]];
+  const characters = [{ userId: 'me', username: 'me' }];
+  const pending = selectPendingInteraction({
+    interactions,
+    beats,
+    characters,
+    localUserId: 'me',
+    resolvedIndex: 0,
+  });
+
+  assert.equal(pending?.id, 'rewind-return:0:me:me');
+});
+
 test('selectPendingInteraction ignores combo without Co entry', async () => {
   const { selectPendingInteraction } = await loadModule();
   const interactions = [{ id: 'combo:0:me:me', type: 'combo', status: 'pending', actorUserId: 'me', beatIndex: 0 }];
