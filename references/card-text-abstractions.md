@@ -12,7 +12,7 @@
 
 ## Conditional throw + charge
 - `cardStartTerrain` is stamped on beat entries during execution to capture the terrain at the start of the action set.
-- Grappling Hook: the `{i}` (bracketed) charge step stops at the first land tile or target in front, and its throw interaction only applies when `cardStartTerrain === 'land'`.
+- Grappling Hook: the `{i}` (bracketed) charge step stops at the first land tile or target in front, and its throw interaction only applies when `cardStartTerrain === 'land'` and the hit target is adjacent on the `{c}` beat.
 
 ## Targeting keywords
 - `touching` means the actor's current hex or any of the six adjacent hexes.

@@ -239,10 +239,18 @@ const isBracketedAction = (action) => {
   return Boolean(trimmed) && trimmed.startsWith('[') && trimmed.endsWith(']');
 };
 
-const isEntryThrow = (entry) => {
+const isGrapplingHookThrow = (entry, options = {}) => {
+  if (!entry || entry.cardId !== GRAPPLING_HOOK_CARD_ID) return false;
+  if (entry.cardStartTerrain !== 'land') return false;
+  if (`${options.tokenType ?? ''}`.toLowerCase() !== 'c') return false;
+  if (!options.actorPosition || !options.targetPosition) return false;
+  return axialDistance(options.actorPosition, options.targetPosition) === 1;
+};
+
+const isEntryThrow = (entry, options = {}) => {
   if (!entry) return false;
   if (entry.interaction?.type === 'throw') return true;
-  if (entry.cardId === GRAPPLING_HOOK_CARD_ID && entry.cardStartTerrain === 'land') return true;
+  if (isGrapplingHookThrow(entry, options)) return true;
   if (entry.cardId && ACTIVE_THROW_CARD_IDS.has(entry.cardId)) return true;
   if (entry.passiveCardId && PASSIVE_THROW_CARD_IDS.has(entry.passiveCardId)) return true;
   return false;
@@ -799,16 +807,20 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
         blockMap.get(targetKey)?.has(directionIndex);
       const targetCharacter = targetId ? characterById.get(targetId) : null;
       const targetEntry = targetCharacter ? getBeatEntryForCharacter(beat, targetCharacter) : null;
+      const targetState = targetId ? state.get(targetId) : null;
 
       if (token.type === 'a' || token.type === 'c') {
-        const isThrow = isEntryThrow(entry);
+        const isThrow = isEntryThrow(entry, {
+          tokenType: token.type,
+          actorPosition: origin,
+          targetPosition: targetState?.position,
+        });
         const throwBlocked = isThrow && isThrowImmune(targetEntry);
         const blocked = (isBlocked && !isThrow) || throwBlocked;
         if (targetId && blocked && directionIndex != null) {
           blockHits.push({ coord: { q: destination.q, r: destination.r }, directionIndex });
         }
         if (targetId && !blocked) {
-          const targetState = state.get(targetId);
           if (targetState) {
             const fromPosition = { q: targetState.position.q, r: targetState.position.r };
             if (isThrow) {

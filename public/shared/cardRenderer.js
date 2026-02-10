@@ -47,14 +47,19 @@ const ensureActionList = (actions) => {
 
 const formatStatValue = (value) => {
   if (value === null || value === undefined || value === '') return '0';
-  return `${value}`;
+  const raw = `${value}`.trim();
+  if (!raw) return '0';
+  return raw.toUpperCase() === 'T' ? 'T' : raw;
 };
 
 const buildStatBadge = (type, value, iconUrl) => {
   const stat = document.createElement('span');
   stat.className = `action-card-stat action-card-stat-${type}`;
-  stat.style.backgroundImage = `url('${iconUrl}')`;
+  stat.style.setProperty('--action-card-stat-icon', `url('${iconUrl}')`);
   const textValue = formatStatValue(value);
+  if (type === 'kbf' && textValue === 'T') {
+    stat.classList.add('is-throw-indicator');
+  }
   stat.setAttribute('aria-label', `${type} ${textValue}`);
   const text = document.createElement('span');
   text.className = 'action-card-stat-value';

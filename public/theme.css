@@ -2151,15 +2151,23 @@ small {
 .action-card-stat {
   position: absolute;
   border-radius: 0;
-  background-size: contain;
-  background-position: center;
-  background-repeat: no-repeat;
   display: grid;
   place-items: center;
   color: #ffffff;
   font-size: calc(9px * var(--action-card-scale) * var(--action-card-text-scale, 1));
   font-weight: 700;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+}
+
+.action-card-stat::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--action-card-stat-icon);
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  pointer-events: none;
 }
 
 .action-card-stat-damage {
@@ -2176,7 +2184,13 @@ small {
   left: var(--action-card-kbf-left);
 }
 
+.action-card-stat-kbf.is-throw-indicator::before {
+  filter: grayscale(1) brightness(0.7);
+}
+
 .action-card-stat-value {
+  position: relative;
+  z-index: 1;
   line-height: 1;
 }
 

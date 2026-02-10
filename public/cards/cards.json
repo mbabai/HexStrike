@@ -84,7 +84,7 @@
       "rotations": "*",
       "damage": 0,
       "kbf": 1,
-      "activeText": "{i}: Grappling Hook charges at most only as far as the first land or target in front of you. If you started Grappling Hook on land, it is a Throw.",
+      "activeText": "{i}: Grappling Hook charges at most only as far as the first land or target in front of you. If you started Grappling Hook on land, and the target is touching you, it is a Throw.",
       "passiveText": "If a {a} lands, place the target on the opposite side of your character, and knock them in that direction."
     },
     {
@@ -485,8 +485,7 @@
       ],
       "rotations": "*",
       "damage": 2,
-      "kbf": "X",
-      "activeText": "{i}: Throw",
+      "kbf": "T",
       "passiveText": "While this move card is active, you cannot be thrown."
     },
     {
@@ -746,8 +745,7 @@
       ],
       "rotations": "0-1",
       "damage": 1,
-      "kbf": "X",
-      "activeText": "{i}: Throw",
+      "kbf": "T",
       "passiveText": "While this move card is active, you cannot be thrown."
     },
     {

@@ -153,7 +153,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Active ability card text is handled in `src/game/cardText/activeAbility.ts` + `public/game/cardText/activeAbility.js`; Counter Attack shifts the selected rotation to after `{i}` by clearing the start rotation and applying a forced rotation on the next entry.
 - The combo modal is filtered to the actor's beat entry by userId/username; keep interaction actor resolution aligned with roster identifiers.
 - Cards can opt out of throw keyword detection by id (e.g., `grappling-hook`).
-- Grappling Hook uses `cardStartTerrain` to gate its conditional throw (throw only if the action set started on land), and its `{i}` bracketed charge stops at the first land tile or target in front.
+- Grappling Hook uses `cardStartTerrain` plus adjacency to gate its conditional throw (throw only if the action set started on land and the hit target is directly adjacent on the `{c}` beat), and its `{i}` bracketed charge stops at the first land tile or target in front.
 - Grappling Hook passive flips landed `{a}` hits to the opposite side of the attacker before knockback; keep the inversion logic in sync between `src/game/execute.ts` and `public/game/timelinePlayback.js`.
 - Pending throw interactions must surface the throw modal even if the beat is already resolved; don't filter throws by resolved index in the UI selector.
 - Skipped combos keep the `Co` symbol on the timeline and are marked with `comboSkipped` for UI greying; do not replace with `W`.

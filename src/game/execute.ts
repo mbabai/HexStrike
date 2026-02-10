@@ -510,10 +510,32 @@ const buildSwappedActionList = (
   return buildCardActionList(nextActive, nextPassive, rotationLabel);
 };
 
-const isEntryThrow = (entry: BeatEntry | null | undefined) => {
+const isGrapplingHookThrow = (
+  entry: BeatEntry | null | undefined,
+  options: {
+    tokenType?: string;
+    actorPosition?: { q: number; r: number } | null;
+    targetPosition?: { q: number; r: number } | null;
+  } = {},
+) => {
+  if (!entry || entry.cardId !== GRAPPLING_HOOK_CARD_ID) return false;
+  if (entry.cardStartTerrain !== 'land') return false;
+  if (`${options.tokenType ?? ''}`.toLowerCase() !== 'c') return false;
+  if (!options.actorPosition || !options.targetPosition) return false;
+  return axialDistance(options.actorPosition, options.targetPosition) === 1;
+};
+
+const isEntryThrow = (
+  entry: BeatEntry | null | undefined,
+  options: {
+    tokenType?: string;
+    actorPosition?: { q: number; r: number } | null;
+    targetPosition?: { q: number; r: number } | null;
+  } = {},
+) => {
   if (!entry) return false;
   if (entry.interaction?.type === 'throw') return true;
-  if (entry.cardId === GRAPPLING_HOOK_CARD_ID && entry.cardStartTerrain === 'land') return true;
+  if (isGrapplingHookThrow(entry, options)) return true;
   if (entry.cardId && ACTIVE_THROW_CARD_IDS.has(entry.cardId)) return true;
   if (entry.passiveCardId && PASSIVE_THROW_CARD_IDS.has(entry.passiveCardId)) return true;
   return false;
@@ -2676,10 +2698,15 @@ export const executeBeatsWithInteractions = (
         const blockSource = directionIndex != null ? blockMap.get(targetKey)?.get(directionIndex) : undefined;
         const targetCharacter = targetId ? characterById.get(targetId) : null;
         const targetEntry = targetCharacter ? findEntryForCharacter(beat, targetCharacter) : null;
+        const targetState = targetId ? state.get(targetId) : null;
 
         if (token.type === 'a' || token.type === 'c') {
           recordBurningStrikeAttack(actorId, destination);
-          const isThrow = isEntryThrow(entry);
+          const isThrow = isEntryThrow(entry, {
+            tokenType: token.type,
+            actorPosition: origin,
+            targetPosition: targetState?.position,
+          });
           let resolvedTargetEntry = targetEntry;
           let resolvedBlockSource = blockSource;
           let blockedByBlock = Boolean(resolvedBlockSource) && !isThrow;
@@ -2731,7 +2758,6 @@ export const executeBeatsWithInteractions = (
               activeComboState.hit = true;
             }
           }
-          const targetState = targetId ? state.get(targetId) : null;
           const isStabHit =
             targetId &&
             entry.cardId === STAB_CARD_ID &&
