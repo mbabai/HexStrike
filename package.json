@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "node --test test",
+    "test": "node --test",
     "dev": "npm run build && npm run test && node scripts/run-dev-server.cjs",
     "dev:watch": "npm run build && npm run test && node --watch scripts/run-dev-server.cjs",
     "prepare": "tsc"
