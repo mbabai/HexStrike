@@ -2,9 +2,12 @@ import { loadCardCatalog } from './shared/cardCatalog.js';
 import { getOrCreateUserId, getSelectedDeckId } from './storage.js';
 
 const DECK_STORAGE_PREFIX = 'hexstrikeDecks:';
+const DECK_STORAGE_VERSION_PREFIX = 'hexstrikeDecksVersion:';
+const DECK_STORAGE_VERSION = 2;
 let baseDecksPromise = null;
 
 const getDeckStorageKey = (userId) => `${DECK_STORAGE_PREFIX}${userId}`;
+const getDeckStorageVersionKey = (userId) => `${DECK_STORAGE_VERSION_PREFIX}${userId}`;
 
 const normalizeDeckDefinition = (deck, index) => {
   if (!deck || typeof deck !== 'object') {
@@ -47,6 +50,19 @@ const readStoredDecks = (userId) => {
 const writeStoredDecks = (userId, decks) => {
   if (!userId) return;
   localStorage.setItem(getDeckStorageKey(userId), JSON.stringify(decks));
+};
+
+const readDeckStorageVersion = (userId) => {
+  if (!userId) return null;
+  const raw = localStorage.getItem(getDeckStorageVersionKey(userId));
+  if (!raw) return null;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const writeDeckStorageVersion = (userId) => {
+  if (!userId) return;
+  localStorage.setItem(getDeckStorageVersionKey(userId), `${DECK_STORAGE_VERSION}`);
 };
 
 const loadBaseDecks = async () => {
@@ -113,23 +129,33 @@ const areDeckListsEqual = (a, b) => {
 };
 
 export const loadUserDecks = async (userId = getOrCreateUserId()) => {
-  const stored = readStoredDecks(userId);
   const baseDecks = await loadBaseDecks();
+  const storageVersion = readDeckStorageVersion(userId);
+  if (storageVersion !== DECK_STORAGE_VERSION) {
+    writeStoredDecks(userId, baseDecks);
+    writeDeckStorageVersion(userId);
+    return baseDecks;
+  }
+
+  const stored = readStoredDecks(userId);
   if (stored !== null) {
     const merged = mergeBaseDecks(stored, baseDecks);
     if (!areDeckListsEqual(merged, stored)) {
       writeStoredDecks(userId, merged);
+      writeDeckStorageVersion(userId);
       return merged;
     }
     return stored;
   }
   writeStoredDecks(userId, baseDecks);
+  writeDeckStorageVersion(userId);
   return baseDecks;
 };
 
 export const saveUserDecks = (userId, decks) => {
   const normalized = Array.isArray(decks) ? decks.map((deck, index) => normalizeDeckDefinition(deck, index)) : [];
   writeStoredDecks(userId, normalized);
+  writeDeckStorageVersion(userId);
   return normalized;
 };
 

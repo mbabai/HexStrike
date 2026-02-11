@@ -860,53 +860,28 @@
       ]
     },
     {
-      "id": "haven-test-shared",
-      "name": "Haven Test Shared",
-      "characterId": "strylan",
+      "id": "aumandetta-base",
+      "name": "Aumandetta Base",
+      "characterId": "aumandetta",
       "movement": [
         "step",
-        "advance",
         "dash",
-        "jump"
-      ],
-      "ability": [
-        "haven",
-        "guard",
-        "healing-harmony",
-        "iron-will",
-        "burning-strike",
-        "cross-slash",
-        "fumikomi",
-        "flying-knee",
-        "tackle",
-        "jab",
-        "smash-attack",
-        "spike"
-      ]
-    },
-    {
-      "id": "rewind-test-shared",
-      "name": "Rewind Test Shared",
-      "characterId": "murelious",
-      "movement": [
-        "step",
-        "ninja-roll",
         "backflip",
-        "grappling-hook"
+        "leap"
       ],
       "ability": [
+        "absorb",
+        "haven",
         "rewind",
-        "parry",
-        "feint",
-        "reflex-dodge",
-        "smoke-bomb",
-        "long-thrust",
-        "balestra-lunge",
-        "trip",
-        "hip-throw",
-        "aerial-strike",
-        "stab",
-        "counter-attack"
+        "sweeping-strike",
+        "push-kick",
+        "down-slash",
+        "hammer",
+        "bow-shot",
+        "sinking-shot",
+        "gigantic-staff",
+        "chase",
+        "vengeance"
       ]
     }
   ]
