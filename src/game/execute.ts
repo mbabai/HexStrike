@@ -25,7 +25,7 @@ import {
 } from './cardText/discardEffects';
 import { getPassiveKbfReduction, isThrowImmune } from './cardText/combatModifiers';
 import { getTimelineResolvedIndex } from './beatTimeline';
-import { isBracketedAction, normalizeActionToken } from './cardText/actionListTransforms';
+import { isBracketedAction, normalizeActionToken, splitActionTokens } from './cardText/actionListTransforms';
 import { buildCardActionList } from './cardText/actionListBuilder';
 import { DEFAULT_LAND_HEXES } from './hexGrid';
 import { getHandTriggerDefinition } from './handTriggers';
@@ -300,12 +300,9 @@ const applyGiganticStaffAction = (action: string): string => {
 };
 
 const parseActionTokens = (action: string) => {
-  const trimmed = action.trim();
+  const trimmed = `${action ?? ''}`.trim();
   if (isWaitAction(trimmed)) return [];
-  return trimmed
-    .split('-')
-    .map((token) => normalizeActionToken(token))
-    .filter(Boolean)
+  return splitActionTokens(trimmed)
     .map((token) => {
       const type = token[token.length - 1]?.toLowerCase() ?? '';
       const path = token.slice(0, -1);
@@ -743,6 +740,27 @@ export const executeBeatsWithInteractions = (
     return cardId || REWIND_CARD_ID;
   };
   const normalizeInteractionHex = (value: unknown): { q: number; r: number } | null => normalizeHexCoord(value);
+  const rebuildActiveRewindFocusByUser = () => {
+    activeRewindFocusByUser.clear();
+    updatedInteractions.forEach((interaction) => {
+      if (interaction.type !== REWIND_FOCUS_INTERACTION_TYPE) return;
+      if (interaction.status !== 'resolved') return;
+      const actorId = `${interaction.actorUserId ?? ''}`.trim();
+      if (!actorId) return;
+      const active = interaction.resolution?.active;
+      if (active === false) return;
+      activeRewindFocusByUser.set(actorId, interaction);
+    });
+  };
+  const rebuildFocusTokenByOwner = () => {
+    focusTokenByOwner.clear();
+    boardTokens.forEach((token) => {
+      if (token?.type !== FOCUS_ANCHOR_TOKEN_TYPE) return;
+      const ownerId = `${token.ownerUserId ?? ''}`.trim();
+      if (!ownerId) return;
+      focusTokenByOwner.set(ownerId, token.id);
+    });
+  };
   updatedInteractions.forEach((interaction) => {
     interactionById.set(interaction.id, interaction);
     if (interaction.status === 'pending' && Number.isFinite(interaction.beatIndex)) {
@@ -755,14 +773,8 @@ export const executeBeatsWithInteractions = (
         handTriggerKeys.add(buildHandTriggerKey(cardId, beatIndex, interaction.actorUserId));
       }
     }
-    if (interaction.type === REWIND_FOCUS_INTERACTION_TYPE && interaction.status === 'resolved') {
-      const actorId = interaction.actorUserId;
-      if (!actorId) return;
-      const active = interaction.resolution?.active;
-      if (active === false) return;
-      activeRewindFocusByUser.set(actorId, interaction);
-    }
   });
+  rebuildActiveRewindFocusByUser();
   const markRewindFocusInactive = (
     actorId: string,
     endedBeatIndex: number,
@@ -1362,6 +1374,11 @@ export const executeBeatsWithInteractions = (
       const entry = beat ? findEntryForCharacter(beat, character) : null;
       if (!entry) continue;
       const action = `${entry.action ?? DEFAULT_ACTION}`;
+      // DamageIcon entries indicate the return window has already been rewritten by hit logic.
+      // Rehydrating rewind return actions over them can swallow newly submitted future starts.
+      if (normalizeActionLabel(action).toUpperCase() === DAMAGE_ICON_ACTION.toUpperCase()) {
+        return true;
+      }
       if (isOpenBeatAction(action)) continue;
       const cardId = `${entry.cardId ?? ''}`.trim();
       if (cardId && cardId !== REWIND_CARD_ID) {
@@ -1658,6 +1675,23 @@ export const executeBeatsWithInteractions = (
     forcedGuardDiscardByBeat.set(safeBeatIndex, existing);
   };
 
+  const resetRewindReturnInteractionForFocus = (
+    interaction: CustomInteraction,
+    actorId: string,
+    beatIndex: number,
+    focus: CustomInteraction,
+  ) => {
+    interaction.status = 'pending';
+    interaction.beatIndex = beatIndex;
+    interaction.actorUserId = actorId;
+    interaction.targetUserId = actorId;
+    interaction.cardId = getRewindFocusCardId(focus);
+    interaction.resolution = {
+      focusInteractionId: focus.id,
+      anchorHex: focus.resolution?.anchorHex,
+    };
+  };
+
   const ensurePendingRewindReturn = (actorId: string, beatIndex: number): boolean => {
     const focus = activeRewindFocusByUser.get(actorId);
     if (!focus) return false;
@@ -1668,9 +1702,23 @@ export const executeBeatsWithInteractions = (
       if (existing.status === 'pending' && (haltIndex == null || safeBeatIndex < haltIndex)) {
         haltIndex = safeBeatIndex;
       }
-      return existing.status === 'pending';
+      if (existing.status === 'pending') {
+        return true;
+      }
+      const activeFocusId = `${focus.id ?? ''}`.trim();
+      const existingFocusId = `${existing.resolution?.focusInteractionId ?? ''}`.trim();
+      const belongsToActiveFocus = existingFocusId ? existingFocusId === activeFocusId : true;
+      if (belongsToActiveFocus || isHistoryIndex(safeBeatIndex)) {
+        return false;
+      }
+      resetRewindReturnInteractionForFocus(existing, actorId, safeBeatIndex, focus);
+      if (haltIndex == null || safeBeatIndex < haltIndex) {
+        haltIndex = safeBeatIndex;
+      }
+      return true;
     }
     if (isHistoryIndex(safeBeatIndex)) return false;
+    ensureBeatIndex(safeBeatIndex);
     const created: CustomInteraction = {
       id: interactionId,
       type: REWIND_RETURN_INTERACTION_TYPE,
@@ -2359,6 +2407,8 @@ export const executeBeatsWithInteractions = (
       });
       handTriggerKeys.clear();
       snapshot.handTriggerKeys.forEach((key) => handTriggerKeys.add(key));
+      rebuildActiveRewindFocusByUser();
+      rebuildFocusTokenByOwner();
       haltIndex = snapshot.haltIndex;
       parryCountersByBeat.clear();
       snapshot.parryCountersByBeat.forEach((list, beatIndex) => {
@@ -3865,6 +3915,16 @@ export const executeBeatsWithInteractions = (
       }
       break;
     }
+  }
+
+  if (haltIndex == null) {
+    characters.forEach((character) => {
+      const actorId = character.userId;
+      if (!actorId || !activeRewindFocusByUser.has(actorId)) return;
+      const firstOpenIndex = findCharacterFirstEIndexAfter(character, -1);
+      if (firstOpenIndex < normalizedBeats.length) return;
+      ensurePendingRewindReturn(actorId, firstOpenIndex);
+    });
   }
 
     const updatedCharacters = characters.map((character) => ({

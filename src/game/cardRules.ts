@@ -27,6 +27,7 @@ import { buildCardActionList } from './cardText/actionListBuilder';
 
 const ROTATION_LABELS = ['0', 'R1', 'R2', '3', 'L2', 'L1'];
 const REWIND_CARD_ID = 'rewind';
+const REWIND_FOCUS_INTERACTION_TYPE = 'rewind-focus';
 
 export const isActionValidationFailure = (result: ActionValidationResult): result is { ok: false; error: CardValidationError } =>
   !result.ok;
@@ -454,9 +455,23 @@ export const resolveLandRefreshes = (
     characterById.set(character.userId, character);
     characterById.set(character.username, character);
   });
+  const activeRewindFocusUsers = new Set<string>();
+  interactions.forEach((interaction) => {
+    if (!interaction || interaction.type !== REWIND_FOCUS_INTERACTION_TYPE) return;
+    if (interaction.status !== 'resolved') return;
+    if (interaction.resolution?.active === false) return;
+    const focusedCardId = normalizeCardId(interaction.cardId ?? interaction.resolution?.cardId) ?? REWIND_CARD_ID;
+    if (focusedCardId !== REWIND_CARD_ID) return;
+    const actorKey = `${interaction.actorUserId ?? ''}`.trim();
+    if (!actorKey) return;
+    const actorCharacter = characterById.get(actorKey);
+    const actorId = actorCharacter?.userId ?? actorKey;
+    if (!actorId) return;
+    activeRewindFocusUsers.add(actorId);
+  });
 
   deckStates.forEach((deckState, userId) => {
-    if (deckState.focusedAbilityCardIds.has(REWIND_CARD_ID)) return;
+    if (deckState.focusedAbilityCardIds.has(REWIND_CARD_ID) || activeRewindFocusUsers.has(userId)) return;
     const character = characterById.get(userId);
     if (!character) return;
     const firstEIndex = getCharacterFirstEIndex(beats, character);

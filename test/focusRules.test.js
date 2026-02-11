@@ -92,3 +92,35 @@ test('resolveLandRefreshes skips draw refresh when Rewind focus is active', () =
   assert.equal(deckState.abilityHand.length, beforeHandSize);
   assert.equal(deckState.lastRefreshIndex, null);
 });
+
+test('resolveLandRefreshes skips draw refresh when active rewind focus interaction exists', () => {
+  const deckState = createDeckState(buildDeckDefinition());
+  const discardResult = discardAbilityCards(deckState, { abilityCardIds: ['ability-a'], movementCardIds: [] });
+  assert.equal(discardResult.ok, true);
+  assert.equal(deckState.focusedAbilityCardIds.has('rewind'), false);
+
+  const beforeHandSize = deckState.abilityHand.length;
+  resolveLandRefreshes(
+    new Map([['alpha', deckState]]),
+    buildEBeat(),
+    [buildCharacter()],
+    [{ q: 0, r: 0 }],
+    [
+      {
+        id: 'rewind-focus:0:alpha:alpha',
+        type: 'rewind-focus',
+        beatIndex: 0,
+        actorUserId: 'alpha',
+        targetUserId: 'alpha',
+        status: 'resolved',
+        cardId: 'rewind',
+        resolution: { active: true, cardId: 'rewind', anchorHex: { q: 0, r: 0 } },
+      },
+    ],
+    undefined,
+    [],
+  );
+
+  assert.equal(deckState.abilityHand.length, beforeHandSize);
+  assert.equal(deckState.lastRefreshIndex, null);
+});

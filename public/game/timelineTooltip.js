@@ -195,6 +195,10 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
   instruction.className = 'timeline-tooltip-instruction';
   const divider = document.createElement('div');
   divider.className = 'timeline-tooltip-divider';
+  const characterPower = document.createElement('div');
+  characterPower.className = 'timeline-tooltip-passive';
+  const characterPowerText = document.createElement('div');
+  characterPowerText.className = 'timeline-tooltip-passive-text';
   const passive = document.createElement('div');
   passive.className = 'timeline-tooltip-passive';
   const passiveText = document.createElement('div');
@@ -203,7 +207,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
   focus.className = 'timeline-tooltip-passive';
   const focusText = document.createElement('div');
   focusText.className = 'timeline-tooltip-passive-text';
-  text.append(title, instruction, divider, passive, passiveText, focus, focusText);
+  text.append(title, instruction, divider, characterPower, characterPowerText, passive, passiveText, focus, focusText);
   tooltip.appendChild(text);
   gameArea.appendChild(tooltip);
 
@@ -243,6 +247,10 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
 
   const clearSupplementalSections = ({ hideDivider = true } = {}) => {
     divider.hidden = hideDivider;
+    characterPower.hidden = true;
+    characterPowerText.hidden = true;
+    characterPower.textContent = '';
+    characterPowerText.textContent = '';
     passive.hidden = true;
     passiveText.hidden = true;
     passive.textContent = '';
@@ -253,19 +261,69 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     focusText.textContent = '';
   };
 
+  const getCharacterByUserId = (userId) => {
+    const normalizedUserId = `${userId ?? ''}`.trim();
+    if (!normalizedUserId) return null;
+    const characters = Array.isArray(gameState?.state?.public?.characters) ? gameState.state.public.characters : [];
+    return characters.find((item) => `${item?.userId ?? ''}`.trim() === normalizedUserId) ?? null;
+  };
+
+  const getCharacterPowerDetails = (character) => {
+    const characterCatalogEntry = characterMetadata.byId.get(character?.characterId);
+    const powerText =
+      `${character?.characterPowerText ?? ''}`.trim() ||
+      `${characterCatalogEntry?.powerText ?? ''}`.trim();
+    const name =
+      `${character?.characterName ?? ''}`.trim() ||
+      `${characterCatalogEntry?.name ?? ''}`.trim() ||
+      `${character?.username ?? character?.userId ?? ''}`.trim();
+    return { name, powerText };
+  };
+
+  const renderCharacterPowerSection = (details) => {
+    const powerText = `${details?.powerText ?? ''}`.trim();
+    if (!powerText) {
+      characterPower.hidden = true;
+      characterPowerText.hidden = true;
+      characterPower.textContent = '';
+      characterPowerText.textContent = '';
+      return false;
+    }
+    const name = `${details?.name ?? ''}`.trim();
+    characterPower.textContent = name ? `Character: ${name}` : 'Character';
+    characterPower.hidden = false;
+    characterPowerText.hidden = false;
+    appendInlineText(characterPowerText, powerText);
+    return true;
+  };
+
+  const getFocusLineFromCard = (card, options = {}) => {
+    const focusInstruction = card?.symbolText?.get('F') ?? '';
+    if (focusInstruction) return `{F}: ${focusInstruction}`;
+    if (!options.includeActiveTextFallback) return '';
+    return `${card?.activeText ?? ''}`.trim();
+  };
+
+  const renderFocusSection = (focusTitle, focusLine) => {
+    focus.textContent = `${focusTitle ?? 'Focus'}`.trim() || 'Focus';
+    focus.hidden = !focusLine;
+    if (focusLine) {
+      focusText.hidden = false;
+      appendInlineText(focusText, focusLine);
+      return true;
+    }
+    focusText.hidden = true;
+    focusText.textContent = '';
+    return false;
+  };
+
   const renderCharacterPowerTooltip = (target) => {
     const character = target?.character ?? {};
-    const characterCatalogEntry = characterMetadata.byId.get(character.characterId);
-    const powerText =
-      `${character.characterPowerText ?? ''}`.trim() ||
-      `${characterCatalogEntry?.powerText ?? ''}`.trim();
+    const { name, powerText } = getCharacterPowerDetails(character);
     if (!powerText) {
       return false;
     }
-    const titleText =
-      `${character.characterName ?? ''}`.trim() ||
-      `${characterCatalogEntry?.name ?? ''}`.trim() ||
-      `${character.username ?? character.userId ?? ''}`.trim();
+    const titleText = name || `${character.username ?? character.userId ?? ''}`.trim();
     const key = ['character', character.userId ?? character.username, powerText].join(':');
     if (key !== lastTooltipKey) {
       title.textContent = titleText || 'Character Power';
@@ -319,29 +377,30 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     if (target.kind === 'focus-anchor') {
       const cardId = `${target.token?.cardId ?? ''}`.trim();
       const card = cardId ? cardMetadata.byId.get(cardId) : null;
+      const character = getCharacterByUserId(target.token?.ownerUserId);
+      const characterPowerDetails = getCharacterPowerDetails(character);
       const titleText = card?.name ?? cardId;
-      const focusInstruction = card?.symbolText?.get('F') ?? '';
-      const focusLine = focusInstruction ? `{F}: ${focusInstruction}` : card?.activeText ?? '';
-      if (!titleText && !focusLine) {
+      const focusLine = getFocusLineFromCard(card, { includeActiveTextFallback: true });
+      if (!titleText && !focusLine && !characterPowerDetails.powerText) {
         hide();
         return;
       }
-      const key = ['focus-anchor', cardId, focusLine].join(':');
+      const key = [
+        'focus-anchor',
+        cardId,
+        focusLine,
+        character?.userId ?? target.token?.ownerUserId ?? '',
+        characterPowerDetails.powerText,
+      ].join(':');
       if (key !== lastTooltipKey) {
         title.textContent = titleText;
         title.hidden = !titleText;
         instruction.hidden = true;
         instruction.textContent = '';
-        clearSupplementalSections({ hideDivider: false });
-        focus.textContent = 'Focus';
-        focus.hidden = false;
-        if (focusLine) {
-          focusText.hidden = false;
-          appendInlineText(focusText, focusLine);
-        } else {
-          focusText.hidden = true;
-          focusText.textContent = '';
-        }
+        clearSupplementalSections({ hideDivider: true });
+        const hasCharacterPower = renderCharacterPowerSection(characterPowerDetails);
+        const hasFocus = renderFocusSection('Focus', focusLine);
+        divider.hidden = !(hasCharacterPower || hasFocus);
         lastTooltipKey = key;
       }
       tooltip.hidden = false;
@@ -378,31 +437,34 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     if (target.kind === 'rewind-return') {
       const cardId = target.cardId ? `${target.cardId}` : 'rewind';
       const card = cardId ? cardMetadata.byId.get(cardId) : null;
+      const character = getCharacterByUserId(target.interaction?.actorUserId);
+      const characterPowerDetails = getCharacterPowerDetails(character);
       const titleText = card?.name ?? cardId;
-      const focusInstruction = card?.symbolText?.get('F') ?? '';
-      const focusLine = focusInstruction ? `{F}: ${focusInstruction}` : card?.activeText ?? '';
+      const focusLine = getFocusLineFromCard(card, { includeActiveTextFallback: true });
       const returnToAnchor = Boolean(target.interaction?.resolution?.returnToAnchor);
       const choiceLine = returnToAnchor ? 'Choice: Yes (return to anchor)' : 'Choice: No (stay focused)';
-      if (!titleText && !focusLine) {
+      if (!titleText && !focusLine && !characterPowerDetails.powerText) {
         hide();
         return;
       }
-      const key = ['rewind-return', cardId, target.beatIndex, returnToAnchor, focusLine].join(':');
+      const key = [
+        'rewind-return',
+        cardId,
+        target.beatIndex,
+        returnToAnchor,
+        focusLine,
+        character?.userId ?? target.interaction?.actorUserId ?? '',
+        characterPowerDetails.powerText,
+      ].join(':');
       if (key !== lastTooltipKey) {
         title.textContent = titleText;
         title.hidden = !titleText;
         instruction.hidden = false;
         appendInlineText(instruction, choiceLine);
-        clearSupplementalSections({ hideDivider: !focusLine });
-        focus.textContent = 'Focus';
-        focus.hidden = !focusLine;
-        if (focusLine) {
-          focusText.hidden = false;
-          appendInlineText(focusText, focusLine);
-        } else {
-          focusText.hidden = true;
-          focusText.textContent = '';
-        }
+        clearSupplementalSections({ hideDivider: true });
+        const hasCharacterPower = renderCharacterPowerSection(characterPowerDetails);
+        const hasFocus = renderFocusSection('Focus', focusLine);
+        divider.hidden = !(hasCharacterPower || hasFocus);
         lastTooltipKey = key;
       }
       tooltip.hidden = false;
@@ -432,9 +494,10 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     const instructionText = activeCard?.symbolText?.get(target.symbol) ?? '';
     const instructionLine = instructionText ? `{${target.symbol}}: ${instructionText}` : '';
     const passiveTextValue = passiveCard?.passiveText ?? '';
-    const focusInstruction = focusCard?.symbolText?.get('F') ?? '';
-    const focusLine = focusInstruction ? `{F}: ${focusInstruction}` : '';
-    if (!activeName && !passiveName && !instructionLine && !passiveTextValue && !focusLine) {
+    const focusLine = getFocusLineFromCard(focusCard, { includeActiveTextFallback: true });
+    const characterPowerDetails = getCharacterPowerDetails(target.character);
+    const characterPowerLine = focusCardId ? characterPowerDetails.powerText : '';
+    if (!activeName && !passiveName && !instructionLine && !passiveTextValue && !focusLine && !characterPowerLine) {
       hide();
       return;
     }
@@ -446,6 +509,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       passiveCardId ?? 'none',
       instructionLine,
       passiveTextValue,
+      characterPowerLine,
       focusCardId ?? 'none',
       focusLine,
     ].join(':');
@@ -459,7 +523,12 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
         instruction.hidden = true;
         instruction.textContent = '';
       }
-      const showDivider = Boolean(passiveName || passiveTextValue || focusLine);
+      const hasCharacterPower = renderCharacterPowerSection({
+        ...characterPowerDetails,
+        powerText: characterPowerLine,
+      });
+      const hasFocus = renderFocusSection(focusCard?.name ? `Focus: ${focusCard.name}` : 'Focus', focusLine);
+      const showDivider = Boolean(hasCharacterPower || passiveName || passiveTextValue || hasFocus);
       divider.hidden = !showDivider;
       passive.textContent = passiveName;
       passive.hidden = !passiveName;
@@ -469,15 +538,6 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       } else {
         passiveText.hidden = true;
         passiveText.textContent = '';
-      }
-      focus.textContent = focusCard?.name ? `Focus: ${focusCard.name}` : 'Focus';
-      focus.hidden = !focusLine;
-      if (focusLine) {
-        focusText.hidden = false;
-        appendInlineText(focusText, focusLine);
-      } else {
-        focusText.hidden = true;
-        focusText.textContent = '';
       }
       lastTooltipKey = key;
     }

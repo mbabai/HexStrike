@@ -1,7 +1,11 @@
 import { LAND_HEXES } from '../shared/hex.mjs';
 import { getPassiveKbfReduction, isThrowImmune } from './cardText/combatModifiers.js';
 import { shouldConvertKbfToDiscard } from './cardText/discardEffects.js';
-import { isBracketedAction as isBracketedTokenAction, normalizeActionToken } from './cardText/actionListTransforms.js';
+import {
+  isBracketedAction as isBracketedTokenAction,
+  normalizeActionToken,
+  splitActionTokens,
+} from './cardText/actionListTransforms.js';
 
 const DEFAULT_ACTION = 'E';
 const FOCUS_ACTION = 'F';
@@ -386,10 +390,7 @@ const getHealingHarmonyReduction = (entry) => {
 const parseActionTokens = (action) => {
   const trimmed = `${action ?? ''}`.trim();
   if (isWaitAction(trimmed)) return [];
-  return trimmed
-    .split('-')
-    .map((token) => normalizeActionToken(token))
-    .filter(Boolean)
+  return splitActionTokens(trimmed)
     .map((token) => {
       const type = token[token.length - 1]?.toLowerCase() ?? '';
       const path = token.slice(0, -1);

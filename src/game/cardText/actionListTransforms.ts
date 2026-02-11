@@ -14,12 +14,15 @@ export const normalizeActionToken = (token: string): string => {
   return trimmed;
 };
 
+export const splitActionTokens = (action: string): string[] =>
+  normalizeActionToken(`${action ?? ''}`.trim())
+    .split('-')
+    .map((token) => normalizeActionToken(token))
+    .filter(Boolean);
+
 export const actionHasAttackToken = (action: string): boolean => {
   if (!action) return false;
-  return action
-    .split('-')
-    .map((token) => normalizeActionToken(token).toLowerCase())
-    .some((token) => token.includes('a'));
+  return splitActionTokens(action).some((token) => token.toLowerCase().includes('a'));
 };
 
 export const mapActionList = (

@@ -12,12 +12,15 @@ export const normalizeActionToken = (token) => {
   return trimmed;
 };
 
+export const splitActionTokens = (action) =>
+  normalizeActionToken(`${action ?? ''}`.trim())
+    .split('-')
+    .map((token) => normalizeActionToken(token))
+    .filter(Boolean);
+
 export const actionHasAttackToken = (action) => {
   if (!action) return false;
-  return action
-    .split('-')
-    .map((token) => normalizeActionToken(token).toLowerCase())
-    .some((token) => token.includes('a'));
+  return splitActionTokens(action).some((token) => token.toLowerCase().includes('a'));
 };
 
 export const mapActionList = (actionList, mapper) => {

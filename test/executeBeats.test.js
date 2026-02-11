@@ -1434,6 +1434,30 @@ test('executeBeats applies smoke-bomb stun even when the attack entry is tagged 
   assert.equal(result.interactions.some((interaction) => interaction.type === 'throw'), false);
 });
 
+test('executeBeats applies smoke-bomb right-arc stun from bracketed a-La-Ra actions', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: -1 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [[
+    buildEntry('alpha', '[a-La-Ra]', 87, characters[0].position, characters[0].facing, '', 0, 0),
+    buildEntry('beta', 'W', 10, characters[1].position, characters[1].facing),
+  ]];
+
+  beats[0][0].cardId = 'smoke-bomb';
+  beats[0][0].passiveCardId = 'backflip';
+  beats[0][0].rotation = '0';
+  beats[0][0].rotationSource = 'selected';
+
+  const result = executeBeats(beats, characters);
+  const betaBeat0 = (result.beats[0] || []).find((entry) => entry.username === 'beta');
+
+  assert.ok(betaBeat0);
+  assert.equal(betaBeat0.action, 'DamageIcon');
+  assert.equal(betaBeat0.stunOnly, true);
+});
+
 test('executeBeats preserves character baseline state in returned characters', () => {
   const characters = [
     {
@@ -1681,6 +1705,187 @@ test('executeBeatsWithInteractions opens rewind return choice on focused E beats
   );
 
   assert.ok(pendingReturn);
+});
+
+test('executeBeatsWithInteractions opens rewind return choice on focused implicit-open beats', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+  const beats = [[
+    buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+    buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+  ]];
+  const interactions = [{
+    id: 'rewind-focus:0:alpha:alpha',
+    type: 'rewind-focus',
+    beatIndex: 0,
+    actorUserId: 'alpha',
+    targetUserId: 'alpha',
+    status: 'resolved',
+    cardId: 'rewind',
+    resolution: {
+      active: true,
+      cardId: 'rewind',
+      anchorHex: { q: 0, r: 0 },
+      focusStartBeatIndex: 0,
+      returnActions: [
+        { action: 'W', rotation: '', priority: 90, damage: 0, kbf: 0, cardId: 'rewind' },
+        { action: 'W', rotation: '', priority: 90, damage: 0, kbf: 0, cardId: 'rewind' },
+        { action: 'E', rotation: '', priority: 90, damage: 0, kbf: 0, cardId: 'rewind' },
+      ],
+    },
+  }];
+
+  const result = executeBeatsWithInteractions(beats, characters, interactions);
+  const pendingReturn = result.interactions.find(
+    (interaction) =>
+      interaction.type === 'rewind-return' &&
+      interaction.status === 'pending' &&
+      interaction.actorUserId === 'alpha' &&
+      interaction.beatIndex === 1,
+  );
+
+  assert.ok(pendingReturn);
+});
+
+test('executeBeatsWithInteractions reopens rewind return when a stale declined interaction collides with a new focus', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+  const beats = [[
+    buildEntry('alpha', 'E', 0, characters[0].position, characters[0].facing),
+    buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+  ]];
+  const interactions = [
+    {
+      id: 'rewind-focus:0:alpha:alpha:old',
+      type: 'rewind-focus',
+      beatIndex: 0,
+      actorUserId: 'alpha',
+      targetUserId: 'alpha',
+      status: 'resolved',
+      cardId: 'rewind',
+      resolution: {
+        active: false,
+        cardId: 'rewind',
+        anchorHex: { q: 0, r: 0 },
+        focusStartBeatIndex: 0,
+        endedBeatIndex: 0,
+        endReason: 'returned',
+      },
+    },
+    {
+      id: 'rewind-return:0:alpha:alpha',
+      type: 'rewind-return',
+      beatIndex: 0,
+      actorUserId: 'alpha',
+      targetUserId: 'alpha',
+      status: 'resolved',
+      cardId: 'rewind',
+      resolution: {
+        focusInteractionId: 'rewind-focus:0:alpha:alpha:old',
+        anchorHex: { q: 0, r: 0 },
+        returnToAnchor: false,
+      },
+    },
+    {
+      id: 'rewind-focus:0:alpha:alpha:new',
+      type: 'rewind-focus',
+      beatIndex: 0,
+      actorUserId: 'alpha',
+      targetUserId: 'alpha',
+      status: 'resolved',
+      cardId: 'rewind',
+      resolution: {
+        active: true,
+        cardId: 'rewind',
+        anchorHex: { q: 0, r: 0 },
+        focusStartBeatIndex: 0,
+        returnActions: [
+          { action: 'W', rotation: '', priority: 90, damage: 0, kbf: 0, cardId: 'rewind' },
+          { action: 'W', rotation: '', priority: 90, damage: 0, kbf: 0, cardId: 'rewind' },
+          { action: 'E', rotation: '', priority: 90, damage: 0, kbf: 0, cardId: 'rewind' },
+        ],
+      },
+    },
+  ];
+
+  const result = executeBeatsWithInteractions(beats, characters, interactions);
+  const rewindReturn = result.interactions.find((interaction) => interaction.id === 'rewind-return:0:alpha:alpha');
+
+  assert.ok(rewindReturn);
+  assert.equal(rewindReturn.status, 'pending');
+  assert.equal(rewindReturn.resolution?.focusInteractionId, 'rewind-focus:0:alpha:alpha:new');
+});
+
+test('executeBeatsWithInteractions preserves submitted start after rewind return when history already has DamageIcon rewrites', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 0, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: -1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+  const beats = [
+    [
+      buildEntry('alpha', 'W', 90, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 10, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 90, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'a', 67, characters[1].position, characters[1].facing, '', 3, 2),
+    ],
+    [
+      buildEntry('alpha', 'DamageIcon', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 67, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'DamageIcon', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 67, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'B2m', 20, characters[0].position, characters[0].facing, 'L2'),
+      buildEntry('beta', 'E', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+  beats[0][0].cardId = 'rewind';
+  beats[1][0].cardId = 'rewind';
+  beats[2][0].cardId = 'rewind';
+  beats[4][0].cardId = 'dash';
+  beats[4][0].passiveCardId = 'push-kick';
+  beats[4][0].rotationSource = 'selected';
+  beats[4][0].play = [{ type: 'action-set', activeCardId: 'dash', passiveCardId: 'push-kick', rotation: 'L2' }];
+  for (let i = 0; i <= 3; i += 1) {
+    beats[i][0].calculated = true;
+    beats[i][1].calculated = true;
+  }
+
+  const interactions = [{
+    id: 'rewind-return:0:alpha:alpha',
+    type: 'rewind-return',
+    beatIndex: 0,
+    actorUserId: 'alpha',
+    targetUserId: 'alpha',
+    status: 'resolved',
+    cardId: 'rewind',
+    resolution: {
+      returnToAnchor: true,
+      applied: true,
+      focusInteractionId: 'rewind-focus:0:alpha:alpha',
+      anchorHex: { q: 0, r: 0 },
+      returnActions: [
+        { action: 'W', rotation: '', priority: 90, damage: 0, kbf: 0, cardId: 'rewind' },
+        { action: 'W', rotation: '', priority: 90, damage: 0, kbf: 0, cardId: 'rewind' },
+        { action: 'E', rotation: '', priority: 90, damage: 0, kbf: 0, cardId: 'rewind' },
+      ],
+    },
+  }];
+
+  const result = executeBeatsWithInteractions(beats, characters, interactions);
+  const alphaBeat4 = (result.beats[4] || []).find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaBeat4);
+  assert.equal(alphaBeat4.action, 'B2m');
+  assert.equal(alphaBeat4.rotationSource, 'selected');
 });
 
 test('executeBeatsWithInteractions applies resolved rewind return and runs rewind trailing actions', () => {
