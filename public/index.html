@@ -82,67 +82,90 @@
 
     <div id="deckBuilderOverlay" class="modal-overlay deck-builder-overlay" hidden>
       <div class="deck-builder panel" role="dialog" aria-modal="true" aria-labelledby="deckBuilderTitle">
-        <div class="deck-builder-header">
-          <div>
+        <div class="deck-builder-header deck-builder-toolbar">
+          <div class="deck-builder-title-block">
             <h2 id="deckBuilderTitle">Create a Deck</h2>
-            <p>Pick a character, 4 movement cards, and 12 ordered ability cards.</p>
+            <p id="deckBuilderSubtitle" class="deck-builder-subtitle">
+              Pick a character, 4 movement cards, and 12 ordered ability cards.
+            </p>
           </div>
-          <button id="deckBuilderClose" class="btn btn-ghost btn-small" type="button">Close</button>
+          <div class="deck-name-field">
+            <input id="deckNameInput" type="text" maxlength="40" placeholder="Untitled Deck" value="Untitled Deck" />
+            <button id="deckSave" class="deck-save-icon" type="button" aria-label="Save deck" title="Save deck">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M4 4h13l3 3v13H4V4zm3 0v6h8V4H7zm0 10v4h10v-4H7z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
+          <button id="deckBuilderClose" class="btn btn-ghost btn-small" type="button" aria-label="Close deck builder">&times;</button>
         </div>
-        <div class="deck-builder-controls">
-          <div>
-            <span class="deck-section-label">Character</span>
-            <div id="deckCharacterPicker" class="deck-character-picker"></div>
-          </div>
-          <div class="deck-filter-row field-row">
-            <label>
-              <span class="deck-filter-label">Type</span>
-              <select id="deckTypeFilter" class="menu-select">
-                <option value="all">All Cards</option>
-                <option value="movement">Movement</option>
-                <option value="ability">Ability</option>
-              </select>
-            </label>
-            <label>
-              <span class="deck-filter-label">Sort</span>
-              <select id="deckSort" class="menu-select">
-                <option value="name">Alphabetical</option>
-                <option value="beats">Number of Beats</option>
-                <option value="damage">Damage</option>
-                <option value="kbf">KBF</option>
-              </select>
-            </label>
-          </div>
-        </div>
-        <div id="deckLibrary" class="deck-library" aria-live="polite"></div>
-        <div class="deck-selection">
-          <div class="deck-selection-header">
-            <span id="deckMovementCount" class="deck-selection-count">Movement 0/4</span>
-            <span class="deck-selection-hint">Click a card to remove it.</span>
-          </div>
-          <div id="deckSelectionMovement" class="deck-selection-row"></div>
-          <div class="deck-selection-header">
-            <span id="deckAbilityCount" class="deck-selection-count">Ability 0/12</span>
-            <span class="deck-selection-hint">Drag to reorder ability cards.</span>
-          </div>
-          <div id="deckSelectionAbility" class="deck-selection-row deck-selection-ability"></div>
-          <div class="section-actions deck-selection-actions">
-            <button id="deckSave" class="btn btn-primary" type="button" hidden>Save Deck</button>
-          </div>
+        <div class="deck-builder-layout">
+          <section class="deck-builder-library-pane">
+            <div class="deck-filter-row field-row">
+              <label>
+                <span class="deck-filter-label">Type</span>
+                <select id="deckTypeFilter" class="menu-select">
+                  <option value="all">All Cards</option>
+                  <option value="movement">Movement</option>
+                  <option value="ability">Ability</option>
+                </select>
+              </label>
+              <label>
+                <span class="deck-filter-label">Sort</span>
+                <select id="deckSort" class="menu-select">
+                  <option value="name">Alphabetical</option>
+                  <option value="beats">Number of Beats</option>
+                  <option value="damage">Damage</option>
+                  <option value="kbf">KBF</option>
+                </select>
+              </label>
+            </div>
+            <div class="deck-library-scroll">
+              <div id="deckLibrary" class="deck-library" aria-live="polite"></div>
+            </div>
+          </section>
+          <section class="deck-builder-selection-pane">
+            <div class="deck-builder-selection-header">
+              <div class="deck-builder-character">
+                <span class="deck-section-label">Character</span>
+                <button
+                  id="deckCharacterButton"
+                  class="deck-character-summary"
+                  type="button"
+                  aria-haspopup="dialog"
+                  aria-expanded="false"
+                >
+                  <span id="deckCharacterSummaryPortrait" class="deck-character-summary-portrait"></span>
+                  <span id="deckCharacterSummaryName" class="deck-character-summary-name">No character selected</span>
+                </button>
+              </div>
+            </div>
+            <div class="deck-stack-section">
+              <div class="deck-stack-scroll">
+                <div id="deckSelectionStack" class="deck-stack"></div>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
     </div>
 
-    <div id="deckNameOverlay" class="modal-overlay deck-name-overlay" hidden>
-      <div class="deck-name panel" role="dialog" aria-modal="true" aria-labelledby="deckNameTitle">
-        <h2 id="deckNameTitle">Name Your Deck</h2>
-        <label>
-          <span class="deck-filter-label">Deck Name</span>
-          <input id="deckNameInput" type="text" maxlength="40" placeholder="New deck name" />
-        </label>
-        <div class="section-actions">
-          <button id="deckNameCancel" class="btn btn-ghost" type="button">Cancel</button>
-          <button id="deckNameOk" class="btn btn-primary" type="button">OK</button>
+    <div id="deckCharacterOverlay" class="modal-overlay deck-character-overlay" hidden>
+      <div class="deck-character-modal panel" role="dialog" aria-modal="true" aria-labelledby="deckCharacterTitle">
+        <div class="deck-character-modal-header">
+          <h2 id="deckCharacterTitle">Select Character</h2>
+          <button id="deckCharacterClose" class="btn btn-ghost btn-small" type="button">Close</button>
+        </div>
+        <div class="deck-character-modal-body">
+          <button id="deckCharacterClear" class="deck-character-clear" type="button">No character</button>
+          <div id="deckCharacterPicker" class="deck-character-picker"></div>
         </div>
       </div>
     </div>

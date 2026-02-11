@@ -70,6 +70,13 @@ export function initQueue() {
     }
   };
 
+  const isDeckComplete = (deck) =>
+    Boolean(deck?.characterId) &&
+    Array.isArray(deck?.movement) &&
+    deck.movement.length === 4 &&
+    Array.isArray(deck?.ability) &&
+    deck.ability.length === 12;
+
   const leaveQuickplayQueue = async () => {
     const userId = getOrCreateUserId();
     await fetch('/api/v1/lobby/leave', {
@@ -104,6 +111,13 @@ export function initQueue() {
 
       if (!queueSelect || queueSelect.value !== QUICKPLAY_QUEUE) {
         alertQuickplayOnly();
+        return;
+      }
+
+      const userId = getOrCreateUserId();
+      const selectedDeck = await getSelectedDeck(userId);
+      if (!isDeckComplete(selectedDeck)) {
+        window.alert('Deck incomplete');
         return;
       }
 
