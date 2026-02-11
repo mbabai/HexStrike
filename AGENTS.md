@@ -194,6 +194,8 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Damage previews during hit shakes are drawn via `displayDamage` using pre-step damage to avoid double-counting when the step completes.
 - Map panning/zooming is bound to the game area and must ignore UI elements like action cards, slots, or rotation controls; update `PAN_BLOCK_SELECTORS` in `public/game/controls.js` when adding new HUD controls.
 - Find Game is disabled until a deck is selected; the selected deck ID is stored in cookies and its `characterId` plus movement/ability lists are sent with `/api/v1/lobby/join`.
+- Main menu hamburger/side-menu assets are intentionally kept in place but disabled (`MENU_ENABLED = false`) in `public/menu.js` and hidden in `public/index.html`; to restore, set `MENU_ENABLED = true` and remove `hidden`/`aria-hidden` from `#menuToggle` if needed.
+- Lobby queue selector is intentionally Quickplay-only in `public/index.html`; to restore other queues, re-add `<option>` entries under `#queueSelect` (queue handling placeholders already exist in `public/queue.js`).
 - `/api/v1/lobby/join` rejects decks unless they contain exactly 4 movement cards and exactly 12 ability cards; keep `public/cards/cards.json` base decks and deck-builder output aligned with this.
 - Base deck definitions from `public/cards/cards.json` are merged into each user's localStorage on load in `public/deckStore.js`; keep the merge logic when adding new base decks.
 - Character powers are defined in `public/characters/characters.json`; when adding/changing effects, keep `src/game/characterPowers.ts`, `src/game/execute.ts`, and `public/game/timelinePlayback.js` behavior in sync.

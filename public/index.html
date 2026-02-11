@@ -7,7 +7,15 @@
   </head>
   <body class="menu-body">
     <div id="menuShell" class="menu-shell menu-collapsed">
-      <button id="menuToggle" class="icon-btn menu-toggle" type="button" aria-label="Toggle side menu" aria-expanded="false">
+      <button
+        id="menuToggle"
+        class="icon-btn menu-toggle"
+        type="button"
+        aria-label="Toggle side menu"
+        aria-expanded="false"
+        hidden
+        aria-hidden="true"
+      >
         <span></span>
         <span></span>
         <span></span>
@@ -51,10 +59,6 @@
           <span class="queue-label">Queue</span>
           <select id="queueSelect" class="menu-select">
             <option value="quickplayQueue" selected>Quickplay</option>
-            <option value="rankedQueue">Ranked</option>
-            <option value="customQueue">Custom</option>
-            <option value="botsQueue">Bots</option>
-            <option value="spectateQueue">Spectate</option>
           </select>
         </label>
       </section>
