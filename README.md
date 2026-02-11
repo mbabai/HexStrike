@@ -3,7 +3,7 @@
 HexStrike is a dependency-light Node.js lobby and matchmaking prototype with a browser UI, HTTP API, and Server-Sent Events (SSE) stream.
 
 ## Requirements
-- Node.js (18+ for `node --watch` and `node --test`) and npm
+- Node.js `24.x` (LTS) and npm
 
 ## Quick start
 1. Install dependencies:
