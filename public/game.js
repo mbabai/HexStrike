@@ -1187,6 +1187,7 @@ export const initGame = () => {
   const showGame = () => {
     gameArea.hidden = false;
     if (menuShell) menuShell.hidden = true;
+    timeIndicatorViewModel.isPlaying = true;
     if (actionHud) actionHud.setHidden(false);
     renderer.resize();
     centerView(viewState, renderer.viewport);
