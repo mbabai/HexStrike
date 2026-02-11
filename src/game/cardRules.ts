@@ -235,15 +235,22 @@ export const buildDefaultDeckDefinition = (catalog: CardCatalog): DeckDefinition
   return { movement, ability };
 };
 
-export const createDeckState = (deck: DeckDefinition): DeckState => {
+export const createDeckState = (
+  deck: DeckDefinition,
+  options: { baseMaxHandSize?: number } = {},
+): DeckState => {
   const movement = Array.isArray(deck.movement) ? deck.movement.map((id) => `${id}`) : [];
   const ability = Array.isArray(deck.ability) ? deck.ability.map((id) => `${id}`) : [];
-  const abilityHand = ability.slice(0, MAX_HAND_SIZE);
-  const abilityDeck = ability.slice(MAX_HAND_SIZE);
+  const baseMaxHandSize = Number.isFinite(options.baseMaxHandSize)
+    ? Math.max(0, Math.floor(options.baseMaxHandSize as number))
+    : MAX_HAND_SIZE;
+  const abilityHand = ability.slice(0, baseMaxHandSize);
+  const abilityDeck = ability.slice(baseMaxHandSize);
   const deckState: DeckState = {
     movement,
     abilityHand,
     abilityDeck,
+    baseMaxHandSize,
     focusedAbilityCardIds: new Set(),
     exhaustedMovementIds: new Set(),
     lastRefreshIndex: null,

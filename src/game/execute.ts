@@ -8,6 +8,14 @@ import {
   PublicCharacter,
 } from '../types';
 import {
+  getCharacterAttackDamageBonus,
+  getCharacterDamageReduction,
+  getCharacterDrawOnKnockback,
+  getCharacterKnockbackBonus,
+  getCharacterOpponentDiscardReduction,
+  isCharacterFireDamageImmune,
+} from './characterPowers';
+import {
   getActiveHitDiscardRule,
   getPassiveBlockDiscardCount,
   getPassiveStartDiscardCount,
@@ -713,9 +721,10 @@ export const executeBeatsWithInteractions = (
   });
   const state = new Map<string, { position: { q: number; r: number }; damage: number; facing: number }>();
   characters.forEach((character) => {
+    const baselineDamage = Number.isFinite(character.damage) ? Math.max(0, Math.floor(character.damage)) : 0;
     state.set(character.userId, {
       position: { q: character.position.q, r: character.position.r },
-      damage: 0,
+      damage: baselineDamage,
       facing: normalizeDegrees(character.facing ?? 0),
     });
   });
@@ -780,6 +789,22 @@ export const executeBeatsWithInteractions = (
     characterById.set(character.userId, character);
     characterById.set(character.username, character);
   });
+  const getCharacterIdByUser = (userId: string): string => {
+    const character = characterById.get(userId);
+    return character?.characterId ?? '';
+  };
+  const getAttackDamageBonusByUser = (userId: string): number =>
+    getCharacterAttackDamageBonus(getCharacterIdByUser(userId));
+  const getDamageReductionByUser = (userId: string): number =>
+    getCharacterDamageReduction(getCharacterIdByUser(userId));
+  const getDiscardReductionByUser = (userId: string): number =>
+    getCharacterOpponentDiscardReduction(getCharacterIdByUser(userId));
+  const isFireDamageImmuneByUser = (userId: string): boolean =>
+    isCharacterFireDamageImmune(getCharacterIdByUser(userId));
+  const getDrawOnKnockbackByUser = (userId: string): number =>
+    getCharacterDrawOnKnockback(getCharacterIdByUser(userId));
+  const getKnockbackBonusByUser = (userId: string, accumulatedDamage: number, kbf: number): number =>
+    getCharacterKnockbackBonus(getCharacterIdByUser(userId), accumulatedDamage, kbf);
   type ParryCounter = {
     beatIndex: number;
     defenderId: string;
@@ -2555,6 +2580,15 @@ export const executeBeatsWithInteractions = (
       }
       return forced;
     };
+    const applyCharacterDamage = (targetId: string, rawDamage: number): number => {
+      const targetState = state.get(targetId);
+      if (!targetState) return 0;
+      const safeDamage = Number.isFinite(rawDamage) ? Math.max(0, Math.floor(rawDamage)) : 0;
+      if (!safeDamage) return 0;
+      const reducedDamage = Math.max(0, safeDamage - getDamageReductionByUser(targetId));
+      targetState.damage += reducedDamage;
+      return reducedDamage;
+    };
     const queueDraw = (targetId: string, drawCount: number) => {
       const safeCount = Number.isFinite(drawCount) ? Math.max(0, Math.floor(drawCount)) : 0;
       if (!targetId || !safeCount) return;
@@ -2628,7 +2662,8 @@ export const executeBeatsWithInteractions = (
             reflexDodgeAvoidedByUser.add(targetId);
           }
           if (blockCardId === ABSORB_CARD_ID && isBracketedAction(blockAction ?? '')) {
-            queueDraw(targetId, ARROW_DAMAGE);
+            const arrowDamage = ARROW_DAMAGE + getAttackDamageBonusByUser(ownerId);
+            queueDraw(targetId, Math.max(0, arrowDamage - getDamageReductionByUser(targetId)));
           }
           return;
         }
@@ -2712,12 +2747,15 @@ export const executeBeatsWithInteractions = (
 
       const fromPosition = { q: targetState.position.q, r: targetState.position.r };
       const damageReduction = getHealingHarmonyReduction(targetEntry);
-      const adjustedDamage = Math.max(0, ARROW_DAMAGE - damageReduction);
-      targetState.damage += adjustedDamage;
+      const arrowDamage = ARROW_DAMAGE + getAttackDamageBonusByUser(safeOwnerId);
+      const adjustedDamage = applyCharacterDamage(targetId, Math.max(0, arrowDamage - damageReduction));
       const passiveKbfReduction = getPassiveKbfReduction(targetEntry);
       const baseKbf = Math.max(0, ARROW_KBF - passiveKbfReduction);
       const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : baseKbf;
-      const knockbackDistance = getKnockbackDistance(targetState.damage, effectiveKbf);
+      const baseKnockbackDistance = getKnockbackDistance(targetState.damage, effectiveKbf);
+      const calculatedKnockbackDistance =
+        baseKnockbackDistance + getKnockbackBonusByUser(safeOwnerId, state.get(safeOwnerId)?.damage ?? 0, effectiveKbf);
+      const knockbackDistance = Math.max(0, calculatedKnockbackDistance);
       let knockedSteps = 0;
       if (knockbackDistance > 0) {
         let finalPosition = { ...targetState.position };
@@ -2737,7 +2775,11 @@ export const executeBeatsWithInteractions = (
           occupancy.set(coordKey(targetState.position), targetId);
         }
       }
-      const shouldStun = effectiveKbf === 1 || (effectiveKbf > 1 && knockbackDistance > 0);
+      const shouldStun = effectiveKbf === 1 || (effectiveKbf > 1 && calculatedKnockbackDistance > 0);
+      const drawOnKnockbackCount = getDrawOnKnockbackByUser(targetId);
+      if (drawOnKnockbackCount > 0 && calculatedKnockbackDistance > 0) {
+        queueDraw(targetId, drawOnKnockbackCount);
+      }
       if (shouldStun || knockedSteps > 0) {
         markRewindFocusInactive(targetId, index, shouldStun ? 'stun' : 'knockback');
         removeFocusAnchorToken(targetId);
@@ -2751,10 +2793,10 @@ export const executeBeatsWithInteractions = (
       }
       recordHitConsequence(targetId, index, targetState, adjustedDamage, knockedSteps);
         if (safeOwnerId && safeOwnerId !== targetId && hasHammerPassive) {
+          const reflected = applyCharacterDamage(safeOwnerId, 2);
           const attackerState = state.get(safeOwnerId);
-          if (attackerState) {
-            attackerState.damage += 2;
-            recordHitConsequence(safeOwnerId, index, attackerState, 2, 0);
+          if (attackerState && reflected > 0) {
+            recordHitConsequence(safeOwnerId, index, attackerState, reflected, 0);
           }
       }
 
@@ -2810,7 +2852,7 @@ export const executeBeatsWithInteractions = (
       targetEntry?: BeatEntry | null,
       options: { force?: boolean } = {},
     ) => {
-      const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+      let safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
       if (!safeCount) return;
       const entryForImmunity =
         targetEntry ??
@@ -2818,7 +2860,11 @@ export const executeBeatsWithInteractions = (
           const targetCharacter = characterById.get(targetId);
           return targetCharacter ? findEntryForCharacter(beat, targetCharacter) : null;
         })();
-      if (source === 'opponent' && isDiscardImmune(entryForImmunity)) return;
+      if (source === 'opponent') {
+        if (isDiscardImmune(entryForImmunity)) return;
+        safeCount = Math.max(0, safeCount - getDiscardReductionByUser(targetId));
+        if (!safeCount) return;
+      }
       const queue = options.force ? forcedDiscardQueue : discardQueue;
       queue.set(targetId, (queue.get(targetId) ?? 0) + safeCount);
     };
@@ -2835,19 +2881,23 @@ export const executeBeatsWithInteractions = (
         if (!targetState) return;
         const targetCharacter = characterById.get(counter.attackerId);
         const targetEntry = targetCharacter ? findEntryForCharacter(beat, targetCharacter) : null;
+        const attackerState = state.get(counter.defenderId);
         const hasHammerPassive =
           targetEntry?.passiveCardId === HAMMER_CARD_ID && isActionActive(targetEntry.action);
         const damageReduction = getHealingHarmonyReduction(targetEntry);
-        const adjustedDamage = Math.max(0, counter.damage - damageReduction);
-        targetState.damage += adjustedDamage;
+        const counterDamage = Math.max(0, counter.damage + getAttackDamageBonusByUser(counter.defenderId));
+        const adjustedDamage = applyCharacterDamage(counter.attackerId, Math.max(0, counterDamage - damageReduction));
         const passiveKbfReduction = getPassiveKbfReduction(targetEntry);
-        const baseKbf = Math.max(0, counter.kbf - passiveKbfReduction);
+        const counterKbf = Math.max(0, counter.kbf);
+        const baseKbf = Math.max(0, counterKbf - passiveKbfReduction);
         const baseKnockbackDistance = getKnockbackDistance(targetState.damage, baseKbf);
+        const calculatedKnockbackDistance =
+          baseKnockbackDistance + getKnockbackBonusByUser(counter.defenderId, attackerState?.damage ?? 0, baseKbf);
         const convertKbf = shouldConvertKbfToDiscard(targetEntry);
-        if (convertKbf && baseKnockbackDistance > 0) {
-          queueDiscard(counter.attackerId, baseKnockbackDistance, 'self', targetEntry);
+        if (convertKbf && calculatedKnockbackDistance > 0) {
+          queueDiscard(counter.attackerId, calculatedKnockbackDistance, 'self', targetEntry);
         }
-        const knockbackDistance = convertKbf ? 0 : baseKnockbackDistance;
+        const knockbackDistance = convertKbf ? 0 : calculatedKnockbackDistance;
         let knockedSteps = 0;
         const knockbackDirection = counter.directionIndex != null ? AXIAL_DIRECTIONS[counter.directionIndex] : null;
         if (knockbackDirection && knockbackDistance > 0) {
@@ -2868,7 +2918,11 @@ export const executeBeatsWithInteractions = (
             occupancy.set(coordKey(targetState.position), counter.attackerId);
           }
         }
-        const shouldStun = baseKbf === 1 || (baseKbf > 1 && baseKnockbackDistance > 0);
+        const shouldStun = baseKbf === 1 || (baseKbf > 1 && calculatedKnockbackDistance > 0);
+        const drawOnKnockbackCount = getDrawOnKnockbackByUser(counter.attackerId);
+        if (drawOnKnockbackCount > 0 && calculatedKnockbackDistance > 0) {
+          queueDraw(counter.attackerId, drawOnKnockbackCount);
+        }
         if (shouldStun || knockedSteps > 0) {
           markRewindFocusInactive(counter.attackerId, index, shouldStun ? 'stun' : 'knockback');
           removeFocusAnchorToken(counter.attackerId);
@@ -2887,9 +2941,9 @@ export const executeBeatsWithInteractions = (
             hasHammerPassive
           ) {
             const defenderState = state.get(counter.defenderId);
-            if (defenderState) {
-              defenderState.damage += 2;
-              recordHitConsequence(counter.defenderId, index, defenderState, 2, 0);
+            const reflected = applyCharacterDamage(counter.defenderId, 2);
+            if (defenderState && reflected > 0) {
+              recordHitConsequence(counter.defenderId, index, defenderState, reflected, 0);
           }
         }
         disabledActors.add(counter.attackerId);
@@ -3070,8 +3124,10 @@ export const executeBeatsWithInteractions = (
         }
 
         if (entry.passiveCardId === CROSS_SLASH_CARD_ID && !isOpenBeatAction(entry.action) && isActionSetStart(entry)) {
-          actorState.damage += 1;
-          recordHitConsequence(actorId, index, actorState, 1, 0);
+          const passiveSelfDamage = applyCharacterDamage(actorId, 1);
+          if (passiveSelfDamage > 0) {
+            recordHitConsequence(actorId, index, actorState, passiveSelfDamage, 0);
+          }
         }
 
         const startDiscard = getPassiveStartDiscardCount(entry.passiveCardId);
@@ -3155,6 +3211,7 @@ export const executeBeatsWithInteractions = (
 
         const entryDamage = Number.isFinite(entry.attackDamage) ? entry.attackDamage : 0;
         const entryKbf = Number.isFinite(entry.attackKbf) ? entry.attackKbf : 0;
+        const attackDamageBonus = getAttackDamageBonusByUser(actorId);
         const hasGrapplingHookPassive = entry.passiveCardId === GRAPPLING_HOOK_CARD_ID;
         const hasGiganticStaffPassive =
           entry.passiveCardId === GIGANTIC_STAFF_CARD_ID && resolveTerrain(actorState.position) === 'abyss';
@@ -3265,7 +3322,7 @@ export const executeBeatsWithInteractions = (
             targetState &&
             isBehindTarget(origin, targetState);
           const stabBonus = isStabHit ? 3 : 0;
-          const attackDamage = entryDamage + stabBonus;
+          const attackDamage = entryDamage + stabBonus + attackDamageBonus;
           const attackKbf = entryKbf + stabBonus;
           if (targetId && blockedByBlock && resolvedTargetEntry?.cardId === REFLEX_DODGE_CARD_ID) {
             reflexDodgeAvoidedByUser.add(targetId);
@@ -3274,7 +3331,7 @@ export const executeBeatsWithInteractions = (
             const blockAction = resolvedBlockSource?.action ?? resolvedTargetEntry?.action;
             const blockCardId = resolvedBlockSource?.cardId ?? resolvedTargetEntry?.cardId;
             if (blockCardId === ABSORB_CARD_ID && isBracketedAction(blockAction ?? '')) {
-              queueDraw(targetId, attackDamage);
+              queueDraw(targetId, Math.max(0, attackDamage - getDamageReductionByUser(targetId)));
             }
             if (blockCardId === PARRY_CARD_ID && isBracketedAction(blockAction ?? '')) {
               queueParryCounter(index, index + 1, targetId, actorId, attackDamage * 2, attackKbf + 1, directionIndex);
@@ -3291,6 +3348,8 @@ export const executeBeatsWithInteractions = (
                   isBracketedAction(entry.action ?? '') &&
                   (token.type === 'a' || token.type === 'c');
                 if (isSmokeBombStunHit) {
+                  const damageReduction = getHealingHarmonyReduction(resolvedTargetEntry);
+                  const adjustedDamage = applyCharacterDamage(targetId, Math.max(0, attackDamage - damageReduction));
                   markRewindFocusInactive(targetId, index, 'stun');
                   removeFocusAnchorToken(targetId);
                   const beforeSignature = currentBeatActionSignature(targetId);
@@ -3316,11 +3375,12 @@ export const executeBeatsWithInteractions = (
                     causeActorId: actorId,
                     causePriority: entry.priority,
                   });
+                  recordHitConsequence(targetId, index, targetState, adjustedDamage, 0);
                   if (hasHammerPassive && actorId !== targetId) {
                     const attackerState = state.get(actorId);
-                    if (attackerState) {
-                      attackerState.damage += 2;
-                      recordHitConsequence(actorId, index, attackerState, 2, 0);
+                    const reflected = applyCharacterDamage(actorId, 2);
+                    if (attackerState && reflected > 0) {
+                      recordHitConsequence(actorId, index, attackerState, reflected, 0);
                     }
                   }
                   disabledActors.add(targetId);
@@ -3333,10 +3393,10 @@ export const executeBeatsWithInteractions = (
                 if (existing?.status === 'resolved' && resolvedDirection != null) {
                   const beforeSignature = currentBeatActionSignature(targetId);
                   const damageReduction = getHealingHarmonyReduction(resolvedTargetEntry);
-                  const adjustedDamage = Math.max(0, attackDamage - damageReduction);
-                  targetState.damage += adjustedDamage;
+                  const adjustedDamage = applyCharacterDamage(targetId, Math.max(0, attackDamage - damageReduction));
                   recordBurningStrikeHit(actorId);
                   const knockbackDirection = AXIAL_DIRECTIONS[resolvedDirection];
+                  const calculatedKnockbackDistance = THROW_DISTANCE;
                   let knockedSteps = 0;
                   if (knockbackDirection && THROW_DISTANCE > 0) {
                     let finalPosition = { ...targetState.position };
@@ -3359,9 +3419,13 @@ export const executeBeatsWithInteractions = (
                       occupancy.set(coordKey(targetState.position), targetId);
                     }
                   }
-                    if (knockedSteps > 0) {
+                  if (knockedSteps > 0) {
                       markRewindFocusInactive(targetId, index, 'knockback');
                       removeFocusAnchorToken(targetId);
+                    }
+                    const drawOnKnockbackCount = getDrawOnKnockbackByUser(targetId);
+                    if (drawOnKnockbackCount > 0 && calculatedKnockbackDistance > 0) {
+                      queueDraw(targetId, drawOnKnockbackCount);
                     }
                     applyHitTimeline(targetId, index, targetState, knockedSteps, preserveAction);
                     rerunIfCurrentFrameChanged(targetId, beforeSignature, {
@@ -3371,9 +3435,9 @@ export const executeBeatsWithInteractions = (
                     recordHitConsequence(targetId, index, targetState, adjustedDamage, knockedSteps);
                     if (hasHammerPassive && actorId !== targetId) {
                       const attackerState = state.get(actorId);
-                      if (attackerState) {
-                        attackerState.damage += 2;
-                        recordHitConsequence(actorId, index, attackerState, 2, 0);
+                      const reflected = applyCharacterDamage(actorId, 2);
+                      if (attackerState && reflected > 0) {
+                        recordHitConsequence(actorId, index, attackerState, reflected, 0);
                       }
                   }
                   disabledActors.add(targetId);
@@ -3452,8 +3516,7 @@ export const executeBeatsWithInteractions = (
 
                 const fromPosition = { q: targetState.position.q, r: targetState.position.r };
                 const damageReduction = getHealingHarmonyReduction(resolvedTargetEntry);
-                const adjustedDamage = Math.max(0, attackDamage - damageReduction);
-                targetState.damage += adjustedDamage;
+                const adjustedDamage = applyCharacterDamage(targetId, Math.max(0, attackDamage - damageReduction));
                 if (
                   entry.cardId === BURNING_STRIKE_CARD_ID &&
                   isBracketedAction(entry.action ?? '') &&
@@ -3475,11 +3538,13 @@ export const executeBeatsWithInteractions = (
                 const baseKbf = Math.max(0, attackKbf - passiveKbfReduction);
                 const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : baseKbf;
                 const baseKnockbackDistance = getKnockbackDistance(targetState.damage, effectiveKbf);
+                const calculatedKnockbackDistance =
+                  baseKnockbackDistance + getKnockbackBonusByUser(actorId, state.get(actorId)?.damage ?? 0, effectiveKbf);
                 const convertKbf = shouldConvertKbfToDiscard(resolvedTargetEntry);
-                if (convertKbf && baseKnockbackDistance > 0) {
-                  queueDiscard(targetId, baseKnockbackDistance, 'self', resolvedTargetEntry, { force: true });
+                if (convertKbf && calculatedKnockbackDistance > 0) {
+                  queueDiscard(targetId, calculatedKnockbackDistance, 'self', resolvedTargetEntry, { force: true });
                 }
-                const knockbackDistance = convertKbf ? 0 : baseKnockbackDistance;
+                const knockbackDistance = convertKbf ? 0 : calculatedKnockbackDistance;
                 let knockedSteps = 0;
                 if (knockbackDirection && knockbackDistance > 0) {
                   let finalPosition = { ...targetState.position };
@@ -3499,7 +3564,11 @@ export const executeBeatsWithInteractions = (
                     occupancy.set(coordKey(targetState.position), targetId);
                   }
                 }
-                const shouldStun = effectiveKbf === 1 || (effectiveKbf > 1 && baseKnockbackDistance > 0);
+                const shouldStun = effectiveKbf === 1 || (effectiveKbf > 1 && calculatedKnockbackDistance > 0);
+                const drawOnKnockbackCount = getDrawOnKnockbackByUser(targetId);
+                if (drawOnKnockbackCount > 0 && calculatedKnockbackDistance > 0) {
+                  queueDraw(targetId, drawOnKnockbackCount);
+                }
                 if (shouldStun || knockedSteps > 0) {
                   markRewindFocusInactive(targetId, index, shouldStun ? 'stun' : 'knockback');
                   removeFocusAnchorToken(targetId);
@@ -3515,9 +3584,9 @@ export const executeBeatsWithInteractions = (
                 recordHitConsequence(targetId, index, targetState, adjustedDamage, knockedSteps);
                 if (hasHammerPassive && actorId !== targetId) {
                   const attackerState = state.get(actorId);
-                  if (attackerState) {
-                    attackerState.damage += 2;
-                    recordHitConsequence(actorId, index, attackerState, 2, 0);
+                  const reflected = applyCharacterDamage(actorId, 2);
+                  if (attackerState && reflected > 0) {
+                    recordHitConsequence(actorId, index, attackerState, reflected, 0);
                   }
                 }
                 if (shouldStun) {
@@ -3717,8 +3786,11 @@ export const executeBeatsWithInteractions = (
       state.forEach((targetState, targetId) => {
         const key = coordKey(targetState.position);
         if (!fireTokenKeys.has(key) && !ephemeralFireKeys.has(key)) return;
-        targetState.damage += 1;
-        recordHitConsequence(targetId, index, targetState, 1, 0);
+        if (isFireDamageImmuneByUser(targetId)) return;
+        const fireDamage = applyCharacterDamage(targetId, 1);
+        if (fireDamage > 0) {
+          recordHitConsequence(targetId, index, targetState, fireDamage, 0);
+        }
       });
     }
 

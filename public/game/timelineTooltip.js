@@ -4,6 +4,7 @@ import { extractHandTriggerText } from './handTriggerText.mjs';
 import { appendInlineText } from '../shared/cardRenderer.js';
 import { axialToPixel, getHexSize } from '../shared/hex.mjs';
 import { GAME_CONFIG } from './config.js';
+import { getCharacterTokenMetrics } from './characterTokens.mjs';
 
 const normalizeSymbolText = (text) => {
   const raw = `${text ?? ''}`.trim();
@@ -146,10 +147,37 @@ const getFocusAnchorTarget = ({ event, canvas, viewState, sceneTokens }) => {
   return best ? { kind: 'focus-anchor', token: best.token, center: best.center } : null;
 };
 
+const getCharacterTokenTarget = ({ event, canvas, viewState, sceneCharacters }) => {
+  if (!event || !canvas || !viewState || !Array.isArray(sceneCharacters) || !sceneCharacters.length) return null;
+  const rect = canvas.getBoundingClientRect();
+  const pointerX = event.clientX - rect.left;
+  const pointerY = event.clientY - rect.top;
+  const size = getHexSize(rect.width || canvas.clientWidth || 1, GAME_CONFIG.hexSizeFactor);
+  const metrics = getCharacterTokenMetrics(size);
+  const hitRadius = Math.max(12, metrics.radius * viewState.scale);
+  let best = null;
+  sceneCharacters.forEach((character) => {
+    if (!character?.position) return;
+    const base = axialToPixel(character.position.q, character.position.r, size);
+    const renderOffset = character.renderOffset ?? null;
+    const worldX = base.x + (renderOffset ? renderOffset.x * size : 0);
+    const worldY = base.y + (renderOffset ? renderOffset.y * size : 0);
+    const screenX = viewState.offset.x + worldX * viewState.scale;
+    const screenY = viewState.offset.y + worldY * viewState.scale;
+    const distance = Math.hypot(pointerX - screenX, pointerY - screenY);
+    if (distance > hitRadius) return;
+    if (!best || distance < best.distance) {
+      best = { distance, character, center: { x: screenX, y: screenY } };
+    }
+  });
+  return best ? { kind: 'character', character: best.character, center: best.center } : null;
+};
+
 export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicatorViewModel, getScene } = {}) => {
   if (!gameArea || !canvas) {
     return {
       setCardCatalog: () => {},
+      setCharacterCatalog: () => {},
       setGameState: () => {},
       update: () => {},
       hide: () => {},
@@ -180,6 +208,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
   gameArea.appendChild(tooltip);
 
   let cardMetadata = { list: [], byId: new Map() };
+  let characterMetadata = { byId: new Map() };
   let gameState = null;
   let lastTooltipKey = null;
 
@@ -212,6 +241,45 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     tooltip.style.top = `${top}px`;
   };
 
+  const clearSupplementalSections = ({ hideDivider = true } = {}) => {
+    divider.hidden = hideDivider;
+    passive.hidden = true;
+    passiveText.hidden = true;
+    passive.textContent = '';
+    passiveText.textContent = '';
+    focus.hidden = true;
+    focusText.hidden = true;
+    focus.textContent = '';
+    focusText.textContent = '';
+  };
+
+  const renderCharacterPowerTooltip = (target) => {
+    const character = target?.character ?? {};
+    const characterCatalogEntry = characterMetadata.byId.get(character.characterId);
+    const powerText =
+      `${character.characterPowerText ?? ''}`.trim() ||
+      `${characterCatalogEntry?.powerText ?? ''}`.trim();
+    if (!powerText) {
+      return false;
+    }
+    const titleText =
+      `${character.characterName ?? ''}`.trim() ||
+      `${characterCatalogEntry?.name ?? ''}`.trim() ||
+      `${character.username ?? character.userId ?? ''}`.trim();
+    const key = ['character', character.userId ?? character.username, powerText].join(':');
+    if (key !== lastTooltipKey) {
+      title.textContent = titleText || 'Character Power';
+      title.hidden = false;
+      instruction.hidden = false;
+      appendInlineText(instruction, powerText);
+      clearSupplementalSections({ hideDivider: true });
+      lastTooltipKey = key;
+    }
+    tooltip.hidden = false;
+    positionTooltip(target.center.x, target.center.y);
+    return true;
+  };
+
   const update = (event) => {
     if (!gameState || !cardMetadata.list.length) {
       hide();
@@ -235,7 +303,17 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       target = getFocusAnchorTarget({ event, canvas, viewState, sceneTokens });
     }
     if (!target) {
+      const sceneCharacters = getScene?.()?.characters ?? gameState?.state?.public?.characters ?? [];
+      target = getCharacterTokenTarget({ event, canvas, viewState, sceneCharacters });
+    }
+    if (!target) {
       hide();
+      return;
+    }
+    if (target.kind === 'character') {
+      if (!renderCharacterPowerTooltip(target)) {
+        hide();
+      }
       return;
     }
     if (target.kind === 'focus-anchor') {
@@ -254,11 +332,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
         title.hidden = !titleText;
         instruction.hidden = true;
         instruction.textContent = '';
-        divider.hidden = false;
-        passive.hidden = true;
-        passiveText.hidden = true;
-        passive.textContent = '';
-        passiveText.textContent = '';
+        clearSupplementalSections({ hideDivider: false });
         focus.textContent = 'Focus';
         focus.hidden = false;
         if (focusLine) {
@@ -294,15 +368,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
           instruction.hidden = true;
           instruction.textContent = '';
         }
-        divider.hidden = true;
-        passive.hidden = true;
-        passiveText.hidden = true;
-        passive.textContent = '';
-        passiveText.textContent = '';
-        focus.hidden = true;
-        focusText.hidden = true;
-        focus.textContent = '';
-        focusText.textContent = '';
+        clearSupplementalSections({ hideDivider: true });
         lastTooltipKey = key;
       }
       tooltip.hidden = false;
@@ -327,11 +393,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
         title.hidden = !titleText;
         instruction.hidden = false;
         appendInlineText(instruction, choiceLine);
-        divider.hidden = !focusLine;
-        passive.hidden = true;
-        passiveText.hidden = true;
-        passive.textContent = '';
-        passiveText.textContent = '';
+        clearSupplementalSections({ hideDivider: !focusLine });
         focus.textContent = 'Focus';
         focus.hidden = !focusLine;
         if (focusLine) {
@@ -427,12 +489,18 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     cardMetadata = buildCardMetadata(catalog);
   };
 
+  const setCharacterCatalog = (catalog) => {
+    const list = Array.isArray(catalog?.characters) ? catalog.characters : [];
+    characterMetadata = { byId: new Map(list.map((item) => [item.id, item])) };
+  };
+
   const setGameState = (state) => {
     gameState = state;
   };
 
   return {
     setCardCatalog,
+    setCharacterCatalog,
     setGameState,
     update,
     hide,

@@ -37,6 +37,35 @@ const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
 const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
 const GRAPPLING_HOOK_CARD_ID = 'grappling-hook';
 
+const toSafeCount = (value) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0;
+};
+
+const getCharacterEffects = (character, characterPowersById) => {
+  const fromCatalog =
+    character?.characterId && characterPowersById?.get(character.characterId)?.effects
+      ? characterPowersById.get(character.characterId).effects
+      : {};
+  const fromCharacter =
+    character?.characterPower && typeof character.characterPower === 'object' ? character.characterPower : {};
+  return { ...fromCatalog, ...fromCharacter };
+};
+
+const getAttackDamageBonusForCharacter = (character, characterPowersById) =>
+  toSafeCount(getCharacterEffects(character, characterPowersById).attackDamageBonus);
+
+const getDamageReductionForCharacter = (character, characterPowersById) =>
+  toSafeCount(getCharacterEffects(character, characterPowersById).damageReduction);
+
+const getKnockbackBonusForCharacter = (character, accumulatedDamage, kbf, characterPowersById) => {
+  if (!Number.isFinite(kbf) || kbf <= 0) return 0;
+  const perTen = toSafeCount(getCharacterEffects(character, characterPowersById).knockbackBonusPerTenDamage);
+  if (!perTen) return 0;
+  const damage = Number.isFinite(accumulatedDamage) ? Math.max(0, Math.floor(accumulatedDamage)) : 0;
+  return perTen * Math.floor(damage / 10);
+};
+
 const HIT_WINDOW_START = 0.18;
 const HIT_WINDOW_END = 0.32;
 const KNOCKBACK_START = 0.32;
@@ -613,7 +642,15 @@ const buildBaseState = (beats, beatIndex, characters, interactions) => {
 const isBeatCalculated = (beat) =>
   Array.isArray(beat) && beat.length && beat.every((entry) => entry && entry.calculated);
 
-const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, land) => {
+const buildActionSteps = (
+  beat,
+  characters,
+  baseState,
+  interactions,
+  beatIndex,
+  land,
+  characterPowersById = new Map(),
+) => {
   const rosterOrder = new Map();
   characters.forEach((character, index) => {
     rosterOrder.set(character.userId, index);
@@ -653,6 +690,18 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
     });
     occupancy.set(coordKey(character.position), character.userId);
   });
+  const getCharacterForUser = (userId) => characterById.get(userId) ?? null;
+  const applyDamageToUser = (userId, rawDamage) => {
+    const targetState = state.get(userId);
+    if (!targetState) return 0;
+    const safeDamage = Number.isFinite(rawDamage) ? Math.max(0, Math.floor(rawDamage)) : 0;
+    if (!safeDamage) return 0;
+    const targetCharacter = getCharacterForUser(userId);
+    const reduction = getDamageReductionForCharacter(targetCharacter, characterPowersById);
+    const adjusted = Math.max(0, safeDamage - reduction);
+    targetState.damage = (targetState.damage ?? 0) + adjusted;
+    return adjusted;
+  };
 
   const blockMap = new Map();
   const disabledActors = new Set();
@@ -688,17 +737,26 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
       if (!attackerId) return;
       const targetState = state.get(attackerId);
       if (!targetState) return;
+      const defenderCharacter = characterById.get(defenderId);
       const targetCharacter = characterById.get(attackerId);
       const targetEntry = targetCharacter ? getBeatEntryForCharacter(beat, targetCharacter) : null;
       const baseDamage = Number.isFinite(interaction.damage) ? Math.max(0, Math.floor(interaction.damage)) : 0;
+      const attackDamageBonus = getAttackDamageBonusForCharacter(defenderCharacter, characterPowersById);
       const baseKbf = Number.isFinite(interaction.kbf) ? Math.max(0, Math.floor(interaction.kbf)) : 0;
       const directionIndex = Number.isFinite(interaction.directionIndex) ? Math.round(interaction.directionIndex) : null;
       const damageReduction = getHealingHarmonyReduction(targetEntry);
-      const adjustedDamage = Math.max(0, baseDamage - damageReduction);
+      const adjustedDamage = applyDamageToUser(attackerId, Math.max(0, baseDamage + attackDamageBonus - damageReduction));
       const passiveKbfReduction = getPassiveKbfReduction(targetEntry);
       const effectiveKbf = Math.max(0, baseKbf - passiveKbfReduction);
-      const baseKnockbackDistance = getKnockbackDistance((targetState.damage ?? 0) + adjustedDamage, effectiveKbf);
-      const knockbackDistance = shouldConvertKbfToDiscard(targetEntry) ? 0 : baseKnockbackDistance;
+      const baseKnockbackDistance = getKnockbackDistance(targetState.damage ?? 0, effectiveKbf);
+      const knockbackBonus = getKnockbackBonusForCharacter(
+        defenderCharacter,
+        state.get(defenderId)?.damage ?? 0,
+        effectiveKbf,
+        characterPowersById,
+      );
+      const calculatedKnockbackDistance = baseKnockbackDistance + knockbackBonus;
+      const knockbackDistance = shouldConvertKbfToDiscard(targetEntry) ? 0 : calculatedKnockbackDistance;
       const knockbackDirection = directionIndex != null ? AXIAL_DIRECTIONS[directionIndex] : null;
       const startPosition = { q: targetState.position.q, r: targetState.position.r };
       let finalPosition = { ...targetState.position };
@@ -720,7 +778,6 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
         occupancy.set(coordKey(finalPosition), attackerId);
       }
       targetState.position = { q: finalPosition.q, r: finalPosition.r };
-      targetState.damage = (targetState.damage ?? 0) + adjustedDamage;
 
       const damageChanges = [];
       const positionChanges = [];
@@ -749,10 +806,9 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
         targetEntry?.passiveCardId === HAMMER_CARD_ID &&
         isActionActive(targetEntry.action)
       ) {
-        const defenderState = state.get(defenderId);
-        if (defenderState) {
-          defenderState.damage = (defenderState.damage ?? 0) + 2;
-          damageChanges.push({ targetId: defenderId, delta: 2 });
+        const reflected = applyDamageToUser(defenderId, 2);
+        if (reflected > 0) {
+          damageChanges.push({ targetId: defenderId, delta: reflected });
         }
       }
       steps.push({
@@ -779,10 +835,12 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
     if (disabledActors.has(actorId)) return;
     const actorState = state.get(actorId);
     if (!actorState) return;
+    const actorCharacter = characterById.get(actorId);
 
     const origin = { q: actorState.position.q, r: actorState.position.r };
     const entryDamage = Number.isFinite(entry?.attackDamage) ? entry.attackDamage : 0;
     const entryKbf = Number.isFinite(entry?.attackKbf) ? entry.attackKbf : 0;
+    const attackDamageBonus = getAttackDamageBonusForCharacter(actorCharacter, characterPowersById);
     const hasGrapplingHookPassive = entry?.passiveCardId === GRAPPLING_HOOK_CARD_ID;
     const hasGiganticStaffPassive =
       entry?.passiveCardId === GIGANTIC_STAFF_CARD_ID && !isCoordOnLand(actorState.position, landTiles);
@@ -812,8 +870,10 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
       }
 
       if (entry.passiveCardId === CROSS_SLASH_CARD_ID && isActionSetStart(entry)) {
-        actorState.damage = (actorState.damage ?? 0) + 1;
-        damageChanges.push({ targetId: actorId, delta: 1 });
+        const selfDamage = applyDamageToUser(actorId, 1);
+        if (selfDamage > 0) {
+          damageChanges.push({ targetId: actorId, delta: selfDamage });
+        }
       }
 
       const tokens = parseActionTokens(action);
@@ -886,8 +946,8 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
               const knockbackPath = [{ q: targetState.position.q, r: targetState.position.r }];
               if (interaction?.status === 'resolved' && resolvedDirection != null) {
                 const damageReduction = getHealingHarmonyReduction(targetEntry);
-                const adjustedDamage = Math.max(0, entryDamage - damageReduction);
-                targetState.damage += adjustedDamage;
+                const throwDamage = entryDamage + attackDamageBonus;
+                const adjustedDamage = applyDamageToUser(targetId, Math.max(0, throwDamage - damageReduction));
                 damageChanges.push({ targetId, delta: adjustedDamage });
                 const knockbackDirection = AXIAL_DIRECTIONS[resolvedDirection];
                 let finalPosition = { ...targetState.position };
@@ -928,10 +988,9 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
                   isActionActive(targetEntry.action) &&
                   actorId !== targetId
                 ) {
-                  const attackerState = state.get(actorId);
-                  if (attackerState) {
-                    attackerState.damage = (attackerState.damage ?? 0) + 2;
-                    damageChanges.push({ targetId: actorId, delta: 2 });
+                  const reflected = applyDamageToUser(actorId, 2);
+                  if (reflected > 0) {
+                    damageChanges.push({ targetId: actorId, delta: reflected });
                   }
                 }
                 disabledActors.add(targetId);
@@ -955,11 +1014,10 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
               isBracketedAction(entry.action ?? '') &&
               isBehindTarget(origin, targetState);
             const stabBonus = isStabHit ? 3 : 0;
-            const rawDamage = entryDamage + stabBonus;
+            const rawDamage = entryDamage + stabBonus + attackDamageBonus;
             const rawKbf = entryKbf + stabBonus;
             const damageReduction = getHealingHarmonyReduction(targetEntry);
-            const adjustedDamage = Math.max(0, rawDamage - damageReduction);
-            targetState.damage += adjustedDamage;
+            const adjustedDamage = applyDamageToUser(targetId, Math.max(0, rawDamage - damageReduction));
             damageChanges.push({ targetId, delta: adjustedDamage });
             const usesGrapplingHookPassive = hasGrapplingHookPassive && token.type === 'a';
             const attackDirection = getKnockbackDirection(origin, destination, lastStep);
@@ -976,8 +1034,15 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
             const baseKbf = Math.max(0, rawKbf - passiveKbfReduction);
             const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : baseKbf;
             const baseKnockbackDistance = getKnockbackDistance(targetState.damage, effectiveKbf);
-            const knockbackDistance = shouldConvertKbfToDiscard(targetEntry) ? 0 : baseKnockbackDistance;
-            const shouldStun = effectiveKbf === 1 || (effectiveKbf > 1 && baseKnockbackDistance > 0);
+            const knockbackBonus = getKnockbackBonusForCharacter(
+              actorCharacter,
+              state.get(actorId)?.damage ?? 0,
+              effectiveKbf,
+              characterPowersById,
+            );
+            const calculatedKnockbackDistance = baseKnockbackDistance + knockbackBonus;
+            const knockbackDistance = shouldConvertKbfToDiscard(targetEntry) ? 0 : calculatedKnockbackDistance;
+            const shouldStun = effectiveKbf === 1 || (effectiveKbf > 1 && calculatedKnockbackDistance > 0);
             if (flipPosition) {
               knockbackPath.push({ q: flipPosition.q, r: flipPosition.r });
             }
@@ -1018,10 +1083,9 @@ const buildActionSteps = (beat, characters, baseState, interactions, beatIndex, 
               isActionActive(targetEntry.action) &&
               actorId !== targetId
             ) {
-              const attackerState = state.get(actorId);
-              if (attackerState) {
-                attackerState.damage = (attackerState.damage ?? 0) + 2;
-                damageChanges.push({ targetId: actorId, delta: 2 });
+              const reflected = applyDamageToUser(actorId, 2);
+              if (reflected > 0) {
+                damageChanges.push({ targetId: actorId, delta: reflected });
               }
             }
             if (shouldStun) {
@@ -1171,7 +1235,7 @@ const createTokenRenderState = (baseTokens) => {
   };
 };
 
-const buildTokenPlayback = (gameState, beatIndex) => {
+const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map()) => {
   const beats = gameState?.state?.public?.beats ?? [];
   const characters = gameState?.state?.public?.characters ?? [];
   const interactions = gameState?.state?.public?.customInteractions ?? [];
@@ -1192,6 +1256,15 @@ const buildTokenPlayback = (gameState, beatIndex) => {
     if (character.username) {
       userLookup.set(character.username, character.userId);
       rosterOrder.set(character.username, index);
+    }
+  });
+  const characterById = new Map();
+  characters.forEach((character) => {
+    if (character.userId) {
+      characterById.set(character.userId, character);
+    }
+    if (character.username) {
+      characterById.set(character.username, character);
     }
   });
 
@@ -1477,7 +1550,15 @@ const buildTokenPlayback = (gameState, beatIndex) => {
     }
 
     const baseState = buildCharacterSnapshot();
-    const { steps, persistentEffects } = buildActionSteps(beat, characters, baseState, interactions, index, land);
+    const { steps, persistentEffects } = buildActionSteps(
+      beat,
+      characters,
+      baseState,
+      interactions,
+      index,
+      land,
+      characterPowersById,
+    );
     const blockMap = new Map();
     (persistentEffects ?? []).forEach((effect) => {
       if (effect?.type !== 'block') return;
@@ -1500,6 +1581,22 @@ const buildTokenPlayback = (gameState, beatIndex) => {
         damage: typeof character.damage === 'number' ? character.damage : 0,
       });
     });
+    const applyEndStateDamage = (userId, rawDamage) => {
+      const targetState = endStateById.get(userId);
+      if (!targetState) return 0;
+      const safeDamage = Number.isFinite(rawDamage) ? Math.max(0, Math.floor(rawDamage)) : 0;
+      if (!safeDamage) return 0;
+      const targetCharacter = characterById.get(userId);
+      const damageReduction = getDamageReductionForCharacter(targetCharacter, characterPowersById);
+      const adjusted = Math.max(0, safeDamage - damageReduction);
+      targetState.damage = (targetState.damage ?? 0) + adjusted;
+      endStateById.set(userId, {
+        position: { q: targetState.position.q, r: targetState.position.r },
+        facing: targetState.facing,
+        damage: targetState.damage,
+      });
+      return adjusted;
+    };
     const stepByActor = new Map();
     steps.forEach((step) => {
       stepByActor.set(step.actorId, step);
@@ -1634,9 +1731,18 @@ const buildTokenPlayback = (gameState, beatIndex) => {
       const baseKbf = Math.max(0, ARROW_KBF - passiveKbfReduction);
       const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : baseKbf;
       const damageReduction = getHealingHarmonyReduction(targetEntry);
-      const adjustedDamage = Math.max(0, ARROW_DAMAGE - damageReduction);
-      const updatedDamage = (targetState.damage ?? 0) + adjustedDamage;
-      const knockbackDistance = getKnockbackDistance(updatedDamage, effectiveKbf);
+      const ownerCharacter = token.ownerUserId ? characterById.get(token.ownerUserId) : null;
+      const arrowDamage = ARROW_DAMAGE + getAttackDamageBonusForCharacter(ownerCharacter, characterPowersById);
+      const adjustedDamage = applyEndStateDamage(targetId, Math.max(0, arrowDamage - damageReduction));
+      const updatedDamage = endStateById.get(targetId)?.damage ?? targetState.damage ?? 0;
+      const baseKnockbackDistance = getKnockbackDistance(updatedDamage, effectiveKbf);
+      const knockbackBonus = getKnockbackBonusForCharacter(
+        ownerCharacter,
+        endStateById.get(token.ownerUserId)?.damage ?? 0,
+        effectiveKbf,
+        characterPowersById,
+      );
+      const knockbackDistance = baseKnockbackDistance + knockbackBonus;
       let finalPosition = { q: startPosition.q, r: startPosition.r };
       const hitPath = [{ q: finalPosition.q, r: finalPosition.r }];
       for (let step = 0; step < knockbackDistance; step += 1) {
@@ -1665,16 +1771,9 @@ const buildTokenPlayback = (gameState, beatIndex) => {
         token.ownerUserId &&
         token.ownerUserId !== targetId
       ) {
-        const attackerState = endStateById.get(token.ownerUserId);
-        if (attackerState) {
-          endStateById.set(token.ownerUserId, {
-            position: { q: attackerState.position.q, r: attackerState.position.r },
-            facing: attackerState.facing,
-            damage: (attackerState.damage ?? 0) + 2,
-          });
-          if (applyNow) {
-            arrowDamageChanges.push({ targetId: token.ownerUserId, delta: 2 });
-          }
+        const reflected = applyEndStateDamage(token.ownerUserId, 2);
+        if (applyNow && reflected > 0) {
+          arrowDamageChanges.push({ targetId: token.ownerUserId, delta: reflected });
         }
       }
       if (applyNow) {
@@ -1930,6 +2029,7 @@ export const createTimelinePlayback = () => {
   let lastBeatIndex = null;
   let lastGameStamp = null;
   let playback = null;
+  let characterPowersById = new Map();
   let scene = { characters: [], effects: [] };
   let status = {
     isCalculated: false,
@@ -1945,7 +2045,7 @@ export const createTimelinePlayback = () => {
     const interactions = gameState?.state?.public?.customInteractions ?? [];
     const beat = beats[beatIndex] ?? [];
     const baseState = buildBaseState(beats, beatIndex, characters, interactions);
-    const tokenPlayback = buildTokenPlayback(gameState, beatIndex);
+    const tokenPlayback = buildTokenPlayback(gameState, beatIndex, characterPowersById);
     const baseTokens = tokenPlayback?.baseTokens ?? [];
 
     if (!isBeatCalculated(beat)) {
@@ -1969,6 +2069,7 @@ export const createTimelinePlayback = () => {
       interactions,
       beatIndex,
       land,
+      characterPowersById,
     );
     const steps = characterSteps.map((step) => ({
       ...step,
@@ -2249,6 +2350,11 @@ export const createTimelinePlayback = () => {
   };
 
   return {
+    setCharacterPowers(nextMap) {
+      characterPowersById = nextMap instanceof Map ? nextMap : new Map();
+      lastGameStamp = null;
+      lastBeatIndex = null;
+    },
     update(now, gameState, beatIndex) {
       const gameStamp = gameState?.updatedAt ?? beatsStamp(gameState);
       if (gameStamp !== lastGameStamp || beatIndex !== lastBeatIndex) {

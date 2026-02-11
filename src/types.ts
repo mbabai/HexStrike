@@ -122,6 +122,7 @@ export interface DeckState {
   movement: string[];
   abilityHand: string[];
   abilityDeck: string[];
+  baseMaxHandSize?: number;
   focusedAbilityCardIds: Set<string>;
   exhaustedMovementIds: Set<string>;
   lastRefreshIndex: number | null;

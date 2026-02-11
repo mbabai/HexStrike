@@ -39,6 +39,7 @@ import {
 } from './game/cardRules';
 import { getMaxAbilityHandSize, getTargetMovementHandSize } from './game/handRules';
 import { HAND_TRIGGER_BY_ID, HAND_TRIGGER_DEFINITIONS } from './game/handTriggers';
+import { getCharacterMaxHandSize } from './game/characterPowers';
 import { writeDevTempEvent } from './dev/tempLogs';
 import {
   ActionListItem,
@@ -760,7 +761,10 @@ export function buildServer(port: number) {
     const deckStates = new Map<string, DeckState>();
     match.players.forEach((player) => {
       const deck = queuedDecks.get(player.userId) ?? buildDefaultDeckDefinition(catalog);
-      deckStates.set(player.userId, createDeckState(deck));
+      deckStates.set(
+        player.userId,
+        createDeckState(deck, { baseMaxHandSize: getCharacterMaxHandSize(player.characterId) ?? undefined }),
+      );
     });
     gameDeckStates.set(game.id, deckStates);
     return deckStates;
@@ -777,7 +781,10 @@ export function buildServer(port: number) {
     const characters = game.state?.public ? ensureBaselineCharacters(game.state.public) : [];
     characters.forEach((character) => {
       const deck = queuedDecks.get(character.userId) ?? buildDefaultDeckDefinition(catalog);
-      deckStates.set(character.userId, createDeckState(deck));
+      deckStates.set(
+        character.userId,
+        createDeckState(deck, { baseMaxHandSize: getCharacterMaxHandSize(character.characterId) ?? undefined }),
+      );
     });
     gameDeckStates.set(game.id, deckStates);
     return deckStates;

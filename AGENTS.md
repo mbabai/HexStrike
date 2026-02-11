@@ -12,6 +12,8 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - UI: lobby deck library + deck builder (stored per-user in localStorage) in `public/decks.js` + `public/deckStore.js`; selected deck is saved in cookies and gates matchmaking.
 - UI: deck edit uses the same builder overlay as create; edit state is prefilled and saves back to the existing deck id.
 - UI: `/cards` catalog page renders the full card set from `public/cards/cards.json` via `public/cards.js` + `public/cards.css`.
+- Character powers are data-driven in `public/characters/characters.json`; server helpers live in `src/game/characterPowers.ts` and client loaders in `public/shared/characterCatalog.js`.
+- UI: deck-character selection shows character power text and in-game character-token hover tooltips show power text.
 - UI action HUD uses movement/ability cards from `public/cards/cards.json`, random/selected deck hand selection in `public/game/cards.js`, and drag/drop wiring in `public/game/actionHud.js`.
 - Action HUD hands are always rendered in a stacked spread, with turn-only slots/rotation and icon-driven card badges.
 - UI match-end rule checks are centralized in `public/game/matchEndRules.js` to keep game-over logic separate from controller wiring.
@@ -29,6 +31,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - [architecture.md](architecture.md): system overview of server/client/data flow; use when onboarding, tracing state sync issues, or planning cross-cutting changes.
 - [rules.md](rules.md): player-facing rules; use to align gameplay changes, answer rules questions, or sanity-check rule coverage.
 - [docs/hex-grid.md](docs/hex-grid.md): hex coordinate system and land/abyss definitions; use when touching board math or terrain.
+- [docs/character-powers.md](docs/character-powers.md): character-power data schema/effects and server-client integration points.
 - [references/card-text-abstractions.md](references/card-text-abstractions.md): inventory of card-text symbols/effects and their implementation anchors.
 - [references/card-text-implementation.json](references/card-text-implementation.json): active/passive card-text implementation tracker.
 - [plans/basic-lobby.md](plans/basic-lobby.md): historical lobby plan snapshot; reference for context on the initial lobby scope.
@@ -193,6 +196,8 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Find Game is disabled until a deck is selected; the selected deck ID is stored in cookies and its `characterId` plus movement/ability lists are sent with `/api/v1/lobby/join`.
 - `/api/v1/lobby/join` rejects decks unless they contain exactly 4 movement cards and exactly 12 ability cards; keep `public/cards/cards.json` base decks and deck-builder output aligned with this.
 - Base deck definitions from `public/cards/cards.json` are merged into each user's localStorage on load in `public/deckStore.js`; keep the merge logic when adding new base decks.
+- Character powers are defined in `public/characters/characters.json`; when adding/changing effects, keep `src/game/characterPowers.ts`, `src/game/execute.ts`, and `public/game/timelinePlayback.js` behavior in sync.
+- Accumulated-damage character effects (ex: `knockbackBonusPerTenDamage`) use the attacker's current damage, seeded from `public.characters[*].damage` at `executeBeats` start; test fixtures must set baseline `character.damage` explicitly.
 
 ## PR expectations
 - Summarize rule/engine changes clearly; include replay determinism notes when relevant.

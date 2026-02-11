@@ -18,6 +18,7 @@ import {
   getTimelineStopIndex,
 } from './game/beatTimeline.js';
 import { loadCardCatalog } from './shared/cardCatalog.js';
+import { loadCharacterCatalog } from './shared/characterCatalog.js';
 import { createDiscardPrompt } from './game/discardPrompt.mjs';
 import { createDrawPrompt } from './game/drawPrompt.mjs';
 import { createHandTriggerPrompt } from './game/handTriggerPrompt.mjs';
@@ -1263,6 +1264,17 @@ export const initGame = () => {
     })
     .catch((err) => {
       console.warn('Failed to load card catalog for timeline tooltips', err);
+    });
+  loadCharacterCatalog()
+    .then((catalog) => {
+      tooltip.setCharacterCatalog(catalog);
+      timelinePlayback.setCharacterPowers(catalog?.byId ?? new Map());
+      refreshActionHud();
+      refreshInteractionOverlay();
+    })
+    .catch((err) => {
+      console.warn('Failed to load character catalog for power tooltips', err);
+      timelinePlayback.setCharacterPowers(new Map());
     });
 
   bindControls(canvas, viewState, pointerState, undefined, timeIndicatorViewModel, gameArea);

@@ -1,0 +1,58 @@
+{
+  "characters": [
+    {
+      "id": "murelious",
+      "name": "Murelious",
+      "image": "/public/images/Murelious.png",
+      "powerText": "Max cards is 5.",
+      "effects": {
+        "maxHandSize": 5
+      }
+    },
+    {
+      "id": "strylan",
+      "name": "Strylan",
+      "image": "/public/images/Strylan.png",
+      "powerText": "All attacks do +1 damage.",
+      "effects": {
+        "attackDamageBonus": 1
+      }
+    },
+    {
+      "id": "aumandetta",
+      "name": "Aumandetta",
+      "image": "/public/images/Aumandetta.png",
+      "powerText": "Draw 1 when knocked back.",
+      "effects": {
+        "drawOnKnockback": 1
+      }
+    },
+    {
+      "id": "monkey-queen",
+      "name": "Monkey Queen",
+      "image": "/public/images/MonkeyQueen.png",
+      "powerText": "+1 knockback on all KBF >0 attacks for each 10 damage accumulated.",
+      "effects": {
+        "knockbackBonusPerTenDamage": 1
+      }
+    },
+    {
+      "id": "ryathan",
+      "name": "Ryathan",
+      "image": "/public/images/Ryathan.png",
+      "powerText": "Immune to fire damage.",
+      "effects": {
+        "fireDamageImmune": true
+      }
+    },
+    {
+      "id": "zenytha",
+      "name": "Zenytha",
+      "image": "/public/images/Zenytha.png",
+      "powerText": "Opponent discard effects are reduced by 1.",
+      "effects": {
+        "opponentDiscardReduction": 1
+      }
+    }
+  ]
+}

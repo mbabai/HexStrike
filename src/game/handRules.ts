@@ -62,8 +62,14 @@ export const getFocusedCardCount = (deckState: DeckState | null | undefined): nu
   return Math.max(0, Math.floor(size as number));
 };
 
+const getBaseAbilityHandSize = (deckState: DeckState | null | undefined): number => {
+  const configured = deckState?.baseMaxHandSize;
+  if (!Number.isFinite(configured)) return MAX_HAND_SIZE;
+  return Math.max(0, Math.floor(configured as number));
+};
+
 export const getMaxAbilityHandSize = (deckState: DeckState | null | undefined): number => {
-  const reduced = MAX_HAND_SIZE - getFocusedCardCount(deckState);
+  const reduced = getBaseAbilityHandSize(deckState) - getFocusedCardCount(deckState);
   return Math.max(0, reduced);
 };
 

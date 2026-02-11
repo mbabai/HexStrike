@@ -1,4 +1,5 @@
 import { loadCardCatalog } from './shared/cardCatalog.js';
+import { loadCharacterCatalog } from './shared/characterCatalog.js';
 import { buildCardElement, fitAllCardText } from './shared/cardRenderer.js';
 import { loadUserDecks, saveUserDecks, createDeckId } from './deckStore.js';
 import { getOrCreateUserId, getSelectedDeckId, setSelectedDeckId, clearSelectedDeckId } from './storage.js';
@@ -6,13 +7,13 @@ import { getOrCreateUserId, getSelectedDeckId, setSelectedDeckId, clearSelectedD
 const REQUIRED_MOVEMENT = 4;
 const REQUIRED_ABILITY = 12;
 
-const CHARACTER_OPTIONS = [
-  { id: 'murelious', name: 'Murelious', image: '/public/images/Murelious.png' },
-  { id: 'strylan', name: 'Strylan', image: '/public/images/Strylan.png' },
-  { id: 'monkey-queen', name: 'Monkey Queen', image: '/public/images/MonkeyQueen.png' },
-  { id: 'ryathan', name: 'Ryathan', image: '/public/images/Ryathan.png' },
-  { id: 'zenytha', name: 'Zenytha', image: '/public/images/Zenytha.png' },
-  { id: 'aumandetta', name: 'Aumandetta', image: '/public/images/Aumandetta.png' },
+const CHARACTER_OPTIONS_FALLBACK = [
+  { id: 'murelious', name: 'Murelious', image: '/public/images/Murelious.png', powerText: '' },
+  { id: 'strylan', name: 'Strylan', image: '/public/images/Strylan.png', powerText: '' },
+  { id: 'monkey-queen', name: 'Monkey Queen', image: '/public/images/MonkeyQueen.png', powerText: '' },
+  { id: 'ryathan', name: 'Ryathan', image: '/public/images/Ryathan.png', powerText: '' },
+  { id: 'zenytha', name: 'Zenytha', image: '/public/images/Zenytha.png', powerText: '' },
+  { id: 'aumandetta', name: 'Aumandetta', image: '/public/images/Aumandetta.png', powerText: '' },
 ];
 
 const createIcon = (path, viewBox = '0 0 24 24') => {
@@ -32,9 +33,6 @@ const createIcon = (path, viewBox = '0 0 24 24') => {
 
 const PENCIL_ICON = createIcon('M3 21l3.5-1 11-11-2.5-2.5-11 11L3 21z M14.5 5.5l2.5 2.5');
 const TRASH_ICON = createIcon('M4 7h16M9 7V5h6v2M8 7l1 12h6l1-12');
-
-const getCharacterMeta = (characterId) =>
-  CHARACTER_OPTIONS.find((option) => option.id === characterId) || null;
 
 const createDeckActions = () => {
   const actions = document.createElement('div');
@@ -156,6 +154,21 @@ export const initDecks = async () => {
 
   const userId = getOrCreateUserId();
   const catalog = await loadCardCatalog();
+  let characterOptions = [...CHARACTER_OPTIONS_FALLBACK];
+  try {
+    const characterCatalog = await loadCharacterCatalog();
+    if (Array.isArray(characterCatalog?.characters) && characterCatalog.characters.length) {
+      const fallbackById = new Map(CHARACTER_OPTIONS_FALLBACK.map((entry) => [entry.id, entry]));
+      characterOptions = characterCatalog.characters.map((entry) => ({
+        ...fallbackById.get(entry.id),
+        ...entry,
+      }));
+    }
+  } catch (err) {
+    console.warn('Failed to load character catalog for deck picker', err);
+  }
+  const getCharacterMeta = (characterId) =>
+    characterOptions.find((option) => option.id === characterId) || null;
   const cardMap = buildCardMap(catalog);
   let decks = await loadUserDecks(userId);
   let selectedDeckId = getSelectedDeckId();
@@ -414,7 +427,7 @@ export const initDecks = async () => {
 
   const renderCharacterPicker = () => {
     characterPicker.innerHTML = '';
-    CHARACTER_OPTIONS.forEach((option) => {
+    characterOptions.forEach((option) => {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'deck-character-card';
@@ -432,10 +445,15 @@ export const initDecks = async () => {
       portrait.appendChild(image);
 
       const label = document.createElement('span');
+      label.className = 'deck-character-name';
       label.textContent = option.name;
+      const power = document.createElement('span');
+      power.className = 'deck-character-power';
+      power.textContent = option.powerText || '';
 
       button.appendChild(portrait);
       button.appendChild(label);
+      button.appendChild(power);
       button.addEventListener('click', () => {
         builderState.characterId = option.id;
         renderCharacterPicker();

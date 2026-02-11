@@ -48,6 +48,12 @@ npm run test
 - The queue selector is a placeholder for future modes; non-Quickplay queues show an alert.
 - Sidebar links are stubs and show "Coming soon".
 
+## Character powers
+- Character powers are defined in `public/characters/characters.json`.
+- Deck creation shows each character's power text in the character picker.
+- In-game board token hover tooltips show the selected character's power text.
+- Server resolution reads effects via `src/game/characterPowers.ts`; client playback mirrors power effects in `public/game/timelinePlayback.js`.
+
 ## API quick reference
 - `GET /events?userId=...` - SSE stream (server will assign an ID if omitted).
 - `POST /api/v1/lobby/join` - `{ userId, username, queue }` (queues: `quickplayQueue`, `rankedQueue`, `botQueue`)

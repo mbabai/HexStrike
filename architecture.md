@@ -49,11 +49,12 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
 
 ### Card catalog and deck state
 - Card data lives in `public/cards/cards.json` and is loaded by `src/game/cardCatalog.ts`.
+- Character powers live in `public/characters/characters.json`; server reads them through `src/game/characterPowers.ts`, client reads them through `public/shared/characterCatalog.js`.
 - Deck definitions require 4 movement cards and 12 ability cards; duplicates are rejected.
 - `src/game/cardRules.ts` manages deck state:
   - Movement cards are always in the "hand" but exhaust on use.
   - Ability cards are drawn into a 4-card hand; used cards go to the bottom of the deck.
-  - Refreshes on land clear movement exhaustion and refill the ability hand.
+  - Refreshes on land clear movement exhaustion and refill the ability hand (base max may be overridden by character powers).
 
 ### Action submission pipeline
 - `input:request` is emitted when a player is at the earliest open beat or a throw requires a direction.

@@ -1690,6 +1690,20 @@ small {
   transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
 }
 
+.deck-character-name {
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+
+.deck-character-power {
+  display: block;
+  min-height: 32px;
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--color-subtle);
+  font-weight: 500;
+}
+
 .deck-character-card:hover {
   transform: translateY(-1px);
   border-color: var(--color-accent);
