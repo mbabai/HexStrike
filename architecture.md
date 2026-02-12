@@ -103,9 +103,9 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
 ### Game view modules
 - `public/game.js` orchestrates the game canvas, action HUD, timeline playback, and HTTP submissions.
 - `public/game/renderer.js` draws the board and characters.
-- `public/game/timelinePlayback.js` mirrors the server resolution logic to animate each beat.
+- `public/game/timelinePlayback.js` mirrors the server resolution logic to animate each beat; slider speed scales movement/rotation fully while attack/hit visuals scale at half-rate.
 - `public/game/actionHud.js` + `public/game/rotationWheel.js` manage card selection and rotation.
-- `public/game/timeIndicatorView.js` provides the timeline stepper and play/pause control.
+- `public/game/timeIndicatorView.js` provides the timeline stepper and play/pause control; `public/game.js` owns turtle/rabbit speed slider state + beat auto-advance cadence.
 - `public/game/interactionState.mjs` selects pending interactions (throw/discard/draw/combo/guard/rewind/hand-trigger/haven) for the UI overlay.
 - `public/game/controls.js` + `public/game/viewState.js` manage panning, zooming, and input.
 - `public/game/portraitBadges.js` and `public/game/characterTokens.mjs` draw UI badges and facing arrows.

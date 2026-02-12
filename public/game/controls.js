@@ -17,6 +17,7 @@ const PAN_BLOCK_SELECTORS = [
   '.game-menu-panel',
   '.game-menu-modal',
   '.game-menu-modal-overlay',
+  '.timeline-speed-control',
 ];
 
 const isEventWithinRoot = (event, root) => {

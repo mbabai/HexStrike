@@ -20,7 +20,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - Server match outcomes are evaluated in `src/game/matchEndRules.ts` and stored on `state.public.matchOutcome`.
 - Front-end animation: `public/game/timelinePlayback.js` builds beat-by-beat scenes (characters + effects) consumed by `public/game/renderer.js`.
 - UI portrait badges (name capsules) are drawn with `public/game/portraitBadges.js`; local player accents use `--color-player-accent`.
-- Timeline controls: play/pause is rendered in the center time slot and auto-advance steps when the current beat playback completes.
+- Timeline controls: play/pause is rendered in the center time slot; a turtle->rabbit speed slider sits above the timeline, and auto-advance uses slider timing (can overlap beats at high speed).
 - UI timeline shows a local-only pending action preview (faded + pulsing) when you've submitted and are waiting on other players.
 - Matchmaking: Quickplay and bot-queue joins are wired from the UI; selecting a bot queue starts an immediate 1v1 versus the selected profile (`Strike-bot`, `Hex-bot`, or `Bot-bot`).
 
@@ -126,7 +126,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Parry cleanup must not wipe newly submitted future action-set starts: when forcing the defender to `E` on the counter beat, only clear stale continuation entries and preserve future entries tagged with `rotationSource: 'selected'`/`comboStarter`.
 - Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
 - Timeline gold highlight uses the earliest `E` beat across all players, not the currently viewed beat.
-- Timeline play/pause replaces the center beat label; hit detection is a circular button in `public/game/timeIndicatorView.js` and auto-advance only steps after playback reports completion.
+- Timeline play/pause replaces the center beat label; hit detection is a circular button in `public/game/timeIndicatorView.js` and auto-advance pacing is driven by the speed slider interval in `public/game.js`.
 - Timeline playback should advance beat-by-beat to the stop index; do not auto-jump the time indicator to the latest stop index on `game:update` or intermediate animations will be skipped.
 - Timeline tooltips use `cardId`/`passiveCardId` on beat entries for active/passive names; symbol instructions still come from `{X1}/{X2}/{i}` fragments in `activeText`.
 - Timeline tooltip action-set start prefers `rotationSource: 'selected'` and falls back to non-empty `rotation` when the source flag is missing (legacy data).
@@ -197,7 +197,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Timeline row separators must render before portrait rings so the local player highlight is visually on top.
 - Board damage capsules are offset outside the ring and drawn without clipping so they sit over the border.
 - Name capsule sizing is centralized in `public/game/portraitBadges.js`; pass config overrides for board vs timeline to keep consistency.
-- Timeline playback timing is tuned in `public/game/timelinePlayback.js` via `ACTION_DURATION_MS` plus swipe/hit/knockback windows; adjust there before changing renderer effects.
+- Timeline playback timing is tuned in `public/game/timelinePlayback.js` via `ACTION_DURATION_MS`, per-channel speed scaling, and swipe/hit/knockback windows; movement/rotation scale with slider speed, while attack/hit timing uses half-speed scaling (`ATTACK_SPEED_SCALE_FACTOR`).
 - Abyss grid borders are rendered via `drawAbyssGrid` in `public/game/abyssRendering.mjs`; keep `minLineWidth = max(baseLineWidth * 0.2, 1 / (dpr * scale))` to avoid vanishing outlines at high zoom.
 - Trails are drawn as tapered polygons (sharp edges) in `public/game/renderer.js` instead of stroked lines; keep this in mind if changing trail caps or widths.
 - Board portraits render in greyscale when the beat action is `DamageIcon`/`knockbackIcon`; keep the renderer's action tag matching server output.

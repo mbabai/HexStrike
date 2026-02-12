@@ -2080,6 +2080,79 @@ small {
   pointer-events: auto;
 }
 
+.timeline-speed-control {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-panel-border);
+  background: linear-gradient(160deg, rgba(8, 18, 14, 0.88), rgba(20, 42, 48, 0.88));
+  box-shadow: var(--shadow-soft);
+  pointer-events: auto;
+}
+
+.timeline-speed-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  filter: brightness(0) invert(1) drop-shadow(0 0 4px rgba(255, 255, 255, 0.28));
+}
+
+.timeline-speed-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  width: clamp(120px, 24vw, 190px);
+  height: 14px;
+  margin: 0;
+  background: transparent;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.timeline-speed-slider:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 999px;
+}
+
+.timeline-speed-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--color-queue-lavender), var(--color-accent-strong));
+}
+
+.timeline-speed-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  border: 1px solid var(--color-panel-border);
+  background: var(--color-panel-strong);
+  box-shadow: 0 0 0 2px rgba(213, 163, 74, 0.45);
+}
+
+.timeline-speed-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--color-queue-lavender), var(--color-accent-strong));
+}
+
+.timeline-speed-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--color-panel-border);
+  background: var(--color-panel-strong);
+  box-shadow: 0 0 0 2px rgba(213, 163, 74, 0.45);
+}
+
 .game-menu-toggle {
   width: 42px;
   height: 42px;
@@ -2974,6 +3047,21 @@ small {
 }
 
 @media (max-width: 640px) {
+  .timeline-speed-control {
+    top: 10px;
+    padding: 5px 8px;
+    gap: 6px;
+  }
+
+  .timeline-speed-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .timeline-speed-slider {
+    width: 116px;
+  }
+
   .action-hud {
     --action-hand-width-base: min(88vw, 360px);
     --action-hand-fan-gap-factor: 0.24;

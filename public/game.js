@@ -2,7 +2,7 @@ import { createActionHud } from './game/actionHud.js';
 import { createRenderer } from './game/renderer.js';
 import { createViewState, createPointerState, centerView, applyMomentum } from './game/viewState.js';
 import { bindControls } from './game/controls.js';
-import { createTimelinePlayback } from './game/timelinePlayback.js';
+import { ACTION_DURATION_MS, createTimelinePlayback } from './game/timelinePlayback.js';
 import { createTimelineTooltip } from './game/timelineTooltip.js';
 import { GAME_CONFIG } from './game/config.js';
 import { createGameOverView } from './game/gameOverView.js';
@@ -41,6 +41,8 @@ const COMBO_ACTION = 'CO';
 const GUARD_CONTINUE_INTERACTION_TYPE = 'guard-continue';
 const REWIND_RETURN_INTERACTION_TYPE = 'rewind-return';
 const DRAW_OFFER_INTERACTION_TYPE = 'draw-offer';
+const TIMELINE_SPEED_MIN = 1;
+const TIMELINE_SPEED_MAX = 3;
 const MAX_HAND_SIZE = 4;
 const AXIAL_DIRECTIONS = [
   { q: 1, r: 0 },
@@ -130,6 +132,7 @@ const createTimeIndicatorViewModel = ({ getMaxIndex }) => {
     value: 0,
     isPlaying: true,
     isHolding: false,
+    speedMultiplier: TIMELINE_SPEED_MIN,
     canStep(direction) {
       const maxIndex = getMaxIndex();
       const next = viewModel.value + direction;
@@ -182,6 +185,15 @@ const createTimeIndicatorViewModel = ({ getMaxIndex }) => {
     togglePlaying() {
       viewModel.isPlaying = !viewModel.isPlaying;
     },
+    setSpeedMultiplier(nextSpeed) {
+      const parsed = Number(nextSpeed);
+      if (!Number.isFinite(parsed)) return viewModel.speedMultiplier;
+      viewModel.speedMultiplier = clamp(parsed, TIMELINE_SPEED_MIN, TIMELINE_SPEED_MAX);
+      return viewModel.speedMultiplier;
+    },
+    getBeatAdvanceIntervalMs() {
+      return ACTION_DURATION_MS / viewModel.speedMultiplier;
+    },
   };
   return viewModel;
 };
@@ -230,6 +242,7 @@ export const initGame = () => {
   const gameMenuModalCopy = document.getElementById('gameMenuModalCopy');
   const gameMenuModalCancel = document.getElementById('gameMenuModalCancel');
   const gameMenuModalConfirm = document.getElementById('gameMenuModalConfirm');
+  const timelineSpeedSlider = document.getElementById('timelineSpeedSlider');
 
   const renderer = createRenderer(canvas);
   if (!renderer) return;
@@ -258,6 +271,7 @@ export const initGame = () => {
   let handTriggerPrompt = null;
   let havenHoverKey = null;
   let gameMenuUi = null;
+  let nextAutoAdvanceAt = null;
   const pendingActionPreview = createPendingActionPreview();
 
   const getMaxIndex = () => {
@@ -270,6 +284,23 @@ export const initGame = () => {
 
   const timeIndicatorViewModel = createTimeIndicatorViewModel({ getMaxIndex });
   let actionHud = null;
+  const resetAutoAdvanceClock = (now = performance.now()) => {
+    nextAutoAdvanceAt = now + timeIndicatorViewModel.getBeatAdvanceIntervalMs();
+  };
+
+  if (timelineSpeedSlider instanceof HTMLInputElement) {
+    timelineSpeedSlider.value = `${TIMELINE_SPEED_MIN}`;
+    timeIndicatorViewModel.setSpeedMultiplier(TIMELINE_SPEED_MIN);
+    timelinePlayback.setSpeedMultiplier(TIMELINE_SPEED_MIN);
+    const onSpeedChange = () => {
+      const nextSpeed = timeIndicatorViewModel.setSpeedMultiplier(timelineSpeedSlider.value);
+      timelinePlayback.setSpeedMultiplier(nextSpeed);
+      timelineSpeedSlider.value = `${nextSpeed}`;
+      resetAutoAdvanceClock();
+    };
+    timelineSpeedSlider.addEventListener('input', onSpeedChange);
+    timelineSpeedSlider.addEventListener('change', onSpeedChange);
+  }
 
   const getThrowAngle = (direction) => {
     const vector = axialToPixel(direction.q, direction.r, 1);
@@ -1336,6 +1367,7 @@ export const initGame = () => {
   }
   const clampTimeline = () => {
     timeIndicatorViewModel.setValue(timeIndicatorViewModel.value);
+    resetAutoAdvanceClock();
     refreshActionHud();
     refreshInteractionOverlay();
   };
@@ -1345,6 +1377,7 @@ export const initGame = () => {
     if (menuShell) menuShell.hidden = true;
     gameMenuUi?.closeAll();
     timeIndicatorViewModel.isPlaying = true;
+    resetAutoAdvanceClock();
     if (actionHud) actionHud.setHidden(false);
     renderer.resize();
     centerView(viewState, renderer.viewport);
@@ -1360,6 +1393,7 @@ export const initGame = () => {
     gameMenuUi?.closeAll();
     timeIndicatorViewModel.isPlaying = false;
     timeIndicatorViewModel.setValue(0);
+    nextAutoAdvanceAt = null;
     gameState = null;
     tooltip.setGameState(null);
     lastHudKey = null;
@@ -1405,6 +1439,7 @@ export const initGame = () => {
       timeIndicatorViewModel.setValue(stopIndex);
       didInitTimelinePosition = true;
     }
+    resetAutoAdvanceClock();
     clampTimeline();
     refreshActionHud();
     refreshInteractionOverlay();
@@ -1509,8 +1544,26 @@ export const initGame = () => {
     applyMomentum(viewState, dt);
     timelinePlayback.update(now, gameState, timeIndicatorViewModel.value);
     const status = timelinePlayback.getStatus();
-    if (timeIndicatorViewModel.isPlaying && status.isComplete) {
-      timeIndicatorViewModel.step(1);
+    if (timeIndicatorViewModel.isPlaying) {
+      if (status.duration <= 0 && status.isComplete) {
+        const stepped = timeIndicatorViewModel.step(1);
+        if (stepped) {
+          resetAutoAdvanceClock(now);
+        }
+      } else {
+        if (!Number.isFinite(nextAutoAdvanceAt)) {
+          resetAutoAdvanceClock(now);
+        }
+        const trailGateReached =
+          !Number.isFinite(status.minElapsedForMovementTrail) ||
+          status.elapsed >= status.minElapsedForMovementTrail;
+        if (Number.isFinite(nextAutoAdvanceAt) && now >= nextAutoAdvanceAt && trailGateReached) {
+          timeIndicatorViewModel.step(1);
+          resetAutoAdvanceClock(now);
+        }
+      }
+    } else {
+      nextAutoAdvanceAt = null;
     }
     refreshActionHud();
     refreshInteractionOverlay();

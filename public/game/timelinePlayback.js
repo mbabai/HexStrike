@@ -6,6 +6,7 @@ import {
   normalizeActionToken,
   splitActionTokens,
 } from './cardText/actionListTransforms.js';
+import { getInterpolatedFacing, getStepProgressByChannel } from './playbackSpeed.mjs';
 
 const DEFAULT_ACTION = 'E';
 const FOCUS_ACTION = 'F';
@@ -13,7 +14,9 @@ const WAIT_ACTION = 'W';
 const COMBO_ACTION = 'CO';
 const DAMAGE_ICON_ACTION = 'DamageIcon';
 const KNOCKBACK_DIVISOR = 10;
-const ACTION_DURATION_MS = 1200;
+export const ACTION_DURATION_MS = 1200;
+const MIN_TRAIL_VISIBLE_MS = 90;
+const MAX_TRAIL_VISIBLE_MS = 180;
 const THROW_DISTANCE = 2;
 const FIRE_HEX_TOKEN_TYPE = 'fire-hex';
 const ETHEREAL_PLATFORM_TOKEN_TYPE = 'ethereal-platform';
@@ -197,6 +200,12 @@ const parseRotationDegrees = (rotation) => {
   const steps = Number(stepMatch[0]);
   return Number.isFinite(steps) ? direction * steps * 60 : 0;
 };
+
+const hasRenderableMovementTrail = (step) =>
+  Array.isArray(step?.movePath) &&
+  step.movePath.length > 1 &&
+  typeof step?.moveType === 'string' &&
+  step.moveType.length > 0;
 
 const getRotationMagnitude = (rotationLabel) => {
   const trimmed = `${rotationLabel ?? ''}`.trim().toUpperCase();
@@ -2030,6 +2039,7 @@ export const createTimelinePlayback = () => {
   let lastBeatIndex = null;
   let lastGameStamp = null;
   let playback = null;
+  let speedMultiplier = 1;
   let characterPowersById = new Map();
   let scene = { characters: [], effects: [] };
   let status = {
@@ -2038,6 +2048,7 @@ export const createTimelinePlayback = () => {
     isComplete: true,
     elapsed: 0,
     duration: 0,
+    minElapsedForMovementTrail: 0,
   };
 
   const buildPlayback = (gameState, beatIndex, now) => {
@@ -2058,6 +2069,7 @@ export const createTimelinePlayback = () => {
         isComplete: true,
         elapsed: 0,
         duration: 0,
+        minElapsedForMovementTrail: 0,
       };
       return;
     }
@@ -2087,6 +2099,16 @@ export const createTimelinePlayback = () => {
       steps.push(...tokenPlayback.tokenSteps);
     }
     const stepDuration = steps.length ? ACTION_DURATION_MS / steps.length : 0;
+    const firstTrailStepIndex = steps.findIndex((step) => hasRenderableMovementTrail(step));
+    const firstTrailStartMs = firstTrailStepIndex >= 0 ? firstTrailStepIndex * stepDuration : 0;
+    const trailVisibleMs =
+      firstTrailStepIndex >= 0
+        ? Math.min(MAX_TRAIL_VISIBLE_MS, Math.max(MIN_TRAIL_VISIBLE_MS, stepDuration * 0.65))
+        : 0;
+    const minElapsedForMovementTrail =
+      firstTrailStepIndex >= 0
+        ? Math.min(stepDuration * steps.length, firstTrailStartMs + trailVisibleMs)
+        : 0;
     playback = {
       baseState,
       steps,
@@ -2095,6 +2117,7 @@ export const createTimelinePlayback = () => {
       persistentEffects,
       damagePreviewByStep: new Map(),
       baseTokens,
+      minElapsedForMovementTrail,
     };
     status = {
       isCalculated: true,
@@ -2102,13 +2125,23 @@ export const createTimelinePlayback = () => {
       isComplete: stepDuration <= 0 || steps.length === 0,
       elapsed: 0,
       duration: stepDuration * steps.length,
+      minElapsedForMovementTrail,
     };
     scene = { characters: baseState, effects: [], boardTokens: baseTokens };
   };
 
   const updateScene = (now) => {
     if (!playback) return;
-    const { baseState, steps, stepDuration, startTime, persistentEffects, damagePreviewByStep, baseTokens } = playback;
+    const {
+      baseState,
+      steps,
+      stepDuration,
+      startTime,
+      persistentEffects,
+      damagePreviewByStep,
+      baseTokens,
+      minElapsedForMovementTrail,
+    } = playback;
     if (!steps.length || stepDuration <= 0) {
       const snapshotTokens = Array.isArray(baseTokens)
         ? baseTokens.map((token) => ({ ...token, position: { q: token.position.q, r: token.position.r } }))
@@ -2120,6 +2153,7 @@ export const createTimelinePlayback = () => {
         isComplete: true,
         elapsed: 0,
         duration: 0,
+        minElapsedForMovementTrail: 0,
       };
       return;
     }
@@ -2132,10 +2166,15 @@ export const createTimelinePlayback = () => {
       isComplete: elapsed >= totalDuration,
       elapsed: clamped,
       duration: totalDuration,
+      minElapsedForMovementTrail,
     };
     const completed = Math.floor(clamped / stepDuration);
     const stepIndex = Math.min(completed, steps.length - 1);
     const stepProgress = Math.min(1, Math.max(0, (clamped - stepIndex * stepDuration) / stepDuration));
+    const channelProgress = getStepProgressByChannel(stepProgress, speedMultiplier);
+    const movementStepProgress = channelProgress.movement;
+    const rotationStepProgress = channelProgress.rotation;
+    const attackStepProgress = channelProgress.attack;
 
     let renderCharacters = baseState.map((character) => ({ ...character }));
     const tokenState = createTokenRenderState(baseTokens);
@@ -2191,16 +2230,37 @@ export const createTimelinePlayback = () => {
     });
 
     const currentStep = steps[stepIndex];
+    const currentStepActorIndex =
+      currentStep && currentStep.kind !== 'token' ? characterIndex.get(currentStep.actorId) : null;
+    const currentStepFacingBefore =
+      currentStepActorIndex == null ? null : renderCharacters[currentStepActorIndex]?.facing;
     if (currentStep && stepProgress > 0) {
       renderCharacters = applyStep(renderCharacters, {
         ...currentStep,
-        moveDestination: stepProgress >= 1 ? currentStep.moveDestination : null,
-        damageChanges: stepProgress >= 1 ? currentStep.damageChanges : [],
-        positionChanges: stepProgress >= 1 ? currentStep.positionChanges : [],
+        facingAfter:
+          stepProgress >= 1 ? currentStep.facingAfter : currentStepFacingBefore ?? currentStep.facingAfter,
+        moveDestination: movementStepProgress >= 1 ? currentStep.moveDestination : null,
+        damageChanges: attackStepProgress >= 1 ? currentStep.damageChanges : [],
+        positionChanges: attackStepProgress >= 1 ? currentStep.positionChanges : [],
       });
+      if (
+        currentStep.kind !== 'token' &&
+        Number.isFinite(currentStepFacingBefore) &&
+        Number.isFinite(currentStep.facingAfter)
+      ) {
+        const interpolatedFacing = getInterpolatedFacing(
+          currentStepFacingBefore,
+          currentStep.facingAfter,
+          rotationStepProgress,
+        );
+        applyCharacterUpdate(currentStep.actorId, { facing: interpolatedFacing });
+      }
     }
 
-    const { alpha, easedProgress, swipeProgress, attackAlpha } = getSwipeState(stepProgress);
+    const movementSwipe = getSwipeState(movementStepProgress);
+    const attackSwipe = getSwipeState(attackStepProgress);
+    const { alpha, easedProgress } = movementSwipe;
+    const { swipeProgress, attackAlpha } = attackSwipe;
     const effects =
       currentStep?.effects?.map((effect) => {
         const baseAlpha =
@@ -2230,7 +2290,8 @@ export const createTimelinePlayback = () => {
     };
 
     if (currentStep && stepProgress > 0) {
-      const { hitProgress, hitPulse, knockbackProgress, knockbackEase, isHitWindow } = getHitState(stepProgress);
+      const { hitProgress, hitPulse, knockbackProgress, knockbackEase, isHitWindow } =
+        getHitState(attackStepProgress);
 
       if (currentStep.movePath?.length && currentStep.moveType) {
         const partialPath = buildPartialPath(currentStep.movePath, easedProgress);
@@ -2263,14 +2324,14 @@ export const createTimelinePlayback = () => {
               type: 'trail',
               trailType: 'knockback',
               path: partialPath,
-              alpha: alpha * 0.9,
+              alpha: attackSwipe.alpha * 0.9,
             });
           }
         });
       }
 
       if (currentStep.damageChanges?.length) {
-        const healingPulse = Math.sin(stepProgress * Math.PI);
+        const healingPulse = Math.sin(attackStepProgress * Math.PI);
         if (healingPulse > 0) {
           currentStep.damageChanges.forEach((change) => {
             if (!change || change.delta >= 0) return;
@@ -2289,7 +2350,7 @@ export const createTimelinePlayback = () => {
           if (hit.directionIndex == null) return;
           const key = `${coordKey(hit.coord)}:${hit.directionIndex}`;
           const seed = hashSeed(key);
-          blockShake.set(key, getShakeOffset(stepProgress, alpha * 0.08, seed));
+          blockShake.set(key, getShakeOffset(attackStepProgress, attackSwipe.alpha * 0.08, seed));
         });
       }
 
@@ -2303,7 +2364,12 @@ export const createTimelinePlayback = () => {
         });
       }
 
-      if (isHitWindow && currentStep.damageChanges?.length && stepProgress < 1 && !damagePreviewByStep.has(stepIndex)) {
+      if (
+        isHitWindow &&
+        currentStep.damageChanges?.length &&
+        attackStepProgress < 1 &&
+        !damagePreviewByStep.has(stepIndex)
+      ) {
         damagePreviewByStep.set(stepIndex, buildDamagePreview(currentStep.damageChanges, baseDamageById));
       }
     }
@@ -2317,7 +2383,7 @@ export const createTimelinePlayback = () => {
       }
     }
 
-    const previewedDamage = stepProgress < 1 ? damagePreviewByStep.get(stepIndex) : null;
+    const previewedDamage = attackStepProgress < 1 ? damagePreviewByStep.get(stepIndex) : null;
     if (previewedDamage?.size) {
       previewedDamage.forEach((damageValue, targetId) => {
         const index = characterIndex.get(targetId);
@@ -2351,6 +2417,10 @@ export const createTimelinePlayback = () => {
   };
 
   return {
+    setSpeedMultiplier(nextSpeed) {
+      const parsed = Number(nextSpeed);
+      speedMultiplier = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+    },
     setCharacterPowers(nextMap) {
       characterPowersById = nextMap instanceof Map ? nextMap : new Map();
       lastGameStamp = null;

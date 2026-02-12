@@ -285,6 +285,8 @@ const buildDrawLookup = (interactions, characters) => {
 
 export const getTimeIndicatorLayout = (viewport) => {
   const padding = viewport.width < 520 ? 8 : 12;
+  const speedControlHeight = viewport.width < 520 ? 26 : 30;
+  const speedControlGap = viewport.width < 520 ? 6 : 8;
   const maxWidth = Math.max(180, viewport.width - padding * 4);
   const borderWidth = DEFAULT_BORDER_SIZE.width;
   const borderHeight = DEFAULT_BORDER_SIZE.height;
@@ -308,7 +310,7 @@ export const getTimeIndicatorLayout = (viewport) => {
 
   const groupX = (viewport.width - groupWidth) / 2;
   const x = groupX + actionHeight - portraitOverlap;
-  const y = padding;
+  const y = padding + speedControlHeight + speedControlGap;
   const arrowWidth = Math.max(30, actionHeight * 0.25);
   const innerPadding = Math.max(6, actionHeight * 0.12);
   const numberArea = {

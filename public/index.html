@@ -234,6 +234,30 @@
           </div>
         </div>
       </div>
+      <div id="timelineSpeedControl" class="timeline-speed-control" aria-label="Timeline animation speed">
+        <img
+          class="timeline-speed-icon"
+          src="/public/images/turtle.png"
+          alt="Turtle speed"
+          draggable="false"
+        />
+        <input
+          id="timelineSpeedSlider"
+          class="timeline-speed-slider"
+          type="range"
+          min="1"
+          max="3"
+          step="0.1"
+          value="1"
+          aria-label="Timeline speed from turtle to rabbit"
+        />
+        <img
+          class="timeline-speed-icon"
+          src="/public/images/rabbit.png"
+          alt="Rabbit speed"
+          draggable="false"
+        />
+      </div>
       <div id="actionHud" class="action-hud">
         <div id="movementHand" class="action-hand action-hand-movement" aria-label="Movement cards"></div>
         <div class="action-center">
