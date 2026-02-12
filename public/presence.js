@@ -35,6 +35,11 @@ export function initPresence() {
       if (data.type === 'match:ended') {
         dispatch('hexstrike:match-ended', data.payload);
       }
+      if (data.type === 'bot:error') {
+        dispatch('hexstrike:bot-error', data.payload);
+        const message = data?.payload?.message ? `${data.payload.message}` : 'Hex-Bot failed to act.';
+        window.alert(message);
+      }
     } catch (err) {
       console.warn('Failed to parse SSE message', err);
     }

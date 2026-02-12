@@ -22,7 +22,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - UI portrait badges (name capsules) are drawn with `public/game/portraitBadges.js`; local player accents use `--color-player-accent`.
 - Timeline controls: play/pause is rendered in the center time slot and auto-advance steps when the current beat playback completes.
 - UI timeline shows a local-only pending action preview (faded + pulsing) when you've submitted and are waiting on other players.
-- Matchmaking: Quickplay join/leave is wired from the UI; other queue options are placeholders.
+- Matchmaking: Quickplay and `botQueue` joins are wired from the UI; selecting `botQueue` starts an immediate 1v1 versus `Hex-Bot`.
 
 # Documentation map (start here)
 - [README.md](README.md): project overview, setup, and API summary; read first when onboarding or running the server.
@@ -49,7 +49,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 
 ## Realtime and client interactions (current)
 - SSE message envelope: `{ type, payload, recipient }`.
-- Message types currently emitted: `connected`, `queueChanged`, `match:created`, `game:update`, `match:ended`.
+- Message types currently emitted: `connected`, `queueChanged`, `match:created`, `game:update`, `match:ended`, `bot:error`.
 - REST endpoints live under `/api/v1/lobby`, `/api/v1/match`, `/api/v1/history`, and `/api/v1/game/interaction` (plus `/api/v1/match/:id/exit` for per-player leave).
 - `game:update` payloads may include `pendingActions` in public state when concurrent players are submitting action sets.
 - `game:update` payloads may include `customInteractions` (pending/resolved) that pause the timeline until resolved.
@@ -58,6 +58,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 ## Persistence and operations (current)
 - `MemoryDb` in `src/persistence/memoryDb.ts` is the only persistence layer and resets on restart.
 - Quickplay joins are logged to the server console for visibility.
+- `botQueue` joins and bot-decision steps/errors are logged and written to `temp-logs/events.jsonl` under `easy-bot` events.
 
 ## Testing and validation (current)
 - Use the Node.js built-in test runner (`npm run test`).
@@ -203,7 +204,10 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Map panning/zooming is bound to the game area and must ignore UI elements like action cards, slots, or rotation controls; update `PAN_BLOCK_SELECTORS` in `public/game/controls.js` when adding new HUD controls.
 - Find Game is disabled until a deck is selected; the selected deck ID is stored in cookies and its `characterId` plus movement/ability lists are sent with `/api/v1/lobby/join`.
 - Main menu hamburger/side-menu assets are intentionally kept in place but disabled (`MENU_ENABLED = false`) in `public/menu.js` and hidden in `public/index.html`; to restore, set `MENU_ENABLED = true` and remove `hidden`/`aria-hidden` from `#menuToggle` if needed.
-- Lobby queue selector is intentionally Quickplay-only in `public/index.html`; to restore other queues, re-add `<option>` entries under `#queueSelect` (queue handling placeholders already exist in `public/queue.js`).
+- Lobby queue selector includes `botQueue` (`Hex-Bot (Easy)`), and `public/queue.js` now joins/leaves the selected queue instead of hardcoding quickplay.
+- `botQueue` creates a per-match bot user (`Hex-Bot`) with one random base deck (first three catalog decks), and bot choices are simulated server-side using cloned state; missing opponent actions during bot simulation are assumed to be `W`.
+- Bot choice selection is weighted-random from the top 5 scored candidates; if all top scores are non-positive, selection falls back to uniform probabilities across those candidates.
+- Bot failure path emits `bot:error` to human players and writes verbose `easy-bot` events to `temp-logs/events.jsonl`; keep this wired when changing bot orchestration.
 - `/api/v1/lobby/join` rejects decks unless they contain exactly 4 movement cards and exactly 12 ability cards; keep `public/cards/cards.json` base decks and deck-builder output aligned with this.
 - Base deck definitions from `public/cards/cards.json` are merged with cookie-stored player-created decks on load in `public/deckStore.js`; keep the merge logic when adding new base decks.
 - Character powers are defined in `public/characters/characters.json`; when adding/changing effects, keep `src/game/characterPowers.ts`, `src/game/execute.ts`, and `public/game/timelinePlayback.js` behavior in sync.

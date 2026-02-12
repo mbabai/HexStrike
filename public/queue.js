@@ -2,6 +2,7 @@ import { getOrCreateUserId, getSelectedDeckId, getPreferredServerUsername } from
 import { getSelectedDeck } from './deckStore.js';
 
 const QUICKPLAY_QUEUE = 'quickplayQueue';
+const BOT_QUEUE = 'botQueue';
 const SEARCHING_LABEL = 'Searching...';
 
 export function initQueue() {
@@ -10,6 +11,7 @@ export function initQueue() {
   let searchInterval = null;
   let searchStart = 0;
   let isSearching = false;
+  let activeQueue = QUICKPLAY_QUEUE;
 
   const updateFindGameAvailability = () => {
     if (!findGameButton) return;
@@ -48,7 +50,7 @@ export function initQueue() {
     updateFindGameAvailability();
   };
 
-  const joinQuickplayQueue = async () => {
+  const joinQueue = async (queueName) => {
     const userId = getOrCreateUserId();
     const username = getPreferredServerUsername();
     const selectedDeck = await getSelectedDeck(userId);
@@ -62,7 +64,7 @@ export function initQueue() {
     const response = await fetch('/api/v1/lobby/join', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, username, queue: QUICKPLAY_QUEUE, characterId, deck }),
+      body: JSON.stringify({ userId, username, queue: queueName, characterId, deck }),
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
@@ -78,22 +80,19 @@ export function initQueue() {
     Array.isArray(deck?.ability) &&
     deck.ability.length === 12;
 
-  const leaveQuickplayQueue = async () => {
+  const leaveQueue = async (queueName) => {
     const userId = getOrCreateUserId();
     await fetch('/api/v1/lobby/leave', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, queue: QUICKPLAY_QUEUE }),
+      body: JSON.stringify({ userId, queue: queueName }),
     });
-  };
-
-  const alertQuickplayOnly = () => {
-    window.alert('comming soon, please try quickplay');
   };
 
   window.addEventListener('hexstrike:match', () => {
     if (isSearching) {
       setSearchingState(false);
+      activeQueue = QUICKPLAY_QUEUE;
     }
   });
 
@@ -103,15 +102,11 @@ export function initQueue() {
       if (isSearching) {
         setSearchingState(false);
         try {
-          await leaveQuickplayQueue();
+          await leaveQueue(activeQueue);
         } catch (err) {
-          console.error('Failed to leave quickplay queue', err);
+          console.error('Failed to leave queue', err);
         }
-        return;
-      }
-
-      if (!queueSelect || queueSelect.value !== QUICKPLAY_QUEUE) {
-        alertQuickplayOnly();
+        activeQueue = QUICKPLAY_QUEUE;
         return;
       }
 
@@ -122,14 +117,16 @@ export function initQueue() {
         return;
       }
 
+      activeQueue = queueSelect?.value === BOT_QUEUE ? BOT_QUEUE : QUICKPLAY_QUEUE;
       setSearchingState(true);
       try {
-        await joinQuickplayQueue();
+        await joinQueue(activeQueue);
       } catch (err) {
-        console.error('Failed to join quickplay queue', err);
+        console.error('Failed to join queue', err);
         const message = err instanceof Error ? err.message : 'Failed to join queue.';
         window.alert(message);
         setSearchingState(false);
+        activeQueue = QUICKPLAY_QUEUE;
       }
     });
   }

@@ -43,9 +43,9 @@ npm run test
 ```
 
 ## Using the lobby UI
-- Click **Find Game** to toggle Quickplay queue search; the timer counts up while searching.
+- Select **Quickplay** or **Hex-Bot (Easy)**, then click **Find Game** to start queue search; the timer counts up while searching.
 - Clicking **Find Game** again cancels the search and leaves the queue.
-- The queue selector is a placeholder for future modes; non-Quickplay queues show an alert.
+- **Hex-Bot (Easy)** starts an immediate 1v1 match versus `Hex-Bot` using a random base deck.
 - Sidebar links are stubs and show "Coming soon".
 
 ## Character powers

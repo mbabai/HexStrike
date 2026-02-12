@@ -41,6 +41,11 @@ import {
 import { getMaxAbilityHandSize, getTargetMovementHandSize } from './game/handRules';
 import { HAND_TRIGGER_BY_ID, HAND_TRIGGER_DEFINITIONS } from './game/handTriggers';
 import { getCharacterMaxHandSize } from './game/characterPowers';
+import {
+  buildEasyBotActionCandidates,
+  buildEasyBotInteractionCandidates,
+} from './bot/easyBot';
+import { buildTopWeightedDistribution, buildWeightedChoiceOrder } from './bot/weightedChoice';
 import { writeDevTempEvent } from './dev/tempLogs';
 import {
   ActionListItem,
@@ -113,6 +118,10 @@ const PROD_FAVICON_PATH = '/public/images/X1.png';
 const DEV_FAVICON_PATH = '/public/images/X2.png';
 const IS_DEV_RUNTIME = process.env.HEXSTRIKE_TEMP_LOGS === '1' || process.env.NODE_ENV === 'development';
 const MAX_USERNAME_LENGTH = 24;
+const EASY_BOT_USERNAME = 'Hex-Bot';
+const EASY_BOT_BASE_DECK_CHARACTERS: CharacterId[] = ['murelious', 'strylan', 'aumandetta'];
+const BOT_MAX_DECISION_ATTEMPTS = 12;
+const BOT_MAX_RUN_STEPS = 64;
 
 const normalizeActionLabel = (value: unknown): string => {
   const trimmed = `${value ?? ''}`.trim();
@@ -620,6 +629,9 @@ export function buildServer(port: number) {
   const matchExitUsers = new Map<string, Set<string>>();
   const queuedDecks = new Map<string, DeckDefinition>();
   const gameDeckStates = new Map<string, Map<string, DeckState>>();
+  const botUsersByGame = new Map<string, Set<string>>();
+  const botRunsInProgress = new Set<string>();
+  const botRunsQueued = new Set<string>();
   const winsRequired = 3;
   let anonymousCounter = 0;
 
@@ -930,6 +942,347 @@ export function buildServer(port: number) {
     });
   };
 
+  const pickEasyBotLoadout = async (): Promise<{ deck: DeckDefinition; characterId: CharacterId; deckIndex: number }> => {
+    const catalog = await loadCardCatalog();
+    const baseDecks = Array.isArray(catalog.decks)
+      ? catalog.decks.slice(0, EASY_BOT_BASE_DECK_CHARACTERS.length)
+      : [];
+    if (!baseDecks.length) {
+      return {
+        deck: buildDefaultDeckDefinition(catalog),
+        characterId: pickRandomCharacterId(),
+        deckIndex: -1,
+      };
+    }
+    const deckIndex = Math.floor(Math.random() * baseDecks.length);
+    const selectedDeck = baseDecks[deckIndex] ?? buildDefaultDeckDefinition(catalog);
+    return {
+      deck: {
+        movement: Array.isArray(selectedDeck.movement) ? [...selectedDeck.movement] : [],
+        ability: Array.isArray(selectedDeck.ability) ? [...selectedDeck.ability] : [],
+      },
+      characterId: EASY_BOT_BASE_DECK_CHARACTERS[deckIndex] ?? pickRandomCharacterId(),
+      deckIndex,
+    };
+  };
+
+  const createEasyBotMatchForUser = async (user: { id: string; username: string }) => {
+    const loadout = await pickEasyBotLoadout();
+    const botId = `easybot-${randomUUID()}`;
+    const bot = await db.upsertUser({
+      id: botId,
+      username: EASY_BOT_USERNAME,
+      elo: 1000,
+      characterId: loadout.characterId,
+      isBot: true,
+      botDifficulty: 'easy',
+    });
+    queuedDecks.set(bot.id, loadout.deck);
+    console.log(`${LOG_PREFIX} easybot:match-create`, {
+      humanUserId: user.id,
+      botUserId: bot.id,
+      botCharacterId: loadout.characterId,
+      deckIndex: loadout.deckIndex,
+    });
+    writeDevTempEvent('easy-bot', {
+      stage: 'match-create',
+      humanUserId: user.id,
+      botUserId: bot.id,
+      botCharacterId: loadout.characterId,
+      deckIndex: loadout.deckIndex,
+      deck: loadout.deck,
+    });
+    try {
+      await createMatchWithUsers([
+        { id: user.id, username: user.username },
+        { id: bot.id, username: bot.username },
+      ]);
+    } finally {
+      queuedDecks.delete(bot.id);
+    }
+  };
+
+  const getPendingInteractionRecipientId = (interaction?: CustomInteraction | null): string | null => {
+    if (!interaction) return null;
+    if (interaction.type === 'discard') {
+      const target = interaction.actorUserId ?? interaction.targetUserId;
+      return target ? `${target}` : null;
+    }
+    return interaction.actorUserId ? `${interaction.actorUserId}` : null;
+  };
+
+  const getBotUserIdsForMatch = async (match?: MatchDoc): Promise<Set<string>> => {
+    const botIds = new Set<string>();
+    if (!match) return botIds;
+    for (const player of match.players) {
+      const user = await db.findUser(player.userId);
+      if (user?.isBot) {
+        botIds.add(player.userId);
+      }
+    }
+    return botIds;
+  };
+
+  const ensureBotUsersForGame = async (game: GameDoc, match?: MatchDoc): Promise<Set<string>> => {
+    const cached = botUsersByGame.get(game.id);
+    if (cached?.size) return cached;
+    const resolvedMatch = match ?? (await db.findMatch(game.matchId));
+    const botIds = await getBotUserIdsForMatch(resolvedMatch);
+    if (botIds.size) {
+      botUsersByGame.set(game.id, botIds);
+    }
+    return botIds;
+  };
+
+  const emitEasyBotError = (
+    match: MatchDoc,
+    gameId: string,
+    botUserId: string,
+    message: string,
+    extra: Record<string, unknown> = {},
+  ) => {
+    console.error(`${LOG_PREFIX} easybot:error`, { gameId, botUserId, message, ...extra });
+    writeDevTempEvent('easy-bot', {
+      stage: 'error',
+      gameId,
+      botUserId,
+      message,
+      ...extra,
+    });
+    match.players.forEach((player) => {
+      if (player.userId === botUserId) return;
+      sendRealtimeEvent({ type: 'bot:error', payload: { gameId, botUserId, message } }, player.userId);
+    });
+  };
+
+  const formatChoiceDistribution = <T extends { score: number }>(
+    distribution: Array<{ item: T; probability: number; weight: number }>,
+    formatter: (item: T) => Record<string, unknown>,
+  ) =>
+    distribution.map((entry) => ({
+      probability: Number(entry.probability.toFixed(4)),
+      weight: Number(entry.weight.toFixed(4)),
+      score: Number(entry.item.score.toFixed(4)),
+      ...formatter(entry.item),
+    }));
+
+  const scheduleEasyBotRun = (gameId: string, reason: string) => {
+    if (!gameId) return;
+    if (botRunsInProgress.has(gameId)) {
+      botRunsQueued.add(gameId);
+      return;
+    }
+    if (botRunsQueued.has(gameId)) return;
+    botRunsQueued.add(gameId);
+    setTimeout(() => {
+      void runEasyBotsForGame(gameId, reason);
+    }, 0);
+  };
+
+  const runEasyBotsForGame = async (gameId: string, reason: string) => {
+    if (!gameId) return;
+    if (botRunsInProgress.has(gameId)) {
+      botRunsQueued.add(gameId);
+      return;
+    }
+    botRunsQueued.delete(gameId);
+    botRunsInProgress.add(gameId);
+    writeDevTempEvent('easy-bot', { stage: 'run:start', gameId, reason });
+    try {
+      for (let step = 0; step < BOT_MAX_RUN_STEPS; step += 1) {
+        const game = await db.findGame(gameId);
+        if (!game) return;
+        if (game.state?.public?.matchOutcome) return;
+        const match = await db.findMatch(game.matchId);
+        if (!match || match.state === 'complete') return;
+        const botIds = await ensureBotUsersForGame(game, match);
+        if (!botIds.size) return;
+
+        const publicState = game.state.public;
+        const beats = publicState.beats ?? publicState.timeline ?? [];
+        const characters = ensureBaselineCharacters(publicState);
+        const firstPendingInteraction = (publicState.customInteractions ?? []).find(
+          (interaction) => interaction?.status === 'pending',
+        );
+
+        if (firstPendingInteraction) {
+          const botUserId = getPendingInteractionRecipientId(firstPendingInteraction);
+          if (!botUserId || !botIds.has(botUserId)) return;
+          const deckStates = await ensureDeckStatesForGame(game, match);
+          const catalog = await loadCardCatalog();
+          const interactionCandidates = buildEasyBotInteractionCandidates(
+            {
+              botUserId,
+              publicState,
+              deckStates,
+              catalog,
+            },
+            firstPendingInteraction,
+          );
+          if (!interactionCandidates.length) {
+            emitEasyBotError(match, gameId, botUserId, 'Hex-Bot could not find a legal interaction choice.', {
+              interactionType: firstPendingInteraction.type,
+              interactionId: firstPendingInteraction.id,
+            });
+            return;
+          }
+
+          const topDistribution = buildTopWeightedDistribution(interactionCandidates, 5);
+          const orderedCandidates = buildWeightedChoiceOrder(interactionCandidates, Math.random, 5);
+          writeDevTempEvent('easy-bot', {
+            stage: 'interaction:choices',
+            gameId,
+            botUserId,
+            interactionId: firstPendingInteraction.id,
+            interactionType: firstPendingInteraction.type,
+            candidateCount: interactionCandidates.length,
+            top: formatChoiceDistribution(topDistribution, (choice) => ({
+              payload: choice.payload,
+              scoreIndex: choice.scoreIndex,
+            })),
+          });
+
+          let success = false;
+          const attempts = Math.min(orderedCandidates.length, BOT_MAX_DECISION_ATTEMPTS);
+          for (let attempt = 0; attempt < attempts; attempt += 1) {
+            const candidate = orderedCandidates[attempt];
+            const result = await resolveInteraction({
+              userId: botUserId,
+              gameId,
+              interactionId: firstPendingInteraction.id,
+              ...candidate.payload,
+            });
+            writeDevTempEvent('easy-bot', {
+              stage: 'interaction:attempt',
+              gameId,
+              botUserId,
+              interactionId: firstPendingInteraction.id,
+              attempt: attempt + 1,
+              ok: result.ok,
+              status: result.status,
+              code: result.code ?? null,
+              error: result.error ?? null,
+              payload: candidate.payload,
+              score: candidate.score,
+            });
+            if (result.ok) {
+              success = true;
+              break;
+            }
+          }
+
+          if (!success) {
+            emitEasyBotError(
+              match,
+              gameId,
+              botUserId,
+              `Hex-Bot failed to resolve interaction after ${BOT_MAX_DECISION_ATTEMPTS} attempts.`,
+              {
+                interactionType: firstPendingInteraction.type,
+                interactionId: firstPendingInteraction.id,
+              },
+            );
+            return;
+          }
+          continue;
+        }
+
+        const pending = publicState.pendingActions;
+        let botUserId: string | null = null;
+        if (pending) {
+          const submitted = new Set(pending.submittedUserIds ?? []);
+          botUserId =
+            pending.requiredUserIds.find((candidateId) => botIds.has(candidateId) && !submitted.has(candidateId)) ??
+            null;
+          if (!botUserId) return;
+        } else {
+          const atBat = getCharactersAtEarliestE(beats, characters);
+          botUserId = atBat.map((character) => character.userId).find((candidateId) => botIds.has(candidateId)) ?? null;
+          if (!botUserId) return;
+        }
+
+        const deckStates = await ensureDeckStatesForGame(game, match);
+        const catalog = await loadCardCatalog();
+        const actionCandidates = buildEasyBotActionCandidates({
+          botUserId,
+          publicState,
+          deckStates,
+          catalog,
+        });
+        if (!actionCandidates.length) {
+          emitEasyBotError(match, gameId, botUserId, 'Hex-Bot could not find a legal action set.');
+          return;
+        }
+
+        const topDistribution = buildTopWeightedDistribution(actionCandidates, 5);
+        const orderedCandidates = buildWeightedChoiceOrder(actionCandidates, Math.random, 5);
+        writeDevTempEvent('easy-bot', {
+          stage: 'action:choices',
+          gameId,
+          botUserId,
+          candidateCount: actionCandidates.length,
+          top: formatChoiceDistribution(topDistribution, (choice) => ({
+            activeCardId: choice.activeCardId,
+            passiveCardId: choice.passiveCardId,
+            rotation: choice.rotation,
+            scoreIndex: choice.scoreIndex,
+          })),
+        });
+
+        let success = false;
+        const attempts = Math.min(orderedCandidates.length, BOT_MAX_DECISION_ATTEMPTS);
+        for (let attempt = 0; attempt < attempts; attempt += 1) {
+          const candidate = orderedCandidates[attempt];
+          const result = await submitActionSet({
+            userId: botUserId,
+            gameId,
+            activeCardId: candidate.activeCardId,
+            passiveCardId: candidate.passiveCardId,
+            rotation: candidate.rotation,
+          });
+          writeDevTempEvent('easy-bot', {
+            stage: 'action:attempt',
+            gameId,
+            botUserId,
+            attempt: attempt + 1,
+            ok: result.ok,
+            status: result.status,
+            code: result.code ?? null,
+            error: result.error ?? null,
+            activeCardId: candidate.activeCardId,
+            passiveCardId: candidate.passiveCardId,
+            rotation: candidate.rotation,
+            score: candidate.score,
+          });
+          if (result.ok) {
+            success = true;
+            break;
+          }
+        }
+
+        if (!success) {
+          emitEasyBotError(
+            match,
+            gameId,
+            botUserId,
+            `Hex-Bot failed to submit a legal move after ${BOT_MAX_DECISION_ATTEMPTS} attempts.`,
+          );
+          return;
+        }
+      }
+      console.warn(`${LOG_PREFIX} easybot:step-limit`, { gameId, limit: BOT_MAX_RUN_STEPS });
+      writeDevTempEvent('easy-bot', { stage: 'run:step-limit', gameId, limit: BOT_MAX_RUN_STEPS });
+    } finally {
+      botRunsInProgress.delete(gameId);
+      if (botRunsQueued.has(gameId)) {
+        botRunsQueued.delete(gameId);
+        setTimeout(() => {
+          void runEasyBotsForGame(gameId, 'queued');
+        }, 0);
+      }
+    }
+  };
+
   const formatGameLog = (game: GameDoc, match?: MatchDoc) => {
     const usernameById = new Map<string, string>();
     match?.players.forEach((player) => {
@@ -962,14 +1315,12 @@ export function buildServer(port: number) {
     if (!match) return;
     const publicState = game.state.public;
     if (publicState.matchOutcome) return;
+    const botIds = botUsersByGame.get(game.id) ?? new Set<string>();
     const pending = publicState.pendingActions;
     const interactions = publicState.customInteractions ?? [];
     const pendingInteraction = interactions.find((interaction) => interaction.status === 'pending');
     if (pendingInteraction) {
-      const recipientId =
-        pendingInteraction.type === 'discard'
-          ? pendingInteraction.actorUserId ?? pendingInteraction.targetUserId
-          : pendingInteraction.actorUserId;
+      const recipientId = getPendingInteractionRecipientId(pendingInteraction);
       if (!recipientId) return;
       const payload = {
         gameId: game.id,
@@ -977,14 +1328,22 @@ export function buildServer(port: number) {
         requiredUserIds: [recipientId],
         interactionId: pendingInteraction.id,
       };
-      sendRealtimeEvent({ type: 'input:request', payload }, recipientId);
+      if (botIds.has(recipientId)) {
+        scheduleEasyBotRun(game.id, 'pending-interaction');
+      } else {
+        sendRealtimeEvent({ type: 'input:request', payload }, recipientId);
+      }
       return;
     }
     if (pending) {
       const submitted = new Set(pending.submittedUserIds ?? []);
       pending.requiredUserIds.forEach((userId) => {
         if (!submitted.has(userId)) {
-          sendRealtimeEvent({ type: 'input:request', payload: { ...pending, gameId: game.id } }, userId);
+          if (botIds.has(userId)) {
+            scheduleEasyBotRun(game.id, 'pending-actions');
+          } else {
+            sendRealtimeEvent({ type: 'input:request', payload: { ...pending, gameId: game.id } }, userId);
+          }
         }
       });
       return;
@@ -996,10 +1355,14 @@ export function buildServer(port: number) {
     const requiredUserIds = Array.from(new Set(atBatCharacters.map((candidate) => candidate.userId).filter(Boolean)));
     if (!requiredUserIds.length) return;
     requiredUserIds.forEach((userId) => {
-      sendRealtimeEvent(
-        { type: 'input:request', payload: { gameId: game.id, beatIndex: earliestIndex, requiredUserIds } },
-        userId,
-      );
+      if (botIds.has(userId)) {
+        scheduleEasyBotRun(game.id, 'at-bat');
+      } else {
+        sendRealtimeEvent(
+          { type: 'input:request', payload: { gameId: game.id, beatIndex: earliestIndex, requiredUserIds } },
+          userId,
+        );
+      }
     });
   };
 
@@ -1053,6 +1416,16 @@ export function buildServer(port: number) {
     lobby.addToQueue(assignedUser.id, queue);
     if (queue === 'quickplayQueue') {
       console.log(`[lobby] ${assignedUser.username} (${assignedUser.id}) joined quickplay queue`);
+    }
+    if (queue === 'botQueue') {
+      console.log(`[lobby] ${assignedUser.username} (${assignedUser.id}) requested Hex-Bot match`);
+      try {
+        await createEasyBotMatchForUser({ id: assignedUser.id, username: assignedUser.username });
+      } catch (err) {
+        lobby.removeFromQueue(assignedUser.id, 'botQueue');
+        const message = err instanceof Error ? err.message : 'Failed to create Hex-Bot match.';
+        throw new Error(message);
+      }
     }
     return { user: assignedUser, lobby: lobby.serialize() };
   };
@@ -1123,6 +1496,12 @@ export function buildServer(port: number) {
     const updatedMatch = await db.updateMatch(match.id, { gameId: game.id });
     const finalMatch = updatedMatch ?? match;
     await buildDeckStatesForMatch(finalMatch, game);
+    const botIds = await getBotUserIdsForMatch(finalMatch);
+    if (botIds.size) {
+      botUsersByGame.set(game.id, botIds);
+    } else {
+      botUsersByGame.delete(game.id);
+    }
     notifyMatchPlayers(finalMatch, game);
     return { match: finalMatch, game };
   };
@@ -1132,18 +1511,6 @@ export function buildServer(port: number) {
       { id: body.hostId as string, username: (body.hostName as string) || (body.hostId as string) },
       { id: body.guestId as string, username: (body.guestName as string) || (body.guestId as string) },
     ]);
-
-  const launchBotIfNeeded = async () => {
-    const snapshot = lobby.serialize();
-    const botCandidate = snapshot.botQueue[0];
-    if (!botCandidate) return;
-    lobby.removeFromQueue(botCandidate, 'botQueue');
-    const bot = await db.upsertUser({ username: 'Bot', isBot: true, botDifficulty: 'easy' });
-    await createCustomMatch({ hostId: botCandidate, guestId: bot.id, guestName: bot.username } as Record<
-      string,
-      unknown
-    >);
-  };
 
   let matchmakeInProgress = false;
   const matchmakeQuickplay = async () => {
@@ -1173,10 +1540,12 @@ export function buildServer(port: number) {
     if (match.gameId) {
       const game = await db.findGame(match.gameId);
       if (game) {
+        await ensureBotUsersForGame(game, match);
         const deckStates = await ensureDeckStatesForGame(game, match);
         logGameState(game, match);
         const view = buildGameViewForPlayer(game, userId, deckStates);
         sendRealtimeEvent({ type: 'game:update', payload: view }, userId);
+        sendInputRequests(match, game);
       }
     }
   };
@@ -1208,6 +1577,9 @@ export function buildServer(port: number) {
     if (match.gameId) {
       gameDeckStates.delete(match.gameId);
       matchExitUsers.delete(match.gameId);
+      botUsersByGame.delete(match.gameId);
+      botRunsInProgress.delete(match.gameId);
+      botRunsQueued.delete(match.gameId);
     }
     return match;
   };
@@ -2258,6 +2630,9 @@ export function buildServer(port: number) {
       if (req.method === 'POST' && pathname === '/api/v1/lobby/clear') {
         lobby.clearQueues();
         queuedDecks.clear();
+        botUsersByGame.clear();
+        botRunsInProgress.clear();
+        botRunsQueued.clear();
         return respondJson(res, 200, lobby.serialize());
       }
     }
@@ -2361,9 +2736,6 @@ export function buildServer(port: number) {
   server.listen(port, () => {
     lobby.clearQueues();
     sendRealtimeEvent({ type: 'queueChanged', payload: lobby.serialize() });
-    setInterval(() => {
-      launchBotIfNeeded();
-    }, 5000);
     setInterval(() => {
       void matchmakeQuickplay();
     }, 2000);
