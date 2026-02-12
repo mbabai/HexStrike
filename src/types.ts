@@ -270,10 +270,11 @@ export interface CustomInteraction {
 }
 
 export interface MatchOutcome {
-  winnerUserId: string;
-  loserUserId: string;
-  reason: 'no-cards-abyss' | 'far-from-land';
+  winnerUserId?: string;
+  loserUserId?: string;
+  reason: 'no-cards-abyss' | 'far-from-land' | 'forfeit' | 'draw-agreement';
   beatIndex: number;
+  drawUserIds?: string[];
 }
 
 export interface PublicCharacter {

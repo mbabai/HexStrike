@@ -84,7 +84,16 @@ export const getTimelineStopIndex = (beats, characters, interactions = [], optio
   );
   const pendingIndex = pending.length ? Math.min(...pending.map((interaction) => interaction.beatIndex)) : null;
   const alwaysStopTypes = new Set(
-    options.alwaysStopTypes ?? ['throw', 'discard', 'hand-trigger', 'draw', 'haven-platform', 'guard-continue', 'rewind-return'],
+    options.alwaysStopTypes ?? [
+      'throw',
+      'discard',
+      'hand-trigger',
+      'draw',
+      'haven-platform',
+      'guard-continue',
+      'rewind-return',
+      'draw-offer',
+    ],
   );
   const alwaysPending = pending.filter((interaction) => alwaysStopTypes.has(interaction?.type));
   const alwaysPendingIndex = alwaysPending.length

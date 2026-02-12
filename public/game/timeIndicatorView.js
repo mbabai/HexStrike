@@ -12,6 +12,7 @@ const FOCUS_ICON_KEY = 'F';
 const KNOCKBACK_ICON_KEY = 'KnockBackIcon';
 const DISCARD_ICON_KEY = 'DiscardIcon';
 const REWIND_RETURN_INTERACTION_TYPE = 'rewind-return';
+const END_MARKER_ACTIONS = new Set(['Death', 'Victory', 'Handshake']);
 const VISIBLE_BEAT_RADIUS = 6;
 const TIMELINE_OFFSETS = Array.from({ length: VISIBLE_BEAT_RADIUS * 2 + 1 }, (_, index) => index - VISIBLE_BEAT_RADIUS);
 const actionArt = new Map();
@@ -100,6 +101,27 @@ const getPendingPreviewEntry = (preview, character, beatIndex) => {
   const offset = beatIndex - startIndex;
   if (offset < 0 || offset >= actionList.length) return null;
   return actionList[offset] ?? null;
+};
+
+const matchesOutcomeCharacter = (character, outcomeUserId) => {
+  if (!character || !outcomeUserId) return false;
+  return outcomeUserId === character.userId || outcomeUserId === character.username;
+};
+
+const getOutcomeMarkerAction = (matchOutcome, character, beatIndex) => {
+  if (!matchOutcome || !character) return null;
+  const markerBeat = Number.isFinite(matchOutcome?.beatIndex) ? Math.max(0, Math.round(matchOutcome.beatIndex)) : null;
+  if (markerBeat == null || markerBeat !== beatIndex) return null;
+  if (matchOutcome.reason === 'draw-agreement') {
+    if (Array.isArray(matchOutcome.drawUserIds) && matchOutcome.drawUserIds.length) {
+      const allowed = matchOutcome.drawUserIds.some((userId) => matchesOutcomeCharacter(character, userId));
+      return allowed ? 'Handshake' : null;
+    }
+    return 'Handshake';
+  }
+  if (matchesOutcomeCharacter(character, matchOutcome.loserUserId)) return 'Death';
+  if (matchesOutcomeCharacter(character, matchOutcome.winnerUserId)) return 'Victory';
+  return null;
 };
 
 const buildActorKeyMap = (characters) => {
@@ -367,6 +389,7 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
   const characters = gameState?.state?.public?.characters ?? [];
   const beats = gameState?.state?.public?.beats ?? [];
   const interactions = gameState?.state?.public?.customInteractions ?? [];
+  const matchOutcome = gameState?.state?.public?.matchOutcome ?? null;
   if (!characters.length || !beats.length) return null;
   const offsets = TIMELINE_OFFSETS;
   const value = viewModel?.value ?? 0;
@@ -398,7 +421,18 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
       const offset = offsets[offsetIndex];
       const beatIndex = value + offset;
       if (beatIndex < 0) continue;
-      const entry = beatLookup[beatIndex]?.get(lookupKey);
+      const baseEntry = beatLookup[beatIndex]?.get(lookupKey);
+      const baseAction = `${baseEntry?.action ?? ''}`.trim();
+      const outcomeAction = getOutcomeMarkerAction(matchOutcome, character, beatIndex);
+      const action =
+        outcomeAction && (!baseEntry || baseAction === DEFAULT_ACTION)
+          ? outcomeAction
+          : baseEntry?.action ?? ACTION_ICON_FALLBACK;
+      const entry = baseEntry
+        ? { ...baseEntry, action }
+        : action && action !== ACTION_ICON_FALLBACK
+          ? { action }
+          : null;
       const xPos = rowCenterX + offset * spacing;
       const rewindReturnKey = `${lookupKey}:${beatIndex}`;
       const rewindReturns = rewindReturnLookup.get(rewindReturnKey) ?? [];
@@ -473,7 +507,7 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
         }
       }
       if (!entry) continue;
-      const token = parseActionToken(entry.action ?? '');
+      const token = parseActionToken(action);
       const symbol = token.emphasized ? EMPHASIS_ICON_KEY : token.label;
       if (token.label === ACTION_ICON_FALLBACK) continue;
       const bounds = {
@@ -514,8 +548,6 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
   const beats = gameState?.state?.public?.beats ?? [];
   const interactions = gameState?.state?.public?.customInteractions ?? [];
   const matchOutcome = gameState?.state?.public?.matchOutcome ?? null;
-  const deathUserId = matchOutcome?.loserUserId ?? null;
-  const deathIndex = Number.isFinite(matchOutcome?.beatIndex) ? matchOutcome.beatIndex : null;
   const highlightIndex = getTimelineStopIndex(beats, characters, interactions);
   const handTriggerLookup = buildHandTriggerLookup(interactions, characters);
   const rewindReturnLookup = buildRewindReturnLookup(interactions, characters);
@@ -621,17 +653,13 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       const baseEntry = beatLookup[beatIndex]?.get(lookupKey);
       const baseAction = baseEntry?.action ?? ACTION_ICON_FALLBACK;
       const previewEntry = getPendingPreviewEntry(pendingPreview, character, beatIndex);
-      const isDeathBeat =
-        deathIndex !== null &&
-        beatIndex === deathIndex &&
-        deathUserId &&
-        (character.userId === deathUserId || character.username === deathUserId);
+      const outcomeMarkerAction = getOutcomeMarkerAction(matchOutcome, character, beatIndex);
       const usePreview =
-        !isDeathBeat && previewEntry && (!baseEntry || baseAction === DEFAULT_ACTION);
+        !outcomeMarkerAction && previewEntry && (!baseEntry || baseAction === DEFAULT_ACTION);
       const entry = usePreview ? previewEntry : baseEntry;
       const action =
-        isDeathBeat && (!baseEntry || baseAction === DEFAULT_ACTION)
-          ? 'Death'
+        outcomeMarkerAction && (!baseEntry || baseAction === DEFAULT_ACTION)
+          ? outcomeMarkerAction
           : entry?.action ?? ACTION_ICON_FALLBACK;
       const xPos = rowCenterX + offset * rowSpacing;
       const shouldFade = fadeAfterIndex !== null && beatIndex > fadeAfterIndex;
@@ -713,7 +741,7 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       if (
         actionLabel &&
         actionLabel !== 'E' &&
-        actionLabel !== 'Death' &&
+        !END_MARKER_ACTIONS.has(actionLabel) &&
         actionLabel !== ACTION_ICON_FALLBACK &&
         actionLabel !== 'DamageIcon'
       ) {

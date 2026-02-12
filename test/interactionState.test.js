@@ -40,6 +40,32 @@ test('selectPendingInteraction returns pending draw even if beat is resolved', a
   assert.equal(pending?.id, 'draw:0:me:me');
 });
 
+test('selectPendingInteraction returns pending draw offer even if beat is resolved', async () => {
+  const { selectPendingInteraction } = await loadModule();
+  const interactions = [
+    {
+      id: 'draw-offer:0:you:me',
+      type: 'draw-offer',
+      status: 'pending',
+      actorUserId: 'me',
+      targetUserId: 'me',
+      sourceUserId: 'you',
+      beatIndex: 0,
+    },
+  ];
+  const beats = [[{ username: 'me', action: 'W' }]];
+  const characters = [{ userId: 'me', username: 'me' }];
+  const pending = selectPendingInteraction({
+    interactions,
+    beats,
+    characters,
+    localUserId: 'me',
+    resolvedIndex: 0,
+  });
+
+  assert.equal(pending?.id, 'draw-offer:0:you:me');
+});
+
 test('selectPendingInteraction returns pending guard continue even if beat is resolved', async () => {
   const { selectPendingInteraction } = await loadModule();
   const interactions = [

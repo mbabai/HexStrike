@@ -205,6 +205,35 @@
     </div>
 
     <section id="gameArea" class="game-area" hidden>
+      <div id="gameMenu" class="game-menu">
+        <button
+          id="gameMenuToggle"
+          class="icon-btn game-menu-toggle"
+          type="button"
+          aria-label="Open game menu"
+          aria-expanded="false"
+          aria-controls="gameMenuPanel"
+        >
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <div id="gameMenuPanel" class="game-menu-panel panel" hidden aria-hidden="true">
+          <button id="gameMenuForfeit" class="game-menu-action" type="button">Forfeit</button>
+          <button id="gameMenuOfferDraw" class="game-menu-action" type="button">Offer Draw</button>
+        </div>
+      </div>
+      <div id="gameMenuModalOverlay" class="game-menu-modal-overlay" hidden aria-hidden="true">
+        <div id="gameMenuModal" class="game-menu-modal panel" role="dialog" aria-modal="true" aria-labelledby="gameMenuModalTitle">
+          <p id="gameMenuModalEyebrow" class="game-menu-modal-eyebrow"></p>
+          <h2 id="gameMenuModalTitle">Confirm</h2>
+          <p id="gameMenuModalCopy" class="game-menu-modal-copy"></p>
+          <div class="section-actions game-menu-modal-actions">
+            <button id="gameMenuModalCancel" class="btn btn-ghost" type="button">No</button>
+            <button id="gameMenuModalConfirm" class="btn btn-primary" type="button">Yes</button>
+          </div>
+        </div>
+      </div>
       <div id="actionHud" class="action-hud">
         <div id="movementHand" class="action-hand action-hand-movement" aria-label="Movement cards"></div>
         <div class="action-center">

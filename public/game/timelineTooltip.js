@@ -9,6 +9,7 @@ import { actionHasAttackToken } from './cardText/actionListTransforms.js';
 
 const DAMAGE_ICON_ACTION = 'DamageIcon';
 const DEFAULT_ACTION = 'E';
+const END_MARKER_ACTIONS = new Set(['Death', 'Victory', 'Handshake']);
 
 const normalizeSymbolText = (text) => {
   const raw = `${text ?? ''}`.trim();
@@ -21,6 +22,42 @@ const normalizeActionLabel = (action) => `${action ?? ''}`.trim().toUpperCase();
 const isDamageIconAction = (action) => normalizeActionLabel(action) === DAMAGE_ICON_ACTION.toUpperCase();
 
 const isOpenBeatAction = (action) => normalizeActionLabel(action) === DEFAULT_ACTION;
+
+const isEndMarkerAction = (action) => END_MARKER_ACTIONS.has(`${action ?? ''}`.trim());
+
+const matchesOutcomeCharacter = (character, outcomeUserId) => {
+  if (!character || !outcomeUserId) return false;
+  return outcomeUserId === character.userId || outcomeUserId === character.username;
+};
+
+const getEndMarkerTooltip = (action, outcome, character, beatIndex) => {
+  const label = `${action ?? ''}`.trim();
+  if (!isEndMarkerAction(label)) return null;
+  if (!outcome) {
+    if (label === 'Handshake') return { title: 'Handshake', status: '', instruction: 'Draw.' };
+    if (label === 'Victory') return { title: 'Victory', status: '', instruction: 'Win.' };
+    if (label === 'Death') return { title: 'Death', status: '', instruction: 'Defeat.' };
+    return null;
+  }
+  const outcomeBeat = Number.isFinite(outcome?.beatIndex) ? Math.max(0, Math.round(outcome.beatIndex)) : null;
+  if (outcomeBeat != null && outcomeBeat !== beatIndex) return null;
+  if (label === 'Handshake') {
+    return { title: 'Handshake', status: '', instruction: 'Draw accepted.' };
+  }
+  if (label === 'Victory') {
+    if (outcome.reason === 'forfeit') {
+      return { title: 'Victory', status: '', instruction: 'Opponent forfeited.' };
+    }
+    return { title: 'Victory', status: '', instruction: 'Win.' };
+  }
+  if (label === 'Death') {
+    if (outcome.reason === 'forfeit' && matchesOutcomeCharacter(character, outcome.loserUserId)) {
+      return { title: 'Death', status: 'Forfeit.', instruction: '' };
+    }
+    return { title: 'Death', status: '', instruction: 'Defeat.' };
+  }
+  return null;
+};
 
 const cardHasAttack = (card) => {
   if (!card) return false;
@@ -585,7 +622,31 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     }
 
     const beats = gameState?.state?.public?.beats ?? [];
+    const matchOutcome = gameState?.state?.public?.matchOutcome ?? null;
     const entry = target.entry;
+    const endMarker = getEndMarkerTooltip(entry?.action, matchOutcome, target.character, target.beatIndex);
+    if (endMarker) {
+      const key = ['outcome-marker', target.character?.userId, target.beatIndex, endMarker.title, endMarker.status, endMarker.instruction]
+        .join(':');
+      if (key !== lastTooltipKey) {
+        title.textContent = endMarker.title;
+        title.hidden = !endMarker.title;
+        renderAttackStats('');
+        renderStatus(endMarker.status ?? '');
+        if (endMarker.instruction) {
+          instruction.hidden = false;
+          appendInlineText(instruction, endMarker.instruction);
+        } else {
+          instruction.hidden = true;
+          instruction.textContent = '';
+        }
+        clearSupplementalSections({ hideDivider: true });
+        lastTooltipKey = key;
+      }
+      tooltip.hidden = false;
+      positionTooltip(target.center.x, target.center.y);
+      return;
+    }
     const interruptedContext = resolveInterruptedCardIds(beats, target.character, target.beatIndex, entry);
     const activeCardId = interruptedContext.activeCardId;
     const passiveCardId = interruptedContext.passiveCardId;

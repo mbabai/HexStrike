@@ -1,4 +1,4 @@
-import { BeatEntry, DeckState, HexCoord, PublicCharacter } from '../types';
+import { BeatEntry, DeckState, HexCoord, MatchOutcome, PublicCharacter } from '../types';
 import {
   getCharacterFirstEIndex,
   getCharacterLocationAtIndex,
@@ -9,13 +9,6 @@ import { DEFAULT_LAND_HEXES } from './hexGrid';
 
 const DEFAULT_ACTION = 'E';
 const DISTANCE_LOSS_THRESHOLD = 4;
-
-export interface MatchOutcome {
-  winnerUserId: string;
-  loserUserId: string;
-  reason: 'no-cards-abyss' | 'far-from-land';
-  beatIndex: number;
-}
 
 const buildCoordKey = (coord: HexCoord | undefined): string | null => {
   if (!coord) return null;
@@ -69,6 +62,25 @@ const matchesEntryForCharacter = (entry: BeatEntry, character: PublicCharacter):
   return key === character.username || key === character.userId;
 };
 
+const matchesOutcomeUser = (character: PublicCharacter, outcomeUserId: string): boolean =>
+  outcomeUserId === character.userId || outcomeUserId === character.username;
+
+const getOutcomeActionForCharacter = (outcome: MatchOutcome, character: PublicCharacter): string | null => {
+  if (outcome.reason === 'draw-agreement') {
+    if (Array.isArray(outcome.drawUserIds) && outcome.drawUserIds.length) {
+      return outcome.drawUserIds.some((userId) => matchesOutcomeUser(character, userId)) ? 'Handshake' : null;
+    }
+    return 'Handshake';
+  }
+  if (typeof outcome.loserUserId === 'string' && matchesOutcomeUser(character, outcome.loserUserId)) {
+    return 'Death';
+  }
+  if (typeof outcome.winnerUserId === 'string' && matchesOutcomeUser(character, outcome.winnerUserId)) {
+    return 'Victory';
+  }
+  return null;
+};
+
 const sortBeatEntries = (beat: BeatEntry[], characters: PublicCharacter[]) => {
   const order = new Map<string, number>();
   characters.forEach((character, index) => {
@@ -84,6 +96,31 @@ const sortBeatEntries = (beat: BeatEntry[], characters: PublicCharacter[]) => {
     const scoreB = typeof indexB === 'number' ? indexB : Number.MAX_SAFE_INTEGER;
     return scoreA - scoreB;
   });
+};
+
+const buildOutcomeEntry = (
+  action: string,
+  character: PublicCharacter,
+  priorEntry: BeatEntry | null,
+  landTiles: HexCoord[],
+): BeatEntry => {
+  const location = priorEntry?.location ?? character.position;
+  const priorFacing = priorEntry?.facing;
+  const priorDamage = priorEntry?.damage;
+  const facing = Number.isFinite(priorFacing) ? priorFacing : character.facing ?? 0;
+  const damage = Number.isFinite(priorDamage) ? priorDamage : 0;
+  const terrain = priorEntry?.terrain ?? (isCoordOnLand(location, landTiles) ? 'land' : 'abyss');
+  return {
+    username: character.username ?? character.userId,
+    action,
+    rotation: '',
+    priority: 0,
+    damage,
+    location: { q: location.q, r: location.r },
+    terrain,
+    facing,
+    calculated: false,
+  };
 };
 
 const hasPlayableCards = (deckState?: DeckState): boolean => {
@@ -165,6 +202,40 @@ export const applyDeathToBeats = (
     if (cleared.length !== nextBeat.length) {
       beats[i] = cleared;
     }
+  }
+};
+
+export const applyMatchOutcomeToBeats = (
+  beats: BeatEntry[][],
+  characters: PublicCharacter[],
+  outcome: MatchOutcome,
+  land: HexCoord[] = DEFAULT_LAND_HEXES,
+): void => {
+  if (!Array.isArray(beats) || !Array.isArray(characters) || !characters.length || !outcome) return;
+  const landTiles = Array.isArray(land) && land.length ? land : DEFAULT_LAND_HEXES;
+  const index = Math.max(0, Math.floor(Number.isFinite(outcome.beatIndex) ? outcome.beatIndex : beats.length - 1));
+  while (beats.length <= index) {
+    beats.push([]);
+  }
+  const beat = Array.isArray(beats[index]) ? beats[index] : [];
+  const outcomeCharacters = characters
+    .map((character) => ({
+      character,
+      action: getOutcomeActionForCharacter(outcome, character),
+    }))
+    .filter((item) => Boolean(item.action)) as Array<{ character: PublicCharacter; action: string }>;
+  if (!outcomeCharacters.length) return;
+  const filtered = beat.filter(
+    (entry) => !outcomeCharacters.some((item) => matchesEntryForCharacter(entry, item.character)),
+  );
+  const outcomeEntries = outcomeCharacters.map((item) => {
+    const priorEntry = getLastEntryForCharacter(beats, item.character, index);
+    return buildOutcomeEntry(item.action, item.character, priorEntry, landTiles);
+  });
+  beats[index] = [...filtered, ...outcomeEntries];
+  sortBeatEntries(beats[index], characters);
+  if (beats.length > index + 1) {
+    beats.splice(index + 1);
   }
 };
 

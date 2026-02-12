@@ -10,7 +10,8 @@ import { createInitialGameState } from './game/state';
 import { applyActionSetToBeats } from './game/actionSets';
 import { executeBeatsWithInteractions } from './game/execute';
 import { buildReplaySeedTokens } from './game/tokenReplay';
-import { applyDeathToBeats, evaluateMatchOutcome } from './game/matchEndRules';
+import { applyMatchOutcomeToBeats, evaluateMatchOutcome } from './game/matchEndRules';
+import { shouldBotAcceptDrawOffer } from './game/drawOfferRules';
 import {
   getCharacterFirstEIndex,
   getCharacterLocationAtIndex,
@@ -84,6 +85,7 @@ interface ActionSetResponse {
   payload?: unknown;
   error?: string;
   code?: string;
+  details?: Record<string, unknown>;
 }
 
 const cloneBaselineCharacter = (character: PublicCharacter): PublicCharacter => ({
@@ -112,8 +114,10 @@ const COMBO_ACTION = 'CO';
 const GUARD_CONTINUE_INTERACTION_TYPE = 'guard-continue';
 const REWIND_FOCUS_INTERACTION_TYPE = 'rewind-focus';
 const REWIND_RETURN_INTERACTION_TYPE = 'rewind-return';
+const DRAW_OFFER_INTERACTION_TYPE = 'draw-offer';
 const WHIRLWIND_CARD_ID = 'whirlwind';
 const WHIRLWIND_MIN_DAMAGE = 12;
+const DRAW_OFFER_COOLDOWN_MS = 30_000;
 const PROD_FAVICON_PATH = '/public/images/X1.png';
 const DEV_FAVICON_PATH = '/public/images/X2.png';
 const IS_DEV_RUNTIME = process.env.HEXSTRIKE_TEMP_LOGS === '1' || process.env.NODE_ENV === 'development';
@@ -681,6 +685,7 @@ export function buildServer(port: number) {
   const sseClients = new Map<string, any>();
   const wsClients = new Map<string, WsClient>();
   const pendingActionSets = new Map<string, PendingActionBatch>();
+  const drawOfferCooldownByGame = new Map<string, Map<string, number>>();
   const pendingInvites = new Map<string, string>();
   const matchDisconnects = new Map<string, Set<string>>();
   const matchExitUsers = new Map<string, Set<string>>();
@@ -710,6 +715,22 @@ export function buildServer(port: number) {
     const candidate = value.trim().toLowerCase();
     if (!candidate) return undefined;
     return CHARACTER_IDS.includes(candidate as CharacterId) ? (candidate as CharacterId) : undefined;
+  };
+
+  const getDrawOfferCooldownRemainingSeconds = (gameId: string, userId: string, nowMs = Date.now()): number => {
+    const gameCooldowns = drawOfferCooldownByGame.get(gameId);
+    if (!gameCooldowns) return 0;
+    const nextAllowedAt = gameCooldowns.get(userId);
+    if (!Number.isFinite(nextAllowedAt)) return 0;
+    const remainingMs = nextAllowedAt - nowMs;
+    if (remainingMs <= 0) return 0;
+    return Math.max(1, Math.ceil(remainingMs / 1000));
+  };
+
+  const setDrawOfferCooldown = (gameId: string, userId: string, nowMs = Date.now()) => {
+    const gameCooldowns = drawOfferCooldownByGame.get(gameId) ?? new Map<string, number>();
+    gameCooldowns.set(userId, nowMs + DRAW_OFFER_COOLDOWN_MS);
+    drawOfferCooldownByGame.set(gameId, gameCooldowns);
   };
 
   const sendSseEvent = (packet: Record<string, unknown>, targetId?: string) => {
@@ -1520,13 +1541,33 @@ export function buildServer(port: number) {
     if (!resolvedDeckStates) return false;
     const outcome = evaluateMatchOutcome(beats, characters, resolvedDeckStates, land);
     if (!outcome) return false;
-    if (outcome.reason === 'far-from-land') {
-      applyDeathToBeats(beats, characters, outcome.loserUserId, outcome.beatIndex, land);
-      game.state.public.timeline = beats;
-      game.state.public.beats = beats;
-    }
+    applyMatchOutcomeToBeats(beats, characters, outcome, land);
+    game.state.public.timeline = beats;
+    game.state.public.beats = beats;
     game.state.public.matchOutcome = outcome;
+    game.state.public.pendingActions = undefined;
+    pendingActionSets.delete(game.id);
     return true;
+  };
+
+  const applyExplicitOutcome = (game: GameDoc, outcome: GameStateDoc['public']['matchOutcome']) => {
+    if (!outcome) return;
+    const beats = game.state.public.beats ?? game.state.public.timeline ?? [];
+    const characters = ensureBaselineCharacters(game.state.public);
+    const land = game.state.public.land ?? [];
+    applyMatchOutcomeToBeats(beats, characters, outcome, land);
+    game.state.public.beats = beats;
+    game.state.public.timeline = beats;
+    game.state.public.pendingActions = undefined;
+    const interactions = Array.isArray(game.state.public.customInteractions) ? game.state.public.customInteractions : [];
+    interactions.forEach((interaction) => {
+      if (!interaction || interaction.status !== 'pending') return;
+      interaction.status = 'resolved';
+      interaction.resolution = { ...(interaction.resolution ?? {}), cancelledByOutcome: true };
+    });
+    game.state.public.customInteractions = interactions;
+    game.state.public.matchOutcome = outcome;
+    pendingActionSets.delete(game.id);
   };
   const handleJoin = async (body: Record<string, unknown>) => {
     const characterId = normalizeCharacterId(body.characterId || body.characterID);
@@ -1713,6 +1754,7 @@ export function buildServer(port: number) {
     sendRealtimeEvent({ type: 'match:ended', payload: match });
     if (match.gameId) {
       gameDeckStates.delete(match.gameId);
+      drawOfferCooldownByGame.delete(match.gameId);
       matchExitUsers.delete(match.gameId);
       botUsersByGame.delete(match.gameId);
       botRunsInProgress.delete(match.gameId);
@@ -2181,6 +2223,151 @@ export function buildServer(port: number) {
     return { ok: true, status: 200, payload: view };
   };
 
+  const submitForfeit = async (body: Record<string, unknown>): Promise<ActionSetResponse> => {
+    const userId = (body.userId as string) || (body.userID as string);
+    const gameId = (body.gameId as string) || (body.gameID as string);
+    if (!userId || !gameId) {
+      return { ok: false, status: 400, error: 'Invalid forfeit payload' };
+    }
+    const game = await db.findGame(gameId);
+    if (!game) return { ok: false, status: 404, error: 'Not found' };
+    if (game.state?.public?.matchOutcome) {
+      return { ok: false, status: 409, error: 'Match is already over' };
+    }
+    const characters = game.state?.public ? ensureBaselineCharacters(game.state.public) : [];
+    const loser = characters.find((character) => character.userId === userId || character.username === userId);
+    if (!loser) {
+      return { ok: false, status: 403, error: 'User not in game' };
+    }
+    const winner = characters.find((character) => character.userId !== loser.userId);
+    if (!winner) {
+      return { ok: false, status: 409, error: 'Unable to resolve forfeit winner' };
+    }
+    const beats = game.state.public.beats ?? game.state.public.timeline ?? [];
+    const beatIndex = Math.max(0, getTimelineEarliestEIndex(beats, characters));
+    const outcome: GameStateDoc['public']['matchOutcome'] = {
+      winnerUserId: winner.userId,
+      loserUserId: loser.userId,
+      reason: 'forfeit',
+      beatIndex,
+    };
+    applyExplicitOutcome(game, outcome);
+    const interactions = game.state.public.customInteractions ?? [];
+    interactions.forEach((interaction) => {
+      if (!interaction || interaction.status !== 'pending') return;
+      if (interaction.type !== DRAW_OFFER_INTERACTION_TYPE) return;
+      interaction.status = 'resolved';
+      interaction.resolution = { ...(interaction.resolution ?? {}), accepted: false, supersededByForfeit: true };
+    });
+    game.state.public.customInteractions = interactions;
+    const match = await db.findMatch(game.matchId);
+    const deckStates = await ensureDeckStatesForGame(game, match);
+    const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
+    sendGameUpdate(match, updatedGame, deckStates);
+    const view = buildGameViewForPlayer(updatedGame, userId, deckStates);
+    return { ok: true, status: 200, payload: view };
+  };
+
+  const submitDrawOffer = async (body: Record<string, unknown>): Promise<ActionSetResponse> => {
+    const userId = (body.userId as string) || (body.userID as string);
+    const gameId = (body.gameId as string) || (body.gameID as string);
+    if (!userId || !gameId) {
+      return { ok: false, status: 400, error: 'Invalid draw offer payload' };
+    }
+    const game = await db.findGame(gameId);
+    if (!game) return { ok: false, status: 404, error: 'Not found' };
+    if (game.state?.public?.matchOutcome) {
+      return { ok: false, status: 409, error: 'Match is already over' };
+    }
+    const characters = game.state?.public ? ensureBaselineCharacters(game.state.public) : [];
+    const offerer = characters.find((character) => character.userId === userId || character.username === userId);
+    if (!offerer) {
+      return { ok: false, status: 403, error: 'User not in game' };
+    }
+    const opponent = characters.find((character) => character.userId !== offerer.userId);
+    if (!opponent) {
+      return { ok: false, status: 409, error: 'Unable to find draw offer recipient' };
+    }
+    const opponentUser = await db.findUser(opponent.userId);
+    const nowMs = Date.now();
+    const remainingSeconds = getDrawOfferCooldownRemainingSeconds(game.id, offerer.userId, nowMs);
+    if (remainingSeconds > 0) {
+      return {
+        ok: false,
+        status: 429,
+        error: `You cannot offer draw so soon again, please wait ${remainingSeconds} seconds.`,
+        code: 'draw-offer-cooldown',
+        details: { remainingSeconds },
+      };
+    }
+    const interactions = game.state.public.customInteractions ?? [];
+    const pendingOffer = interactions.find(
+      (interaction) => interaction?.type === DRAW_OFFER_INTERACTION_TYPE && interaction?.status === 'pending',
+    );
+    if (pendingOffer) {
+      return { ok: false, status: 409, error: 'A draw offer is already pending.', code: 'draw-offer-pending' };
+    }
+    const beats = game.state.public.beats ?? game.state.public.timeline ?? [];
+    const beatIndex = Math.max(0, getTimelineEarliestEIndex(beats, characters));
+    const interactionId = `${DRAW_OFFER_INTERACTION_TYPE}:${beatIndex}:${offerer.userId}:${opponent.userId}:${randomUUID()}`;
+    if (opponentUser?.isBot) {
+      const botDifficulty = normalizeBotDifficulty(opponentUser?.botDifficulty);
+      const botDamage = getCharacterDamageAtIndex(beats, opponent, beatIndex);
+      const playerDamage = getCharacterDamageAtIndex(beats, offerer, beatIndex);
+      const accepted = shouldBotAcceptDrawOffer(botDifficulty, botDamage, playerDamage);
+      interactions.push({
+        id: interactionId,
+        type: DRAW_OFFER_INTERACTION_TYPE,
+        beatIndex,
+        actorUserId: opponent.userId,
+        targetUserId: opponent.userId,
+        sourceUserId: offerer.userId,
+        status: 'resolved',
+        resolution: {
+          offererUserId: offerer.userId,
+          accepted,
+          autoResolvedByBot: true,
+          botDifficulty,
+          botDamage,
+          playerDamage,
+        },
+      });
+      if (accepted) {
+        const drawUserIds = Array.from(new Set([offerer.userId, opponent.userId]));
+        applyExplicitOutcome(game, {
+          reason: 'draw-agreement',
+          beatIndex,
+          drawUserIds,
+        });
+        interactions.forEach((candidate) => {
+          if (!candidate || candidate.id === interactionId) return;
+          if (candidate.type !== DRAW_OFFER_INTERACTION_TYPE || candidate.status !== 'pending') return;
+          candidate.status = 'resolved';
+          candidate.resolution = { ...(candidate.resolution ?? {}), accepted: false, supersededByDraw: true };
+        });
+      }
+    } else {
+      interactions.push({
+        id: interactionId,
+        type: DRAW_OFFER_INTERACTION_TYPE,
+        beatIndex,
+        actorUserId: opponent.userId,
+        targetUserId: opponent.userId,
+        sourceUserId: offerer.userId,
+        status: 'pending',
+        resolution: { offererUserId: offerer.userId },
+      });
+    }
+    game.state.public.customInteractions = interactions;
+    setDrawOfferCooldown(game.id, offerer.userId, nowMs);
+    const match = await db.findMatch(game.matchId);
+    const deckStates = await ensureDeckStatesForGame(game, match);
+    const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
+    sendGameUpdate(match, updatedGame, deckStates);
+    const view = buildGameViewForPlayer(updatedGame, userId, deckStates);
+    return { ok: true, status: 200, payload: view };
+  };
+
   const resolveInteraction = async (body: Record<string, unknown>): Promise<ActionSetResponse> => {
     const userId = (body.userId as string) || (body.userID as string);
     const gameId = (body.gameId as string) || (body.gameID as string);
@@ -2254,7 +2441,59 @@ export function buildServer(port: number) {
       deckStates,
     );
 
-    if (interaction.type === 'throw') {
+    if (interaction.type === DRAW_OFFER_INTERACTION_TYPE) {
+      const rawAccept = (body as { acceptDraw?: unknown; accept?: unknown; continue?: unknown; continueDraw?: unknown })
+        ?.acceptDraw;
+      const altAccept = (body as { accept?: unknown })?.accept;
+      const altContinue = (body as { continue?: unknown; continueDraw?: unknown })?.continue;
+      const altContinueDraw = (body as { continueDraw?: unknown })?.continueDraw;
+      const resolvedAccept =
+        typeof rawAccept === 'boolean'
+          ? rawAccept
+          : typeof altAccept === 'boolean'
+            ? altAccept
+            : typeof altContinue === 'boolean'
+              ? altContinue
+              : typeof altContinueDraw === 'boolean'
+                ? altContinueDraw
+                : null;
+      if (resolvedAccept === null) {
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'invalid-draw-offer-choice' });
+        return { ok: false, status: 400, error: 'Invalid draw choice' };
+      }
+      const offererUserId = `${interaction.sourceUserId ?? interaction.resolution?.offererUserId ?? ''}`.trim();
+      interaction.status = 'resolved';
+      interaction.resolution = {
+        ...(interaction.resolution ?? {}),
+        accepted: resolvedAccept,
+        offererUserId: offererUserId || undefined,
+      };
+      if (resolvedAccept) {
+        const drawUserIds = Array.from(
+          new Set(
+            [interaction.actorUserId, offererUserId]
+              .map((value) => `${value ?? ''}`.trim())
+              .filter((value) => Boolean(value)),
+          ),
+        );
+        const beatIndex = Math.max(0, getTimelineEarliestEIndex(beats, characters));
+        applyExplicitOutcome(game, {
+          reason: 'draw-agreement',
+          beatIndex,
+          drawUserIds,
+        });
+        interactions.forEach((candidate) => {
+          if (!candidate || candidate.id === interaction.id) return;
+          if (candidate.type !== DRAW_OFFER_INTERACTION_TYPE || candidate.status !== 'pending') return;
+          candidate.status = 'resolved';
+          candidate.resolution = { ...(candidate.resolution ?? {}), accepted: false, supersededByDraw: true };
+        });
+      }
+      const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
+      sendGameUpdate(match, updatedGame, deckStates);
+      const view = buildGameViewForPlayer(updatedGame, userId, deckStates);
+      return { ok: true, status: 200, payload: view };
+    } else if (interaction.type === 'throw') {
       const resolvedDirection = Number(directionIndex);
       if (!Number.isFinite(resolvedDirection) || resolvedDirection < 0 || resolvedDirection > 5) {
         console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'invalid-direction' });
@@ -2767,6 +3006,7 @@ export function buildServer(port: number) {
       if (req.method === 'POST' && pathname === '/api/v1/lobby/clear') {
         lobby.clearQueues();
         queuedDecks.clear();
+        drawOfferCooldownByGame.clear();
         botUsersByGame.clear();
         botRunsInProgress.clear();
         botRunsQueued.clear();
@@ -2817,6 +3057,40 @@ export function buildServer(port: number) {
           matchId: game.matchId,
           state: { public: game.state.public },
         });
+      }
+      if (req.method === 'POST' && pathname === '/api/v1/game/forfeit') {
+        let body;
+        try {
+          body = await parseBody(req);
+        } catch (err) {
+          return respondJson(res, 400, { error: 'Invalid forfeit payload' });
+        }
+        const result = await submitForfeit(body);
+        if (!result.ok) {
+          return respondJson(res, result.status, {
+            error: result.error,
+            code: result.code,
+            ...(result.details ?? {}),
+          });
+        }
+        return respondJson(res, result.status, result.payload);
+      }
+      if (req.method === 'POST' && pathname === '/api/v1/game/draw-offer') {
+        let body;
+        try {
+          body = await parseBody(req);
+        } catch (err) {
+          return respondJson(res, 400, { error: 'Invalid draw offer payload' });
+        }
+        const result = await submitDrawOffer(body);
+        if (!result.ok) {
+          return respondJson(res, result.status, {
+            error: result.error,
+            code: result.code,
+            ...(result.details ?? {}),
+          });
+        }
+        return respondJson(res, result.status, result.payload);
       }
       if (req.method === 'POST' && pathname === '/api/v1/game/action-set') {
         let body;

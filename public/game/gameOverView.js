@@ -27,7 +27,14 @@ export const createGameOverView = ({ gameArea, overlay, message, button, onConti
       return;
     }
     const localOutcome = getLocalOutcomeLabel(outcome, localUserId);
-    message.textContent = localOutcome === 'win' ? 'You win!' : localOutcome === 'lose' ? 'You lose' : 'Game over.';
+    message.textContent =
+      localOutcome === 'win'
+        ? 'You win!'
+        : localOutcome === 'lose'
+          ? 'You lose'
+          : localOutcome === 'draw'
+            ? 'Draw agreed.'
+            : 'Game over.';
     button.disabled = Boolean(inFlight);
   };
 

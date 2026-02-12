@@ -9,6 +9,7 @@ import { createGameOverView } from './game/gameOverView.js';
 import { getMatchOutcome } from './game/matchEndRules.js';
 import { createPendingActionPreview } from './game/pendingActionPreview.js';
 import { selectPendingInteraction } from './game/interactionState.mjs';
+import { createGameMenu } from './game/gameMenu.mjs';
 import {
   getCharacterFirstEIndex,
   getCharactersAtEarliestE,
@@ -39,6 +40,7 @@ const LOG_PREFIX = '[hexstrike]';
 const COMBO_ACTION = 'CO';
 const GUARD_CONTINUE_INTERACTION_TYPE = 'guard-continue';
 const REWIND_RETURN_INTERACTION_TYPE = 'rewind-return';
+const DRAW_OFFER_INTERACTION_TYPE = 'draw-offer';
 const MAX_HAND_SIZE = 4;
 const AXIAL_DIRECTIONS = [
   { q: 1, r: 0 },
@@ -217,6 +219,17 @@ export const initGame = () => {
   const gameOverOverlay = document.getElementById('gameOverOverlay');
   const gameOverMessage = document.getElementById('gameOverMessage');
   const gameOverDone = document.getElementById('gameOverDone');
+  const gameMenu = document.getElementById('gameMenu');
+  const gameMenuToggle = document.getElementById('gameMenuToggle');
+  const gameMenuPanel = document.getElementById('gameMenuPanel');
+  const gameMenuForfeit = document.getElementById('gameMenuForfeit');
+  const gameMenuOfferDraw = document.getElementById('gameMenuOfferDraw');
+  const gameMenuModalOverlay = document.getElementById('gameMenuModalOverlay');
+  const gameMenuModalEyebrow = document.getElementById('gameMenuModalEyebrow');
+  const gameMenuModalTitle = document.getElementById('gameMenuModalTitle');
+  const gameMenuModalCopy = document.getElementById('gameMenuModalCopy');
+  const gameMenuModalCancel = document.getElementById('gameMenuModalCancel');
+  const gameMenuModalConfirm = document.getElementById('gameMenuModalConfirm');
 
   const renderer = createRenderer(canvas);
   if (!renderer) return;
@@ -244,6 +257,7 @@ export const initGame = () => {
   let drawPrompt = null;
   let handTriggerPrompt = null;
   let havenHoverKey = null;
+  let gameMenuUi = null;
   const pendingActionPreview = createPendingActionPreview();
 
   const getMaxIndex = () => {
@@ -289,22 +303,27 @@ export const initGame = () => {
   const setChoiceModalContent = (interactionType) => {
     const isGuard = interactionType === GUARD_CONTINUE_INTERACTION_TYPE;
     const isRewind = interactionType === REWIND_RETURN_INTERACTION_TYPE;
+    const isDrawOffer = interactionType === DRAW_OFFER_INTERACTION_TYPE;
     if (comboEyebrow) {
-      comboEyebrow.textContent = isGuard ? 'Guard' : isRewind ? 'Focus' : 'Combo';
+      comboEyebrow.textContent = isGuard ? 'Guard' : isRewind ? 'Focus' : isDrawOffer ? 'Draw Offer' : 'Combo';
     }
     if (comboTitle) {
       comboTitle.textContent = isGuard
         ? 'Continue Guard?'
         : isRewind
           ? 'Return To Rewind Anchor?'
-          : 'Continue Combo?';
+          : isDrawOffer
+            ? 'Accept Draw Offer?'
+            : 'Continue Combo?';
     }
     if (comboCopy) {
       comboCopy.textContent = isGuard
         ? "Choose Yes to continue Guard and force a discard of 1 on Guard's E frame."
         : isRewind
           ? 'Choose Yes to end Rewind focus and return to your anchored hex.'
-          : 'Your hit opens a combo window. Continue with another combo card?';
+          : isDrawOffer
+            ? 'Your opponent offered a draw. Accept and end the match immediately?'
+            : 'Your hit opens a combo window. Continue with another combo card?';
     }
   };
 
@@ -422,6 +441,7 @@ export const initGame = () => {
     if (outcome) {
       interactionOverlay.hidden = true;
       interactionOverlay.setAttribute('aria-hidden', 'true');
+      gameMenuUi?.closeAll();
       pendingInteractionId = null;
       pendingInteractionType = null;
       clearHavenHover();
@@ -483,7 +503,8 @@ export const initGame = () => {
     if (
       pending.type === 'combo' ||
       pending.type === GUARD_CONTINUE_INTERACTION_TYPE ||
-      pending.type === REWIND_RETURN_INTERACTION_TYPE
+      pending.type === REWIND_RETURN_INTERACTION_TYPE ||
+      pending.type === DRAW_OFFER_INTERACTION_TYPE
     ) {
       clearHavenHover();
       setChoiceModalContent(pending.type);
@@ -824,7 +845,8 @@ export const initGame = () => {
     const isCombo = pendingInteractionType === 'combo';
     const isGuard = pendingInteractionType === GUARD_CONTINUE_INTERACTION_TYPE;
     const isRewind = pendingInteractionType === REWIND_RETURN_INTERACTION_TYPE;
-    if (!isCombo && !isGuard && !isRewind) return;
+    const isDrawOffer = pendingInteractionType === DRAW_OFFER_INTERACTION_TYPE;
+    if (!isCombo && !isGuard && !isRewind && !isDrawOffer) return;
     if (getMatchOutcome(gameState?.state?.public)) return;
     interactionSubmitInFlight = true;
     setComboButtonsEnabled(false);
@@ -849,6 +871,7 @@ export const initGame = () => {
           continueGuard: isGuard ? shouldContinue : undefined,
           returnToAnchor: isRewind ? shouldContinue : undefined,
           rewindReturn: isRewind ? shouldContinue : undefined,
+          acceptDraw: isDrawOffer ? shouldContinue : undefined,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -859,7 +882,9 @@ export const initGame = () => {
             ? 'Failed to resolve guard choice.'
             : isRewind
               ? 'Failed to resolve rewind choice.'
-              : 'Failed to resolve combo.';
+              : isDrawOffer
+                ? 'Failed to resolve draw offer.'
+                : 'Failed to resolve combo.';
         console.warn(`${LOG_PREFIX} interaction:rejected`, {
           status: response.status,
           error: payload?.error,
@@ -879,7 +904,9 @@ export const initGame = () => {
           ? 'Failed to resolve guard choice.'
           : isRewind
             ? 'Failed to resolve rewind choice.'
-            : 'Failed to resolve combo.';
+            : isDrawOffer
+              ? 'Failed to resolve draw offer.'
+              : 'Failed to resolve combo.';
       window.alert(message);
     } finally {
       interactionSubmitInFlight = false;
@@ -1106,6 +1133,113 @@ export const initGame = () => {
     }
   };
 
+  const showInfoModal = ({
+    eyebrow = '',
+    title = 'Notice',
+    copy = '',
+    confirmText = 'OK',
+  } = {}) => {
+    gameMenuUi?.showModal({
+      eyebrow,
+      title,
+      copy,
+      confirmText,
+      hideCancel: true,
+      onConfirm: () => {
+        gameMenuUi?.hideModal();
+      },
+    });
+  };
+
+  const submitForfeit = async () => {
+    if (!gameState?.id || getMatchOutcome(gameState?.state?.public)) return;
+    gameMenuUi?.setModalButtonsEnabled(false);
+    try {
+      const response = await fetch('/api/v1/game/forfeit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: localUserId,
+          gameId: gameState.id,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = payload?.error ? `${payload.error}` : 'Failed to forfeit.';
+        throw new Error(message);
+      }
+      gameMenuUi?.closeAll();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to forfeit.';
+      showInfoModal({
+        eyebrow: 'Forfeit',
+        title: 'Unable To Forfeit',
+        copy: message,
+      });
+    }
+  };
+
+  const requestForfeitConfirmation = () => {
+    if (!gameState?.id || getMatchOutcome(gameState?.state?.public)) return;
+    gameMenuUi?.setMenuOpen(false);
+    gameMenuUi?.showModal({
+      eyebrow: 'Forfeit',
+      title: 'Are you sure?',
+      copy: 'If you forfeit, you lose immediately.',
+      confirmText: 'Yes',
+      cancelText: 'No',
+      onConfirm: () => {
+        void submitForfeit();
+      },
+      onCancel: () => {
+        gameMenuUi?.hideModal();
+      },
+    });
+  };
+
+  const submitDrawOffer = async () => {
+    if (!gameState?.id || getMatchOutcome(gameState?.state?.public)) return;
+    gameMenuUi?.setMenuOpen(false);
+    try {
+      const response = await fetch('/api/v1/game/draw-offer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: localUserId,
+          gameId: gameState.id,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const remainingSeconds = Number.isFinite(payload?.remainingSeconds)
+          ? Math.max(1, Math.round(payload.remainingSeconds))
+          : null;
+        if (payload?.code === 'draw-offer-cooldown' && remainingSeconds !== null) {
+          showInfoModal({
+            eyebrow: 'Draw Offer',
+            title: 'Please Wait',
+            copy: `You cannot offer draw so soon again, please wait ${remainingSeconds} seconds.`,
+          });
+          return;
+        }
+        const message = payload?.error ? `${payload.error}` : 'Failed to offer draw.';
+        showInfoModal({
+          eyebrow: 'Draw Offer',
+          title: 'Unable To Offer Draw',
+          copy: message,
+        });
+        return;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to offer draw.';
+      showInfoModal({
+        eyebrow: 'Draw Offer',
+        title: 'Unable To Offer Draw',
+        copy: message,
+      });
+    }
+  };
+
   actionHud = createActionHud({
     root: actionHudRoot,
     movementHand,
@@ -1163,6 +1297,27 @@ export const initGame = () => {
   setThrowButtonsEnabled(false);
   setComboButtonsEnabled(false);
   handTriggerPrompt?.sync();
+  gameMenuUi = createGameMenu({
+    gameArea,
+    menuRoot: gameMenu,
+    toggleButton: gameMenuToggle,
+    panel: gameMenuPanel,
+    forfeitButton: gameMenuForfeit,
+    offerDrawButton: gameMenuOfferDraw,
+    modalOverlay: gameMenuModalOverlay,
+    modalEyebrow: gameMenuModalEyebrow,
+    modalTitle: gameMenuModalTitle,
+    modalCopy: gameMenuModalCopy,
+    modalCancelButton: gameMenuModalCancel,
+    modalConfirmButton: gameMenuModalConfirm,
+    onForfeit: () => {
+      requestForfeitConfirmation();
+    },
+    onOfferDraw: () => {
+      void submitDrawOffer();
+    },
+  });
+
   throwButtons.forEach((button) => {
     button.addEventListener('click', () => {
       const index = Number(button.dataset.dir);
@@ -1188,6 +1343,7 @@ export const initGame = () => {
   const showGame = () => {
     gameArea.hidden = false;
     if (menuShell) menuShell.hidden = true;
+    gameMenuUi?.closeAll();
     timeIndicatorViewModel.isPlaying = true;
     if (actionHud) actionHud.setHidden(false);
     renderer.resize();
@@ -1201,6 +1357,7 @@ export const initGame = () => {
   const hideGame = () => {
     gameArea.hidden = true;
     if (menuShell) menuShell.hidden = false;
+    gameMenuUi?.closeAll();
     timeIndicatorViewModel.isPlaying = false;
     timeIndicatorViewModel.setValue(0);
     gameState = null;

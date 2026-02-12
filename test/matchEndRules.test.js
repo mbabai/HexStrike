@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { applyDeathToBeats, evaluateMatchOutcome } = require('../dist/game/matchEndRules.js');
+const { applyDeathToBeats, applyMatchOutcomeToBeats, evaluateMatchOutcome } = require('../dist/game/matchEndRules.js');
 const { buildDefaultLandHexes } = require('../dist/game/hexGrid.js');
 
 const buildDeckState = ({
@@ -151,4 +151,63 @@ test('applyDeathToBeats inserts death and clears later entries for the loser', (
   assert.equal(deathEntry.action, 'Death');
   assert.equal(beats[1].some((entry) => entry.username === 'winner'), true);
   assert.equal(beats[2].some((entry) => entry.username === 'loser'), false);
+});
+
+test('applyMatchOutcomeToBeats inserts death and victory on the same beat and trims later beats', () => {
+  const characters = [
+    { userId: 'loser', username: 'loser', position: { q: 0, r: 0 }, facing: 0, characterId: 'murelious' },
+    { userId: 'winner', username: 'winner', position: { q: 1, r: 0 }, facing: 0, characterId: 'murelious' },
+  ];
+  const beats = [
+    [
+      buildEntry('loser', 'W', characters[0].position),
+      buildEntry('winner', 'W', characters[1].position),
+    ],
+    [
+      buildEntry('loser', 'E', characters[0].position),
+      buildEntry('winner', 'E', characters[1].position),
+    ],
+    [
+      buildEntry('loser', 'm', characters[0].position),
+      buildEntry('winner', 'm', characters[1].position),
+    ],
+  ];
+
+  applyMatchOutcomeToBeats(beats, characters, {
+    winnerUserId: 'winner',
+    loserUserId: 'loser',
+    reason: 'forfeit',
+    beatIndex: 1,
+  });
+
+  assert.equal(beats.length, 2);
+  assert.equal(beats[1].find((entry) => entry.username === 'loser')?.action, 'Death');
+  assert.equal(beats[1].find((entry) => entry.username === 'winner')?.action, 'Victory');
+});
+
+test('applyMatchOutcomeToBeats inserts handshake for both players on draw', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 0, characterId: 'murelious' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 0, characterId: 'murelious' },
+  ];
+  const beats = [
+    [
+      buildEntry('alpha', 'W', characters[0].position),
+      buildEntry('beta', 'W', characters[1].position),
+    ],
+    [
+      buildEntry('alpha', 'E', characters[0].position),
+      buildEntry('beta', 'E', characters[1].position),
+    ],
+  ];
+
+  applyMatchOutcomeToBeats(beats, characters, {
+    reason: 'draw-agreement',
+    beatIndex: 1,
+    drawUserIds: ['alpha', 'beta'],
+  });
+
+  assert.equal(beats.length, 2);
+  assert.equal(beats[1].find((entry) => entry.username === 'alpha')?.action, 'Handshake');
+  assert.equal(beats[1].find((entry) => entry.username === 'beta')?.action, 'Handshake');
 });

@@ -61,7 +61,11 @@ npm run test
 - `POST /api/v1/lobby/clear` - `{}`
 - `POST /api/v1/match/custom` - `{ hostId, hostName, guestId, guestName }`
 - `POST /api/v1/match/:matchId/end` - `{ winnerId }`
-- `POST /api/v1/game/action-set` - `{ userId, gameId, actionList: [{ action, rotation }] }` (rotation is set on the first entry).
+- `POST /api/v1/match/:matchId/exit` - `{ userId }`
+- `POST /api/v1/game/action-set` - `{ userId, gameId, activeCardId, passiveCardId, rotation }`
+- `POST /api/v1/game/interaction` - `{ userId, gameId, interactionId, ...resolutionFields }`
+- `POST /api/v1/game/forfeit` - `{ userId, gameId }`
+- `POST /api/v1/game/draw-offer` - `{ userId, gameId }` (30-second server cooldown per offerer)
 - `GET /api/v1/history/matches`
 - `GET /api/v1/history/games`
 

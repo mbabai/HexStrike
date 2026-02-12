@@ -12,6 +12,11 @@ const PAN_BLOCK_SELECTORS = [
   '.throw-arrow',
   '.interaction-overlay',
   '.combo-modal',
+  '.game-menu',
+  '.game-menu-toggle',
+  '.game-menu-panel',
+  '.game-menu-modal',
+  '.game-menu-modal-overlay',
 ];
 
 const isEventWithinRoot = (event, root) => {
