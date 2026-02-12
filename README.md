@@ -43,9 +43,9 @@ npm run test
 ```
 
 ## Using the lobby UI
-- Select **Quickplay** or **Hex-Bot (Easy)**, then click **Find Game** to start queue search; the timer counts up while searching.
+- Select **Quickplay**, **Strike-bot (Hard)**, **Hex-bot (Medium)**, or **Bot-bot (Easy)**, then click **Find Game** to start queue search; the timer counts up while searching.
 - Clicking **Find Game** again cancels the search and leaves the queue.
-- **Hex-Bot (Easy)** starts an immediate 1v1 match versus `Hex-Bot` using a random base deck.
+- Bot queues start an immediate 1v1 match against the selected bot difficulty, each using a random base deck.
 - Sidebar links are stubs and show "Coming soon".
 
 ## Character powers
@@ -56,7 +56,7 @@ npm run test
 
 ## API quick reference
 - `GET /events?userId=...` - SSE stream (server will assign an ID if omitted).
-- `POST /api/v1/lobby/join` - `{ userId, username, queue }` (queues: `quickplayQueue`, `rankedQueue`, `botQueue`)
+- `POST /api/v1/lobby/join` - `{ userId, username, queue }` (queues: `quickplayQueue`, `rankedQueue`, `botHardQueue`, `botMediumQueue`, `botEasyQueue`, legacy `botQueue`)
 - `POST /api/v1/lobby/leave` - `{ userId, queue }`
 - `POST /api/v1/lobby/clear` - `{}`
 - `POST /api/v1/match/custom` - `{ hostId, hostName, guestId, guestName }`

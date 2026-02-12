@@ -2,7 +2,17 @@ import { getOrCreateUserId, getSelectedDeckId, getPreferredServerUsername } from
 import { getSelectedDeck } from './deckStore.js';
 
 const QUICKPLAY_QUEUE = 'quickplayQueue';
-const BOT_QUEUE = 'botQueue';
+const RANKED_QUEUE = 'rankedQueue';
+const BOT_HARD_QUEUE = 'botHardQueue';
+const BOT_MEDIUM_QUEUE = 'botMediumQueue';
+const BOT_EASY_QUEUE = 'botEasyQueue';
+const KNOWN_QUEUES = new Set([
+  QUICKPLAY_QUEUE,
+  RANKED_QUEUE,
+  BOT_HARD_QUEUE,
+  BOT_MEDIUM_QUEUE,
+  BOT_EASY_QUEUE,
+]);
 const SEARCHING_LABEL = 'Searching...';
 
 export function initQueue() {
@@ -117,7 +127,8 @@ export function initQueue() {
         return;
       }
 
-      activeQueue = queueSelect?.value === BOT_QUEUE ? BOT_QUEUE : QUICKPLAY_QUEUE;
+      const requestedQueue = `${queueSelect?.value ?? QUICKPLAY_QUEUE}`;
+      activeQueue = KNOWN_QUEUES.has(requestedQueue) ? requestedQueue : QUICKPLAY_QUEUE;
       setSearchingState(true);
       try {
         await joinQueue(activeQueue);

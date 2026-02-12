@@ -37,11 +37,47 @@ test('easy bot falls back to uniform probabilities when top scores are non-posit
   assert.equal(distribution[1].probability, 0.5);
 });
 
+test('medium profile can weight across all candidates', () => {
+  const candidates = [
+    { id: 'a', score: 8 },
+    { id: 'b', score: 6 },
+    { id: 'c', score: 4 },
+    { id: 'd', score: 2 },
+    { id: 'e', score: 1 },
+    { id: 'f', score: 0.5 },
+  ];
+
+  const distribution = buildTopWeightedDistribution(candidates, candidates.length, 0);
+  const order = buildWeightedChoiceOrder(candidates, () => 0, candidates.length, 0);
+
+  assert.equal(distribution.length, candidates.length);
+  assert.equal(order.length, candidates.length);
+});
+
+test('easy profile removes the top ten candidates before weighting', () => {
+  const candidates = Array.from({ length: 12 }, (_, index) => ({
+    id: `c${index + 1}`,
+    score: 120 - index * 10,
+  }));
+
+  const distribution = buildTopWeightedDistribution(candidates, candidates.length, 10);
+  const order = buildWeightedChoiceOrder(candidates, () => 0, candidates.length, 10);
+
+  assert.deepEqual(
+    distribution.map((entry) => entry.item.id),
+    ['c11', 'c12'],
+  );
+  assert.deepEqual(
+    order.map((entry) => entry.id),
+    ['c11', 'c12'],
+  );
+});
+
 test('easy bot enumerates legal action-set candidates', async () => {
   const catalog = await loadCardCatalog();
   const deck = buildDefaultDeckDefinition(catalog);
   const publicState = (await createInitialGameState([
-    { userId: 'bot', username: 'Hex-Bot', characterId: 'murelious' },
+    { userId: 'bot', username: 'Hex-bot', characterId: 'murelious' },
     { userId: 'enemy', username: 'enemy', characterId: 'strylan' },
   ])).public;
   const deckStates = new Map([
@@ -64,7 +100,7 @@ test('easy bot enumerates throw interaction choices', async () => {
   const catalog = await loadCardCatalog();
   const deck = buildDefaultDeckDefinition(catalog);
   const publicState = (await createInitialGameState([
-    { userId: 'bot', username: 'Hex-Bot', characterId: 'murelious' },
+    { userId: 'bot', username: 'Hex-bot', characterId: 'murelious' },
     { userId: 'enemy', username: 'enemy', characterId: 'strylan' },
   ])).public;
   const throwInteraction = {

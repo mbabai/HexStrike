@@ -1,9 +1,18 @@
-export type QueueName = 'quickplayQueue' | 'rankedQueue' | 'botQueue';
+export type QueueName =
+  | 'quickplayQueue'
+  | 'rankedQueue'
+  | 'botQueue'
+  | 'botHardQueue'
+  | 'botMediumQueue'
+  | 'botEasyQueue';
 
 export interface LobbySnapshot {
   quickplayQueue: string[];
   rankedQueue: string[];
   botQueue: string[];
+  botHardQueue: string[];
+  botMediumQueue: string[];
+  botEasyQueue: string[];
   inGame: string[];
 }
 

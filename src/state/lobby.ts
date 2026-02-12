@@ -10,13 +10,23 @@ export interface LobbyStore extends LobbySnapshot {
   serialize(): LobbySnapshot;
 }
 
-const queues: QueueName[] = ['quickplayQueue', 'rankedQueue', 'botQueue'];
+const queues: QueueName[] = [
+  'quickplayQueue',
+  'rankedQueue',
+  'botQueue',
+  'botHardQueue',
+  'botMediumQueue',
+  'botEasyQueue',
+];
 
 export function createLobbyStore(): LobbyStore {
   const state: LobbySnapshot = {
     quickplayQueue: [],
     rankedQueue: [],
     botQueue: [],
+    botHardQueue: [],
+    botMediumQueue: [],
+    botEasyQueue: [],
     inGame: [],
   };
 
@@ -39,6 +49,9 @@ export function createLobbyStore(): LobbyStore {
     quickplayQueue: [...state.quickplayQueue],
     rankedQueue: [...state.rankedQueue],
     botQueue: [...state.botQueue],
+    botHardQueue: [...state.botHardQueue],
+    botMediumQueue: [...state.botMediumQueue],
+    botEasyQueue: [...state.botEasyQueue],
     inGame: [...state.inGame],
   });
 
@@ -82,6 +95,9 @@ export function createLobbyStore(): LobbyStore {
     state.quickplayQueue.splice(0, state.quickplayQueue.length);
     state.rankedQueue.splice(0, state.rankedQueue.length);
     state.botQueue.splice(0, state.botQueue.length);
+    state.botHardQueue.splice(0, state.botHardQueue.length);
+    state.botMediumQueue.splice(0, state.botMediumQueue.length);
+    state.botEasyQueue.splice(0, state.botEasyQueue.length);
     state.inGame.splice(0, state.inGame.length);
     broadcast();
   };

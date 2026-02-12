@@ -4,13 +4,23 @@ export interface WeightedChoice<T> {
   weight: number;
 }
 
+const getEligibleSortedCandidates = <T extends { score: number }>(candidates: T[], removeTop = 0): T[] => {
+  if (!Array.isArray(candidates) || !candidates.length) return [];
+  const sorted = [...candidates].sort((a, b) => b.score - a.score);
+  const removeCount = Math.max(0, Math.floor(removeTop));
+  if (removeCount <= 0) return sorted;
+  return sorted.slice(removeCount);
+};
+
 export const buildTopWeightedDistribution = <T extends { score: number }>(
   candidates: T[],
   topLimit = 5,
+  removeTop = 0,
 ): Array<WeightedChoice<T>> => {
-  if (!Array.isArray(candidates) || !candidates.length) return [];
-  const sorted = [...candidates].sort((a, b) => b.score - a.score);
-  const top = sorted.slice(0, Math.max(1, topLimit));
+  const eligible = getEligibleSortedCandidates(candidates, removeTop);
+  if (!eligible.length) return [];
+  const normalizedTopLimit = Number.isFinite(topLimit) ? Math.max(1, Math.floor(topLimit)) : eligible.length;
+  const top = eligible.slice(0, Math.max(1, normalizedTopLimit));
   const positiveWeights = top.map((candidate) => Math.max(0, candidate.score));
   let sum = positiveWeights.reduce((acc, value) => acc + value, 0);
   let weights = positiveWeights;
@@ -29,11 +39,13 @@ export const buildWeightedChoiceOrder = <T extends { score: number }>(
   candidates: T[],
   randomFn: () => number = Math.random,
   topLimit = 5,
+  removeTop = 0,
 ): T[] => {
-  if (!Array.isArray(candidates) || !candidates.length) return [];
-  const sorted = [...candidates].sort((a, b) => b.score - a.score);
-  const top = sorted.slice(0, Math.max(1, topLimit));
-  const remainder = sorted.slice(top.length);
+  const eligible = getEligibleSortedCandidates(candidates, removeTop);
+  if (!eligible.length) return [];
+  const normalizedTopLimit = Number.isFinite(topLimit) ? Math.max(1, Math.floor(topLimit)) : eligible.length;
+  const top = eligible.slice(0, Math.max(1, normalizedTopLimit));
+  const remainder = eligible.slice(top.length);
   const weightedPool = top.slice();
   const order: T[] = [];
 

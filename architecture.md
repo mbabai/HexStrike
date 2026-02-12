@@ -10,7 +10,7 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
 
 ## High-level flow
 1. Players join a lobby queue and optionally submit a deck definition.
-2. Quickplay matchmaking pairs the oldest two players; bot queue starts an immediate 1v1 match versus `Hex-Bot`.
+2. Quickplay matchmaking pairs the oldest two players; bot queues start immediate 1v1 matches versus the selected bot profile.
 3. A match and game are created; initial state is seeded with characters and a first timeline beat.
 4. The server emits `match:created` and `game:update` events.
 5. Players submit action sets at the earliest open unresolved beat (`resolvedIndex + 1` onward); the server validates cards, applies actions, executes beats, resolves interactions, refreshes decks, and evaluates match end conditions.
@@ -27,7 +27,7 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
 
 ### Matchmaking
 - Quickplay pairing runs on a timer and consumes the first two users in `quickplayQueue`.
-- `botQueue` creates a per-match `Hex-Bot` user, assigns one of the three base decks at random, and runs server-side bot submissions for action sets + interactions.
+- `botHardQueue`, `botMediumQueue`, and `botEasyQueue` create per-match bots (`Strike-bot`, `Hex-bot`, `Bot-bot`), assign one of the three base decks at random, and run server-side bot submissions for action sets + interactions.
 - `custom` matches can be created via the API for explicit host/guest pairing.
 
 ### HTTP API surface
@@ -95,7 +95,7 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
 ### Lobby modules
 - `public/index.js` initializes menu, deck builder, queue, game, and SSE presence.
 - `public/presence.js` opens `/events` and dispatches `hexstrike:*` events.
-- `public/queue.js` handles quickplay join/leave and UI state.
+- `public/queue.js` handles quickplay and bot-queue join/leave plus queueing UI state.
 - `public/decks.js` + `public/deckStore.js` manage deck creation and persistence in localStorage.
 - `public/storage.js` stores user id and selected deck id in cookies.
 - `public/cards.js` renders the card catalog page.

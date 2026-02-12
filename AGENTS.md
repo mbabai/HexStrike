@@ -5,7 +5,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 
 ## Current scope (lobby prototype)
 - Server: dependency-light Node.js + TypeScript HTTP server in `src/server.ts` with REST endpoints and SSE (`GET /events`).
-- State: lobby queues (`quickplayQueue`, `rankedQueue`, `botQueue`) and in-memory match/game records via `src/state/lobby.ts` and `src/persistence/memoryDb.ts`; games now include starting characters assigned on queue join.
+- State: lobby queues (`quickplayQueue`, `rankedQueue`, `botHardQueue`, `botMediumQueue`, `botEasyQueue`, plus legacy `botQueue`) and in-memory match/game records via `src/state/lobby.ts` and `src/persistence/memoryDb.ts`; games now include starting characters assigned on queue join.
 - Server: action-set validation uses `src/game/cardCatalog.ts` + `src/game/cardRules.ts` to enforce deck/hand exhaustion, rotation limits, and refresh timing.
 - Server: hand management + draw/discard syncing lives in `src/game/handRules.ts` (movement hand derived from ability count).
 - UI: static assets in `public/` with ES module scripts (`public/menu.js`, `public/queue.js`, `public/storage.js`) and styling in `public/theme.css`.
@@ -22,7 +22,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - UI portrait badges (name capsules) are drawn with `public/game/portraitBadges.js`; local player accents use `--color-player-accent`.
 - Timeline controls: play/pause is rendered in the center time slot and auto-advance steps when the current beat playback completes.
 - UI timeline shows a local-only pending action preview (faded + pulsing) when you've submitted and are waiting on other players.
-- Matchmaking: Quickplay and `botQueue` joins are wired from the UI; selecting `botQueue` starts an immediate 1v1 versus `Hex-Bot`.
+- Matchmaking: Quickplay and bot-queue joins are wired from the UI; selecting a bot queue starts an immediate 1v1 versus the selected profile (`Strike-bot`, `Hex-bot`, or `Bot-bot`).
 
 # Documentation map (start here)
 - [README.md](README.md): project overview, setup, and API summary; read first when onboarding or running the server.
@@ -58,7 +58,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 ## Persistence and operations (current)
 - `MemoryDb` in `src/persistence/memoryDb.ts` is the only persistence layer and resets on restart.
 - Quickplay joins are logged to the server console for visibility.
-- `botQueue` joins and bot-decision steps/errors are logged and written to `temp-logs/events.jsonl` under `easy-bot` events.
+- Bot-queue joins and bot-decision steps/errors are logged and written to `temp-logs/events.jsonl` under `easy-bot` events.
 
 ## Testing and validation (current)
 - Use the Node.js built-in test runner (`npm run test`).
@@ -204,9 +204,9 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Map panning/zooming is bound to the game area and must ignore UI elements like action cards, slots, or rotation controls; update `PAN_BLOCK_SELECTORS` in `public/game/controls.js` when adding new HUD controls.
 - Find Game is disabled until a deck is selected; the selected deck ID is stored in cookies and its `characterId` plus movement/ability lists are sent with `/api/v1/lobby/join`.
 - Main menu hamburger/side-menu assets are intentionally kept in place but disabled (`MENU_ENABLED = false`) in `public/menu.js` and hidden in `public/index.html`; to restore, set `MENU_ENABLED = true` and remove `hidden`/`aria-hidden` from `#menuToggle` if needed.
-- Lobby queue selector includes `botQueue` (`Hex-Bot (Easy)`), and `public/queue.js` now joins/leaves the selected queue instead of hardcoding quickplay.
-- `botQueue` creates a per-match bot user (`Hex-Bot`) with one random base deck (first three catalog decks), and bot choices are simulated server-side using cloned state; missing opponent actions during bot simulation are assumed to be `W`.
-- Bot choice selection is weighted-random from the top 5 scored candidates; if all top scores are non-positive, selection falls back to uniform probabilities across those candidates.
+- Lobby queue selector includes `botHardQueue` (`Strike-bot (Hard)`), `botMediumQueue` (`Hex-bot (Medium)`), and `botEasyQueue` (`Bot-bot (Easy)`); `public/queue.js` joins/leaves the selected queue instead of hardcoding quickplay.
+- Bot queues create a per-match bot user (`Strike-bot`/`Hex-bot`/`Bot-bot`) with one random base deck (first three catalog decks), and bot choices are simulated server-side using cloned state; missing opponent actions during bot simulation are assumed to be `W`.
+- Bot choice selection is weighted-random by score with difficulty-specific filtering: hard weights top 5, medium weights all candidates, easy removes top 10 then weights remaining candidates; if all considered scores are non-positive, selection falls back to uniform probabilities across the considered candidates.
 - Bot failure path emits `bot:error` to human players and writes verbose `easy-bot` events to `temp-logs/events.jsonl`; keep this wired when changing bot orchestration.
 - `/api/v1/lobby/join` rejects decks unless they contain exactly 4 movement cards and exactly 12 ability cards; keep `public/cards/cards.json` base decks and deck-builder output aligned with this.
 - Base deck definitions from `public/cards/cards.json` are merged with cookie-stored player-created decks on load in `public/deckStore.js`; keep the merge logic when adding new base decks.
