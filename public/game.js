@@ -32,7 +32,9 @@ import {
   normalizeHexCoord as normalizeHavenHexCoord,
   resolveHavenTargetFromPointer as resolveHavenPointerTarget,
 } from './game/havenInteraction.mjs';
-import { getOrCreateUserId } from './storage.js';
+import { getOrCreateUserId, getTimelineSpeedPreference, setTimelineSpeedPreference } from './storage.js';
+import { buildReplayShareUrl, copyTextToClipboard, normalizeReplayPayload } from './replayShare.mjs';
+import { showToast } from './toast.js';
 
 const HOLD_INITIAL_DELAY = 320;
 const HOLD_REPEAT_DELAY = 90;
@@ -44,6 +46,8 @@ const DRAW_OFFER_INTERACTION_TYPE = 'draw-offer';
 const TIMELINE_SPEED_MIN = 1;
 const TIMELINE_SPEED_MAX = 3;
 const MAX_HAND_SIZE = 4;
+const VIEW_MODE_LIVE = 'live';
+const VIEW_MODE_REPLAY = 'replay';
 const AXIAL_DIRECTIONS = [
   { q: 1, r: 0 },
   { q: 1, r: -1 },
@@ -231,6 +235,7 @@ export const initGame = () => {
   const gameOverOverlay = document.getElementById('gameOverOverlay');
   const gameOverMessage = document.getElementById('gameOverMessage');
   const gameOverDone = document.getElementById('gameOverDone');
+  const gameOverSaveReplay = document.getElementById('gameOverSaveReplay');
   const gameMenu = document.getElementById('gameMenu');
   const gameMenuToggle = document.getElementById('gameMenuToggle');
   const gameMenuPanel = document.getElementById('gameMenuPanel');
@@ -263,6 +268,7 @@ export const initGame = () => {
   let pendingInteractionId = null;
   let pendingInteractionType = null;
   let gameOverInFlight = false;
+  let replaySaveInFlight = false;
   let didInitTimelinePosition = false;
   let lastComboKey = null;
   let lastComboRequired = false;
@@ -272,13 +278,40 @@ export const initGame = () => {
   let havenHoverKey = null;
   let gameMenuUi = null;
   let nextAutoAdvanceAt = null;
+  let viewMode = null;
+  let activeReplay = null;
+  let leaveReplayView = () => {};
   const pendingActionPreview = createPendingActionPreview();
+
+  const isReplayMode = () => viewMode === VIEW_MODE_REPLAY;
+
+  const buildReplaySnapshotFromState = (stateLike) => {
+    const normalized = normalizeReplayPayload(stateLike);
+    if (normalized) return normalized;
+    const gamePublicState = stateLike?.state?.public;
+    if (!gamePublicState) return null;
+    return normalizeReplayPayload({
+      id: stateLike?.id ?? null,
+      sourceGameId: stateLike?.id ?? null,
+      sourceMatchId: stateLike?.matchId ?? null,
+      createdAt: new Date().toISOString(),
+      players: gamePublicState?.characters ?? [],
+      state: { public: gamePublicState },
+    });
+  };
 
   const getMaxIndex = () => {
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
     const interactions = gameState?.state?.public?.customInteractions ?? [];
-    if (!beats.length || !characters.length) return 0;
+    if (!beats.length) return 0;
+    const hasMatchOutcome = Boolean(gameState?.state?.public?.matchOutcome);
+    if (isReplayMode() || hasMatchOutcome) {
+      return Math.max(0, beats.length - 1);
+    }
+    if (!characters.length) {
+      return Math.max(0, beats.length - 1);
+    }
     return getTimelineStopIndex(beats, characters, interactions);
   };
 
@@ -288,14 +321,17 @@ export const initGame = () => {
     nextAutoAdvanceAt = now + timeIndicatorViewModel.getBeatAdvanceIntervalMs();
   };
 
+  const initialTimelineSpeed = getTimelineSpeedPreference() ?? TIMELINE_SPEED_MIN;
   if (timelineSpeedSlider instanceof HTMLInputElement) {
-    timelineSpeedSlider.value = `${TIMELINE_SPEED_MIN}`;
-    timeIndicatorViewModel.setSpeedMultiplier(TIMELINE_SPEED_MIN);
-    timelinePlayback.setSpeedMultiplier(TIMELINE_SPEED_MIN);
+    timelineSpeedSlider.value = `${initialTimelineSpeed}`;
+    const appliedInitialSpeed = timeIndicatorViewModel.setSpeedMultiplier(initialTimelineSpeed);
+    timelinePlayback.setSpeedMultiplier(appliedInitialSpeed);
+    timelineSpeedSlider.value = `${appliedInitialSpeed}`;
     const onSpeedChange = () => {
       const nextSpeed = timeIndicatorViewModel.setSpeedMultiplier(timelineSpeedSlider.value);
       timelinePlayback.setSpeedMultiplier(nextSpeed);
       timelineSpeedSlider.value = `${nextSpeed}`;
+      setTimelineSpeedPreference(nextSpeed);
       resetAutoAdvanceClock();
     };
     timelineSpeedSlider.addEventListener('input', onSpeedChange);
@@ -468,6 +504,25 @@ export const initGame = () => {
 
   const refreshInteractionOverlay = () => {
     if (!interactionOverlay) return;
+    if (isReplayMode()) {
+      interactionOverlay.hidden = true;
+      interactionOverlay.setAttribute('aria-hidden', 'true');
+      pendingInteractionId = null;
+      pendingInteractionType = null;
+      interactionSubmitInFlight = false;
+      clearHavenHover();
+      setThrowButtonsEnabled(false);
+      setComboButtonsEnabled(false);
+      discardPrompt?.sync();
+      drawPrompt?.sync();
+      handTriggerPrompt?.sync();
+      setModalVisibility(throwModal, false);
+      setModalVisibility(comboModal, false);
+      setModalVisibility(handTriggerModal, false);
+      setModalVisibility(discardModal, false);
+      setModalVisibility(drawModal, false);
+      return;
+    }
     const outcome = getMatchOutcome(gameState?.state?.public);
     if (outcome) {
       interactionOverlay.hidden = true;
@@ -620,18 +675,35 @@ export const initGame = () => {
     overlay: gameOverOverlay,
     message: gameOverMessage,
     button: gameOverDone,
+    saveButton: gameOverSaveReplay,
     onContinue: () => {
       void handleGameOverDone();
+    },
+    onSaveReplay: () => {
+      void handleSaveReplay();
     },
   });
 
   const refreshGameOver = () => {
+    if (isReplayMode()) {
+      gameOverView.hide();
+      return;
+    }
     const outcome = getMatchOutcome(gameState?.state?.public);
-    gameOverView.update(outcome, localUserId, gameOverInFlight);
+    gameOverView.update(outcome, localUserId, {
+      continueInFlight: gameOverInFlight,
+      saveInFlight: replaySaveInFlight,
+    });
   };
 
   const refreshActionHud = () => {
     if (!actionHud) return;
+    if (isReplayMode()) {
+      actionHud.setVisible(false);
+      actionHud.setLocked(true);
+      actionHud.setHidden(true);
+      return;
+    }
     const outcome = getMatchOutcome(gameState?.state?.public);
     if (outcome) {
       actionHud.setVisible(false);
@@ -771,6 +843,7 @@ export const initGame = () => {
   };
 
   const handleActionSubmit = async ({ activeCardId, passiveCardId, rotation, activeCard }) => {
+    if (isReplayMode()) return;
     if (!gameState?.id || actionSubmitInFlight) return;
     if (getMatchOutcome(gameState?.state?.public)) return;
     actionSubmitInFlight = true;
@@ -824,6 +897,7 @@ export const initGame = () => {
   };
 
   const handleThrowSubmit = async (directionIndex) => {
+    if (isReplayMode()) return;
     if (!gameState?.id || !pendingInteractionId || interactionSubmitInFlight) return;
     if (pendingInteractionType && pendingInteractionType !== 'throw') return;
     if (getMatchOutcome(gameState?.state?.public)) return;
@@ -872,6 +946,7 @@ export const initGame = () => {
   };
 
   const handleChoiceSubmit = async (continueChoice) => {
+    if (isReplayMode()) return;
     if (!gameState?.id || !pendingInteractionId || interactionSubmitInFlight) return;
     const isCombo = pendingInteractionType === 'combo';
     const isGuard = pendingInteractionType === GUARD_CONTINUE_INTERACTION_TYPE;
@@ -946,6 +1021,7 @@ export const initGame = () => {
   };
 
   const handleHandTriggerSubmit = async ({ use = false, movementCardIds = [], abilityCardIds = [] } = {}) => {
+    if (isReplayMode()) return;
     if (!gameState?.id || !pendingInteractionId || interactionSubmitInFlight) return;
     if (pendingInteractionType !== 'hand-trigger') return;
     if (getMatchOutcome(gameState?.state?.public)) return;
@@ -996,6 +1072,7 @@ export const initGame = () => {
   };
 
   const handleDiscardSubmit = async ({ abilityCardIds = [], movementCardIds = [] } = {}) => {
+    if (isReplayMode()) return;
     if (!gameState?.id || !pendingInteractionId || interactionSubmitInFlight) return;
     if (pendingInteractionType !== 'discard') return;
     if (getMatchOutcome(gameState?.state?.public)) return;
@@ -1044,6 +1121,7 @@ export const initGame = () => {
   };
 
   const handleDrawSubmit = async ({ movementCardIds = [] } = {}) => {
+    if (isReplayMode()) return;
     if (!gameState?.id || !pendingInteractionId || interactionSubmitInFlight) return;
     if (pendingInteractionType !== 'draw') return;
     if (getMatchOutcome(gameState?.state?.public)) return;
@@ -1090,6 +1168,7 @@ export const initGame = () => {
   };
 
   const handleHavenPlatformSubmit = async (targetHex) => {
+    if (isReplayMode()) return;
     if (!gameState?.id || !pendingInteractionId || interactionSubmitInFlight) return;
     if (pendingInteractionType !== HAVEN_PLATFORM_INTERACTION_TYPE) return;
     if (getMatchOutcome(gameState?.state?.public)) return;
@@ -1138,7 +1217,64 @@ export const initGame = () => {
     }
   };
 
+  const getCurrentReplayPayload = () => {
+    if (isReplayMode()) {
+      return buildReplaySnapshotFromState(activeReplay);
+    }
+    return buildReplaySnapshotFromState(gameState);
+  };
+
+  const copyCurrentReplayLink = async () => {
+    const replayPayload = getCurrentReplayPayload();
+    if (!replayPayload) {
+      throw new Error('Replay data is unavailable.');
+    }
+    const shareUrl = buildReplayShareUrl(replayPayload, { includePayload: true });
+    if (!shareUrl) {
+      throw new Error('Unable to build replay link.');
+    }
+    await copyTextToClipboard(shareUrl);
+    return shareUrl;
+  };
+
+  const handleSaveReplay = async () => {
+    if (isReplayMode()) return;
+    const outcome = getMatchOutcome(gameState?.state?.public);
+    if (!outcome || !gameState?.id || replaySaveInFlight) return;
+    replaySaveInFlight = true;
+    refreshGameOver();
+    try {
+      const response = await fetch('/api/v1/replays', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: localUserId,
+          gameId: gameState.id,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = payload?.error ? `${payload.error}` : 'Failed to save replay.';
+        throw new Error(message);
+      }
+      window.dispatchEvent(new CustomEvent('hexstrike:replay-saved', { detail: payload }));
+      activeReplay = buildReplaySnapshotFromState(payload);
+      showToast('Saved', { variant: 'success', durationMs: 3000 });
+    } catch (err) {
+      console.error('Failed to save replay', err);
+      const message = err instanceof Error ? err.message : 'Failed to save replay.';
+      window.alert(message);
+    } finally {
+      replaySaveInFlight = false;
+      refreshGameOver();
+    }
+  };
+
   const handleGameOverDone = async () => {
+    if (isReplayMode()) {
+      leaveReplayView();
+      return;
+    }
     const outcome = getMatchOutcome(gameState?.state?.public);
     if (!outcome || !gameState?.matchId || gameOverInFlight) return;
     gameOverInFlight = true;
@@ -1182,7 +1318,17 @@ export const initGame = () => {
     });
   };
 
+  const setGameMenuLabels = () => {
+    if (gameMenuForfeit) {
+      gameMenuForfeit.textContent = isReplayMode() ? 'Leave Replay' : 'Forfeit';
+    }
+    if (gameMenuOfferDraw) {
+      gameMenuOfferDraw.textContent = isReplayMode() ? 'Share Replay' : 'Offer Draw';
+    }
+  };
+
   const submitForfeit = async () => {
+    if (isReplayMode()) return;
     if (!gameState?.id || getMatchOutcome(gameState?.state?.public)) return;
     gameMenuUi?.setModalButtonsEnabled(false);
     try {
@@ -1211,6 +1357,7 @@ export const initGame = () => {
   };
 
   const requestForfeitConfirmation = () => {
+    if (isReplayMode()) return;
     if (!gameState?.id || getMatchOutcome(gameState?.state?.public)) return;
     gameMenuUi?.setMenuOpen(false);
     gameMenuUi?.showModal({
@@ -1229,6 +1376,7 @@ export const initGame = () => {
   };
 
   const submitDrawOffer = async () => {
+    if (isReplayMode()) return;
     if (!gameState?.id || getMatchOutcome(gameState?.state?.public)) return;
     gameMenuUi?.setMenuOpen(false);
     try {
@@ -1269,6 +1417,57 @@ export const initGame = () => {
         copy: message,
       });
     }
+  };
+
+  const requestLeaveReplayConfirmation = () => {
+    if (!isReplayMode()) return;
+    gameMenuUi?.setMenuOpen(false);
+    gameMenuUi?.showModal({
+      eyebrow: 'Replay',
+      title: 'Leave Replay?',
+      copy: 'Return to the main menu?',
+      confirmText: 'Yes',
+      cancelText: 'No',
+      onConfirm: () => {
+        gameMenuUi?.hideModal();
+        leaveReplayView();
+      },
+      onCancel: () => {
+        gameMenuUi?.hideModal();
+      },
+    });
+  };
+
+  const shareReplayFromMenu = async () => {
+    if (!isReplayMode()) return;
+    gameMenuUi?.setMenuOpen(false);
+    try {
+      await copyCurrentReplayLink();
+      showToast('link copied to clipboard', { variant: 'success', durationMs: 2000 });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to copy replay link.';
+      showInfoModal({
+        eyebrow: 'Replay',
+        title: 'Unable To Copy Link',
+        copy: message,
+      });
+    }
+  };
+
+  const handleGameMenuForfeitAction = () => {
+    if (isReplayMode()) {
+      requestLeaveReplayConfirmation();
+      return;
+    }
+    requestForfeitConfirmation();
+  };
+
+  const handleGameMenuOfferDrawAction = () => {
+    if (isReplayMode()) {
+      void shareReplayFromMenu();
+      return;
+    }
+    void submitDrawOffer();
   };
 
   actionHud = createActionHud({
@@ -1342,12 +1541,13 @@ export const initGame = () => {
     modalCancelButton: gameMenuModalCancel,
     modalConfirmButton: gameMenuModalConfirm,
     onForfeit: () => {
-      requestForfeitConfirmation();
+      handleGameMenuForfeitAction();
     },
     onOfferDraw: () => {
-      void submitDrawOffer();
+      handleGameMenuOfferDrawAction();
     },
   });
+  setGameMenuLabels();
 
   throwButtons.forEach((button) => {
     button.addEventListener('click', () => {
@@ -1372,13 +1572,15 @@ export const initGame = () => {
     refreshInteractionOverlay();
   };
 
-  const showGame = () => {
+  const showGame = (mode = VIEW_MODE_LIVE) => {
+    viewMode = mode;
     gameArea.hidden = false;
     if (menuShell) menuShell.hidden = true;
     gameMenuUi?.closeAll();
-    timeIndicatorViewModel.isPlaying = true;
+    setGameMenuLabels();
+    timeIndicatorViewModel.isPlaying = mode !== VIEW_MODE_REPLAY;
     resetAutoAdvanceClock();
-    if (actionHud) actionHud.setHidden(false);
+    if (actionHud) actionHud.setHidden(mode === VIEW_MODE_REPLAY);
     renderer.resize();
     centerView(viewState, renderer.viewport);
     applyThrowLayout(getPendingThrowInteraction());
@@ -1387,7 +1589,8 @@ export const initGame = () => {
     refreshGameOver();
   };
 
-  const hideGame = () => {
+  const hideGame = ({ emitReplayClosed = true } = {}) => {
+    const wasReplay = isReplayMode();
     gameArea.hidden = true;
     if (menuShell) menuShell.hidden = false;
     gameMenuUi?.closeAll();
@@ -1395,6 +1598,9 @@ export const initGame = () => {
     timeIndicatorViewModel.setValue(0);
     nextAutoAdvanceAt = null;
     gameState = null;
+    viewMode = null;
+    activeReplay = null;
+    setGameMenuLabels();
     tooltip.setGameState(null);
     lastHudKey = null;
     lastTurnActive = false;
@@ -1403,6 +1609,7 @@ export const initGame = () => {
     clearHavenHover();
     interactionSubmitInFlight = false;
     gameOverInFlight = false;
+    replaySaveInFlight = false;
     didInitTimelinePosition = false;
     pendingActionPreview.clear();
     lastComboKey = null;
@@ -1421,22 +1628,66 @@ export const initGame = () => {
       interactionOverlay.setAttribute('aria-hidden', 'true');
     }
     gameOverView.hide();
+    if (wasReplay && emitReplayClosed) {
+      window.dispatchEvent(new CustomEvent('hexstrike:replay-closed'));
+    }
+  };
+
+  leaveReplayView = () => {
+    hideGame({ emitReplayClosed: true });
+  };
+
+  const toReplayGameState = (replay) => {
+    const normalizedReplay = buildReplaySnapshotFromState(replay);
+    if (!normalizedReplay) return null;
+    return {
+      id: normalizedReplay.id || `replay-${Date.now()}`,
+      matchId: normalizedReplay.sourceMatchId || null,
+      state: {
+        public: normalizedReplay.state.public,
+        secret: {},
+        player: { cards: null },
+      },
+    };
+  };
+
+  const showLiveGame = () => {
+    activeReplay = null;
+    didInitTimelinePosition = false;
+    showGame(VIEW_MODE_LIVE);
+  };
+
+  const showReplay = (replay) => {
+    const replayState = toReplayGameState(replay);
+    if (!replayState) return;
+    activeReplay = buildReplaySnapshotFromState(replay);
+    didInitTimelinePosition = false;
+    showGame(VIEW_MODE_REPLAY);
+    setGameState(replayState);
   };
 
   const setGameState = (nextState) => {
     gameState = nextState;
     tooltip.setGameState(nextState);
-    pendingActionPreview.syncWithState(nextState, localUserId);
+    if (isReplayMode()) {
+      pendingActionPreview.clear();
+    } else {
+      pendingActionPreview.syncWithState(nextState, localUserId);
+    }
     if (!gameState) {
       didInitTimelinePosition = false;
       clearHavenHover();
     }
     if (!didInitTimelinePosition && gameState) {
-      const beats = gameState?.state?.public?.beats ?? [];
-      const characters = gameState?.state?.public?.characters ?? [];
-      const interactions = gameState?.state?.public?.customInteractions ?? [];
-      const stopIndex = getTimelineStopIndex(beats, characters, interactions);
-      timeIndicatorViewModel.setValue(stopIndex);
+      if (isReplayMode()) {
+        timeIndicatorViewModel.setValue(0);
+      } else {
+        const beats = gameState?.state?.public?.beats ?? [];
+        const characters = gameState?.state?.public?.characters ?? [];
+        const interactions = gameState?.state?.public?.customInteractions ?? [];
+        const stopIndex = getTimelineStopIndex(beats, characters, interactions);
+        timeIndicatorViewModel.setValue(stopIndex);
+      }
       didInitTimelinePosition = true;
     }
     resetAutoAdvanceClock();
@@ -1514,25 +1765,46 @@ export const initGame = () => {
     applyThrowLayout(getPendingThrowInteraction());
   });
 
-  window.addEventListener('hexstrike:match', showGame);
-  window.addEventListener('hexstrike:match-ended', hideGame);
+  window.addEventListener('hexstrike:match', () => {
+    if (isReplayMode()) {
+      hideGame({ emitReplayClosed: true });
+    }
+    showLiveGame();
+  });
+  window.addEventListener('hexstrike:match-ended', () => {
+    if (isReplayMode()) return;
+    hideGame({ emitReplayClosed: false });
+  });
+  window.addEventListener('hexstrike:replay-open', (event) => {
+    const replay = event?.detail?.replay;
+    if (!replay) return;
+    showReplay(replay);
+  });
   window.addEventListener('hexstrike:game', (event) => {
-    setGameState(event.detail);
-    const beats = event.detail?.state?.public?.beats ?? [];
-    const characters = event.detail?.state?.public?.characters ?? [];
-    const summary = buildTimelineSummary(event.detail);
+    const nextGameState = event.detail;
+    if (!nextGameState) return;
+    if (isReplayMode()) {
+      hideGame({ emitReplayClosed: true });
+    }
+    if (viewMode !== VIEW_MODE_LIVE || gameArea.hidden) {
+      showLiveGame();
+    }
+    setGameState(nextGameState);
+    const beats = nextGameState?.state?.public?.beats ?? [];
+    const characters = nextGameState?.state?.public?.characters ?? [];
+    const summary = buildTimelineSummary(nextGameState);
     console.log(`${LOG_PREFIX} game:update`, {
-      gameId: event.detail?.id,
+      gameId: nextGameState?.id,
       beats: beats.length,
       characters: characters.length,
       earliestIndex: getTimelineEarliestEIndex(beats, characters),
       stopIndex: getTimelineStopIndex(
         beats,
         characters,
-        event.detail?.state?.public?.customInteractions ?? [],
+        nextGameState?.state?.public?.customInteractions ?? [],
       ),
-      pendingActions: event.detail?.state?.public?.pendingActions ?? null,
-      interactions: event.detail?.state?.public?.customInteractions ?? [],
+      pendingActions: nextGameState?.state?.public?.pendingActions ?? null,
+      interactions: nextGameState?.state?.public?.customInteractions ?? [],
       summary,
     });
   });

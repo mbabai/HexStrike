@@ -61,3 +61,34 @@ test('memory db upserts by id without merging on username collisions', async () 
   assert.equal(users.find((user) => user.id === alpha.id)?.username, beta.username);
   assert.equal(users.find((user) => user.id === beta.id)?.username, beta.username);
 });
+
+test('memory db stores and retrieves replays', async () => {
+  const db = new MemoryDb();
+  const replay = await db.createReplay({
+    sourceGameId: 'game-1',
+    sourceMatchId: 'match-1',
+    players: [
+      { userId: 'u1', username: 'Alice', characterId: 'murelious', characterName: 'Murelious' },
+      { userId: 'u2', username: 'Bob', characterId: 'strylan', characterName: 'Strylan' },
+    ],
+    state: {
+      public: {
+        land: [],
+        beats: [],
+        timeline: [],
+        characters: [],
+        customInteractions: [],
+      },
+    },
+  });
+
+  const byId = await db.findReplay(replay.id);
+  assert.equal(byId?.id, replay.id);
+
+  const byGameId = await db.findReplayByGameId('game-1');
+  assert.equal(byGameId?.id, replay.id);
+
+  const list = await db.listReplays();
+  assert.equal(list.length, 1);
+  assert.equal(list[0].id, replay.id);
+});

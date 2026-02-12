@@ -357,6 +357,25 @@ export interface GameDoc {
   updatedAt: Date;
 }
 
+export interface ReplayPlayerDoc {
+  userId: string;
+  username: string;
+  characterId: CharacterId;
+  characterName?: string;
+}
+
+export interface ReplayDoc {
+  id: string;
+  sourceGameId: string;
+  sourceMatchId?: string;
+  players: ReplayPlayerDoc[];
+  state: {
+    public: GamePublicState;
+  };
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface UserDoc {
   id: string;
   username: string;

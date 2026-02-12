@@ -63,6 +63,8 @@ import {
   MatchDoc,
   PublicCharacter,
   QueueName,
+  ReplayDoc,
+  ReplayPlayerDoc,
 } from './types';
 import type { AbilityDiscardResult } from './game/cardRules';
 
@@ -86,6 +88,13 @@ interface ActionSetResponse {
   error?: string;
   code?: string;
   details?: Record<string, unknown>;
+}
+
+interface ReplayResponse {
+  ok: boolean;
+  status: number;
+  payload?: unknown;
+  error?: string;
 }
 
 const cloneBaselineCharacter = (character: PublicCharacter): PublicCharacter => ({
@@ -858,6 +867,76 @@ export function buildServer(port: number) {
   };
 
   const notFound = (res: any) => respondJson(res, 404, { error: 'Not found' });
+
+  const cloneReplayPublicState = (publicState: GameStateDoc['public']) =>
+    JSON.parse(JSON.stringify(publicState ?? {})) as GameStateDoc['public'];
+
+  const buildReplayPlayers = (match: MatchDoc, game: GameDoc): ReplayPlayerDoc[] => {
+    const characterNameByUserId = new Map<string, string>();
+    const characters = ensureBaselineCharacters(game.state.public);
+    characters.forEach((character) => {
+      if (character?.userId && character?.characterName) {
+        characterNameByUserId.set(character.userId, character.characterName);
+      }
+    });
+    return match.players.map((player) => ({
+      userId: player.userId,
+      username: player.username,
+      characterId: player.characterId,
+      characterName: characterNameByUserId.get(player.userId),
+    }));
+  };
+
+  const buildReplaySummary = (replay: ReplayDoc) => ({
+    id: replay.id,
+    sourceGameId: replay.sourceGameId,
+    sourceMatchId: replay.sourceMatchId ?? null,
+    players: replay.players,
+    createdAt: replay.createdAt,
+  });
+
+  const buildReplayDetail = (replay: ReplayDoc) => ({
+    ...buildReplaySummary(replay),
+    state: replay.state,
+  });
+
+  const saveReplay = async (body: Record<string, unknown>): Promise<ReplayResponse> => {
+    const userId = (body.userId as string) || (body.userID as string);
+    const gameId = (body.gameId as string) || (body.gameID as string);
+    if (!userId || !gameId) {
+      return { ok: false, status: 400, error: 'Invalid replay payload' };
+    }
+    const game = await db.findGame(gameId);
+    if (!game) {
+      return { ok: false, status: 404, error: 'Game not found' };
+    }
+    const match = await db.findMatch(game.matchId);
+    if (!match) {
+      return { ok: false, status: 404, error: 'Match not found' };
+    }
+    const isParticipant = match.players.some((player) => player.userId === userId);
+    if (!isParticipant) {
+      return { ok: false, status: 403, error: 'User not in match' };
+    }
+    const outcome = game.state?.public?.matchOutcome ?? null;
+    if (!outcome) {
+      return { ok: false, status: 409, error: 'Game is not complete yet' };
+    }
+    const existing = await db.findReplayByGameId(game.id);
+    if (existing) {
+      return { ok: true, status: 200, payload: buildReplayDetail(existing) };
+    }
+    const replay = await db.createReplay({
+      sourceGameId: game.id,
+      sourceMatchId: game.matchId,
+      players: buildReplayPlayers(match, game),
+      state: {
+        public: cloneReplayPublicState(game.state.public),
+      },
+    });
+    return { ok: true, status: 201, payload: buildReplayDetail(replay) };
+  };
+
   const buildDeckStatesForMatch = async (match: MatchDoc, game: GameDoc) => {
     const catalog = await loadCardCatalog();
     const deckStates = new Map<string, DeckState>();
@@ -3115,6 +3194,46 @@ export function buildServer(port: number) {
         const result = await resolveInteraction(body);
         if (!result.ok) {
           return respondJson(res, result.status, { error: result.error, code: result.code });
+        }
+        return respondJson(res, result.status, result.payload);
+      }
+    }
+    if (pathname.startsWith('/api/v1/replays')) {
+      if (req.method === 'GET' && pathname === '/api/v1/replays') {
+        const replays = await db.listReplays(200);
+        return respondJson(
+          res,
+          200,
+          replays.map((replay) => buildReplaySummary(replay)),
+        );
+      }
+      if (req.method === 'GET' && pathname.startsWith('/api/v1/replays/')) {
+        const replaySegment = pathname.split('/')[4] ?? '';
+        let replayId = '';
+        try {
+          replayId = decodeURIComponent(replaySegment);
+        } catch {
+          return respondJson(res, 400, { error: 'Invalid replay id' });
+        }
+        if (!replayId) {
+          return respondJson(res, 400, { error: 'Replay id is required' });
+        }
+        const replay = await db.findReplay(replayId);
+        if (!replay) {
+          return notFound(res);
+        }
+        return respondJson(res, 200, buildReplayDetail(replay));
+      }
+      if (req.method === 'POST' && pathname === '/api/v1/replays') {
+        let body;
+        try {
+          body = await parseBody(req);
+        } catch (err) {
+          return respondJson(res, 400, { error: 'Invalid replay payload' });
+        }
+        const result = await saveReplay(body);
+        if (!result.ok) {
+          return respondJson(res, result.status, { error: result.error });
         }
         return respondJson(res, result.status, result.payload);
       }

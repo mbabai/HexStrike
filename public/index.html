@@ -74,6 +74,7 @@
             <option value="botEasyQueue">Bot-bot (Easy)</option>
           </select>
         </label>
+        <button id="savedReplaysOpen" class="btn btn-ghost" type="button">Saved Replays</button>
       </section>
     </div>
 
@@ -204,6 +205,16 @@
       </div>
     </div>
 
+    <div id="savedReplaysOverlay" class="modal-overlay saved-replays-overlay" hidden aria-hidden="true">
+      <div class="saved-replays-modal panel" role="dialog" aria-modal="true" aria-labelledby="savedReplaysTitle">
+        <div class="saved-replays-header">
+          <h2 id="savedReplaysTitle">Saved Replays</h2>
+          <button id="savedReplaysClose" class="btn btn-ghost btn-small" type="button">Close</button>
+        </div>
+        <div id="savedReplaysList" class="saved-replays-list" aria-live="polite"></div>
+      </div>
+    </div>
+
     <section id="gameArea" class="game-area" hidden>
       <div id="gameMenu" class="game-menu">
         <button
@@ -327,6 +338,7 @@
         <h2 id="gameOverTitle">Game Over</h2>
         <p id="gameOverMessage" class="game-over-message"></p>
         <div class="section-actions">
+          <button id="gameOverSaveReplay" class="btn btn-ghost" type="button">Save Replay</button>
           <button id="gameOverDone" class="btn btn-primary" type="button">Continue</button>
         </div>
       </div>

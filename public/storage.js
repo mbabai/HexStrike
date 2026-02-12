@@ -3,6 +3,7 @@ const SELECTED_DECK_KEY = 'hexstrikeSelectedDeckId';
 const USERNAME_KEY = 'hexstrikeUsername';
 const USERNAME_CUSTOM_KEY = 'hexstrikeUsernameCustom';
 const ACCOUNT_DECKS_KEY = 'hexstrikeAccountDecks';
+const TIMELINE_SPEED_KEY = 'hexstrikeTimelineSpeed';
 const USERNAME_MAX_LENGTH = 24;
 const ANONYMOUS_NAME_PATTERN = /^anonymous\d+$/i;
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
@@ -114,4 +115,22 @@ export const getStoredCustomDecks = () => {
 
 export const setStoredCustomDecks = (decks) => {
   writeJsonCookie(ACCOUNT_DECKS_KEY, Array.isArray(decks) ? decks : []);
+};
+
+const clampTimelineSpeed = (value) => {
+  const parsed = Number.parseFloat(`${value ?? ''}`);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.min(3, Math.max(1, parsed));
+};
+
+export const getTimelineSpeedPreference = () => {
+  const stored = readCookie(TIMELINE_SPEED_KEY);
+  return clampTimelineSpeed(stored);
+};
+
+export const setTimelineSpeedPreference = (speed) => {
+  const normalized = clampTimelineSpeed(speed);
+  if (normalized === null) return null;
+  writeCookie(TIMELINE_SPEED_KEY, `${normalized}`);
+  return normalized;
 };

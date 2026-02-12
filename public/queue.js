@@ -105,6 +105,12 @@ export function initQueue() {
       activeQueue = QUICKPLAY_QUEUE;
     }
   });
+  window.addEventListener('hexstrike:game', () => {
+    if (isSearching) {
+      setSearchingState(false);
+      activeQueue = QUICKPLAY_QUEUE;
+    }
+  });
 
   if (findGameButton) {
     findGameButton.addEventListener('click', async () => {

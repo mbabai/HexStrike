@@ -3,6 +3,7 @@ import { initQueue } from './queue.js';
 import { initGame } from './game.js';
 import { initPresence } from './presence.js';
 import { initDecks } from './decks.js';
+import { initReplays } from './replays.js';
 
 async function initLobby() {
   initMenu();
@@ -14,6 +15,11 @@ async function initLobby() {
   initQueue();
   initGame();
   initPresence();
+  try {
+    await initReplays();
+  } catch (err) {
+    console.error('Failed to initialize replays', err);
+  }
 }
 
 if (document.readyState === 'loading') {

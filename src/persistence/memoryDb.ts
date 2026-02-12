@@ -1,10 +1,11 @@
 import { randomUUID } from 'crypto';
-import { GameDoc, MatchDoc, UserDoc } from '../types';
+import { GameDoc, MatchDoc, ReplayDoc, UserDoc } from '../types';
 
 export class MemoryDb {
   private users: UserDoc[] = [];
   private matches: MatchDoc[] = [];
   private games: GameDoc[] = [];
+  private replays: ReplayDoc[] = [];
 
   async upsertUser(user: Partial<UserDoc> & { username: string; id?: string }): Promise<UserDoc> {
     const now = new Date();
@@ -86,5 +87,29 @@ export class MemoryDb {
 
   async listGames(limit = 25): Promise<GameDoc[]> {
     return [...this.games].slice(-limit).reverse();
+  }
+
+  async createReplay(payload: Omit<ReplayDoc, 'id' | 'createdAt' | 'updatedAt'>): Promise<ReplayDoc> {
+    const now = new Date();
+    const replay: ReplayDoc = {
+      ...payload,
+      id: randomUUID(),
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.replays.push(replay);
+    return replay;
+  }
+
+  async findReplay(id: string): Promise<ReplayDoc | undefined> {
+    return this.replays.find((replay) => replay.id === id);
+  }
+
+  async findReplayByGameId(gameId: string): Promise<ReplayDoc | undefined> {
+    return this.replays.find((replay) => replay.sourceGameId === gameId);
+  }
+
+  async listReplays(limit = 200): Promise<ReplayDoc[]> {
+    return [...this.replays].slice(-limit).reverse();
   }
 }
