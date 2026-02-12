@@ -2770,6 +2770,20 @@ small {
   margin-bottom: 4px;
 }
 
+.timeline-tooltip-meta {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-subtle);
+  margin-bottom: 4px;
+}
+
+.timeline-tooltip-status {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-damage);
+  margin-bottom: 4px;
+}
+
 .timeline-tooltip-instruction {
   margin-bottom: 6px;
 }

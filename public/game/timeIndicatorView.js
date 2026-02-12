@@ -170,22 +170,35 @@ const buildRewindReturnLookup = (interactions, characters) => {
   return lookup;
 };
 
-const toDiscardCount = (value) => {
+const toBadgeCount = (value) => {
   if (!Number.isFinite(value)) return null;
   return Math.max(0, Math.round(value));
 };
 
 const getResolvedListCount = (value) => (Array.isArray(value) ? value.length : 0);
 
+const getInteractionBeatIndex = (interaction) => {
+  const beatIndex = Number.isFinite(interaction?.beatIndex) ? Math.round(interaction.beatIndex) : null;
+  if (beatIndex == null || beatIndex < 0) return null;
+  return beatIndex;
+};
+
+const getInteractionActorKey = (actorKeyMap, interaction) =>
+  actorKeyMap.get(interaction?.actorUserId) ??
+  actorKeyMap.get(interaction?.targetUserId) ??
+  interaction?.actorUserId ??
+  interaction?.targetUserId ??
+  null;
+
 const getInteractionDiscardCount = (interaction) => {
   if (!interaction || typeof interaction !== 'object') return 0;
   if (interaction.type === 'discard') {
-    const abilityCount = toDiscardCount(interaction.discardAbilityCount);
-    const movementCount = toDiscardCount(interaction.discardMovementCount);
+    const abilityCount = toBadgeCount(interaction.discardAbilityCount);
+    const movementCount = toBadgeCount(interaction.discardMovementCount);
     if (abilityCount !== null || movementCount !== null) {
       return (abilityCount ?? 0) + (movementCount ?? 0);
     }
-    return toDiscardCount(interaction.discardCount) ?? 0;
+    return toBadgeCount(interaction.discardCount) ?? 0;
   }
   if (interaction.type !== 'hand-trigger') return 0;
   if (interaction.status !== 'resolved' || interaction.resolution?.use !== true) return 0;
@@ -193,7 +206,7 @@ const getInteractionDiscardCount = (interaction) => {
     getResolvedListCount(interaction.resolution?.abilityCardIds) +
     getResolvedListCount(interaction.resolution?.movementCardIds);
   if (resolvedCount > 0) return resolvedCount;
-  return toDiscardCount(interaction.discardCount) ?? 0;
+  return toBadgeCount(interaction.discardCount) ?? 0;
 };
 
 const buildDiscardLookup = (interactions, characters) => {
@@ -205,16 +218,45 @@ const buildDiscardLookup = (interactions, characters) => {
     if (interaction.type !== 'discard' && interaction.type !== 'hand-trigger') return;
     const discardCount = getInteractionDiscardCount(interaction);
     if (!discardCount) return;
-    const beatIndex = Number.isFinite(interaction.beatIndex) ? Math.round(interaction.beatIndex) : null;
-    if (beatIndex == null || beatIndex < 0) return;
-    const actorKey =
-      actorKeyMap.get(interaction.actorUserId) ??
-      actorKeyMap.get(interaction.targetUserId) ??
-      interaction.actorUserId ??
-      interaction.targetUserId;
+    const beatIndex = getInteractionBeatIndex(interaction);
+    if (beatIndex == null) return;
+    const actorKey = getInteractionActorKey(actorKeyMap, interaction);
     if (!actorKey) return;
     const key = `${actorKey}:${beatIndex}`;
     lookup.set(key, (lookup.get(key) ?? 0) + discardCount);
+  });
+  return lookup;
+};
+
+const getInteractionDrawCount = (interaction) => {
+  if (!interaction || typeof interaction !== 'object') return 0;
+  if (interaction.type !== 'draw') return 0;
+  const resolvedCount =
+    getResolvedListCount(interaction.resolution?.abilityCardIds) +
+    getResolvedListCount(interaction.resolution?.movementCardIds);
+  if (resolvedCount > 0) return resolvedCount;
+  const abilityCount = toBadgeCount(interaction.drawCount);
+  const movementCount = toBadgeCount(interaction.drawMovementCount);
+  if (abilityCount !== null || movementCount !== null) {
+    return (abilityCount ?? 0) + (movementCount ?? 0);
+  }
+  return 0;
+};
+
+const buildDrawLookup = (interactions, characters) => {
+  const lookup = new Map();
+  if (!Array.isArray(interactions) || !Array.isArray(characters) || !characters.length) return lookup;
+  const actorKeyMap = buildActorKeyMap(characters);
+  interactions.forEach((interaction) => {
+    if (!interaction || interaction.type !== 'draw') return;
+    const drawCount = getInteractionDrawCount(interaction);
+    if (!drawCount) return;
+    const beatIndex = getInteractionBeatIndex(interaction);
+    if (beatIndex == null) return;
+    const actorKey = getInteractionActorKey(actorKeyMap, interaction);
+    if (!actorKey) return;
+    const key = `${actorKey}:${beatIndex}`;
+    lookup.set(key, (lookup.get(key) ?? 0) + drawCount);
   });
   return lookup;
 };
@@ -478,6 +520,7 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
   const handTriggerLookup = buildHandTriggerLookup(interactions, characters);
   const rewindReturnLookup = buildRewindReturnLookup(interactions, characters);
   const discardLookup = buildDiscardLookup(interactions, characters);
+  const drawLookup = buildDrawLookup(interactions, characters);
   const interactionStopIndex = getEarliestPendingInteractionIndex(interactions);
   const fadeAfterIndex =
     interactionStopIndex !== null && interactionStopIndex <= highlightIndex ? interactionStopIndex : null;
@@ -606,6 +649,7 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       }
       const discardKey = `${lookupKey}:${beatIndex}`;
       const discardCount = discardLookup.get(discardKey) ?? 0;
+      const drawCount = drawLookup.get(discardKey) ?? 0;
       const token = parseActionToken(action);
       const image = getActionArt(token.label);
       if (!image || !image.complete || image.naturalWidth === 0) return;
@@ -661,6 +705,9 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       }
       if (discardCount > 0) {
         drawDiscardBadge(ctx, imageX, imageY, drawSize, discardCount, theme);
+      }
+      if (drawCount > 0) {
+        drawDrawBadge(ctx, imageX, imageY, drawSize, drawCount, theme, discardCount > 0 ? 1 : 0);
       }
       const actionLabel = token.label;
       if (
@@ -987,7 +1034,7 @@ const drawDamageDeltaBadge = (ctx, x, y, size, delta, theme) => {
   ctx.font = `700 ${Math.max(9, height * 0.6)}px ${theme.fontBody}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const label = `${safeDelta}`;
+  const label = safeDelta < 0 ? `${Math.abs(safeDelta)}` : `${safeDelta}`;
   ctx.fillText(label, badgeX + width / 2, badgeY + height / 2 + height * 0.05);
   ctx.restore();
 };
@@ -1003,29 +1050,48 @@ const getDamageBadgeRect = (x, y, size) => {
   return { x: badgeX, y: badgeY, width, height };
 };
 
+const getCardFlowBadgeRect = (x, y, size, row = 0) => {
+  const damageBadge = getDamageBadgeRect(x, y, size);
+  const badgeSize = Math.max(14, size * 0.48);
+  const gap = Math.max(1, size * 0.03);
+  const rightShift = badgeSize * 0.1;
+  const rowOffset = Math.max(0, Math.round(row)) * (badgeSize + gap);
+  const badgeX = damageBadge.x + damageBadge.width / 2 - badgeSize / 2 + rightShift;
+  const badgeY = damageBadge.y + damageBadge.height + gap + rowOffset;
+  return { x: badgeX, y: badgeY, size: badgeSize };
+};
+
 const drawDiscardBadge = (ctx, x, y, size, discardCount, theme) => {
   const safeCount = Number.isFinite(discardCount) ? Math.max(0, Math.round(discardCount)) : 0;
   if (!safeCount) return;
   const icon = getActionArt(DISCARD_ICON_KEY);
   if (!icon || !icon.complete || icon.naturalWidth === 0) return;
-  const damageBadge = getDamageBadgeRect(x, y, size);
-  const badgeSize = Math.max(14, size * 0.48);
-  const gap = Math.max(1, size * 0.03);
-  const rightShift = badgeSize * 0.1;
-  const badgeX = damageBadge.x + damageBadge.width / 2 - badgeSize / 2;
-  const badgeY = damageBadge.y + damageBadge.height + gap;
-  ctx.drawImage(icon, badgeX + rightShift, badgeY, badgeSize, badgeSize);
+  const rect = getCardFlowBadgeRect(x, y, size, 0);
+  ctx.drawImage(icon, rect.x, rect.y, rect.size, rect.size);
 
   ctx.save();
   ctx.fillStyle = theme.damageText || '#ffffff';
-  ctx.font = `700 ${Math.max(9, badgeSize * 0.4)}px ${theme.fontBody}`;
+  ctx.font = `700 ${Math.max(9, rect.size * 0.4)}px ${theme.fontBody}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(
-    `-${safeCount}`,
-    badgeX + badgeSize / 2 + rightShift,
-    badgeY + badgeSize / 2 + badgeSize * 0.05,
-  );
+  ctx.fillText(`-${safeCount}`, rect.x + rect.size / 2, rect.y + rect.size / 2 + rect.size * 0.05);
+  ctx.restore();
+};
+
+const drawDrawBadge = (ctx, x, y, size, drawCount, theme, row = 0) => {
+  const safeCount = Number.isFinite(drawCount) ? Math.max(0, Math.round(drawCount)) : 0;
+  if (!safeCount) return;
+  const icon = getActionArt(DISCARD_ICON_KEY);
+  if (!icon || !icon.complete || icon.naturalWidth === 0) return;
+  const rect = getCardFlowBadgeRect(x, y, size, row);
+  ctx.drawImage(icon, rect.x, rect.y, rect.size, rect.size);
+
+  ctx.save();
+  ctx.fillStyle = theme.damageText || '#ffffff';
+  ctx.font = `700 ${Math.max(9, rect.size * 0.4)}px ${theme.fontBody}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`+${safeCount}`, rect.x + rect.size / 2, rect.y + rect.size / 2 + rect.size * 0.05);
   ctx.restore();
 };
 

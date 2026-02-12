@@ -94,3 +94,39 @@ test('applyActionSetToBeats replaces a focus F beat as the next open slot', () =
   assert.equal(updated[1][0].action, 'm');
   assert.equal(updated[2][0].action, 'E');
 });
+
+test('applyActionSetToBeats preserves committed future starts while pruning stale trailing entries', () => {
+  const characters = [
+    { userId: 'player-a', username: 'Player A', position: { q: 1, r: 0 }, facing: 0 },
+    { userId: 'player-b', username: 'Player B', position: { q: -1, r: 0 }, facing: 180 },
+  ];
+  const beats = [
+    [
+      { username: 'Player A', action: 'W', rotation: '', priority: 0, damage: 0, location: { q: 1, r: 0 }, facing: 0, calculated: true },
+      { username: 'Player B', action: 'W', rotation: '', priority: 0, damage: 0, location: { q: -1, r: 0 }, facing: 180, calculated: true },
+    ],
+    [
+      { username: 'Player A', action: 'E', rotation: '', priority: 0, damage: 0, location: { q: 1, r: 0 }, facing: 0, calculated: false },
+      { username: 'Player B', action: 'W', rotation: '', priority: 0, damage: 0, location: { q: -1, r: 0 }, facing: 180, calculated: false },
+    ],
+    [
+      { username: 'Player A', action: 'W', rotation: '', rotationSource: 'selected', priority: 81, damage: 0, location: { q: 1, r: 0 }, facing: 0, calculated: false, cardId: 'bow-shot' },
+      { username: 'Player B', action: 'W', rotation: '', priority: 0, damage: 0, location: { q: -1, r: 0 }, facing: 180, calculated: false },
+    ],
+    [
+      { username: 'Player A', action: 'W', rotation: '0', rotationSource: 'selected', priority: 30, damage: 0, location: { q: 1, r: 0 }, facing: 0, calculated: false, cardId: 'dash' },
+      { username: 'Player B', action: 'W', rotation: '', priority: 0, damage: 0, location: { q: -1, r: 0 }, facing: 180, calculated: false },
+    ],
+  ];
+
+  const updated = applyActionSetToBeats(beats, characters, 'player-a', [
+    { action: 'W', rotation: '', priority: 20 },
+    { action: 'E', rotation: '', priority: 0 },
+  ]);
+
+  assert.equal(updated[1][0].action, 'W');
+  assert.equal(updated[2][0].action, 'E');
+  assert.equal(updated[3][0].action, 'W');
+  assert.equal(updated[3][0].rotationSource, 'selected');
+  assert.equal(updated[3][0].cardId, 'dash');
+});

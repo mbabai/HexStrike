@@ -24,6 +24,9 @@ const matchesEntryForCharacter = (entry: BeatEntry, character: PublicCharacter) 
   return key === character.username || key === character.userId;
 };
 
+const isActionSetStart = (entry: BeatEntry | null | undefined) =>
+  `${entry?.rotationSource ?? ''}`.trim() === 'selected' || Boolean(entry?.comboStarter);
+
 const findEntryForUser = (beat: BeatEntry[], target: PublicCharacter) =>
   beat.find((entry) => matchesEntryForCharacter(entry, target));
 
@@ -267,6 +270,10 @@ export const applyActionSetToBeats = (
   for (let i = lastIndex + 1; i < updated.length; i += 1) {
     const beat = updated[i];
     if (!beat.length) continue;
+    const preservedStart = findEntryForUser(beat, target);
+    if (isActionSetStart(preservedStart)) {
+      break;
+    }
     const filtered = beat.filter((entry) => !matchesEntryForCharacter(entry, target));
     if (filtered.length !== beat.length) {
       updated[i] = filtered;

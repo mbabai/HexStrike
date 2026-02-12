@@ -63,6 +63,8 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
   - batches in `pendingActions` until all required players submit.
 - `applyActionSetToBeats` inserts the action list at the player's first open unresolved beat and clears later entries for that player.
 - `executeBeatsWithInteractions` recomputes positions, damage, and interactions from the start of the timeline.
+- Replay mutators in `executeBeatsWithInteractions` treat committed future starts as protected boundaries (`rotationSource: 'selected'`, `comboStarter`, committed rewind-return starts) and must clamp rewrite/prune windows before those beats.
+- `BeatEntry.consequences` stores per-beat hit outcomes used by timeline badges (`damageDelta` positive for damage, negative for healing; `knockbackDistance` for knockback capsules).
 - `resolveLandRefreshes` applies deck refresh rules after execution.
 - `evaluateMatchOutcome` determines win/loss conditions and inserts `Death` beats when needed.
 

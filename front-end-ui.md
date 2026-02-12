@@ -23,7 +23,8 @@ This document defines the single source of truth for HexStrike's browser UI styl
 - Action HUD: use `.action-hud` for the bottom-center action layout, `.action-hand` for card columns, `.action-card` for movement/ability cards, `.action-slot`/`.action-slot-drop` for active/passive slots, and `.action-hud.is-locked` for locked-in styling.
 - Discard prompt: use `.discard-modal` as a compact, centered prompt over the game area; discard selection reuses in-hand `.action-card` elements with `.is-discard-pending` (pulsing) and `.is-discard-selected` (greyed) states instead of rendering a separate hand.
 - Draw prompt: use `.draw-modal` (same sizing as `.discard-modal`) for movement-draw selection; exhausted movement cards pulse with `.is-draw-pending` and selected restores use `.is-draw-selected`.
-- Timeline tooltips: use `.timeline-tooltip` with a `.timeline-tooltip-text` child for hover callouts on timeline action icons (X1/X2/i) and focus/rewind hover states; focused tooltips should list character power first, then focus-card text, anchored inside `.game-area`.
+- Timeline tooltips: use `.timeline-tooltip` with a `.timeline-tooltip-text` child for hover callouts on timeline action icons (X1/X2/i) and focus/rewind hover states; focused tooltips should list character power first, then focus-card text, anchored inside `.game-area`. Tooltip meta rows use `.timeline-tooltip-meta` (attack DMG/KBF) and `.timeline-tooltip-status` (interrupted state).
+- Timeline badges: card-flow badges use the shared discard icon for both directions (`-X` for discard, `+X` for draw). Damage capsules are red for positive `damageDelta`; healing capsules are green and show the healed amount when `damageDelta` is negative.
 
 ## Backgrounds and mood
 - Use the base body gradient from `public/theme.css` to mirror the dark teal + gold fantasy mood. If new sections need emphasis, layer subtle radial glows (see `.hero-header::after`).

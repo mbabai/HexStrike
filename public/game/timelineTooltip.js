@@ -5,11 +5,39 @@ import { appendInlineText } from '../shared/cardRenderer.js';
 import { axialToPixel, getHexSize } from '../shared/hex.mjs';
 import { GAME_CONFIG } from './config.js';
 import { getCharacterTokenMetrics } from './characterTokens.mjs';
+import { actionHasAttackToken } from './cardText/actionListTransforms.js';
+
+const DAMAGE_ICON_ACTION = 'DamageIcon';
+const DEFAULT_ACTION = 'E';
 
 const normalizeSymbolText = (text) => {
   const raw = `${text ?? ''}`.trim();
   if (!raw) return '';
   return raw.replace(/^\s*[:\-]\s*/, '').trim();
+};
+
+const normalizeActionLabel = (action) => `${action ?? ''}`.trim().toUpperCase();
+
+const isDamageIconAction = (action) => normalizeActionLabel(action) === DAMAGE_ICON_ACTION.toUpperCase();
+
+const isOpenBeatAction = (action) => normalizeActionLabel(action) === DEFAULT_ACTION;
+
+const cardHasAttack = (card) => {
+  if (!card) return false;
+  const damage = Number.isFinite(card.damage) ? Number(card.damage) : 0;
+  const kbf = Number.isFinite(card.kbf) ? Number(card.kbf) : 0;
+  if (damage > 0 || kbf > 0) return true;
+  const actions = Array.isArray(card.actions) ? card.actions : [];
+  return actions.some((action) => actionHasAttackToken(action));
+};
+
+const buildAttackStatsLine = (card, entry = null) => {
+  if (!cardHasAttack(card)) return '';
+  const baseDamage = Number.isFinite(card?.damage) ? Number(card.damage) : 0;
+  const baseKbf = Number.isFinite(card?.kbf) ? Number(card.kbf) : 0;
+  const damage = Number.isFinite(entry?.attackDamage) ? Number(entry.attackDamage) : baseDamage;
+  const kbf = Number.isFinite(entry?.attackKbf) ? Number(entry.attackKbf) : baseKbf;
+  return `Attack: DMG ${Math.max(0, Math.round(damage))}, KBF ${Math.max(0, Math.round(kbf))}`;
 };
 
 const splitParagraphs = (text) => {
@@ -82,6 +110,37 @@ const findActionSetStartIndex = (beats, character, beatIndex) => {
     if (!rotationSource && rotation) return i;
   }
   return null;
+};
+
+const isFirstInterruptedBeat = (beats, character, beatIndex, entry) => {
+  if (!Array.isArray(beats) || !character || !entry) return false;
+  if (!isDamageIconAction(entry.action)) return false;
+  if (beatIndex <= 0) return true;
+  const previousEntry = getBeatEntryForCharacter(beats[beatIndex - 1], character);
+  if (!previousEntry) return true;
+  return !isDamageIconAction(previousEntry.action);
+};
+
+const resolveInterruptedCardIds = (beats, character, beatIndex, entry) => {
+  let activeCardId = `${entry?.cardId ?? ''}`.trim() || null;
+  let passiveCardId = `${entry?.passiveCardId ?? ''}`.trim() || null;
+  const interrupted = isFirstInterruptedBeat(beats, character, beatIndex, entry);
+  if (!interrupted || beatIndex <= 0 || (activeCardId && passiveCardId)) {
+    return { interrupted, activeCardId, passiveCardId };
+  }
+  const previousEntry = getBeatEntryForCharacter(beats[beatIndex - 1], character);
+  if (!previousEntry || isOpenBeatAction(previousEntry.action)) {
+    return { interrupted, activeCardId, passiveCardId };
+  }
+  if (!activeCardId) {
+    const candidate = `${previousEntry.cardId ?? ''}`.trim();
+    if (candidate) activeCardId = candidate;
+  }
+  if (!passiveCardId) {
+    const candidate = `${previousEntry.passiveCardId ?? ''}`.trim();
+    if (candidate) passiveCardId = candidate;
+  }
+  return { interrupted, activeCardId, passiveCardId };
 };
 
 const findCardForTimelineEntry = (beats, character, beatIndex, priority, cardMetadata) => {
@@ -191,6 +250,10 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
   text.className = 'timeline-tooltip-text';
   const title = document.createElement('div');
   title.className = 'timeline-tooltip-title';
+  const attackStats = document.createElement('div');
+  attackStats.className = 'timeline-tooltip-meta';
+  const status = document.createElement('div');
+  status.className = 'timeline-tooltip-status';
   const instruction = document.createElement('div');
   instruction.className = 'timeline-tooltip-instruction';
   const divider = document.createElement('div');
@@ -207,7 +270,19 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
   focus.className = 'timeline-tooltip-passive';
   const focusText = document.createElement('div');
   focusText.className = 'timeline-tooltip-passive-text';
-  text.append(title, instruction, divider, characterPower, characterPowerText, passive, passiveText, focus, focusText);
+  text.append(
+    title,
+    attackStats,
+    status,
+    instruction,
+    divider,
+    characterPower,
+    characterPowerText,
+    passive,
+    passiveText,
+    focus,
+    focusText,
+  );
   tooltip.appendChild(text);
   gameArea.appendChild(tooltip);
 
@@ -259,6 +334,30 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     focusText.hidden = true;
     focus.textContent = '';
     focusText.textContent = '';
+  };
+
+  const renderAttackStats = (line) => {
+    const value = `${line ?? ''}`.trim();
+    if (!value) {
+      attackStats.hidden = true;
+      attackStats.textContent = '';
+      return false;
+    }
+    attackStats.hidden = false;
+    attackStats.textContent = value;
+    return true;
+  };
+
+  const renderStatus = (line) => {
+    const value = `${line ?? ''}`.trim();
+    if (!value) {
+      status.hidden = true;
+      status.textContent = '';
+      return false;
+    }
+    status.hidden = false;
+    status.textContent = value;
+    return true;
   };
 
   const getCharacterByUserId = (userId) => {
@@ -328,6 +427,8 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     if (key !== lastTooltipKey) {
       title.textContent = titleText || 'Character Power';
       title.hidden = false;
+      renderAttackStats('');
+      renderStatus('');
       instruction.hidden = false;
       appendInlineText(instruction, powerText);
       clearSupplementalSections({ hideDivider: true });
@@ -380,14 +481,16 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       const character = getCharacterByUserId(target.token?.ownerUserId);
       const characterPowerDetails = getCharacterPowerDetails(character);
       const titleText = card?.name ?? cardId;
+      const attackStatsLine = buildAttackStatsLine(card);
       const focusLine = getFocusLineFromCard(card, { includeActiveTextFallback: true });
-      if (!titleText && !focusLine && !characterPowerDetails.powerText) {
+      if (!titleText && !focusLine && !characterPowerDetails.powerText && !attackStatsLine) {
         hide();
         return;
       }
       const key = [
         'focus-anchor',
         cardId,
+        attackStatsLine,
         focusLine,
         character?.userId ?? target.token?.ownerUserId ?? '',
         characterPowerDetails.powerText,
@@ -395,6 +498,8 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       if (key !== lastTooltipKey) {
         title.textContent = titleText;
         title.hidden = !titleText;
+        renderAttackStats(attackStatsLine);
+        renderStatus('');
         instruction.hidden = true;
         instruction.textContent = '';
         clearSupplementalSections({ hideDivider: true });
@@ -411,15 +516,18 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       const cardId = target.cardId ? `${target.cardId}` : '';
       const card = cardId ? cardMetadata.byId.get(cardId) : null;
       const titleText = card?.name ?? cardId;
+      const attackStatsLine = buildAttackStatsLine(card);
       const bodyText = card?.handTriggerText || card?.activeText || '';
-      if (!titleText && !bodyText) {
+      if (!titleText && !bodyText && !attackStatsLine) {
         hide();
         return;
       }
-      const key = ['hand-trigger', cardId, target.beatIndex, bodyText].join(':');
+      const key = ['hand-trigger', cardId, target.beatIndex, attackStatsLine, bodyText].join(':');
       if (key !== lastTooltipKey) {
         title.textContent = titleText;
         title.hidden = !titleText;
+        renderAttackStats(attackStatsLine);
+        renderStatus('');
         if (bodyText) {
           instruction.hidden = false;
           appendInlineText(instruction, bodyText);
@@ -440,10 +548,11 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       const character = getCharacterByUserId(target.interaction?.actorUserId);
       const characterPowerDetails = getCharacterPowerDetails(character);
       const titleText = card?.name ?? cardId;
+      const attackStatsLine = buildAttackStatsLine(card);
       const focusLine = getFocusLineFromCard(card, { includeActiveTextFallback: true });
       const returnToAnchor = Boolean(target.interaction?.resolution?.returnToAnchor);
       const choiceLine = returnToAnchor ? 'Choice: Yes (return to anchor)' : 'Choice: No (stay focused)';
-      if (!titleText && !focusLine && !characterPowerDetails.powerText) {
+      if (!titleText && !focusLine && !characterPowerDetails.powerText && !attackStatsLine) {
         hide();
         return;
       }
@@ -452,6 +561,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
         cardId,
         target.beatIndex,
         returnToAnchor,
+        attackStatsLine,
         focusLine,
         character?.userId ?? target.interaction?.actorUserId ?? '',
         characterPowerDetails.powerText,
@@ -459,6 +569,8 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       if (key !== lastTooltipKey) {
         title.textContent = titleText;
         title.hidden = !titleText;
+        renderAttackStats(attackStatsLine);
+        renderStatus('');
         instruction.hidden = false;
         appendInlineText(instruction, choiceLine);
         clearSupplementalSections({ hideDivider: true });
@@ -474,8 +586,9 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
 
     const beats = gameState?.state?.public?.beats ?? [];
     const entry = target.entry;
-    const activeCardId = entry?.cardId ? `${entry.cardId}` : null;
-    const passiveCardId = entry?.passiveCardId ? `${entry.passiveCardId}` : null;
+    const interruptedContext = resolveInterruptedCardIds(beats, target.character, target.beatIndex, entry);
+    const activeCardId = interruptedContext.activeCardId;
+    const passiveCardId = interruptedContext.passiveCardId;
     const focusCardId = entry?.focusCardId ? `${entry.focusCardId}` : null;
     let activeCard = activeCardId ? cardMetadata.byId.get(activeCardId) : null;
     if (!activeCard) {
@@ -490,6 +603,9 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     const passiveCard = passiveCardId ? cardMetadata.byId.get(passiveCardId) : null;
     const focusCard = focusCardId ? cardMetadata.byId.get(focusCardId) : null;
     const activeName = activeCard?.name ?? '';
+    const activeTitle = interruptedContext.interrupted && activeName ? `${activeName} (Interrupted)` : activeName;
+    const attackStatsLine = buildAttackStatsLine(activeCard, entry);
+    const interruptedLine = interruptedContext.interrupted ? 'Interrupted before resolution.' : '';
     const passiveName = passiveCard?.name ?? '';
     const instructionText = activeCard?.symbolText?.get(target.symbol) ?? '';
     const instructionLine = instructionText ? `{${target.symbol}}: ${instructionText}` : '';
@@ -497,7 +613,16 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     const focusLine = getFocusLineFromCard(focusCard, { includeActiveTextFallback: true });
     const characterPowerDetails = getCharacterPowerDetails(target.character);
     const characterPowerLine = focusCardId ? characterPowerDetails.powerText : '';
-    if (!activeName && !passiveName && !instructionLine && !passiveTextValue && !focusLine && !characterPowerLine) {
+    if (
+      !activeTitle &&
+      !passiveName &&
+      !instructionLine &&
+      !passiveTextValue &&
+      !focusLine &&
+      !characterPowerLine &&
+      !attackStatsLine &&
+      !interruptedLine
+    ) {
       hide();
       return;
     }
@@ -507,6 +632,9 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       target.symbol,
       activeCardId ?? 'none',
       passiveCardId ?? 'none',
+      activeTitle,
+      attackStatsLine,
+      interruptedLine,
       instructionLine,
       passiveTextValue,
       characterPowerLine,
@@ -514,8 +642,10 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       focusLine,
     ].join(':');
     if (key !== lastTooltipKey) {
-      title.textContent = activeName;
-      title.hidden = !activeName;
+      title.textContent = activeTitle;
+      title.hidden = !activeTitle;
+      renderAttackStats(attackStatsLine);
+      renderStatus(interruptedLine);
       if (instructionLine) {
         instruction.hidden = false;
         appendInlineText(instruction, instructionLine);

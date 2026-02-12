@@ -25,6 +25,7 @@ import {
 } from './cardText/discardEffects';
 import { getPassiveKbfReduction, isThrowImmune } from './cardText/combatModifiers';
 import { getTimelineResolvedIndex } from './beatTimeline';
+import { findTimelineBreaks, repairTimelineBreaksFromBaseline } from './timelineIntegrity';
 import { isBracketedAction, normalizeActionToken, splitActionTokens } from './cardText/actionListTransforms';
 import { buildCardActionList } from './cardText/actionListBuilder';
 import { DEFAULT_LAND_HEXES } from './hexGrid';
@@ -716,6 +717,12 @@ export const executeBeatsWithInteractions = (
       }
     });
   });
+  const baselineBeats = normalizedBeats.map((beat) =>
+    beat.map((entry) => ({
+      ...entry,
+      location: entry.location ? { q: entry.location.q, r: entry.location.r } : { q: 0, r: 0 },
+    })),
+  );
   const state = new Map<string, { position: { q: number; r: number }; damage: number; facing: number }>();
   characters.forEach((character) => {
     const baselineDamage = Number.isFinite(character.damage) ? Math.max(0, Math.floor(character.damage)) : 0;
@@ -1327,6 +1334,7 @@ export const executeBeatsWithInteractions = (
     const lastIndex = startIndex + actionList.length - 1;
     if (!options.preserveEntriesAfterEnd) {
       for (let i = lastIndex + 1; i < normalizedBeats.length; i += 1) {
+        if (isProtectedFutureStart(character, i)) break;
         const beat = normalizedBeats[i];
         if (!beat?.length) continue;
         const filtered = beat.filter((entry) => !matchesEntryForCharacter(entry, character));
@@ -1492,7 +1500,11 @@ export const executeBeatsWithInteractions = (
     const appliedEnd = getAppliedWindowEnd();
     const knockbackApplied = appliedEnd !== null;
     const priorEndIndex = knockbackApplied ? appliedEnd + 1 : null;
-    const endIndex = knockbackApplied ? Math.max(computedEndIndex, appliedEnd + 1) : computedEndIndex;
+    const rawEndIndex = knockbackApplied ? Math.max(computedEndIndex, appliedEnd + 1) : computedEndIndex;
+    const protectedStartIndex = findProtectedFutureStartIndex(character, startIndex + 1);
+    const endIndex = protectedStartIndex == null ? rawEndIndex : Math.min(rawEndIndex, protectedStartIndex - 1);
+    if (endIndex < startIndex) return;
+    const truncatedByProtectedStart = protectedStartIndex != null && rawEndIndex >= protectedStartIndex;
     const extendedWindow = priorEndIndex !== null && endIndex > priorEndIndex;
     const beforeLength = normalizedBeats.length;
     ensureBeatIndex(endIndex);
@@ -1501,8 +1513,10 @@ export const executeBeatsWithInteractions = (
       console.log(LOG_PREFIX, 'knockback-extend', {
         targetId,
         beatIndex,
+        rawEndIndex,
         endIndex,
         extendedBy,
+        protectedStartIndex,
         knockbackDistance,
         damageIcons,
         stunOnly: Boolean(options.stunOnly),
@@ -1511,13 +1525,12 @@ export const executeBeatsWithInteractions = (
     for (let i = startIndex; i <= endIndex; i += 1) {
       const beat = normalizedBeats[i];
       if (!beat) continue;
-      if (i < endIndex) {
-        const existing = findEntryForCharacter(beat, character);
-        const hadDamageIcon = existing?.action === DAMAGE_ICON_ACTION;
+      const shouldRemainDamageIcon = i < endIndex || (truncatedByProtectedStart && i === endIndex);
+      if (shouldRemainDamageIcon) {
         const entry = upsertBeatEntry(beat, character, DAMAGE_ICON_ACTION, targetState);
-        if (i === startIndex && !hadDamageIcon && (sourceCardId || sourcePassiveCardId)) {
-          if (sourceCardId) entry.cardId = sourceCardId;
-          if (sourcePassiveCardId) entry.passiveCardId = sourcePassiveCardId;
+        if (i === startIndex && (sourceCardId || sourcePassiveCardId)) {
+          if (sourceCardId && !entry.cardId) entry.cardId = sourceCardId;
+          if (sourcePassiveCardId && !entry.passiveCardId) entry.passiveCardId = sourcePassiveCardId;
         }
         if (options.stunOnly) {
           entry.stunOnly = true;
@@ -1545,6 +1558,7 @@ export const executeBeatsWithInteractions = (
     const shouldPruneAfterEnd = (!knockbackApplied || extendedWindow) && !options.preserveEntriesAfterEnd;
     if (shouldPruneAfterEnd) {
       for (let i = endIndex + 1; i < normalizedBeats.length; i += 1) {
+        if (isProtectedFutureStart(character, i)) break;
         const beat = normalizedBeats[i];
         if (!beat?.length) continue;
         const filtered = beat.filter((entry) => !matchesEntryForCharacter(entry, character));
@@ -1573,20 +1587,33 @@ export const executeBeatsWithInteractions = (
     return false;
   };
 
+  const isProtectedFutureStart = (character: PublicCharacter, beatIndex: number): boolean => {
+    if (!character || !Number.isFinite(beatIndex)) return false;
+    const safeBeatIndex = Math.max(0, Math.round(beatIndex));
+    if (isCommittedRewindReturnStart(character.userId, safeBeatIndex)) return true;
+    const beat = normalizedBeats[safeBeatIndex];
+    const entry = beat ? findEntryForCharacter(beat, character) : null;
+    return isActionSetStart(entry);
+  };
+
+  const findProtectedFutureStartIndex = (character: PublicCharacter, startIndex: number): number | null => {
+    if (!character || !Number.isFinite(startIndex)) return null;
+    const safeStartIndex = Math.max(0, Math.round(startIndex));
+    for (let i = safeStartIndex; i < normalizedBeats.length; i += 1) {
+      if (isProtectedFutureStart(character, i)) return i;
+    }
+    return null;
+  };
+
   const clearCharacterEntriesAfter = (
     character: PublicCharacter,
     startIndex: number,
     options?: { preserveFutureActionSetStarts?: boolean },
   ) => {
     for (let i = startIndex + 1; i < normalizedBeats.length; i += 1) {
+      if (options?.preserveFutureActionSetStarts && isProtectedFutureStart(character, i)) break;
       const beat = normalizedBeats[i];
       if (!beat?.length) continue;
-      if (options?.preserveFutureActionSetStarts) {
-        const nextEntry = beat.find((entry) => matchesEntryForCharacter(entry, character));
-        if (isActionSetStart(nextEntry) || isCommittedRewindReturnStart(character.userId, i)) {
-          break;
-        }
-      }
       const filtered = beat.filter((entry) => !matchesEntryForCharacter(entry, character));
       if (filtered.length !== beat.length) {
         normalizedBeats[i] = filtered;
@@ -1801,23 +1828,27 @@ export const executeBeatsWithInteractions = (
     ensureBeatIndex(beatIndex);
     const beat = normalizedBeats[beatIndex];
     const entry = beat ? findEntryForCharacter(beat, character) : null;
+    if (!entry) return;
+    // Hit rewrites own DamageIcon frames; replaying combo resolution over them can
+    // reopen the knockback window and swallow later submitted starts.
+    if (normalizeActionLabel(entry.action ?? '').toUpperCase() === DAMAGE_ICON_ACTION.toUpperCase()) {
+      return;
+    }
     const shouldContinue = Boolean(interaction.resolution?.continue);
-    if (entry) {
-      if (shouldContinue) {
-        entry.action = DEFAULT_ACTION;
-        entry.priority = 0;
-        if ('comboSkipped' in entry) {
-          delete entry.comboSkipped;
-        }
-      } else {
-        if (!isComboAction(entry.action ?? '')) {
-          entry.action = 'Co';
-        }
-        entry.comboSkipped = true;
+    if (shouldContinue) {
+      entry.action = DEFAULT_ACTION;
+      entry.priority = 0;
+      if ('comboSkipped' in entry) {
+        delete entry.comboSkipped;
       }
-      if ('comboStarter' in entry) {
-        delete entry.comboStarter;
+    } else {
+      if (!isComboAction(entry.action ?? '')) {
+        entry.action = 'Co';
       }
+      entry.comboSkipped = true;
+    }
+    if ('comboStarter' in entry) {
+      delete entry.comboStarter;
     }
     if (shouldContinue) {
       clearCharacterEntriesAfter(character, beatIndex);
@@ -3166,55 +3197,61 @@ export const executeBeatsWithInteractions = (
           interactionById.set(interactionId, created);
         }
       }
-        if (entry.cardId === HEALING_HARMONY_CARD_ID && actionLabel.toUpperCase() === 'X1') {
-          const targetState = state.get(actorId);
-          if (targetState) {
-            targetState.damage = Math.max(0, targetState.damage - 3);
+      if (entry.cardId === HEALING_HARMONY_CARD_ID && actionLabel.toUpperCase() === 'X1') {
+        const targetState = state.get(actorId);
+        if (targetState) {
+          const beforeDamage = Number.isFinite(targetState.damage) ? Math.max(0, targetState.damage) : 0;
+          const afterDamage = Math.max(0, beforeDamage - 3);
+          const healedAmount = Math.max(0, beforeDamage - afterDamage);
+          targetState.damage = afterDamage;
+          if (healedAmount > 0) {
+            recordHitConsequence(actorId, index, targetState, -healedAmount, 0);
           }
         }
+      }
 
-        if (entry.passiveCardId === CROSS_SLASH_CARD_ID && !isOpenBeatAction(entry.action) && isActionSetStart(entry)) {
-          const passiveSelfDamage = applyCharacterDamage(actorId, 1);
-          if (passiveSelfDamage > 0) {
-            recordHitConsequence(actorId, index, actorState, passiveSelfDamage, 0);
-          }
+      if (entry.passiveCardId === CROSS_SLASH_CARD_ID && !isOpenBeatAction(entry.action) && isActionSetStart(entry)) {
+        const passiveSelfDamage = applyCharacterDamage(actorId, 1);
+        if (passiveSelfDamage > 0) {
+          recordHitConsequence(actorId, index, actorState, passiveSelfDamage, 0);
         }
+      }
 
-        const startDiscard = getPassiveStartDiscardCount(entry.passiveCardId);
-        if (startDiscard && !isOpenBeatAction(entry.action) && isActionSetStart(entry)) {
-          queueDiscard(actorId, startDiscard, 'self');
-        }
+      const startDiscard = getPassiveStartDiscardCount(entry.passiveCardId);
+      if (startDiscard && !isOpenBeatAction(entry.action) && isActionSetStart(entry)) {
+        queueDiscard(actorId, startDiscard, 'self');
+      }
 
-        const isGuardReturnBeat = Boolean(scheduledForcedGuardDiscard?.has(actorId));
-        const canOpenOnResolvedBeat = resolvedIndex >= 0 && index === resolvedIndex;
-        const guardPromptAllowedAtIndex = !isHistoryIndex(index) || canOpenOnResolvedBeat;
-        if (
-          entry.cardId === GUARD_CARD_ID &&
-          isBracketedAction(entry.action ?? '') &&
-          guardPromptAllowedAtIndex &&
-          !isGuardReturnBeat &&
-          canOfferGuardContinue(actorId)
-        ) {
-          const interactionId = buildInteractionId(GUARD_CONTINUE_INTERACTION_TYPE, index, actorId, actorId);
-          const existing = interactionById.get(interactionId);
-          if (!existing) {
-            const created: CustomInteraction = {
-              id: interactionId,
-              type: GUARD_CONTINUE_INTERACTION_TYPE,
-              beatIndex: index,
-              actorUserId: actorId,
-              targetUserId: actorId,
-              status: 'pending',
-              resolution: undefined,
-            };
-            updatedInteractions.push(created);
-            interactionById.set(interactionId, created);
-          }
-          const pending = interactionById.get(interactionId);
-          if (pending?.status === 'pending' && (haltIndex == null || index < haltIndex)) {
-            haltIndex = index;
-          }
+      const isGuardReturnBeat = Boolean(scheduledForcedGuardDiscard?.has(actorId));
+      const canOpenOnResolvedBeat = resolvedIndex >= 0 && index === resolvedIndex;
+      const guardPromptAllowedAtIndex = !isHistoryIndex(index) || canOpenOnResolvedBeat;
+      if (
+        entry.cardId === GUARD_CARD_ID &&
+        isBracketedAction(entry.action ?? '') &&
+        guardPromptAllowedAtIndex &&
+        !isGuardReturnBeat &&
+        canOfferGuardContinue(actorId)
+      ) {
+        const interactionId = buildInteractionId(GUARD_CONTINUE_INTERACTION_TYPE, index, actorId, actorId);
+        const existing = interactionById.get(interactionId);
+        if (!existing) {
+          const created: CustomInteraction = {
+            id: interactionId,
+            type: GUARD_CONTINUE_INTERACTION_TYPE,
+            beatIndex: index,
+            actorUserId: actorId,
+            targetUserId: actorId,
+            status: 'pending',
+            resolution: undefined,
+          };
+          updatedInteractions.push(created);
+          interactionById.set(interactionId, created);
         }
+        const pending = interactionById.get(interactionId);
+        if (pending?.status === 'pending' && (haltIndex == null || index < haltIndex)) {
+          haltIndex = index;
+        }
+      }
 
       if (isComboAction(entry.action ?? '')) {
         if (entry.comboSkipped || isHistoryIndex(index)) {
@@ -3927,10 +3964,37 @@ export const executeBeatsWithInteractions = (
     });
   }
 
-    const updatedCharacters = characters.map((character) => ({
-      ...character,
-      position: { q: character.position.q, r: character.position.r },
-    }));
+  const guardRepairs = repairTimelineBreaksFromBaseline({
+    beats: normalizedBeats,
+    baselineBeats,
+    characters,
+    interactions: updatedInteractions,
+    resolvedIndex,
+  });
+  if (guardRepairs.length) {
+    console.log(LOG_PREFIX, 'timeline-guard-repair', {
+      repairedCount: guardRepairs.length,
+      repairs: guardRepairs.slice(0, 6),
+    });
+  }
+  const remainingTimelineBreaks = findTimelineBreaks({
+    beats: normalizedBeats,
+    baselineBeats,
+    characters,
+    interactions: updatedInteractions,
+    resolvedIndex,
+  });
+  if (remainingTimelineBreaks.length) {
+    console.log(LOG_PREFIX, 'timeline-break-detected', {
+      breakCount: remainingTimelineBreaks.length,
+      breaks: remainingTimelineBreaks.slice(0, 6),
+    });
+  }
+
+  const updatedCharacters = characters.map((character) => ({
+    ...character,
+    position: { q: character.position.q, r: character.position.r },
+  }));
 
   console.log(LOG_PREFIX, 'result', {
     beats: normalizedBeats.length,

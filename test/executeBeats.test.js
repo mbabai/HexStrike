@@ -87,6 +87,150 @@ test('executeBeats skips combo choice on missed attacks and keeps Co symbol', ()
   assert.equal(result.interactions.some((interaction) => interaction.type === 'combo'), false);
 });
 
+test('executeBeatsWithInteractions does not let combo replay overwrite DamageIcon and swallow a submitted start', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: -1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'a', 90, characters[0].position, characters[0].facing, '', 6, 4),
+      buildEntry('beta', 'DamageIcon', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'DamageIcon', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'DamageIcon', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'E', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+  beats[0][0].cardId = 'hammer';
+  beats[0][1].cardId = 'jab';
+  beats[0][1].passiveCardId = 'step';
+
+  const submittedBeats = applyActionSetToBeats(
+    beats,
+    characters,
+    'beta',
+    [
+      {
+        action: 'W',
+        rotation: '0',
+        rotationSource: 'selected',
+        priority: 15,
+        damage: 0,
+        kbf: 0,
+        cardId: 'advance',
+        passiveCardId: 'tackle',
+      },
+      {
+        action: 'E',
+        rotation: '',
+        priority: 15,
+        damage: 0,
+        kbf: 0,
+        cardId: 'advance',
+        passiveCardId: 'tackle',
+      },
+    ],
+    [{ type: 'action-set', activeCardId: 'advance', passiveCardId: 'tackle', rotation: '0' }],
+  );
+
+  const interactions = [
+    {
+      id: 'combo:0:beta:beta',
+      type: 'combo',
+      beatIndex: 0,
+      actorUserId: 'beta',
+      targetUserId: 'beta',
+      status: 'resolved',
+      resolution: { continue: false },
+    },
+  ];
+
+  const result = executeBeatsWithInteractions(submittedBeats, characters, interactions);
+  const betaBeat3 = (result.beats[3] || []).find((entry) => entry.username === 'beta');
+  const betaBeat4 = (result.beats[4] || []).find((entry) => entry.username === 'beta');
+
+  assert.ok(betaBeat3);
+  assert.equal(betaBeat3.action, 'W');
+  assert.equal(betaBeat3.rotation, '0');
+  assert.equal(betaBeat3.rotationSource, 'selected');
+  assert.ok(betaBeat4);
+  assert.equal(betaBeat4.action, 'E');
+});
+
+test('executeBeats preserves committed future action-set starts when hit timeline is replayed', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: -1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'a', 90, characters[0].position, characters[0].facing, '', 6, 2),
+      buildEntry('beta', 'W', 10, characters[1].position, characters[1].facing),
+    ],
+    [buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing)],
+    [buildEntry('beta', 'W', 15, characters[1].position, characters[1].facing, '0', 0, 0)],
+  ];
+  beats[2][0].rotationSource = 'selected';
+  beats[2][0].cardId = 'advance';
+  beats[2][0].passiveCardId = 'tackle';
+
+  const result = executeBeats(beats, characters);
+  const betaBeat2 = (result.beats[2] || []).find((entry) => entry.username === 'beta');
+
+  assert.ok(betaBeat2);
+  assert.equal(betaBeat2.action, 'W');
+  assert.equal(betaBeat2.rotationSource, 'selected');
+  assert.equal(betaBeat2.cardId, 'advance');
+  assert.equal(betaBeat2.passiveCardId, 'tackle');
+});
+
+test('executeBeats keeps terminal DamageIcon when hit replay is truncated by a committed future start', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: -1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'a', 90, characters[0].position, characters[0].facing, '', 6, 2),
+      buildEntry('beta', 'W', 95, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'DamageIcon', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 15, characters[1].position, characters[1].facing, '0', 0, 0),
+    ],
+  ];
+  beats[2][1].rotationSource = 'selected';
+  beats[2][1].cardId = 'advance';
+  beats[2][1].passiveCardId = 'tackle';
+
+  const result = executeBeats(beats, characters);
+  const betaBeat1 = (result.beats[1] || []).find((entry) => entry.username === 'beta');
+  const betaBeat2 = (result.beats[2] || []).find((entry) => entry.username === 'beta');
+
+  assert.ok(betaBeat1);
+  assert.equal(betaBeat1.action, 'DamageIcon');
+  assert.ok(betaBeat2);
+  assert.equal(betaBeat2.action, 'W');
+  assert.equal(betaBeat2.rotationSource, 'selected');
+  assert.equal(betaBeat2.cardId, 'advance');
+});
+
 test('executeBeats does not open combo on throw hits', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
@@ -1545,6 +1689,37 @@ test('executeBeats applies cross-slash passive self damage at action start', () 
   assert.ok(alphaEntry.consequences?.some((effect) => effect.type === 'hit' && effect.damageDelta === 1));
 });
 
+test('executeBeats records Healing Harmony self-heal as negative timeline consequence', () => {
+  const characters = [
+    {
+      userId: 'alpha',
+      username: 'alpha',
+      position: { q: 0, r: 0 },
+      facing: 180,
+      damage: 5,
+      characterId: 'murelious',
+      characterName: 'Alpha',
+    },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'X1', 20, characters[0].position, characters[0].facing),
+    ],
+  ];
+  beats[0][0].cardId = 'healing-harmony';
+
+  const result = executeBeats(beats, characters);
+  const beat0 = result.beats[0] || [];
+  const alphaEntry = beat0.find((entry) => entry.username === 'alpha');
+  const hitConsequences = (alphaEntry?.consequences ?? []).filter((effect) => effect?.type === 'hit');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.damage, 2);
+  assert.equal(hitConsequences.length, 1);
+  assert.deepEqual(hitConsequences[0], { type: 'hit', damageDelta: -3, knockbackDistance: 0 });
+});
+
 test('executeBeats resolves parry counters even when a defender is at E', () => {
   const characters = [
     { userId: 'def', username: 'def', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Def' },
@@ -1886,6 +2061,44 @@ test('executeBeatsWithInteractions preserves submitted start after rewind return
   assert.ok(alphaBeat4);
   assert.equal(alphaBeat4.action, 'B2m');
   assert.equal(alphaBeat4.rotationSource, 'selected');
+});
+
+test('executeBeats keeps clamped damage icons when the next beat is a protected selected start', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 0, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: -1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+  const beats = [
+    [
+      buildEntry('alpha', 'W', 90, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 10, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 90, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'a', 67, characters[1].position, characters[1].facing, '', 3, 2),
+    ],
+    [
+      buildEntry('alpha', 'DamageIcon', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 67, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'B2m', 20, characters[0].position, characters[0].facing, 'L2'),
+      buildEntry('beta', 'W', 67, characters[1].position, characters[1].facing),
+    ],
+  ];
+  beats[3][0].cardId = 'dash';
+  beats[3][0].passiveCardId = 'push-kick';
+  beats[3][0].rotationSource = 'selected';
+
+  const result = executeBeats(beats, characters);
+  const alphaBeat2 = (result.beats[2] || []).find((entry) => entry.username === 'alpha');
+  const alphaBeat3 = (result.beats[3] || []).find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaBeat2);
+  assert.ok(alphaBeat3);
+  assert.equal(alphaBeat2.action, 'DamageIcon');
+  assert.equal(alphaBeat3.action, 'B2m');
+  assert.equal(alphaBeat3.rotationSource, 'selected');
 });
 
 test('executeBeatsWithInteractions applies resolved rewind return and runs rewind trailing actions', () => {
