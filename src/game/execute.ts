@@ -724,13 +724,20 @@ export const executeBeatsWithInteractions = (
     })),
   );
   const state = new Map<string, { position: { q: number; r: number }; damage: number; facing: number }>();
+  const baselineStateByUser = new Map<string, { position: { q: number; r: number }; damage: number; facing: number }>();
   characters.forEach((character) => {
     const baselineDamage = Number.isFinite(character.damage) ? Math.max(0, Math.floor(character.damage)) : 0;
-    state.set(character.userId, {
+    const baselineState = {
       position: { q: character.position.q, r: character.position.r },
       damage: baselineDamage,
       facing: normalizeDegrees(character.facing ?? 0),
+    };
+    baselineStateByUser.set(character.userId, {
+      position: { q: baselineState.position.q, r: baselineState.position.r },
+      damage: baselineState.damage,
+      facing: baselineState.facing,
     });
+    state.set(character.userId, baselineState);
   });
   let lastCalculated = -1;
   const updatedInteractions: CustomInteraction[] = interactions.map((interaction) => ({
@@ -1059,6 +1066,49 @@ export const executeBeatsWithInteractions = (
 
   const findEntryForCharacter = (beat: BeatEntry[], character: PublicCharacter) =>
     beat.find((item) => matchesEntryForCharacter(item, character)) ?? null;
+
+  const getLastCalculatedEntryForCharacter = (
+    character: PublicCharacter,
+    uptoIndex: number,
+  ): BeatEntry | null => {
+    if (!Number.isFinite(uptoIndex) || uptoIndex < 0) return null;
+    const lastIndex = Math.min(Math.max(0, Math.round(uptoIndex)), normalizedBeats.length - 1);
+    for (let i = lastIndex; i >= 0; i -= 1) {
+      const beat = normalizedBeats[i];
+      const entry = beat ? findEntryForCharacter(beat, character) : null;
+      if (entry?.calculated) return entry;
+    }
+    return null;
+  };
+
+  const syncRuntimeStateFromCalculatedTimeline = (uptoIndex: number) => {
+    characters.forEach((character) => {
+      const fallback = baselineStateByUser.get(character.userId) ?? {
+        position: { q: character.position.q, r: character.position.r },
+        damage: Number.isFinite(character.damage) ? Math.max(0, Math.floor(character.damage)) : 0,
+        facing: normalizeDegrees(character.facing ?? 0),
+      };
+      const calculatedEntry = getLastCalculatedEntryForCharacter(character, uptoIndex);
+      const source = calculatedEntry
+        ? {
+            position: calculatedEntry.location
+              ? { q: calculatedEntry.location.q, r: calculatedEntry.location.r }
+              : { q: fallback.position.q, r: fallback.position.r },
+            damage: Number.isFinite(calculatedEntry.damage)
+              ? Math.max(0, Math.floor(calculatedEntry.damage))
+              : fallback.damage,
+            facing: Number.isFinite(calculatedEntry.facing)
+              ? normalizeDegrees(calculatedEntry.facing)
+              : fallback.facing,
+          }
+        : fallback;
+      state.set(character.userId, {
+        position: { q: source.position.q, r: source.position.r },
+        damage: source.damage,
+        facing: source.facing,
+      });
+    });
+  };
 
   const clearActionFields = (entry: BeatEntry) => {
     entry.action = DEFAULT_ACTION;
@@ -2008,6 +2058,9 @@ export const executeBeatsWithInteractions = (
   };
 
   for (let index = 0; index < normalizedBeats.length; index += 1) {
+    // Timeline entries are canonical; runtime state is re-projected from
+    // calculated history each beat so mutable execution state cannot drift.
+    syncRuntimeStateFromCalculatedTimeline(index - 1);
     if (haltIndex != null && index > haltIndex) {
       for (let j = index; j < normalizedBeats.length; j += 1) {
         applyStateToBeat(normalizedBeats[j], false);
