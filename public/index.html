@@ -14,8 +14,6 @@
         type="button"
         aria-label="Toggle side menu"
         aria-expanded="false"
-        hidden
-        aria-hidden="true"
       >
         <span></span>
         <span></span>
@@ -30,11 +28,13 @@
         </div>
         <nav class="menu-nav">
           <button class="menu-link" type="button">Account</button>
-          <button class="menu-link" type="button">Rulebook</button>
+          <a class="menu-link" href="/public/rulebook.html">Rulebook</a>
           <button class="menu-link" type="button">Video Rules</button>
           <button class="menu-link" type="button">Feedback</button>
         </nav>
-        <a class="menu-footer-link" href="https://bymarcell.com" target="_blank" rel="noreferrer">By Marcell</a>
+        <a class="menu-footer-link" href="https://bymarcell.com" target="_blank" rel="noreferrer">
+          <img class="menu-footer-image" src="/public/images/byMarcell.webp" alt="By Marcell" loading="lazy" />
+        </a>
       </aside>
 
       <section class="menu-decks panel" aria-label="Decks">
@@ -230,6 +230,7 @@
           <span></span>
         </button>
         <div id="gameMenuPanel" class="game-menu-panel panel" hidden aria-hidden="true">
+          <a id="gameMenuRulebook" class="game-menu-action" href="/public/rulebook.html" target="_blank" rel="noreferrer">Rulebook</a>
           <button id="gameMenuForfeit" class="game-menu-action" type="button">Forfeit</button>
           <button id="gameMenuOfferDraw" class="game-menu-action" type="button">Offer Draw</button>
         </div>

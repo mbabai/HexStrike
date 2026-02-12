@@ -20,18 +20,17 @@ const setOverlayVisible = (overlay, visible) => {
 const setReplayUrl = (replayId = null, encodedPayload = null) => {
   const url = new URL(window.location.href);
   if (replayId) {
-    url.searchParams.set('replay', replayId);
+    url.searchParams.set('r', replayId);
+    url.searchParams.delete('replay');
   } else {
+    url.searchParams.delete('r');
     url.searchParams.delete('replay');
   }
-  const hashParams = new URLSearchParams(url.hash.startsWith('#') ? url.hash.slice(1) : url.hash);
   if (encodedPayload) {
-    hashParams.set('rp', encodedPayload);
-  } else {
-    hashParams.delete('rp');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}#${encodedPayload}`);
+    return;
   }
-  const nextHash = hashParams.toString();
-  window.history.replaceState({}, '', `${url.pathname}${url.search}${nextHash ? `#${nextHash}` : ''}`);
+  window.history.replaceState({}, '', `${url.pathname}${url.search}`);
 };
 
 const setBusyText = (listRoot, text) => {
@@ -88,7 +87,7 @@ export const initReplays = async () => {
 
   const shareReplay = async (replay) => {
     const detail = replay?.state?.public ? replay : await fetchReplayDetail(replay.id);
-    const shareUrl = buildReplayShareUrl(detail, { includePayload: true });
+    const shareUrl = buildReplayShareUrl(detail);
     if (!shareUrl) {
       throw new Error('Unable to build replay link');
     }

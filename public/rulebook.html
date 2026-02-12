@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HexStrike Rulebook</title>
+    <link rel="icon" href="/public/images/X1.png" type="image/png" />
+    <link rel="stylesheet" href="/public/theme.css" />
+    <link rel="stylesheet" href="/public/cards.css" />
+    <link rel="stylesheet" href="/public/rulebook.css" />
+  </head>
+  <body class="rulebook-body">
+    <main class="ui-shell rulebook-shell">
+      <header class="hero-header">
+        <div class="hero-header-content">
+          <div class="branding">
+            <p class="eyebrow">Official Rules</p>
+            <h1>HexStrike Rulebook</h1>
+            <p class="subtitle">
+              Current implementation reference for gameplay rules, symbols, timeline flow, and cards.
+            </p>
+          </div>
+          <div class="hero-actions">
+            <a class="btn btn-ghost btn-small" href="/">Back to Lobby</a>
+            <a class="btn btn-ghost btn-small" href="/public/cards.html">Card Catalog</a>
+          </div>
+        </div>
+      </header>
+
+      <section class="panel">
+        <h2>Table of Contents</h2>
+        <ol class="toc">
+          <li><a href="#overview">Game Overview</a></li>
+          <li><a href="#setup">Setup</a></li>
+          <li><a href="#cards">Reading a Card</a></li>
+          <li><a href="#hand-economy">Cards in Hand and Card Economy</a></li>
+          <li><a href="#phases">Frame Phases</a></li>
+          <li><a href="#timeline">Timeline and Submission</a></li>
+          <li><a href="#movement-combat">Symbol Resolution and Combat</a></li>
+          <li><a href="#knockback">Knockback and Damage Resolution</a></li>
+          <li><a href="#advanced">Advanced Interactions</a></li>
+          <li><a href="#victory">End of Match and Victory</a></li>
+          <li><a href="#rules-glossary">Rules Glossary</a></li>
+          <li><a href="#symbol-glossary">Symbol Glossary</a></li>
+          <li><a href="#quick-reference">Quick Reference</a></li>
+          <li><a href="#catalog">Current Card Gallery</a></li>
+        </ol>
+      </section>
+
+      <section id="overview" class="panel">
+        <h2>1) Game Overview</h2>
+        <p>
+          HexStrike is a two-player, timeline-based card combat game on a hex board. You are not choosing one action at a
+          time. Instead, you lock in a paired card plan that can span multiple beats, then the server resolves both players'
+          plans in a shared timeline.
+        </p>
+        <h3>Objective</h3>
+        <p>Win by forcing the opponent to lose. A player loses if either condition is met:</p>
+        <ul>
+          <li>A player is more than 4 hex tiles away from land at any point.</li>
+          <li>A player has no more cards to play when it is their turn to play a card.</li>
+        </ul>
+        <h3>Core Components</h3>
+        <ul>
+          <li>Hex board with central land and surrounding abyss.</li>
+          <li>Two characters with facing direction and accumulated damage.</li>
+          <li>Per-player deck package: four movement cards and twelve ability cards.</li>
+          <li>Shared beat timeline with one entry per player per beat.</li>
+          <li>Interaction pauses for throws, discard prompts, combo prompts, and hand-trigger prompts.</li>
+        </ul>
+      </section>
+
+      <section id="setup" class="panel">
+        <h2>2) Setup</h2>
+        <ol>
+          <li>Each player picks one character and one deck (4 movement, 12 ability, no duplicates).</li>
+          <li>Characters spawn on opposite sides of land, facing each other.</li>
+          <li>All movement cards start available (not exhausted).</li>
+          <li>Draw ability cards up to max hand size (normally 4, modified by character/focus effects).</li>
+        </ol>
+        <div id="characterRoster" class="character-grid" aria-live="polite"></div>
+      </section>
+
+      <section id="cards" class="panel">
+        <h2>3) Reading a Card</h2>
+        <div class="text-panel">
+          <p>
+            Every submission uses exactly two cards of opposite types: one movement card and one ability card. One is
+            designated active, the other passive. The active card supplies the action timeline and base stats. The passive
+            card modifies behavior through passive text.
+          </p>
+        </div>
+        <h3>Card Anatomy</h3>
+        <ul>
+          <li>Left vertical symbol lane: beat-by-beat action sequence for the active card.</li>
+          <li>Top title bar: card name.</li>
+          <li>Upper-right badges: priority and rotation allowance.</li>
+          <li>Middle text area: active text instructions.</li>
+          <li>Lower text area: passive text instructions.</li>
+          <li>Bottom-left badges on ability cards: damage and knockback factor.</li>
+        </ul>
+        <h3>Active vs Passive Role</h3>
+        <ul>
+          <li>The active card puts its symbol sequence onto your timeline.</li>
+          <li>Active card determines base priority, damage, and knockback factor for attacks.</li>
+          <li>Passive card modifies the active list and/or adds conditional effects.</li>
+          <li>You cannot pick two cards of the same type in one submission.</li>
+        </ul>
+        <h3>Visual Examples</h3>
+        <div class="card-row">
+          <div>
+            <h4>Movement Example</h4>
+            <div id="sampleMovementCard"></div>
+          </div>
+          <div>
+            <h4>Ability Example</h4>
+            <div id="sampleAbilityCard"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="hand-economy" class="panel">
+        <h2>4) Cards in Hand and Card Economy</h2>
+        <div class="text-panel">
+          <p>
+            In HexStrike rules text, "cards in hand" refers to ability cards unless a rule explicitly says movement.
+            Movement hand size is kept in line with ability hand size using the hand-cap rules below.
+          </p>
+        </div>
+        <h3>Hand Parity Rule</h3>
+        <p>
+          Movement hand attempts to match ability hand up to the player's current maximum hand size. Default max is four,
+          with character and focus effects able to modify it.
+        </p>
+        <table class="parity-table">
+          <thead>
+            <tr>
+              <th>Ability Cards in Hand</th>
+              <th>Target Movement Cards in Hand</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>0</td>
+              <td>0</td>
+            </tr>
+            <tr>
+              <td>1</td>
+              <td>1</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>2</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td>3</td>
+            </tr>
+            <tr>
+              <td>4 or more</td>
+              <td>4 (practical cap from total movement cards)</td>
+            </tr>
+          </tbody>
+        </table>
+        <h3>Draw and Discard Behavior</h3>
+        <ul>
+          <li>Draw effects add ability cards first, then movement cards are adjusted to match.</li>
+          <li>Discard effects remove ability cards first, then movement cards are adjusted to match.</li>
+          <li>If a discard requirement exceeds current hand size, all available valid cards are used.</li>
+        </ul>
+        <h3>Card Zones and Consumption</h3>
+        <ul>
+          <li>Ability cards cycle through ability hand and ability deck.</li>
+          <li>Movement cards cycle between ready and exhausted states.</li>
+          <li>When a submission is accepted, both selected cards are spent immediately.</li>
+          <li>
+            The selected ability card is removed from hand at submission time and placed under the ability deck, except
+            where focus rules temporarily set it aside.
+          </li>
+          <li>
+            The selected movement card is either exhausted or stays ready depending on current hand-size state, then sync
+            rules apply.
+          </li>
+        </ul>
+      </section>
+
+      <section id="phases" class="panel">
+        <h2>5) Frame Phases</h2>
+        <div class="text-panel">
+          <p>
+            HexStrike can be taught as a repeating five-phase loop: Refresh, Play, Execute, Shift, Repeat. Internally, this
+            means checking who can refresh, locking in player choices, resolving actions in order, and moving to the next
+            beat.
+          </p>
+        </div>
+        <h3>Teaching Version: How a Frame Feels</h3>
+        <div class="phase-grid">
+          <article class="phase-card">
+            <h4>Refresh</h4>
+            <p>If you can refresh, refill toward max and fix movement-to-ability matching.</p>
+          </article>
+          <article class="phase-card">
+            <h4>Play</h4>
+            <p>Players who are ready choose movement + ability + rotation, then lock it in.</p>
+          </article>
+          <article class="phase-card">
+            <h4>Execute</h4>
+            <p>Actions resolve by priority and symbol meaning, with pauses when players must choose.</p>
+          </article>
+          <article class="phase-card">
+            <h4>Shift</h4>
+            <p>The game advances to the next open beat.</p>
+          </article>
+          <article class="phase-card">
+            <h4>Repeat</h4>
+            <p>The loop starts again from that new beat.</p>
+          </article>
+        </div>
+        <div class="phase-visual">
+          <h4>In-Game Phase Visuals</h4>
+          <div class="phase-track">
+            <div class="action-slot-row phase-slot-stack" aria-label="Action card slots">
+              <div class="action-slot">
+                <div class="action-slot-drop" aria-label="Active card slot">
+                  <span class="action-slot-label">Active</span>
+                </div>
+              </div>
+              <div class="action-slot">
+                <div class="action-slot-drop" aria-label="Passive card slot">
+                  <span class="action-slot-label">Passive</span>
+                </div>
+              </div>
+            </div>
+            <div class="rotation-selector phase-rotation-stack" aria-label="Rotation selector">
+              <div id="phaseRotationWheel" class="rotation-wheel"></div>
+            </div>
+          </div>
+        </div>
+        <h3>Formal Version: Phase Rules</h3>
+        <ol>
+          <li>
+            Refresh phase:
+            Refresh can happen only at the current open beat and only on land (or a valid platform effect). Refresh is
+            blocked while choices are pending or while focus is active.
+          </li>
+          <li>
+            Play phase:
+            Each ready player picks one movement card, one ability card, and one legal rotation. If both players must act
+            on the same beat, both choices are collected before reveal.
+          </li>
+          <li>
+            Execute phase:
+            The server resolves by priority, applies rotation first, processes symbols in order, and pauses if input is
+            required.
+          </li>
+          <li>
+            Shift phase:
+            Resolved history advances and the next open beat becomes active.
+          </li>
+          <li>
+            Repeat phase:
+            The same loop runs again from the updated game state until a match outcome is reached.
+          </li>
+        </ol>
+      </section>
+
+      <section id="timeline" class="panel">
+        <h2>6) Timeline and Submission</h2>
+        <h3>Open Beats and Frontier</h3>
+        <ul>
+          <li><img class="inline-symbol" src="/public/images/E.png" alt="Open beat symbol" /> is an open beat.</li>
+          <li>
+            <img class="inline-symbol" src="/public/images/F.png" alt="Focus symbol" /> is also treated as open for
+            action insertion and gating in focus rules.
+          </li>
+          <li>The earliest open beat across all players is where new plays happen.</li>
+          <li>The game checks forward from current progress, not from beat zero.</li>
+        </ul>
+        <h3>Submission Flow</h3>
+        <ol>
+          <li>At your next open beat, choose one active card, one passive card, and one legal rotation.</li>
+          <li>Your active timeline is inserted at your first open slot without shifting other players' rows.</li>
+          <li>Selected rotation is attached to the first inserted entry unless later forced by card text.</li>
+          <li>Old future entries that no longer fit are cleared, while locked future starts are kept.</li>
+          <li>If both players are required at the same beat, all required submissions are collected first.</li>
+        </ol>
+        <h3>Beat Resolution Order</h3>
+        <ul>
+          <li>Entries resolve by priority (higher first). Ties use roster order.</li>
+          <li>Rotation is applied before token execution.</li>
+          <li>
+            Multi-token actions (for example
+            <img class="inline-symbol" src="/public/images/a-La-Ra.png" alt="Multi-attack symbol" />) resolve left to
+            right.
+          </li>
+          <li>Each token uses actor state seeded at that beat's execution window.</li>
+        </ul>
+        <div class="timeline-example">
+          <h4>Timeline Icon Example</h4>
+          <div class="timeline-row">
+            <span class="timeline-user">Player A</span>
+            <span class="token-chip"><img src="/public/images/m.png" alt="Move symbol" /></span>
+            <span class="token-chip"><img src="/public/images/a.png" alt="Attack symbol" /></span>
+            <span class="token-chip"><img src="/public/images/Co.png" alt="Combo symbol" /></span>
+            <span class="token-chip"><img src="/public/images/W.png" alt="Wait symbol" /></span>
+            <span class="token-chip"><img src="/public/images/E.png" alt="Open beat symbol" /></span>
+          </div>
+          <div class="timeline-row">
+            <span class="timeline-user">Player B</span>
+            <span class="token-chip"><img src="/public/images/W.png" alt="Wait symbol" /></span>
+            <span class="token-chip"><img src="/public/images/b.png" alt="Block symbol" /></span>
+            <span class="token-chip"><img src="/public/images/DamageIcon.png" alt="Damage icon symbol" /></span>
+            <span class="token-chip"><img src="/public/images/E.png" alt="Open beat symbol" /></span>
+          </div>
+        </div>
+      </section>
+
+      <section id="movement-combat" class="panel">
+        <h2>7) Symbol Resolution and Combat</h2>
+        <h3>Movement vs Jump (Important)</h3>
+        <ul>
+          <li>
+            <img class="inline-symbol" src="/public/images/m.png" alt="Move symbol" /> moves step-by-step and stops
+            early if another character occupies the path.
+          </li>
+          <li>
+            <img class="inline-symbol" src="/public/images/2j.png" alt="Jump symbol" /> jumps to destination;
+            intermediate occupancy is ignored, but landing on another character is not allowed.
+          </li>
+        </ul>
+        <h3>Path Geometry</h3>
+        <ul>
+          <li>Path directions are relative to facing, not absolute board direction.</li>
+          <li>Distance variants extend travel or reach along the same relative direction.</li>
+          <li>Composite symbols can include multiple attack vectors on the same beat.</li>
+        </ul>
+        <h3>Attack and Charge</h3>
+        <ul>
+          <li><img class="inline-symbol" src="/public/images/a.png" alt="Attack symbol" /> attacks destination hex of its path.</li>
+          <li>
+            <img class="inline-symbol" src="/public/images/c.png" alt="Charge symbol" /> is a charge and performs both
+            attack behavior and movement behavior on the same token.
+          </li>
+        </ul>
+        <h3>Blocks</h3>
+        <ul>
+          <li><img class="inline-symbol" src="/public/images/b.png" alt="Block symbol" /> places a directional block on your current hex.</li>
+          <li>Blocks stop matching attack directions that arrive later in the beat.</li>
+          <li>Throws ignore normal block stopping rules.</li>
+        </ul>
+        <div class="text-panel">
+          <p>Block symbols can represent different defended angles. These are all blocks, but with different coverage:</p>
+          <div class="block-angle-row">
+            <span class="token-chip"><img src="/public/images/b.png" alt="Single-angle block" /></span>
+            <span class="token-chip"><img src="/public/images/Bb.png" alt="Backward block" /></span>
+            <span class="token-chip"><img src="/public/images/b-Lb-Rb.png" alt="Three-angle block" /></span>
+            <span class="token-chip"><img src="/public/images/b-Lb-Rb-BLb-BRb-Bb.png" alt="Six-angle block" /></span>
+          </div>
+        </div>
+      </section>
+
+      <section id="knockback" class="panel">
+        <h2>8) Knockback and Damage Resolution</h2>
+        <h3>Damage Model</h3>
+        <ul>
+          <li>Damage is accumulated over match time and is not automatically reset during play.</li>
+          <li>
+            Per-hit <img class="inline-symbol" src="/public/images/DamageIcon.png" alt="Damage badge" /> value is read
+            from active card stats plus active modifiers.
+          </li>
+          <li>
+            Per-hit <img class="inline-symbol" src="/public/images/KnockBackIcon.png" alt="Knockback badge" /> value is
+            read from active card stats plus active modifiers.
+          </li>
+        </ul>
+        <h3>Knockback Formula</h3>
+        <div class="formula-block">
+          <div class="formula-line">
+            <span class="formula-stat is-damage" aria-label="Damage value X">
+              <span class="formula-stat-value">X</span>
+            </span>
+            <span>add X to the accumulated damage of the target, first.</span>
+          </div>
+          <div class="formula-line">
+            <span class="formula-stat is-kbf" aria-label="Knockback factor 0">
+              <span class="formula-stat-value">0</span>
+            </span>
+            <span class="formula-op">&rarr;</span>
+            <span>knockback 0</span>
+          </div>
+          <div class="formula-line">
+            <span class="formula-stat is-kbf" aria-label="Knockback factor 1">
+              <span class="formula-stat-value">1</span>
+            </span>
+            <span class="formula-op">&rarr;</span>
+            <span>knockback 1</span>
+          </div>
+          <div class="formula-line">
+            <span class="formula-stat is-kbf" aria-label="Knockback factor 2 or more">
+              <span class="formula-stat-value">2+</span>
+            </span>
+            <span class="formula-op">&rarr;</span>
+            <span>knockback = max(1, floor((accumulated damage x factor) / 10))</span>
+          </div>
+          <div class="formula-line">
+            <span class="formula-stat is-kbf is-throw" aria-label="Throw knockback">
+              <span class="formula-stat-value">T</span>
+            </span>
+            <span class="formula-op">&rarr;</span>
+            <span>throw rules replace this formula.</span>
+          </div>
+        </div>
+        <h3>Stun Window and Timeline Rewrite</h3>
+        <ul>
+          <li>
+            When knockback or stun conditions are met, the defender timeline is rewritten with
+            <img class="inline-symbol" src="/public/images/DamageIcon.png" alt="Damage icon marker" /> entries and then
+            re-opened by an open beat marker.
+          </li>
+          <li>
+            <img class="inline-symbol is-muted" src="/public/images/DamageIcon.png" alt="Stun-only grey marker" />
+            Greyed hit markers mean stun timing with no movement knockback.
+          </li>
+          <li>Hit rewrites try not to erase already-locked future actions.</li>
+          <li>Damage and knockback overlays shown on timeline come from per-beat consequences data.</li>
+        </ul>
+      </section>
+
+      <section id="advanced" class="panel">
+        <h2>9) Advanced Interactions</h2>
+        <h3>Throws</h3>
+        <ul>
+          <li>
+            When an attack is a throw, instead of calculating knockback, the thrower chooses the knockback direction, and
+            distance is always 2 regardless of accumulated damage.
+          </li>
+          <li>Throw-enabled attacks pause execution and request that direction choice.</li>
+          <li>
+            Throw hits are marked by the knockback badge with
+            <img class="inline-symbol" src="/public/images/KnockBackIcon.png" alt="Knockback badge" />
+            and value <strong>T</strong>.
+          </li>
+          <li>Throw immunity passives block incoming throw resolution windows.</li>
+        </ul>
+        <h3>Combo Windows</h3>
+        <p>
+          Combo checks are represented by <img class="inline-symbol" src="/public/images/Co.png" alt="Combo symbol" />.
+          A combo prompt opens only when the matching active card landed a valid non-throw hit and combo availability is
+          still true for that sequence.
+        </p>
+        <h3>Focus</h3>
+        <ul>
+          <li>
+            When <img class="inline-symbol" src="/public/images/F.png" alt="Focus symbol" /> appears on the timeline, that
+            card becomes a persistent passive effect until focus is broken.
+          </li>
+          <li>If the focused character is stunned or knocked back, the focus effect ends immediately.</li>
+          <li>When focus ends, the focused card is returned to the bottom of that player's ability deck.</li>
+        </ul>
+        <h3>Hand Trigger Prompts</h3>
+        <ul>
+          <li>Some cards can be revealed from hand when trigger conditions are met.</li>
+          <li>These prompts may require discard payment before effect resolution is applied.</li>
+          <li>Only the globally earliest pending hand-trigger prompt is interactive at a time.</li>
+        </ul>
+        <h3>Board Tokens</h3>
+        <ul>
+          <li>
+            <img class="inline-symbol" src="/public/images/FireHexToken.png" alt="Fire token symbol" /> Fire token:
+            applies periodic damage to occupants unless immunity applies.
+          </li>
+          <li>
+            <img class="inline-symbol" src="/public/images/ArrowToken.png" alt="Arrow token symbol" /> Arrow token:
+            advances each beat and always resolves as
+            <img class="inline-symbol" src="/public/images/c.png" alt="Charge symbol" /> with
+            <img class="inline-symbol" src="/public/images/DamageIcon.png" alt="Damage badge" /> and
+            <img class="inline-symbol" src="/public/images/KnockBackIcon.png" alt="Knockback badge" />.
+          </li>
+          <li>
+            <img class="inline-symbol" src="/public/images/EtherealPlatform.png" alt="Ethereal platform token symbol" />
+            Ethereal platform token: can allow land-style refresh over abyss, then is consumed.
+          </li>
+          <li>
+            <img class="inline-symbol" src="/public/images/F.png" alt="Focus anchor symbol" /> Focus anchor token:
+            marks active focus anchor positions for visibility.
+          </li>
+        </ul>
+      </section>
+
+      <section id="victory" class="panel">
+        <h2>10) End of Match and Victory</h2>
+        <ul>
+          <li>Distance loss: if a character becomes more than 4 hex tiles from land, that player loses.</li>
+          <li>No-cards loss: if it is your turn to play and you cannot play a card, you lose.</li>
+          <li>Players may offer a draw during the match.</li>
+          <li>Players may forfeit during the match.</li>
+        </ul>
+      </section>
+
+      <section id="rules-glossary" class="panel">
+        <h2>11) Rules Glossary</h2>
+        <dl class="glossary-list">
+          <div class="glossary-item">
+            <dt>Ability Card</dt>
+            <dd>Non-movement card type. Ability hand count is the primary hand-count reference in rules.</dd>
+          </div>
+          <div class="glossary-item">
+            <dt>Movement Card</dt>
+            <dd>Movement card type that synchronizes to ability hand count through parity rules.</dd>
+          </div>
+          <div class="glossary-item">
+            <dt>Active Card</dt>
+            <dd>Selected card whose action timeline is inserted and whose priority and base stats drive resolution.</dd>
+          </div>
+          <div class="glossary-item">
+            <dt>Passive Card</dt>
+            <dd>Selected companion card whose passive text modifies the active sequence.</dd>
+          </div>
+          <div class="glossary-item">
+            <dt>Action Set</dt>
+            <dd>The active and passive cards plus rotation that you submit for your next open beat.</dd>
+          </div>
+          <div class="glossary-item">
+            <dt>Beat (Frame)</dt>
+            <dd>One timeline index containing one entry per player.</dd>
+          </div>
+          <div class="glossary-item">
+            <dt>Frontier</dt>
+            <dd>The first open beat where new plays are made.</dd>
+          </div>
+          <div class="glossary-item">
+            <dt>Priority</dt>
+            <dd>Resolution order ranking on active cards; higher resolves first.</dd>
+          </div>
+          <div class="glossary-item">
+            <dt>Rotation</dt>
+            <dd>Facing change in sixty-degree increments applied before action resolution.</dd>
+          </div>
+          <div class="glossary-item">
+            <dt>Accumulated Damage</dt>
+            <dd>Total damage on a character used by knockback calculations and card conditions.</dd>
+          </div>
+          <div class="glossary-item">
+            <dt>Refresh</dt>
+            <dd>Refilling your hand on land when game state allows it.</dd>
+          </div>
+          <div class="glossary-item">
+            <dt>Discard</dt>
+            <dd>Card removal action that moves ability cards through ability cycle and syncs movement parity.</dd>
+          </div>
+          <div class="glossary-item">
+            <dt>Draw</dt>
+            <dd>Ability card draw followed by movement parity synchronization.</dd>
+          </div>
+          <div class="glossary-item">
+            <dt>Throw</dt>
+            <dd>Interaction-based hit type that requests direction input and resolves through throw rules.</dd>
+          </div>
+          <div class="glossary-item">
+            <dt>Touching</dt>
+            <dd>Same hex or one of six adjacent hexes.</dd>
+          </div>
+          <div class="glossary-item">
+            <dt>Land and Abyss</dt>
+            <dd>Terrain categories used for refresh eligibility and distance-loss checks.</dd>
+          </div>
+          <div class="glossary-item">
+            <dt>Combo Window</dt>
+            <dd>A choice point where a combo can continue or stop.</dd>
+          </div>
+          <div class="glossary-item">
+            <dt>Focus</dt>
+            <dd>Concentration-like state that can reduce hand cap and modify refresh/return behavior.</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section id="symbol-glossary" class="panel">
+        <h2>12) Symbol Glossary</h2>
+        <h3>Action Symbols</h3>
+        <div id="actionTypeGlossary" class="symbol-grid"></div>
+
+        <h3>Path and Direction Symbols</h3>
+        <div id="pathGlossary" class="symbol-grid"></div>
+
+        <h3>Timeline and Special Symbols</h3>
+        <div id="specialGlossary" class="symbol-grid"></div>
+      </section>
+
+      <section id="quick-reference" class="panel">
+        <h2>13) Quick Reference</h2>
+        <div class="quick-ref-grid">
+          <div class="text-panel">
+            <h3>Frame Order</h3>
+            <ol>
+              <li>Refresh (if allowed on your current open beat)</li>
+              <li>Play (select movement, ability, and legal rotation)</li>
+              <li>Execute (resolve by priority and symbol rules)</li>
+              <li>Shift (move to the next open beat)</li>
+              <li>Repeat</li>
+            </ol>
+          </div>
+          <div class="text-panel">
+            <h3>Loss Conditions</h3>
+            <ul>
+              <li>More than 4 hex tiles from land.</li>
+              <li>No card available when it is your turn to play.</li>
+            </ul>
+          </div>
+          <div class="text-panel">
+            <h3>Knockback Summary</h3>
+            <ul>
+              <li>Zero factor: no knockback.</li>
+              <li>One factor: one hex knockback.</li>
+              <li>Higher factors: damage-scaled knockback with minimum floor.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="catalog" class="panel">
+        <h2>14) Current Card Gallery</h2>
+        <p>Card visuals below are rendered from the live card catalog data.</p>
+        <h3>Movement Cards</h3>
+        <div id="movementCatalog" class="cards-table" aria-live="polite"></div>
+        <h3>Ability Cards</h3>
+        <div id="abilityCatalog" class="cards-table" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <script type="module" src="/public/rulebook.js"></script>
+  </body>
+</html>

@@ -291,7 +291,7 @@ export const initGame = () => {
     const gamePublicState = stateLike?.state?.public;
     if (!gamePublicState) return null;
     return normalizeReplayPayload({
-      id: stateLike?.id ?? null,
+      id: null,
       sourceGameId: stateLike?.id ?? null,
       sourceMatchId: stateLike?.matchId ?? null,
       createdAt: new Date().toISOString(),
@@ -1218,7 +1218,7 @@ export const initGame = () => {
   };
 
   const getCurrentReplayPayload = () => {
-    if (isReplayMode()) {
+    if (activeReplay) {
       return buildReplaySnapshotFromState(activeReplay);
     }
     return buildReplaySnapshotFromState(gameState);
@@ -1229,7 +1229,7 @@ export const initGame = () => {
     if (!replayPayload) {
       throw new Error('Replay data is unavailable.');
     }
-    const shareUrl = buildReplayShareUrl(replayPayload, { includePayload: true });
+    const shareUrl = buildReplayShareUrl(replayPayload);
     if (!shareUrl) {
       throw new Error('Unable to build replay link.');
     }

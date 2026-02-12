@@ -2,7 +2,7 @@ export function initMenu() {
   const menuShell = document.getElementById('menuShell');
   const menuToggle = document.getElementById('menuToggle');
   const menuSidebar = document.getElementById('menuSidebar');
-  const MENU_ENABLED = false;
+  const MENU_ENABLED = true;
 
   if (!MENU_ENABLED) {
     if (menuShell) {
@@ -25,6 +25,15 @@ export function initMenu() {
   }
 
   if (menuShell && menuToggle) {
+    menuToggle.hidden = false;
+    menuToggle.style.display = '';
+    menuToggle.removeAttribute('aria-hidden');
+    menuToggle.removeAttribute('tabindex');
+    if (menuSidebar) {
+      menuSidebar.classList.add('is-collapsed');
+      menuSidebar.hidden = true;
+      menuSidebar.setAttribute('aria-hidden', 'true');
+    }
     menuToggle.addEventListener('click', () => {
       const isCollapsed = menuShell.classList.toggle('menu-collapsed');
       if (menuSidebar) {
@@ -36,7 +45,7 @@ export function initMenu() {
     });
   }
 
-  document.querySelectorAll('.menu-link').forEach((button) => {
+  document.querySelectorAll('button.menu-link').forEach((button) => {
     button.addEventListener('click', (event) => {
       event.preventDefault();
       window.alert('Coming soon');
