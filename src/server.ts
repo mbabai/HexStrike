@@ -1940,16 +1940,23 @@ export function buildServer(port: number) {
   };
 
   const handleStatic = (res: any, path: string) => {
+    const decodedPath = (() => {
+      try {
+        return decodeURIComponent(path);
+      } catch {
+        return path;
+      }
+    })();
     const resolved =
-      path === '/'
+      decodedPath === '/'
         ? '/public/index.html'
-        : path === '/admin' || path === '/admin/'
+        : decodedPath === '/admin' || decodedPath === '/admin/'
           ? '/public/admin.html'
-          : path === '/cards' || path === '/cards/'
+          : decodedPath === '/cards' || decodedPath === '/cards/'
             ? '/public/cards.html'
-            : path.startsWith('/public/')
-              ? path
-              : `/public${path}`;
+            : decodedPath.startsWith('/public/')
+              ? decodedPath
+              : `/public${decodedPath}`;
     readFile(process.cwd() + resolved, (err, data) => {
       if (err) {
         notFound(res);

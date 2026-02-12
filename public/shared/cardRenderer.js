@@ -4,6 +4,7 @@ const PRIORITY_ICON_URL = '/public/images/priority.png';
 const DAMAGE_ICON_URL = '/public/images/DamageIcon.png';
 const KNOCKBACK_ICON_URL = '/public/images/KnockBackIcon.png';
 const EMPHASIS_ICON_URL = '/public/images/i.png';
+const CARD_ART_BASE_URL = '/public/images/cardart';
 
 const stripActionBrackets = (value) => {
   const trimmed = `${value ?? ''}`.trim();
@@ -33,6 +34,11 @@ const buildRotationIconUrl = (rotation) => {
   const key = `${rotation ?? ''}`.trim();
   if (!key || key === '*') return `/public/images/${ROTATION_ICON_FALLBACK}.png`;
   return `/public/images/rot${key}.png`;
+};
+
+const buildCardArtUrl = (cardName) => {
+  const name = `${cardName ?? ''}`.trim();
+  return `${CARD_ART_BASE_URL}/${encodeURIComponent(name)}.jpg`;
 };
 
 const ensureActionList = (actions) => {
@@ -221,6 +227,21 @@ export const buildCardElement = (card, options = {}) => {
 
   const emptyRow = document.createElement('div');
   emptyRow.className = 'action-card-surface-row is-empty';
+  const art = document.createElement('img');
+  art.className = 'action-card-art';
+  art.src = buildCardArtUrl(card.name);
+  art.alt = `${card.name} art`;
+  art.loading = 'lazy';
+  art.decoding = 'async';
+  art.addEventListener(
+    'error',
+    () => {
+      emptyRow.classList.add('is-missing-art');
+      art.remove();
+    },
+    { once: true },
+  );
+  emptyRow.appendChild(art);
 
   const activeRow = document.createElement('div');
   activeRow.className = 'action-card-surface-row is-active';

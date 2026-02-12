@@ -7,6 +7,8 @@
 .rulebook-shell {
   gap: 1.25rem;
   padding-bottom: 3rem;
+  --action-card-scale: var(--action-card-game-scale);
+  --action-card-text-scale: 2.5;
 }
 
 .toc {

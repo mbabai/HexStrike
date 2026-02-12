@@ -1,6 +1,7 @@
 .cards-shell {
   max-width: 1600px;
-  --action-card-scale: 1.5;
+  --action-card-scale: var(--action-card-game-scale);
+  --action-card-text-scale: 2.5;
 }
 
 .cards-table {
