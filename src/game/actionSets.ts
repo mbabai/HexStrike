@@ -212,6 +212,9 @@ export const applyActionSetToBeats = (
       } else if ('passiveCardId' in entry) {
         delete entry.passiveCardId;
       }
+      if ('havenPassiveSkipApplied' in entry) {
+        delete entry.havenPassiveSkipApplied;
+      }
       if (Number.isFinite(actionItem.attackDamage)) {
         entry.attackDamage = actionItem.attackDamage;
       }

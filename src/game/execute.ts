@@ -1071,6 +1071,7 @@ export const executeBeatsWithInteractions = (
     if ('comboStarter' in entry) delete entry.comboStarter;
     if ('cardId' in entry) delete entry.cardId;
     if ('passiveCardId' in entry) delete entry.passiveCardId;
+    if ('havenPassiveSkipApplied' in entry) delete entry.havenPassiveSkipApplied;
     if ('stunOnly' in entry) delete entry.stunOnly;
     if ('focusCardId' in entry) delete entry.focusCardId;
   };
@@ -1124,6 +1125,9 @@ export const executeBeatsWithInteractions = (
       target.passiveCardId = source.passiveCardId;
     } else if ('passiveCardId' in target) {
       delete target.passiveCardId;
+    }
+    if ('havenPassiveSkipApplied' in target) {
+      delete target.havenPassiveSkipApplied;
     }
     if (source.stunOnly) {
       target.stunOnly = true;
@@ -1891,6 +1895,7 @@ export const executeBeatsWithInteractions = (
   const lastActionByUser = new Map<string, string>();
   const cardStartTerrainByUser = new Map<string, 'land' | 'abyss'>();
   const havenPassiveSkipByUser = new Map<string, boolean>();
+  const havenPassiveStartEntryByUser = new Map<string, BeatEntry>();
   const actionSetFacingByUser = new Map<string, number>();
   const actionSetRotationByUser = new Map<string, string>();
   const reflexDodgeAvoidedByUser = new Set<string>();
@@ -1931,6 +1936,62 @@ export const executeBeatsWithInteractions = (
     };
     comboStates.set(actorId, created);
     return created;
+  };
+
+  const entryHasMovementOrJumpAction = (entry: BeatEntry | null | undefined): boolean => {
+    if (!entry || isOpenBeatAction(entry.action ?? DEFAULT_ACTION)) return false;
+    return parseActionTokens(entry.action ?? '').some((token) => token.type === 'm' || token.type === 'j');
+  };
+
+  const isMovementCardEntry = (entry: BeatEntry | null | undefined): boolean => {
+    const cardId = `${entry?.cardId ?? ''}`.trim();
+    if (!cardId) return false;
+    const card = getRuntimeCardLookup().get(cardId);
+    return card?.type === 'movement';
+  };
+
+  const isLastMovementOrJumpBeatInActionSet = (
+    character: PublicCharacter | undefined,
+    beatIndex: number,
+    entry: BeatEntry | null | undefined,
+  ): boolean => {
+    if (!character || !entryHasMovementOrJumpAction(entry)) return false;
+    for (let i = beatIndex + 1; i < normalizedBeats.length; i += 1) {
+      const nextBeat = normalizedBeats[i];
+      const nextEntry = nextBeat ? findEntryForCharacter(nextBeat, character) : null;
+      if (!nextEntry || isOpenBeatAction(nextEntry.action ?? DEFAULT_ACTION)) {
+        break;
+      }
+      if (entryHasMovementOrJumpAction(nextEntry)) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const shouldQueueAbsorbPassiveDraw = (
+    character: PublicCharacter | undefined,
+    beatIndex: number,
+    entry: BeatEntry | null | undefined,
+  ): boolean => {
+    if (!entry || entry.passiveCardId !== ABSORB_CARD_ID) return false;
+    if (!isMovementCardEntry(entry)) return false;
+    return isLastMovementOrJumpBeatInActionSet(character, beatIndex, entry);
+  };
+
+  const armHavenPassiveSkip = (
+    actorId: string,
+    entry: BeatEntry | null | undefined,
+    startTerrain: 'land' | 'abyss' | undefined,
+  ) => {
+    const shouldTrack = entry?.passiveCardId === HAVEN_CARD_ID && startTerrain === 'abyss' && Boolean(entry);
+    if (!shouldTrack || !entry) {
+      havenPassiveSkipByUser.delete(actorId);
+      havenPassiveStartEntryByUser.delete(actorId);
+      return;
+    }
+    havenPassiveStartEntryByUser.set(actorId, entry);
+    havenPassiveSkipByUser.set(actorId, !Boolean(entry.havenPassiveSkipApplied));
   };
 
   const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
@@ -2124,22 +2185,19 @@ export const executeBeatsWithInteractions = (
       }
       interaction.resolution = nextResolution;
     });
-    const actionSetEnders = new Map<string, BeatEntry>();
-
     characters.forEach((character) => {
       const actorId = character.userId;
       const entry = entriesByUser.get(actorId);
       const action = entry?.action ?? DEFAULT_ACTION;
       const previous = lastActionByUser.get(actorId) ?? DEFAULT_ACTION;
-      const comboStart = isOpenBeatAction(previous) || Boolean(entry?.comboStarter);
+      const actionSetStart = isActionSetStart(entry);
+      const comboStart = isOpenBeatAction(previous) || actionSetStart;
       if (isOpenBeatAction(action)) {
-        if (!isOpenBeatAction(previous) && entry) {
-          actionSetEnders.set(actorId, entry);
-        }
         comboStates.delete(actorId);
         reflexDodgeAvoidedByUser.delete(actorId);
         cardStartTerrainByUser.delete(actorId);
         havenPassiveSkipByUser.delete(actorId);
+        havenPassiveStartEntryByUser.delete(actorId);
         actionSetFacingByUser.delete(actorId);
         actionSetRotationByUser.delete(actorId);
         if (entry && 'cardStartTerrain' in entry) {
@@ -2157,8 +2215,7 @@ export const executeBeatsWithInteractions = (
         }
         if (comboStart) {
           const startTerrain = cardStartTerrainByUser.get(actorId);
-          const shouldSkipFirstWait = entry?.passiveCardId === HAVEN_CARD_ID && startTerrain === 'abyss';
-          havenPassiveSkipByUser.set(actorId, shouldSkipFirstWait);
+          armHavenPassiveSkip(actorId, entry, startTerrain);
         }
         if (comboStart || !actionSetFacingByUser.has(actorId)) {
           const actorState = state.get(actorId);
@@ -2720,7 +2777,7 @@ export const executeBeatsWithInteractions = (
           }
           const startTerrain = resolveTerrain(targetState.position);
           cardStartTerrainByUser.set(targetId, startTerrain);
-          havenPassiveSkipByUser.set(targetId, swappedEntry.passiveCardId === HAVEN_CARD_ID && startTerrain === 'abyss');
+          armHavenPassiveSkip(targetId, swappedEntry, startTerrain);
           actionSetFacingByUser.set(targetId, targetState.facing);
           const refreshedRotation = findActionSetRotationForCharacter(targetCharacter, index);
           if (refreshedRotation) {
@@ -3060,6 +3117,7 @@ export const executeBeatsWithInteractions = (
       if (disabledActors.has(actorId)) return;
       const actorState = state.get(actorId);
       if (!actorState) return;
+      const actorCharacter = characterById.get(actorId);
       const actionSetFacing = actionSetFacingByUser.get(actorId) ?? actorState.facing;
       const actionSetRotation = actionSetRotationByUser.get(actorId) ?? '';
       const rotationMagnitude = getRotationMagnitude(actionSetRotation);
@@ -3071,16 +3129,20 @@ export const executeBeatsWithInteractions = (
       if (havenPassiveSkipByUser.get(actorId)) {
         const firstActionLabel = normalizeActionLabel(entry.action ?? '').toUpperCase();
         if (firstActionLabel === WAIT_ACTION) {
-          const actorCharacter = characterById.get(actorId);
           if (actorCharacter) {
             shiftCharacterActionSetLeft(actorCharacter, index);
           }
+          const startEntry = havenPassiveStartEntryByUser.get(actorId);
+          if (startEntry) {
+            startEntry.havenPassiveSkipApplied = true;
+          } else if (isActionSetStart(entry)) {
+            entry.havenPassiveSkipApplied = true;
+          }
+          havenPassiveSkipByUser.delete(actorId);
         }
-        havenPassiveSkipByUser.set(actorId, false);
       }
       if (entry.cardId === SMOKE_BOMB_CARD_ID && normalizeActionLabel(entry.action ?? '').toUpperCase() === 'X1') {
         const beforeSignature = currentBeatActionSignature(actorId);
-        const actorCharacter = characterById.get(actorId);
         const swappedEntry = swapActiveWithPassiveAtBeat(actorId, index, actorState);
         if (swappedEntry) {
           entriesByUser.set(actorId, swappedEntry);
@@ -3091,7 +3153,7 @@ export const executeBeatsWithInteractions = (
           }
           const startTerrain = resolveTerrain(actorState.position);
           cardStartTerrainByUser.set(actorId, startTerrain);
-          havenPassiveSkipByUser.set(actorId, swappedEntry.passiveCardId === HAVEN_CARD_ID && startTerrain === 'abyss');
+          armHavenPassiveSkip(actorId, swappedEntry, startTerrain);
           actionSetFacingByUser.set(actorId, actorState.facing);
           const refreshedRotation = actorCharacter
             ? findActionSetRotationForCharacter(actorCharacter, index)
@@ -3374,10 +3436,7 @@ export const executeBeatsWithInteractions = (
                 }
                 const startTerrain = resolveTerrain(targetState.position);
                 cardStartTerrainByUser.set(targetId, startTerrain);
-                havenPassiveSkipByUser.set(
-                  targetId,
-                  swappedEntry.passiveCardId === HAVEN_CARD_ID && startTerrain === 'abyss',
-                );
+                armHavenPassiveSkip(targetId, swappedEntry, startTerrain);
                 actionSetFacingByUser.set(targetId, targetState.facing);
                 const refreshedRotation = findActionSetRotationForCharacter(targetCharacter, index);
                 if (refreshedRotation) {
@@ -3769,6 +3828,10 @@ export const executeBeatsWithInteractions = (
         }
       });
 
+      if (shouldQueueAbsorbPassiveDraw(actorCharacter, index, entry)) {
+        queueDraw(actorId, 1);
+      }
+
       executedActors.add(actorId);
     });
 
@@ -3878,16 +3941,6 @@ export const executeBeatsWithInteractions = (
         if (fireDamage > 0) {
           recordHitConsequence(targetId, index, targetState, fireDamage, 0);
         }
-      });
-    }
-
-    if (actionSetEnders.size) {
-      actionSetEnders.forEach((entry, actorId) => {
-        if (entry.passiveCardId !== ABSORB_CARD_ID) return;
-        const actorState = state.get(actorId);
-        if (!actorState) return;
-        if (resolveTerrain(actorState.position) !== 'abyss') return;
-        queueDraw(actorId, 1);
       });
     }
 

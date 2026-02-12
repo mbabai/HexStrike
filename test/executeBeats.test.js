@@ -924,6 +924,39 @@ test('executeBeats queues Absorb draws when a bracketed block stops damage', () 
   assert.equal(draw.drawCount, 3);
 });
 
+test('executeBeats queues Absorb passive draw on the final movement/jump beat', () => {
+  const characters = [
+    {
+      userId: 'alpha',
+      username: 'alpha',
+      position: { q: 5, r: 0 },
+      facing: 180,
+      characterId: 'murelious',
+      characterName: 'Alpha',
+    },
+  ];
+
+  const beats = [
+    [buildEntry('alpha', 'W', 20, characters[0].position, characters[0].facing)],
+    [buildEntry('alpha', 'm', 20, characters[0].position, characters[0].facing)],
+    [buildEntry('alpha', 'W', 20, characters[0].position, characters[0].facing)],
+    [buildEntry('alpha', 'E', 20, characters[0].position, characters[0].facing)],
+  ];
+  beats.forEach((beat) => {
+    beat[0].cardId = 'step';
+    beat[0].passiveCardId = 'absorb';
+  });
+
+  const result = executeBeats(beats, characters);
+  const draws = (result.interactions || []).filter(
+    (interaction) => interaction.type === 'draw' && interaction.actorUserId === 'alpha',
+  );
+
+  assert.equal(draws.length, 1);
+  assert.equal(draws[0].drawCount, 1);
+  assert.equal(draws[0].beatIndex, 1);
+});
+
 test('executeBeats applies fire hex damage from board tokens even when the token owner matches the target', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },

@@ -218,6 +218,7 @@ export interface BeatEntry {
   focusCardId?: string;
   cardId?: string;
   passiveCardId?: string;
+  havenPassiveSkipApplied?: boolean;
   stunOnly?: boolean;
   consequences?: Array<{
     type: 'hit';

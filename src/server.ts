@@ -108,6 +108,9 @@ const REWIND_FOCUS_INTERACTION_TYPE = 'rewind-focus';
 const REWIND_RETURN_INTERACTION_TYPE = 'rewind-return';
 const WHIRLWIND_CARD_ID = 'whirlwind';
 const WHIRLWIND_MIN_DAMAGE = 12;
+const PROD_FAVICON_PATH = '/public/images/X1.png';
+const DEV_FAVICON_PATH = '/public/images/X2.png';
+const IS_DEV_RUNTIME = process.env.HEXSTRIKE_TEMP_LOGS === '1' || process.env.NODE_ENV === 'development';
 
 const normalizeActionLabel = (value: unknown): string => {
   const trimmed = `${value ?? ''}`.trim();
@@ -1234,6 +1237,11 @@ export function buildServer(port: number) {
         if (resolved.endsWith('.css')) type = 'text/css';
         if (resolved.endsWith('.js') || resolved.endsWith('.mjs')) type = 'text/javascript';
         res.writeHead(200, { 'Content-Type': type });
+        if (IS_DEV_RUNTIME && resolved.endsWith('.html')) {
+          const html = data.toString('utf8').replaceAll(PROD_FAVICON_PATH, DEV_FAVICON_PATH);
+          res.end(html);
+          return;
+        }
         res.end(data);
       }
     });

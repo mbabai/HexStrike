@@ -1624,7 +1624,7 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
       const entry = entriesByUser.get(actorId);
       const action = entry?.action ?? DEFAULT_ACTION;
       const previous = lastActionByUser.get(actorId) ?? DEFAULT_ACTION;
-      const comboStart = isOpenBeatAction(previous) || Boolean(entry?.comboStarter);
+      const comboStart = isOpenBeatAction(previous) || isActionSetStart(entry);
       if (isOpenBeatAction(action)) {
         actionSetFacingByUser.delete(actorId);
         actionSetRotationByUser.delete(actorId);
