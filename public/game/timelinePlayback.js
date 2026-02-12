@@ -566,6 +566,27 @@ const getBeatEntryForCharacter = (beat, character) => {
   );
 };
 
+const toAbilityHandCount = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.floor(parsed));
+};
+
+const getAbilityHandCountFromEntry = (entry) => toAbilityHandCount(entry?.abilityHandCount);
+
+const buildBeatAbilityHandCountLookup = (beat, characters) => {
+  const lookup = new Map();
+  if (!Array.isArray(beat) || !Array.isArray(characters)) return lookup;
+  characters.forEach((character) => {
+    const entry = getBeatEntryForCharacter(beat, character);
+    const count = getAbilityHandCountFromEntry(entry);
+    if (count == null) return;
+    if (character.userId) lookup.set(character.userId, count);
+    if (character.username) lookup.set(character.username, count);
+  });
+  return lookup;
+};
+
 const findIronWillInteraction = (interactions, beatIndex, attackerId, targetId) =>
   (interactions ?? []).find((interaction) => {
     if (!interaction || interaction.type !== 'hand-trigger') return false;
@@ -590,6 +611,8 @@ const buildCalculatedBaseState = (beats, beatIndex, characters) => {
   const lookupIndex = Number.isFinite(beatIndex) ? beatIndex - 1 : (beats?.length ?? 0) - 1;
   return characters.map((character) => {
     const entry = lookupIndex >= 0 ? getLastCalculatedEntryForCharacter(beats, character, lookupIndex) : null;
+    const entryAbilityHandCount = getAbilityHandCountFromEntry(entry);
+    const characterAbilityHandCount = toAbilityHandCount(character?.abilityHandCount);
     return {
       ...character,
       position: entry?.location ?? { q: character.position.q, r: character.position.r },
@@ -600,6 +623,7 @@ const buildCalculatedBaseState = (beats, beatIndex, characters) => {
           : typeof character.damage === 'number'
             ? character.damage
             : 0,
+      abilityHandCount: entryAbilityHandCount ?? characterAbilityHandCount ?? 0,
     };
   });
 };
@@ -641,6 +665,7 @@ const buildBaseStateWithInteractionOverrides = (beats, beatIndex, characters, in
       position: { q: entry.location.q, r: entry.location.r },
       facing: Number.isFinite(entry?.facing) ? entry.facing : character.facing,
       damage: typeof entry?.damage === 'number' ? entry.damage : character.damage,
+      abilityHandCount: getAbilityHandCountFromEntry(entry) ?? toAbilityHandCount(character?.abilityHandCount) ?? 0,
     };
   });
 };
@@ -1501,6 +1526,11 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
           ? normalizeDegrees(entry.facing)
           : current?.facing ?? normalizeDegrees(character.facing ?? 0),
         damage: typeof entry.damage === 'number' ? entry.damage : current?.damage ?? 0,
+        abilityHandCount:
+          getAbilityHandCountFromEntry(entry) ??
+          toAbilityHandCount(current?.abilityHandCount) ??
+          toAbilityHandCount(character?.abilityHandCount) ??
+          0,
       });
     });
   };
@@ -1518,6 +1548,10 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
           : typeof character.damage === 'number'
             ? character.damage
             : 0,
+        abilityHandCount:
+          toAbilityHandCount(stored?.abilityHandCount) ??
+          toAbilityHandCount(character?.abilityHandCount) ??
+          0,
       };
     });
 
@@ -2056,6 +2090,7 @@ export const createTimelinePlayback = () => {
     const characters = gameState?.state?.public?.characters ?? [];
     const interactions = gameState?.state?.public?.customInteractions ?? [];
     const beat = beats[beatIndex] ?? [];
+    const beatAbilityHandCountById = buildBeatAbilityHandCountLookup(beat, characters);
     const baseState = buildBaseState(beats, beatIndex, characters, interactions);
     const tokenPlayback = buildTokenPlayback(gameState, beatIndex, characterPowersById);
     const baseTokens = tokenPlayback?.baseTokens ?? [];
@@ -2116,6 +2151,8 @@ export const createTimelinePlayback = () => {
       startTime: now,
       persistentEffects,
       damagePreviewByStep: new Map(),
+      abilityHandPreviewByStep: new Map(),
+      beatAbilityHandCountById,
       baseTokens,
       minElapsedForMovementTrail,
     };
@@ -2139,6 +2176,8 @@ export const createTimelinePlayback = () => {
       startTime,
       persistentEffects,
       damagePreviewByStep,
+      abilityHandPreviewByStep,
+      beatAbilityHandCountById,
       baseTokens,
       minElapsedForMovementTrail,
     } = playback;
@@ -2223,17 +2262,37 @@ export const createTimelinePlayback = () => {
     }
 
     const baseDamageById = new Map();
+    const baseAbilityCountById = new Map();
     renderCharacters.forEach((character) => {
       const baseDamage = typeof character.damage === 'number' ? character.damage : 0;
       baseDamageById.set(character.userId, baseDamage);
       if (character.username) baseDamageById.set(character.username, baseDamage);
+      const abilityHandCount = toAbilityHandCount(character.abilityHandCount) ?? 0;
+      baseAbilityCountById.set(character.userId, abilityHandCount);
+      if (character.username) baseAbilityCountById.set(character.username, abilityHandCount);
     });
+
+    const applyResolvedAbilityHandCounts = () => {
+      if (!beatAbilityHandCountById?.size) return;
+      beatAbilityHandCountById.forEach((abilityHandCount, targetId) => {
+        const index = characterIndex.get(targetId);
+        if (index == null) return;
+        const current = renderCharacters[index];
+        renderCharacters[index] = {
+          ...current,
+          abilityHandCount: toAbilityHandCount(abilityHandCount) ?? 0,
+        };
+      });
+    };
 
     const currentStep = steps[stepIndex];
     const currentStepActorIndex =
       currentStep && currentStep.kind !== 'token' ? characterIndex.get(currentStep.actorId) : null;
     const currentStepFacingBefore =
       currentStepActorIndex == null ? null : renderCharacters[currentStepActorIndex]?.facing;
+    if (stepIndex > 0) {
+      applyResolvedAbilityHandCounts();
+    }
     if (currentStep && stepProgress > 0) {
       renderCharacters = applyStep(renderCharacters, {
         ...currentStep,
@@ -2254,6 +2313,9 @@ export const createTimelinePlayback = () => {
           rotationStepProgress,
         );
         applyCharacterUpdate(currentStep.actorId, { facing: interpolatedFacing });
+      }
+      if (attackStepProgress >= 1) {
+        applyResolvedAbilityHandCounts();
       }
     }
 
@@ -2285,6 +2347,19 @@ export const createTimelinePlayback = () => {
             : 0;
         const existing = preview.get(change.targetId) ?? base;
         preview.set(change.targetId, existing + change.delta);
+      });
+      return preview;
+    };
+
+    const buildAbilityHandPreview = (abilityLookup, baseAbilityLookup) => {
+      const preview = new Map();
+      if (!abilityLookup?.size) return preview;
+      abilityLookup.forEach((value, targetId) => {
+        const safeValue = toAbilityHandCount(value);
+        if (safeValue == null) return;
+        const base = toAbilityHandCount(baseAbilityLookup?.get(targetId)) ?? 0;
+        if (safeValue === base) return;
+        preview.set(targetId, safeValue);
       });
       return preview;
     };
@@ -2372,6 +2447,16 @@ export const createTimelinePlayback = () => {
       ) {
         damagePreviewByStep.set(stepIndex, buildDamagePreview(currentStep.damageChanges, baseDamageById));
       }
+      if (
+        beatAbilityHandCountById?.size &&
+        attackStepProgress < 1 &&
+        !abilityHandPreviewByStep.has(stepIndex)
+      ) {
+        abilityHandPreviewByStep.set(
+          stepIndex,
+          buildAbilityHandPreview(beatAbilityHandCountById, baseAbilityCountById),
+        );
+      }
     }
 
     if (currentStep && stepProgress >= 1) {
@@ -2392,9 +2477,21 @@ export const createTimelinePlayback = () => {
         renderCharacters[index] = { ...current, displayDamage: damageValue };
       });
     }
+    const previewedAbilityHandCount = attackStepProgress < 1 ? abilityHandPreviewByStep.get(stepIndex) : null;
+    if (previewedAbilityHandCount?.size) {
+      previewedAbilityHandCount.forEach((abilityHandCount, targetId) => {
+        const index = characterIndex.get(targetId);
+        if (index == null) return;
+        const current = renderCharacters[index];
+        renderCharacters[index] = { ...current, displayAbilityHandCount: abilityHandCount };
+      });
+    }
 
     damagePreviewByStep.forEach((_, key) => {
       if (key < stepIndex) damagePreviewByStep.delete(key);
+    });
+    abilityHandPreviewByStep.forEach((_, key) => {
+      if (key < stepIndex) abilityHandPreviewByStep.delete(key);
     });
 
     const blockEffects = (persistentEffects ?? []).map((effect) => {

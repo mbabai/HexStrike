@@ -575,6 +575,11 @@ const isEntryThrow = (
   return false;
 };
 
+const toAbilityHandCount = (value: unknown): number | undefined => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return undefined;
+  return Math.max(0, Math.floor(parsed));
+};
 
 const matchesEntryForCharacter = (entry: BeatEntry, character: PublicCharacter) => {
   const key = resolveEntryKey(entry);
@@ -596,7 +601,7 @@ const pruneDuplicateEntries = (beat: BeatEntry[], character: PublicCharacter, pr
 
 const buildEntryForCharacter = (
   character: PublicCharacter,
-  state: { position: { q: number; r: number }; damage: number; facing: number },
+  state: { position: { q: number; r: number }; damage: number; facing: number; abilityHandCount?: number },
   entry?: BeatEntry,
   calculated = false,
   terrain?: 'land' | 'abyss',
@@ -621,6 +626,10 @@ const buildEntryForCharacter = (
   }
   if (Number.isFinite(entry?.attackKbf)) {
     next.attackKbf = entry.attackKbf;
+  }
+  const abilityHandCount = toAbilityHandCount(state.abilityHandCount);
+  if (Number.isFinite(abilityHandCount)) {
+    next.abilityHandCount = abilityHandCount;
   }
   return next;
 };
@@ -723,19 +732,28 @@ export const executeBeatsWithInteractions = (
       location: entry.location ? { q: entry.location.q, r: entry.location.r } : { q: 0, r: 0 },
     })),
   );
-  const state = new Map<string, { position: { q: number; r: number }; damage: number; facing: number }>();
-  const baselineStateByUser = new Map<string, { position: { q: number; r: number }; damage: number; facing: number }>();
+  const state = new Map<
+    string,
+    { position: { q: number; r: number }; damage: number; facing: number; abilityHandCount?: number }
+  >();
+  const baselineStateByUser = new Map<
+    string,
+    { position: { q: number; r: number }; damage: number; facing: number; abilityHandCount?: number }
+  >();
   characters.forEach((character) => {
     const baselineDamage = Number.isFinite(character.damage) ? Math.max(0, Math.floor(character.damage)) : 0;
+    const baselineAbilityHandCount = toAbilityHandCount(character.abilityHandCount);
     const baselineState = {
       position: { q: character.position.q, r: character.position.r },
       damage: baselineDamage,
       facing: normalizeDegrees(character.facing ?? 0),
+      abilityHandCount: baselineAbilityHandCount,
     };
     baselineStateByUser.set(character.userId, {
       position: { q: baselineState.position.q, r: baselineState.position.r },
       damage: baselineState.damage,
       facing: baselineState.facing,
+      abilityHandCount: baselineState.abilityHandCount,
     });
     state.set(character.userId, baselineState);
   });
@@ -997,6 +1015,11 @@ export const executeBeatsWithInteractions = (
         entry.damage = current.damage;
         entry.facing = current.facing;
         entry.terrain = resolveTerrain(current.position);
+        if (Number.isFinite(current.abilityHandCount)) {
+          entry.abilityHandCount = toAbilityHandCount(current.abilityHandCount);
+        } else if ('abilityHandCount' in entry) {
+          delete entry.abilityHandCount;
+        }
       } else if (entry.location) {
         entry.terrain = resolveTerrain(entry.location);
       }
@@ -1087,6 +1110,7 @@ export const executeBeatsWithInteractions = (
         position: { q: character.position.q, r: character.position.r },
         damage: Number.isFinite(character.damage) ? Math.max(0, Math.floor(character.damage)) : 0,
         facing: normalizeDegrees(character.facing ?? 0),
+        abilityHandCount: toAbilityHandCount(character.abilityHandCount),
       };
       const calculatedEntry = getLastCalculatedEntryForCharacter(character, uptoIndex);
       const source = calculatedEntry
@@ -1100,12 +1124,16 @@ export const executeBeatsWithInteractions = (
             facing: Number.isFinite(calculatedEntry.facing)
               ? normalizeDegrees(calculatedEntry.facing)
               : fallback.facing,
+            abilityHandCount: Number.isFinite(calculatedEntry.abilityHandCount)
+              ? toAbilityHandCount(calculatedEntry.abilityHandCount)
+              : fallback.abilityHandCount,
           }
         : fallback;
       state.set(character.userId, {
         position: { q: source.position.q, r: source.position.r },
         damage: source.damage,
         facing: source.facing,
+        abilityHandCount: source.abilityHandCount,
       });
     });
   };
@@ -1209,13 +1237,18 @@ export const executeBeatsWithInteractions = (
 
   const applyStateSnapshotToEntry = (
     entry: BeatEntry,
-    stateSnapshot: { position: { q: number; r: number }; damage: number; facing: number },
+    stateSnapshot: { position: { q: number; r: number }; damage: number; facing: number; abilityHandCount?: number },
     calculated: boolean,
   ) => {
     entry.damage = stateSnapshot.damage;
     entry.location = { q: stateSnapshot.position.q, r: stateSnapshot.position.r };
     entry.facing = stateSnapshot.facing;
     entry.terrain = resolveTerrain(stateSnapshot.position);
+    if (Number.isFinite(stateSnapshot.abilityHandCount)) {
+      entry.abilityHandCount = toAbilityHandCount(stateSnapshot.abilityHandCount);
+    } else if ('abilityHandCount' in entry) {
+      delete entry.abilityHandCount;
+    }
     entry.calculated = calculated;
   };
 
@@ -2112,6 +2145,13 @@ export const executeBeatsWithInteractions = (
           nextAction,
         });
       }
+    });
+    entriesByUser.forEach((entry, actorId) => {
+      const markedCount = toAbilityHandCount(entry?.abilityHandCount);
+      if (!Number.isFinite(markedCount)) return;
+      const actorState = state.get(actorId);
+      if (!actorState) return;
+      actorState.abilityHandCount = markedCount;
     });
     updatedInteractions.forEach((interaction) => {
       if (interaction.type !== REWIND_RETURN_INTERACTION_TYPE) return;

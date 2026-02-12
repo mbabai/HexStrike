@@ -20,7 +20,7 @@ test('counter-attack active leaves rotation on the start action', () => {
   const actionList = buildActionList('counter-attack', 'step', 'R1');
   assert.deepEqual(
     actionList.map((entry) => entry.action),
-    ['Bm', 'a', 'W', 'W', 'E'],
+    ['Bm', 'a', 'W', 'E'],
   );
   assert.equal(actionList[0].rotation, 'R1');
   assert.equal(actionList[0].rotationSource, 'selected');

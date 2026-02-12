@@ -40,6 +40,7 @@ const TOKEN_IMAGE_SOURCES = {
   'fire-hex': '/public/images/FireHexToken.png',
   'ethereal-platform': '/public/images/EtherealPlatform.png',
   'focus-anchor': '/public/images/F.png',
+  'card-in-hand': '/public/images/CardInHand.png',
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -182,6 +183,36 @@ const drawDamageCapsule = (ctx, x, y, radius, damage, theme) => {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(label, centerX, centerY + fontSize * 0.02);
+  ctx.restore();
+};
+
+const drawAbilityHandCounter = (ctx, x, y, radius, abilityHandCount, theme, icon, nameCapsuleRect) => {
+  if (!Number.isFinite(abilityHandCount)) return;
+  const safeCount = Math.max(0, Math.floor(abilityHandCount));
+  const iconSize = Math.max(12, radius * 0.58);
+  const gap = Math.max(3, radius * 0.08);
+  const anchorY = nameCapsuleRect ? nameCapsuleRect.y + nameCapsuleRect.height / 2 : y + radius * 0.65;
+  const iconX = nameCapsuleRect ? nameCapsuleRect.x - iconSize - gap : x - radius * 1.2;
+  const iconY = anchorY - iconSize / 2;
+  const label = `${safeCount}`;
+  const labelSize = Math.max(10, iconSize * 0.52);
+
+  ctx.save();
+  if (icon && icon.complete && icon.naturalWidth > 0) {
+    ctx.drawImage(icon, iconX, iconY, iconSize, iconSize);
+  } else {
+    ctx.fillStyle = theme.panelStrong || '#20303a';
+    drawRoundedRect(ctx, iconX, iconY, iconSize, iconSize, iconSize * 0.2);
+    ctx.fill();
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `700 ${labelSize}px ${theme.fontBody}`;
+  ctx.lineWidth = Math.max(1.2, iconSize * 0.12);
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.72)';
+  ctx.strokeText(label, iconX + iconSize / 2, iconY + iconSize / 2 + labelSize * 0.03);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(label, iconX + iconSize / 2, iconY + iconSize / 2 + labelSize * 0.03);
   ctx.restore();
 };
 
@@ -742,15 +773,40 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
             : typeof character.damage === 'number'
               ? character.damage
               : beatEntry?.damage ?? 0;
+        const abilityHandCount =
+          typeof character.displayAbilityHandCount === 'number'
+            ? character.displayAbilityHandCount
+            : typeof character.abilityHandCount === 'number'
+              ? character.abilityHandCount
+              : beatEntry?.abilityHandCount;
+        const handIcon = getTokenArt('card-in-hand');
         drawDamageCapsule(ctx, drawX, drawY, metrics.radius, damage, theme);
-        drawNameCapsule(ctx, drawX, drawY, metrics.radius, character.username || character.userId, theme, {
+        const nameCapsuleRect = drawNameCapsule(
+          ctx,
+          drawX,
+          drawY,
+          metrics.radius,
+          character.username || character.userId,
+          theme,
+          {
           baseFontScale: 0.3,
           paddingXScale: 0.12,
           paddingYScale: 0.08,
           maxWidthScale: 1.9,
           minWidthScale: 1.05,
           borderScale: 0.08,
-        });
+          },
+        );
+        drawAbilityHandCounter(
+          ctx,
+          drawX,
+          drawY,
+          metrics.radius,
+          abilityHandCount,
+          theme,
+          handIcon,
+          nameCapsuleRect,
+        );
       });
     }
 

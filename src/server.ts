@@ -100,6 +100,9 @@ interface ReplayResponse {
 const cloneBaselineCharacter = (character: PublicCharacter): PublicCharacter => ({
   ...character,
   position: { q: character.position.q, r: character.position.r },
+  abilityHandCount: Number.isFinite(character.abilityHandCount)
+    ? Math.max(0, Math.floor(character.abilityHandCount as number))
+    : undefined,
 });
 
 const ensureBaselineCharacters = (publicState: GameStateDoc['public']): PublicCharacter[] => {
@@ -116,6 +119,75 @@ const ensureBaselineCharacters = (publicState: GameStateDoc['public']): PublicCh
 const resetCharactersToBaseline = (publicState: GameStateDoc['public']) => {
   publicState.characters = ensureBaselineCharacters(publicState);
 };
+
+const toAbilityHandCount = (value: unknown): number | undefined => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return undefined;
+  return Math.max(0, Math.floor(parsed));
+};
+
+const withAbilityHandCountAtActionStart = (
+  actionList: ActionListItem[],
+  abilityHandCount: number,
+): ActionListItem[] => {
+  const safeCount = toAbilityHandCount(abilityHandCount);
+  if (!actionList.length || !Number.isFinite(safeCount)) return actionList;
+  return actionList.map((item, index) =>
+    index === 0 ? { ...item, abilityHandCount: safeCount } : item,
+  );
+};
+
+const findCharacterBeatEntry = (beat: BeatEntry[] | undefined, character: PublicCharacter): BeatEntry | null => {
+  if (!Array.isArray(beat)) return null;
+  return (
+    beat.find((entry) => {
+      const key = entry.username ?? entry.userId ?? entry.userID;
+      return key === character.userId || key === character.username;
+    }) ?? null
+  );
+};
+
+const applyAbilityHandCountMarkers = (
+  beats: BeatEntry[][],
+  characters: PublicCharacter[],
+  deckStates: Map<string, DeckState> | undefined,
+) => {
+  if (!Array.isArray(beats) || !beats.length) return;
+  if (!Array.isArray(characters) || !characters.length) return;
+  if (!deckStates?.size) return;
+  characters.forEach((character) => {
+    const deckState = deckStates.get(character.userId);
+    if (!deckState) return;
+    const abilityHandCount = toAbilityHandCount(deckState.abilityHand.length);
+    if (!Number.isFinite(abilityHandCount)) return;
+    const firstOpenIndex = getCharacterFirstEIndex(beats, character);
+    if (!Number.isFinite(firstOpenIndex)) return;
+    const safeIndex = Math.max(0, Math.round(firstOpenIndex));
+    let entry: BeatEntry | null = null;
+    if (safeIndex < beats.length) {
+      entry = findCharacterBeatEntry(beats[safeIndex], character);
+    } else {
+      for (let i = beats.length - 1; i >= 0; i -= 1) {
+        entry = findCharacterBeatEntry(beats[i], character);
+        if (entry) break;
+      }
+    }
+    if (!entry) return;
+    entry.abilityHandCount = abilityHandCount;
+  });
+};
+
+const attachAbilityHandCountsToCharacters = (
+  characters: PublicCharacter[],
+  deckStates: Map<string, DeckState> | undefined,
+): PublicCharacter[] =>
+  characters.map((character) => {
+    const deckState = deckStates?.get(character.userId);
+    if (!deckState) return { ...character };
+    const abilityHandCount = toAbilityHandCount(deckState.abilityHand.length);
+    if (!Number.isFinite(abilityHandCount)) return { ...character };
+    return { ...character, abilityHandCount };
+  });
 
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const LOG_PREFIX = '[hexstrike]';
@@ -982,6 +1054,8 @@ export function buildServer(port: number) {
     const publicState = game.state.public;
     const beats = publicState.beats ?? publicState.timeline ?? [];
     const characters = ensureBaselineCharacters(publicState);
+    applyAbilityHandCountMarkers(beats, characters, resolvedDeckStates);
+    const charactersWithAbilityCounts = attachAbilityHandCountsToCharacters(characters, resolvedDeckStates);
     const baseInteractions = Array.isArray(publicState.customInteractions) ? publicState.customInteractions : [];
     const customInteractions = baseInteractions.map((interaction) => {
       if (!interaction || typeof interaction !== 'object') return interaction;
@@ -1018,7 +1092,7 @@ export function buildServer(port: number) {
     const handTriggerOrder = buildHandTriggerOrder(
       customInteractions,
       beats,
-      characters,
+      charactersWithAbilityCounts,
       publicState.land ?? [],
       resolvedDeckStates,
     );
@@ -1036,7 +1110,7 @@ export function buildServer(port: number) {
       state: {
         public: {
           ...publicState,
-          characters,
+          characters: charactersWithAbilityCounts,
           beats,
           timeline: beats,
           customInteractions,
@@ -2079,6 +2153,7 @@ export function buildServer(port: number) {
         interactions = interactions.filter((item) => item.id !== comboInteraction.id);
         game.state.public.customInteractions = interactions;
       }
+      const actionListWithHandCount = withAbilityHandCountAtActionStart(actionList, deckState.abilityHand.length);
       pendingActionSets.delete(game.id);
       game.state.public.pendingActions = undefined;
       const actionPlay = {
@@ -2087,7 +2162,7 @@ export function buildServer(port: number) {
         passiveCardId: passiveCardId ?? null,
         rotation: rotation ?? '',
       };
-      const updatedBeats = applyActionSetToBeats(beats, characters, userId, actionList, [actionPlay]);
+      const updatedBeats = applyActionSetToBeats(beats, characters, userId, actionListWithHandCount, [actionPlay]);
       const comboAvailability = buildComboAvailability(deckStates, catalog);
       const handTriggerAvailability = buildHandTriggerAvailability(deckStates);
       const guardContinueAvailability = buildGuardContinueAvailability(deckStates);
@@ -2199,13 +2274,14 @@ export function buildServer(port: number) {
       interactions = interactions.filter((item) => item.id !== comboInteraction.id);
       game.state.public.customInteractions = interactions;
     }
+    const actionListWithHandCount = withAbilityHandCountAtActionStart(actionList, deckState.abilityHand.length);
     const actionPlay = {
       type: 'action-set',
       activeCardId: activeCardId ?? null,
       passiveCardId: passiveCardId ?? null,
       rotation: rotation ?? '',
     };
-    batch.submitted.set(userId, { actionList, play: [actionPlay] });
+    batch.submitted.set(userId, { actionList: actionListWithHandCount, play: [actionPlay] });
     game.state.public.pendingActions = {
       beatIndex: batch.beatIndex,
       requiredUserIds: [...batch.requiredUserIds],

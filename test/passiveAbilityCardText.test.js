@@ -50,7 +50,7 @@ test('flying-knee passive converts movement to charges with 1 damage/kbf', () =>
   const actionList = buildActionList('dash', 'flying-knee');
   assert.deepEqual(
     actionList.map((entry) => entry.action),
-    ['2c', 'W', 'W', 'W', 'W', 'E'],
+    ['2c', 'W', 'W', 'W', 'E'],
   );
   assert.equal(actionList[0].damage, 1);
   assert.equal(actionList[0].kbf, 1);
@@ -60,7 +60,7 @@ test('flying-knee passive converts backward movement to backward charges', () =>
   const actionList = buildActionList('backflip', 'flying-knee');
   assert.deepEqual(
     actionList.map((entry) => entry.action),
-    ['Bc', 'W', 'W', 'W', 'E'],
+    ['Bc', 'W', 'W', 'E'],
   );
   assert.equal(actionList[0].damage, 1);
   assert.equal(actionList[0].kbf, 1);
@@ -88,7 +88,7 @@ test('push-kick passive converts movement to backward movement', () => {
   const actionList = buildActionList('dash', 'push-kick');
   assert.deepEqual(
     actionList.map((entry) => entry.action),
-    ['B2m', 'W', 'W', 'W', 'W', 'E'],
+    ['B2m', 'W', 'W', 'W', 'E'],
   );
 });
 
@@ -96,12 +96,12 @@ test('smoke-bomb passive inverts movement direction', () => {
   const forward = buildActionList('dash', 'smoke-bomb');
   assert.deepEqual(
     forward.map((entry) => entry.action),
-    ['B2m', 'W', 'W', 'W', 'W', 'E'],
+    ['B2m', 'W', 'W', 'W', 'E'],
   );
   const backward = buildActionList('backflip', 'smoke-bomb');
   assert.deepEqual(
     backward.map((entry) => entry.action),
-    ['m', 'W', 'W', 'W', 'E'],
+    ['m', 'W', 'W', 'E'],
   );
 });
 

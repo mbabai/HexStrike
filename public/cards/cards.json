@@ -25,7 +25,6 @@
         "Bm",
         "W",
         "W",
-        "W",
         "E"
       ],
       "rotations": "*",
@@ -39,7 +38,6 @@
       "priority": 20,
       "actions": [
         "2m",
-        "W",
         "W",
         "W",
         "W",
@@ -59,7 +57,6 @@
         "m",
         "m",
         "m",
-        "W",
         "W",
         "E"
       ],
@@ -274,12 +271,11 @@
         "Bm",
         "a",
         "W",
-        "W",
         "E"
       ],
       "rotations": "*",
-      "damage": 5,
-      "kbf": 3,
+      "damage": 6,
+      "kbf": 4,
       "activeText": "",
       "passiveText": "Convert the first {m} to {m-Ba} with damage 3 and KBF 3."
     },
@@ -383,11 +379,12 @@
       "id": "gigantic-staff",
       "name": "Gigantic Staff",
       "type": "ability",
-      "priority": 86,
+      "priority": 44,
       "actions": [
         "W",
         "W",
         "a-2a-3a",
+        "W",
         "W",
         "W",
         "W",
@@ -431,7 +428,7 @@
       ],
       "rotations": "0-2",
       "damage": 6,
-      "kbf": 4,
+      "kbf": 3,
       "passiveText": "If any attack hits you, deal the attacker 2 damage as well."
     },
     {
@@ -642,7 +639,7 @@
       ],
       "rotations": "*",
       "damage": 5,
-      "kbf": 5,
+      "kbf": 4,
       "passiveText": "After completing a jump, {a-La-Ra-BLa-BRa-Ba} for 1 damage, and 1 KBF."
     },
     {

@@ -170,6 +170,7 @@ export interface ActionListItem {
   comboStarter?: boolean;
   cardId?: string;
   passiveCardId?: string;
+  abilityHandCount?: number;
 }
 
 export interface ActionSubmission {
@@ -227,6 +228,7 @@ export interface BeatEntry {
   focusCardId?: string;
   cardId?: string;
   passiveCardId?: string;
+  abilityHandCount?: number;
   havenPassiveSkipApplied?: boolean;
   stunOnly?: boolean;
   consequences?: Array<{
@@ -285,6 +287,7 @@ export interface PublicCharacter {
   position: HexCoord;
   facing: number;
   damage?: number;
+  abilityHandCount?: number;
 }
 
 export interface GamePublicState {

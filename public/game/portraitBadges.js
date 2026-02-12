@@ -11,7 +11,7 @@ const fitTextToWidth = (ctx, label, fontSize, fontFamily, maxWidth) => {
 };
 
 export const drawNameCapsule = (ctx, x, y, radius, username, theme, config = {}) => {
-  if (!username) return;
+  if (!username) return null;
   const {
     baseFontScale = 0.44,
     paddingXScale = 0.14,
@@ -51,6 +51,14 @@ export const drawNameCapsule = (ctx, x, y, radius, username, theme, config = {})
   ctx.textBaseline = 'middle';
   ctx.fillText(username, centerX, centerY + fontSize * 0.02);
   ctx.restore();
+  return {
+    x: capsuleX,
+    y: capsuleY,
+    width: capsuleWidth,
+    height: capsuleHeight,
+    centerX,
+    centerY,
+  };
 };
 
 const drawRoundedRect = (ctx, x, y, width, height, radius) => {

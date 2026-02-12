@@ -67,6 +67,7 @@ const buildTargetEntry = (
   attackKbf: number | undefined,
   cardId: string | undefined,
   passiveCardId: string | undefined,
+  abilityHandCount: number | undefined,
   seed: { damage: number; location: { q: number; r: number }; facing: number },
 ): BeatEntry => {
   const entry: BeatEntry = {
@@ -96,6 +97,9 @@ const buildTargetEntry = (
   }
   if (passiveCardId) {
     entry.passiveCardId = passiveCardId;
+  }
+  if (Number.isFinite(abilityHandCount)) {
+    entry.abilityHandCount = Math.max(0, Math.floor(abilityHandCount as number));
   }
   return entry;
 };
@@ -164,6 +168,7 @@ export const applyActionSetToBeats = (
     comboStarter: index === 0 ? item.comboStarter : undefined,
     cardId: item.cardId,
     passiveCardId: item.passiveCardId,
+    abilityHandCount: index === 0 ? item.abilityHandCount : undefined,
   }));
   const lastIndex = startIndex + actions.length - 1;
 
@@ -212,6 +217,11 @@ export const applyActionSetToBeats = (
       } else if ('passiveCardId' in entry) {
         delete entry.passiveCardId;
       }
+      if (Number.isFinite(actionItem.abilityHandCount)) {
+        entry.abilityHandCount = Math.max(0, Math.floor(actionItem.abilityHandCount as number));
+      } else if ('abilityHandCount' in entry) {
+        delete entry.abilityHandCount;
+      }
       if ('havenPassiveSkipApplied' in entry) {
         delete entry.havenPassiveSkipApplied;
       }
@@ -238,6 +248,7 @@ export const applyActionSetToBeats = (
         actionItem.attackKbf,
         actionItem.cardId,
         actionItem.passiveCardId,
+        actionItem.abilityHandCount,
         seed,
       );
       if (actionItem.comboStarter) {
