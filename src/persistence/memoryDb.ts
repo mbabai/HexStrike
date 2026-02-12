@@ -8,9 +8,11 @@ export class MemoryDb {
 
   async upsertUser(user: Partial<UserDoc> & { username: string; id?: string }): Promise<UserDoc> {
     const now = new Date();
-    const existing = this.users.find((u) => u.username === user.username || u.id === user.id);
+    const existing = user.id
+      ? this.users.find((u) => u.id === user.id)
+      : this.users.find((u) => u.username === user.username);
     if (existing) {
-      Object.assign(existing, user, { updatedAt: now });
+      Object.assign(existing, user, { id: existing.id, updatedAt: now });
       return existing;
     }
     const fresh: UserDoc = {

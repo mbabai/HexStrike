@@ -935,7 +935,7 @@ small {
 
 .menu-decks-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
 }
@@ -943,6 +943,43 @@ small {
 .menu-decks-header p {
   margin: 4px 0 0;
   color: var(--color-subtle);
+}
+
+.player-name-button {
+  appearance: none;
+  border: 1px solid var(--color-panel-border);
+  background: linear-gradient(145deg, var(--color-surface-1), var(--color-surface-2));
+  color: var(--color-text);
+  border-radius: var(--radius-pill);
+  padding: 8px 14px;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  box-shadow: var(--shadow-soft), inset 0 1px 0 var(--color-highlight-medium);
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.player-name-button:hover,
+.player-name-button:focus-visible {
+  transform: translateY(-1px);
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-strong), inset 0 1px 0 var(--color-highlight-medium);
+}
+
+.player-name-value {
+  font-family: var(--font-heading);
+  letter-spacing: 0.03em;
+  color: var(--color-accent-strong);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.player-name-button svg {
+  width: 14px;
+  height: 14px;
+  color: var(--color-link);
 }
 
 .deck-grid {
@@ -1116,6 +1153,28 @@ small {
 
 .modal-overlay[hidden] {
   display: none;
+}
+
+.player-name-modal {
+  width: min(420px, 92vw);
+  display: grid;
+  gap: 14px;
+}
+
+.player-name-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.player-name-header h2 {
+  margin: 0;
+}
+
+.player-name-field {
+  display: grid;
+  gap: 8px;
 }
 
 .interaction-overlay {
@@ -1980,6 +2039,10 @@ small {
 }
 
 @media (max-width: 640px) {
+  .menu-decks-header {
+    flex-wrap: wrap;
+  }
+
   .deck-preview {
     --action-card-scale: 0.75;
   }

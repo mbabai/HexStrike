@@ -1,8 +1,13 @@
-import { getOrCreateUserId } from './storage.js';
+import { getOrCreateUserId, getPreferredServerUsername, setStoredUsername } from './storage.js';
 
 export function initPresence() {
   const userId = getOrCreateUserId();
-  const source = new EventSource(`/events?userId=${encodeURIComponent(userId)}`);
+  const username = getPreferredServerUsername();
+  const params = new URLSearchParams({ userId });
+  if (username) {
+    params.set('username', username);
+  }
+  const source = new EventSource(`/events?${params.toString()}`);
 
   const dispatch = (type, payload) => {
     window.dispatchEvent(new CustomEvent(type, { detail: payload }));
@@ -12,6 +17,15 @@ export function initPresence() {
     if (!event.data) return;
     try {
       const data = JSON.parse(event.data);
+      if (data.type === 'connected') {
+        const assigned = setStoredUsername(data?.payload?.username, {
+          custom: Boolean(getPreferredServerUsername()),
+        });
+        dispatch('hexstrike:connected', {
+          ...(data.payload || {}),
+          username: assigned || data?.payload?.username || null,
+        });
+      }
       if (data.type === 'match:created') {
         dispatch('hexstrike:match', data.payload);
       }

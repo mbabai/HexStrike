@@ -46,3 +46,18 @@ test('memory db upserts users and stores matches/games', async () => {
   const storedGame = await db.findGame(game.id);
   assert.equal(storedGame.id, game.id);
 });
+
+test('memory db upserts by id without merging on username collisions', async () => {
+  const db = new MemoryDb();
+  const alpha = await db.upsertUser({ id: 'alpha-id', username: 'alpha' });
+  const beta = await db.upsertUser({ id: 'beta-id', username: 'beta' });
+
+  const renamed = await db.upsertUser({ id: alpha.id, username: beta.username });
+  assert.equal(renamed.id, alpha.id);
+  assert.equal(renamed.username, beta.username);
+
+  const users = await db.listUsers();
+  assert.equal(users.length, 2);
+  assert.equal(users.find((user) => user.id === alpha.id)?.username, beta.username);
+  assert.equal(users.find((user) => user.id === beta.id)?.username, beta.username);
+});

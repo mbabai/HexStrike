@@ -2,7 +2,15 @@ import { loadCardCatalog } from './shared/cardCatalog.js';
 import { loadCharacterCatalog } from './shared/characterCatalog.js';
 import { buildCardElement, fitAllCardText } from './shared/cardRenderer.js';
 import { loadUserDecks, saveUserDecks, createDeckId } from './deckStore.js';
-import { getOrCreateUserId, getSelectedDeckId, setSelectedDeckId, clearSelectedDeckId } from './storage.js';
+import {
+  getOrCreateUserId,
+  getSelectedDeckId,
+  setSelectedDeckId,
+  clearSelectedDeckId,
+  getStoredUsername,
+  isUsernameCustom,
+  setStoredUsername,
+} from './storage.js';
 
 const REQUIRED_MOVEMENT = 4;
 const REQUIRED_ABILITY = 12;
@@ -120,6 +128,13 @@ export const initDecks = async () => {
   const libraryRoot = document.getElementById('deckLibrary');
   const selectionStack = document.getElementById('deckSelectionStack');
   const deckSave = document.getElementById('deckSave');
+  const playerNameButton = document.getElementById('playerNameButton');
+  const playerNameValue = document.getElementById('playerNameValue');
+  const playerNameOverlay = document.getElementById('playerNameOverlay');
+  const playerNameClose = document.getElementById('playerNameClose');
+  const playerNameCancel = document.getElementById('playerNameCancel');
+  const playerNameSave = document.getElementById('playerNameSave');
+  const playerNameInput = document.getElementById('playerNameInput');
 
   if (
     !deckGrid ||
@@ -147,7 +162,14 @@ export const initDecks = async () => {
     !deckSort ||
     !libraryRoot ||
     !selectionStack ||
-    !deckSave
+    !deckSave ||
+    !playerNameButton ||
+    !playerNameValue ||
+    !playerNameOverlay ||
+    !playerNameClose ||
+    !playerNameCancel ||
+    !playerNameSave ||
+    !playerNameInput
   ) {
     return;
   }
@@ -190,6 +212,7 @@ export const initDecks = async () => {
   };
 
   let builderTextFitRaf = null;
+  let playerName = getStoredUsername() || 'anonymous';
 
   const fitBuilderCardText = () => {
     if (builderOverlay.hidden) return;
@@ -206,6 +229,33 @@ export const initDecks = async () => {
       builderTextFitRaf = null;
       fitBuilderCardText();
     });
+  };
+
+  const renderPlayerName = () => {
+    playerNameValue.textContent = playerName;
+  };
+
+  const openPlayerNameOverlay = () => {
+    playerNameInput.value = playerName;
+    playerNameOverlay.hidden = false;
+    playerNameInput.focus();
+    playerNameInput.select();
+  };
+
+  const closePlayerNameOverlay = () => {
+    playerNameOverlay.hidden = true;
+  };
+
+  const savePlayerName = () => {
+    const nextName = setStoredUsername(playerNameInput.value, { custom: true });
+    if (!nextName) {
+      window.alert('Name cannot be empty.');
+      return;
+    }
+    playerName = nextName;
+    renderPlayerName();
+    closePlayerNameOverlay();
+    window.dispatchEvent(new CustomEvent('hexstrike:username-changed', { detail: { username: playerName } }));
   };
 
   const dispatchDeckSelected = (deck) => {
@@ -706,6 +756,32 @@ export const initDecks = async () => {
     dispatchDecksUpdated();
   };
 
+  renderPlayerName();
+  window.addEventListener('hexstrike:connected', (event) => {
+    const assignedName = setStoredUsername(event?.detail?.username, { custom: isUsernameCustom() });
+    if (!assignedName) return;
+    playerName = assignedName;
+    renderPlayerName();
+    if (!playerNameOverlay.hidden) {
+      playerNameInput.value = playerName;
+    }
+  });
+
+  playerNameButton.addEventListener('click', openPlayerNameOverlay);
+  playerNameClose.addEventListener('click', closePlayerNameOverlay);
+  playerNameCancel.addEventListener('click', closePlayerNameOverlay);
+  playerNameSave.addEventListener('click', savePlayerName);
+  playerNameInput.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    savePlayerName();
+  });
+  playerNameOverlay.addEventListener('click', (event) => {
+    if (event.target === playerNameOverlay) {
+      closePlayerNameOverlay();
+    }
+  });
+
   previewClose.addEventListener('click', closePreview);
   previewOverlay.addEventListener('click', (event) => {
     if (event.target === previewOverlay) {
@@ -767,6 +843,10 @@ export const initDecks = async () => {
       return;
     }
     if (event.key !== 'Escape') return;
+    if (!playerNameOverlay.hidden) {
+      closePlayerNameOverlay();
+      return;
+    }
     if (!characterOverlay.hidden) {
       closeCharacterOverlay();
       return;

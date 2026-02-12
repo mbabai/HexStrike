@@ -37,12 +37,21 @@
         <a class="menu-footer-link" href="https://bymarcell.com" target="_blank" rel="noreferrer">By Marcell</a>
       </aside>
 
-      <section class="menu-decks panel" aria-label="Deck library">
+      <section class="menu-decks panel" aria-label="Decks">
         <div class="menu-decks-header">
-          <div>
-            <h2>Deck Library</h2>
-            <p>Choose a deck to preview or select for matchmaking.</p>
-          </div>
+          <button id="playerNameButton" class="player-name-button" type="button" aria-label="Edit player name">
+            <span id="playerNameValue" class="player-name-value">anonymous</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M3 21l3.5-1 11-11-2.5-2.5-11 11L3 21z M14.5 5.5l2.5 2.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
           <button id="createDeck" class="btn btn-ghost btn-small" type="button">Create New Deck</button>
         </div>
         <div id="deckGrid" class="deck-grid" aria-live="polite"></div>
@@ -171,6 +180,23 @@
         <div class="deck-character-modal-body">
           <button id="deckCharacterClear" class="deck-character-clear" type="button">No character</button>
           <div id="deckCharacterPicker" class="deck-character-picker"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="playerNameOverlay" class="modal-overlay player-name-overlay" hidden>
+      <div class="player-name-modal panel" role="dialog" aria-modal="true" aria-labelledby="playerNameTitle">
+        <div class="player-name-header">
+          <h2 id="playerNameTitle">Player Name</h2>
+          <button id="playerNameClose" class="btn btn-ghost btn-small" type="button">Close</button>
+        </div>
+        <label class="player-name-field">
+          <span class="deck-filter-label">Display Name</span>
+          <input id="playerNameInput" type="text" maxlength="24" placeholder="anonymous1" />
+        </label>
+        <div class="section-actions">
+          <button id="playerNameCancel" class="btn btn-ghost" type="button">Cancel</button>
+          <button id="playerNameSave" class="btn btn-primary" type="button">Save</button>
         </div>
       </div>
     </div>

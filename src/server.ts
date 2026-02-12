@@ -4,6 +4,7 @@ import { readFile } from 'fs';
 import { createHash, randomUUID } from 'crypto';
 import { createLobbyStore } from './state/lobby';
 import { MemoryDb } from './persistence/memoryDb';
+import { assignMatchUsernames } from './matchmaking/usernames';
 import { CHARACTER_IDS } from './game/characters';
 import { createInitialGameState } from './game/state';
 import { applyActionSetToBeats } from './game/actionSets';
@@ -111,6 +112,7 @@ const WHIRLWIND_MIN_DAMAGE = 12;
 const PROD_FAVICON_PATH = '/public/images/X1.png';
 const DEV_FAVICON_PATH = '/public/images/X2.png';
 const IS_DEV_RUNTIME = process.env.HEXSTRIKE_TEMP_LOGS === '1' || process.env.NODE_ENV === 'development';
+const MAX_USERNAME_LENGTH = 24;
 
 const normalizeActionLabel = (value: unknown): string => {
   const trimmed = `${value ?? ''}`.trim();
@@ -624,7 +626,14 @@ export function buildServer(port: number) {
   const pickRandomCharacterId = () => CHARACTER_IDS[Math.floor(Math.random() * CHARACTER_IDS.length)];
   const nextAnonymousName = () => {
     anonymousCounter += 1;
-    return `Anonymous${anonymousCounter}`;
+    return `anonymous${anonymousCounter}`;
+  };
+
+  const normalizeUsername = (value: unknown): string | undefined => {
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    return trimmed.replace(/\s+/g, ' ').slice(0, MAX_USERNAME_LENGTH);
   };
 
   const normalizeCharacterId = (value: unknown): CharacterId | undefined => {
@@ -886,10 +895,12 @@ export function buildServer(port: number) {
   };
 
   const upsertUserFromRequest = async (userId?: string, username?: string, characterId?: CharacterId) => {
+    const normalizedUsername = normalizeUsername(username);
     if (userId) {
       const existing = await db.findUser(userId);
       if (existing) {
-        const nextUsername = username && existing.username !== username ? username : existing.username;
+        const nextUsername =
+          normalizedUsername && existing.username !== normalizedUsername ? normalizedUsername : existing.username;
         const nextCharacterId = characterId ?? existing.characterId;
         if (nextUsername !== existing.username || nextCharacterId !== existing.characterId) {
           return db.upsertUser({
@@ -904,7 +915,7 @@ export function buildServer(port: number) {
     }
     return db.upsertUser({
       id: userId,
-      username: username || nextAnonymousName(),
+      username: normalizedUsername || nextAnonymousName(),
       elo: 1000,
       characterId,
     });
@@ -1087,11 +1098,17 @@ export function buildServer(port: number) {
   const createMatchWithUsers = async (users: Array<{ id: string; username?: string }>) => {
     const resolved = await Promise.all(users.map((user) => upsertUserFromRequest(user.id, user.username)));
     const withCharacters = await Promise.all(resolved.map((user) => ensureUserCharacter(user)));
+    const matchUsernames = assignMatchUsernames(
+      withCharacters.map((user) => ({
+        id: user.id,
+        username: user.username,
+      })),
+    );
     lobby.markInGame(withCharacters.map((user) => user.id));
     const match = await db.createMatch({
-      players: withCharacters.map((user) => ({
+      players: withCharacters.map((user, index) => ({
         userId: user.id,
-        username: user.username,
+        username: matchUsernames[index] ?? user.username,
         score: 0,
         eloChange: 0,
         characterId: (user.characterId ?? pickRandomCharacterId()) as CharacterId,
@@ -1197,23 +1214,24 @@ export function buildServer(port: number) {
 
   const serveEvents = async (req: any, res: any) => {
     const { query } = parse(req.url || '', true);
-    const userId = (query?.userId as string) || randomUUID();
+    const requestedUserId = (query?.userId as string) || randomUUID();
+    const requestedUsername = typeof query?.username === 'string' ? query.username : undefined;
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       Connection: 'keep-alive',
       'Cache-Control': 'no-cache',
       'Access-Control-Allow-Origin': '*',
     });
-    const user = await upsertUserFromRequest(userId);
+    const user = await upsertUserFromRequest(requestedUserId, requestedUsername);
     res.write(
-      `data: ${JSON.stringify({ type: 'connected', payload: { userId, username: user.username, lobby: lobby.serialize() } })}\n\n`,
+      `data: ${JSON.stringify({ type: 'connected', payload: { userId: user.id, username: user.username, lobby: lobby.serialize() } })}\n\n`,
     );
-    sseClients.set(userId, res);
-    pendingInvites.delete(userId);
-    void sendActiveMatchState(userId);
+    sseClients.set(user.id, res);
+    pendingInvites.delete(user.id);
+    void sendActiveMatchState(user.id);
     req.on('close', () => {
-      sseClients.delete(userId);
-      matchDisconnects.forEach((set) => set.delete(userId));
+      sseClients.delete(user.id);
+      matchDisconnects.forEach((set) => set.delete(user.id));
     });
   };
 

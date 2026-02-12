@@ -1,13 +1,13 @@
 import { loadCardCatalog } from './shared/cardCatalog.js';
-import { getOrCreateUserId, getSelectedDeckId } from './storage.js';
+import { getOrCreateUserId, getSelectedDeckId, getStoredCustomDecks, setStoredCustomDecks } from './storage.js';
 
-const DECK_STORAGE_PREFIX = 'hexstrikeDecks:';
-const DECK_STORAGE_VERSION_PREFIX = 'hexstrikeDecksVersion:';
-const DECK_STORAGE_VERSION = 2;
+const LEGACY_DECK_STORAGE_PREFIX = 'hexstrikeDecks:';
+const LEGACY_DECK_STORAGE_VERSION_PREFIX = 'hexstrikeDecksVersion:';
+const LEGACY_DECK_STORAGE_VERSION = 2;
 let baseDecksPromise = null;
 
-const getDeckStorageKey = (userId) => `${DECK_STORAGE_PREFIX}${userId}`;
-const getDeckStorageVersionKey = (userId) => `${DECK_STORAGE_VERSION_PREFIX}${userId}`;
+const getLegacyDeckStorageKey = (userId) => `${LEGACY_DECK_STORAGE_PREFIX}${userId}`;
+const getLegacyDeckStorageVersionKey = (userId) => `${LEGACY_DECK_STORAGE_VERSION_PREFIX}${userId}`;
 
 const normalizeDeckDefinition = (deck, index) => {
   if (!deck || typeof deck !== 'object') {
@@ -33,36 +33,28 @@ const normalizeDeckDefinition = (deck, index) => {
   return { id, name, characterId, movement, ability, isBase };
 };
 
-const readStoredDecks = (userId) => {
+const readLegacyDeckStorageVersion = (userId) => {
   if (!userId) return null;
-  const raw = localStorage.getItem(getDeckStorageKey(userId));
+  const raw = localStorage.getItem(getLegacyDeckStorageVersionKey(userId));
+  if (!raw) return null;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const readLegacyStoredDecks = (userId) => {
+  if (!userId) return null;
+  const storageVersion = readLegacyDeckStorageVersion(userId);
+  if (storageVersion !== LEGACY_DECK_STORAGE_VERSION) return null;
+  const raw = localStorage.getItem(getLegacyDeckStorageKey(userId));
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return null;
     return parsed.map((deck, index) => normalizeDeckDefinition(deck, index));
   } catch (err) {
-    console.warn('Failed to parse deck storage', err);
+    console.warn('Failed to parse legacy deck storage', err);
     return null;
   }
-};
-
-const writeStoredDecks = (userId, decks) => {
-  if (!userId) return;
-  localStorage.setItem(getDeckStorageKey(userId), JSON.stringify(decks));
-};
-
-const readDeckStorageVersion = (userId) => {
-  if (!userId) return null;
-  const raw = localStorage.getItem(getDeckStorageVersionKey(userId));
-  if (!raw) return null;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : null;
-};
-
-const writeDeckStorageVersion = (userId) => {
-  if (!userId) return;
-  localStorage.setItem(getDeckStorageVersionKey(userId), `${DECK_STORAGE_VERSION}`);
 };
 
 const loadBaseDecks = async () => {
@@ -75,87 +67,46 @@ const loadBaseDecks = async () => {
   return baseDecksPromise;
 };
 
-const mergeBaseDecks = (storedDecks, baseDecks) => {
-  if (!Array.isArray(storedDecks)) return baseDecks;
+const mergeBaseAndCustomDecks = (baseDecks, customDecks) => {
   const baseById = new Map(baseDecks.map((deck) => [deck.id, deck]));
-  const merged = [];
-  storedDecks.forEach((deck) => {
-    const base = baseById.get(deck.id);
-    if (base) {
-      merged.push({ ...base, isBase: true });
-      baseById.delete(deck.id);
-      return;
-    }
-    if (deck.isBase) {
-      return;
-    }
-    merged.push(deck);
-  });
-  baseById.forEach((deck) => {
+  const merged = [...baseDecks];
+  customDecks.forEach((deck) => {
+    if (deck.isBase) return;
+    if (baseById.has(deck.id)) return;
     merged.push(deck);
   });
   return merged;
 };
 
-const areArraysEqual = (a, b) => {
-  if (a === b) return true;
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i += 1) {
-    if (a[i] !== b[i]) return false;
+const loadStoredCustomDecks = (userId) => {
+  const cookieDecks = getStoredCustomDecks();
+  if (Array.isArray(cookieDecks)) {
+    return cookieDecks.map((deck, index) => normalizeDeckDefinition({ ...deck, isBase: false }, index));
   }
-  return true;
-};
 
-const areDecksEqual = (a, b) => {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  return (
-    a.id === b.id &&
-    a.name === b.name &&
-    a.characterId === b.characterId &&
-    Boolean(a.isBase) === Boolean(b.isBase) &&
-    areArraysEqual(a.movement, b.movement) &&
-    areArraysEqual(a.ability, b.ability)
-  );
-};
-
-const areDeckListsEqual = (a, b) => {
-  if (a === b) return true;
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i += 1) {
-    if (!areDecksEqual(a[i], b[i])) return false;
+  const legacyDecks = readLegacyStoredDecks(userId);
+  if (!Array.isArray(legacyDecks)) {
+    return [];
   }
-  return true;
+  const customDecks = legacyDecks
+    .filter((deck) => !deck.isBase)
+    .map((deck, index) => normalizeDeckDefinition({ ...deck, isBase: false }, index));
+  setStoredCustomDecks(customDecks);
+  return customDecks;
 };
 
 export const loadUserDecks = async (userId = getOrCreateUserId()) => {
   const baseDecks = await loadBaseDecks();
-  const storageVersion = readDeckStorageVersion(userId);
-  if (storageVersion !== DECK_STORAGE_VERSION) {
-    writeStoredDecks(userId, baseDecks);
-    writeDeckStorageVersion(userId);
-    return baseDecks;
-  }
-
-  const stored = readStoredDecks(userId);
-  if (stored !== null) {
-    const merged = mergeBaseDecks(stored, baseDecks);
-    if (!areDeckListsEqual(merged, stored)) {
-      writeStoredDecks(userId, merged);
-      writeDeckStorageVersion(userId);
-      return merged;
-    }
-    return stored;
-  }
-  writeStoredDecks(userId, baseDecks);
-  writeDeckStorageVersion(userId);
-  return baseDecks;
+  const customDecks = loadStoredCustomDecks(userId);
+  return mergeBaseAndCustomDecks(baseDecks, customDecks);
 };
 
 export const saveUserDecks = (userId, decks) => {
   const normalized = Array.isArray(decks) ? decks.map((deck, index) => normalizeDeckDefinition(deck, index)) : [];
-  writeStoredDecks(userId, normalized);
-  writeDeckStorageVersion(userId);
+  const customDecks = normalized
+    .filter((deck) => !deck.isBase)
+    .map((deck, index) => normalizeDeckDefinition({ ...deck, isBase: false }, index));
+  setStoredCustomDecks(customDecks);
   return normalized;
 };
 

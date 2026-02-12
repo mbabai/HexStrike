@@ -1,4 +1,4 @@
-import { getOrCreateUserId, getSelectedDeckId } from './storage.js';
+import { getOrCreateUserId, getSelectedDeckId, getPreferredServerUsername } from './storage.js';
 import { getSelectedDeck } from './deckStore.js';
 
 const QUICKPLAY_QUEUE = 'quickplayQueue';
@@ -50,6 +50,7 @@ export function initQueue() {
 
   const joinQuickplayQueue = async () => {
     const userId = getOrCreateUserId();
+    const username = getPreferredServerUsername();
     const selectedDeck = await getSelectedDeck(userId);
     const characterId = selectedDeck?.characterId;
     const deck = selectedDeck
@@ -61,7 +62,7 @@ export function initQueue() {
     const response = await fetch('/api/v1/lobby/join', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, queue: QUICKPLAY_QUEUE, characterId, deck }),
+      body: JSON.stringify({ userId, username, queue: QUICKPLAY_QUEUE, characterId, deck }),
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));

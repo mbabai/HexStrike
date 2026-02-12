@@ -9,7 +9,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - Server: action-set validation uses `src/game/cardCatalog.ts` + `src/game/cardRules.ts` to enforce deck/hand exhaustion, rotation limits, and refresh timing.
 - Server: hand management + draw/discard syncing lives in `src/game/handRules.ts` (movement hand derived from ability count).
 - UI: static assets in `public/` with ES module scripts (`public/menu.js`, `public/queue.js`, `public/storage.js`) and styling in `public/theme.css`.
-- UI: lobby deck library + deck builder (stored per-user in localStorage) in `public/decks.js` + `public/deckStore.js`; selected deck is saved in cookies and gates matchmaking.
+- UI: lobby deck library + deck builder stores player-created decks in cookies (base decks still come from `public/cards/cards.json`) via `public/decks.js` + `public/deckStore.js`; selected deck is saved in cookies and gates matchmaking.
 - UI: deck edit uses the same builder overlay as create; edit state is prefilled and saves back to the existing deck id.
 - UI: `/cards` catalog page renders the full card set from `public/cards/cards.json` via `public/cards.js` + `public/cards.css`.
 - Character powers are data-driven in `public/characters/characters.json`; server helpers live in `src/game/characterPowers.ts` and client loaders in `public/shared/characterCatalog.js`.
@@ -205,7 +205,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Main menu hamburger/side-menu assets are intentionally kept in place but disabled (`MENU_ENABLED = false`) in `public/menu.js` and hidden in `public/index.html`; to restore, set `MENU_ENABLED = true` and remove `hidden`/`aria-hidden` from `#menuToggle` if needed.
 - Lobby queue selector is intentionally Quickplay-only in `public/index.html`; to restore other queues, re-add `<option>` entries under `#queueSelect` (queue handling placeholders already exist in `public/queue.js`).
 - `/api/v1/lobby/join` rejects decks unless they contain exactly 4 movement cards and exactly 12 ability cards; keep `public/cards/cards.json` base decks and deck-builder output aligned with this.
-- Base deck definitions from `public/cards/cards.json` are merged into each user's localStorage on load in `public/deckStore.js`; keep the merge logic when adding new base decks.
+- Base deck definitions from `public/cards/cards.json` are merged with cookie-stored player-created decks on load in `public/deckStore.js`; keep the merge logic when adding new base decks.
 - Character powers are defined in `public/characters/characters.json`; when adding/changing effects, keep `src/game/characterPowers.ts`, `src/game/execute.ts`, and `public/game/timelinePlayback.js` behavior in sync.
 - Accumulated-damage character effects (ex: `knockbackBonusPerTenDamage`) use the attacker's current damage, seeded from `public.characters[*].damage` at `executeBeats` start; test fixtures must set baseline `character.damage` explicitly.
 
