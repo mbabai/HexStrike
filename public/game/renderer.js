@@ -190,9 +190,13 @@ const drawAbilityHandCounter = (ctx, x, y, radius, abilityHandCount, theme, icon
   if (!Number.isFinite(abilityHandCount)) return;
   const safeCount = Math.max(0, Math.floor(abilityHandCount));
   const iconSize = Math.max(12, radius * 0.58);
-  const gap = Math.max(3, radius * 0.08);
+  const gap = Math.max(1, radius * 0.03);
   const anchorY = nameCapsuleRect ? nameCapsuleRect.y + nameCapsuleRect.height / 2 : y + radius * 0.65;
-  const iconX = nameCapsuleRect ? nameCapsuleRect.x - iconSize - gap : x - radius * 1.2;
+  const nameLeft =
+    nameCapsuleRect && Number.isFinite(nameCapsuleRect.textLeft)
+      ? nameCapsuleRect.textLeft
+      : nameCapsuleRect?.x;
+  const iconX = Number.isFinite(nameLeft) ? nameLeft - iconSize - gap : x - radius * 1.2;
   const iconY = anchorY - iconSize / 2;
   const label = `${safeCount}`;
   const labelSize = Math.max(10, iconSize * 0.52);

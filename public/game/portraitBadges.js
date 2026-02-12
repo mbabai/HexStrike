@@ -58,6 +58,9 @@ export const drawNameCapsule = (ctx, x, y, radius, username, theme, config = {})
     height: capsuleHeight,
     centerX,
     centerY,
+    textWidth,
+    textLeft: centerX - textWidth / 2,
+    textRight: centerX + textWidth / 2,
   };
 };
 
