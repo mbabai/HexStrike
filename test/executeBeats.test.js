@@ -1393,6 +1393,51 @@ test('executeBeats reduces KBF by 1 for iron will passive hits', () => {
   assert.equal(betaEntry.location.r, 0);
 });
 
+test('executeBeats applies stab rear-arc bonus from B, LB, and RB', () => {
+  const scenarios = [
+    { label: 'B', attackerPosition: { q: -1, r: 0 }, attackerAction: '[a]', expectedTargetPosition: { q: 2, r: 0 } },
+    { label: 'LB', attackerPosition: { q: -1, r: 1 }, attackerAction: '[La]', expectedTargetPosition: { q: 2, r: -2 } },
+    { label: 'RB', attackerPosition: { q: 0, r: -1 }, attackerAction: '[Ra]', expectedTargetPosition: { q: 0, r: 2 } },
+  ];
+
+  scenarios.forEach(({ label, attackerPosition, attackerAction, expectedTargetPosition }) => {
+    const characters = [
+      {
+        userId: 'alpha',
+        username: 'alpha',
+        position: { q: attackerPosition.q, r: attackerPosition.r },
+        facing: 180,
+        characterId: 'murelious',
+        characterName: 'Alpha',
+      },
+      { userId: 'beta', username: 'beta', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+    ];
+
+    const beats = [[
+      buildEntry('alpha', attackerAction, 20, characters[0].position, characters[0].facing, '', 3, 1),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ]];
+    beats[0][0].cardId = 'stab';
+    beats[0][0].passiveCardId = 'step';
+
+    const result = executeBeats(beats, characters);
+    const beat0 = result.beats[0] || [];
+    const betaEntry = beat0.find((entry) => entry.username === 'beta');
+    const hit = (betaEntry?.consequences ?? []).find((effect) => effect?.type === 'hit');
+
+    assert.ok(betaEntry, `Missing beta entry for ${label}`);
+    assert.ok(hit, `Missing hit consequence for ${label}`);
+    assert.equal(betaEntry.damage, 6, `Expected +3 damage bonus for ${label}`);
+    assert.deepEqual(
+      hit,
+      { type: 'hit', damageDelta: 6, knockbackDistance: 2 },
+      `Expected +3 KBF bonus for ${label}`,
+    );
+    assert.equal(betaEntry.location.q, expectedTargetPosition.q, `Unexpected knockback q for ${label}`);
+    assert.equal(betaEntry.location.r, expectedTargetPosition.r, `Unexpected knockback r for ${label}`);
+  });
+});
+
 test('executeBeats swaps reflex dodge on incoming W-hit and ends the set on a successful avoid', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },

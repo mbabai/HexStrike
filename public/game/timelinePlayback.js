@@ -247,7 +247,10 @@ const isBehindTarget = (attackerPosition, targetState) => {
   const directionIndex = getDirectionIndex(delta);
   if (directionIndex == null) return false;
   const facingIndex = getFacingRotationSteps(targetState.facing ?? 0);
-  return directionIndex === (facingIndex + 3) % 6;
+  const rearRightIndex = (facingIndex + 2) % 6;
+  const rearIndex = (facingIndex + 3) % 6;
+  const rearLeftIndex = (facingIndex + 4) % 6;
+  return directionIndex === rearRightIndex || directionIndex === rearIndex || directionIndex === rearLeftIndex;
 };
 
 const coordKey = (coord) => `${coord.q},${coord.r}`;

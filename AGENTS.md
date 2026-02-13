@@ -144,6 +144,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Pending action previews on the timeline are client-side only: build the local player's preview from the submitted active card action list, render it as a faded pulsing overlay only on that player's `E` slots while waiting, and clear it once `pendingActions` no longer includes a local submission.
 - Direction indexing for blocks/attacks must ignore reverse vectors (only forward, positive steps); otherwise block walls flip away from facing.
 - Keep `getDirectionIndex` logic in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized so visuals match server resolution.
+- Stab active rear bonus applies when the attacker is on any rear arc (`B`, `LB`, or `RB` of target), not only exact `B`; keep `isBehindTarget` in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized.
 - Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.
 - Arrow/projectile hits must respect block walls; client token playback derives block lookups from block effects to stop arrows on blocks.
 - Existing arrows resolve/move before beat action tokens; keep this phase order synchronized between `src/game/execute.ts` and `public/game/timelinePlayback.js` so movement-through-arrow and jump-landing outcomes match.
