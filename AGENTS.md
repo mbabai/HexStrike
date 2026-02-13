@@ -81,6 +81,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Keep pure logic (rules/engine) free of I/O; isolate side effects in adapters.
 - Small, focused modules; avoid monolithic files.
 - Prefer functional, deterministic code paths for the engine; inject randomness sources.
+- When providing terminal commands to the user, always format each command as a single-line command (no line-continuation characters like `\`).
 
 ## Repository conventions
 - Add new AGENTS.md files in subdirectories when specialized instructions are needed; nested instructions override this file.
