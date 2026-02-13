@@ -575,6 +575,18 @@ const isEntryThrow = (
   return false;
 };
 
+const isEntryUnblockable = (
+  entry: BeatEntry | null | undefined,
+  options: {
+    tokenType?: string;
+  } = {},
+) => {
+  if (!entry || entry.cardId !== SMOKE_BOMB_CARD_ID) return false;
+  const tokenType = `${options.tokenType ?? ''}`.toLowerCase();
+  if (tokenType && tokenType !== 'a' && tokenType !== 'c') return false;
+  return isBracketedAction(entry.action ?? '');
+};
+
 const toAbilityHandCount = (value: unknown): number | undefined => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return undefined;
@@ -3498,7 +3510,6 @@ export const executeBeatsWithInteractions = (
         const targetCharacter = targetId ? characterById.get(targetId) : null;
         const targetEntry = targetCharacter ? findEntryForCharacter(beat, targetCharacter) : null;
         const targetState = targetId ? state.get(targetId) : null;
-
         if (token.type === 'a' || token.type === 'c') {
           recordBurningStrikeAttack(actorId, destination);
           const isThrow = isEntryThrow(entry, {
@@ -3506,9 +3517,10 @@ export const executeBeatsWithInteractions = (
             actorPosition: origin,
             targetPosition: targetState?.position,
           });
+          const isUnblockable = isEntryUnblockable(entry, { tokenType: token.type });
           let resolvedTargetEntry = targetEntry;
           let resolvedBlockSource = blockSource;
-          let blockedByBlock = Boolean(resolvedBlockSource) && !isThrow;
+          let blockedByBlock = Boolean(resolvedBlockSource) && !isThrow && !isUnblockable;
           if (
             targetId &&
             !blockedByBlock &&
@@ -3537,7 +3549,7 @@ export const executeBeatsWithInteractions = (
                 }
                 registerBlockActions(targetId, swappedEntry, targetState);
                 resolvedBlockSource = directionIndex != null ? blockMap.get(targetKey)?.get(directionIndex) : undefined;
-                blockedByBlock = Boolean(resolvedBlockSource) && !isThrow;
+                blockedByBlock = Boolean(resolvedBlockSource) && !isThrow && !isUnblockable;
                 rerunIfCurrentFrameChanged(targetId, beforeSignature, { causeActorId: targetId });
               }
             }

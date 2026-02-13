@@ -759,6 +759,32 @@ test('executeBeats preserves action when hit after acting and records consequenc
   assert.equal(alphaBeat1.action, 'DamageIcon');
 });
 
+test('executeBeats applies only one hit per target for a multi-token attack in the same beat', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'a-2a', 67, characters[0].position, characters[0].facing, '', 3, 2),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  const result = executeBeats(beats, characters);
+  const beat0 = result.beats[0] || [];
+  const betaEntry = beat0.find((entry) => entry.username === 'beta');
+  const hitConsequences = (betaEntry?.consequences ?? []).filter((effect) => effect?.type === 'hit');
+
+  assert.ok(betaEntry);
+  assert.equal(betaEntry.damage, 3);
+  assert.equal(betaEntry.location.q, 2);
+  assert.equal(betaEntry.location.r, 0);
+  assert.equal(hitConsequences.length, 1);
+  assert.deepEqual(hitConsequences[0], { type: 'hit', damageDelta: 3, knockbackDistance: 1 });
+});
+
 test('executeBeats preserves rotations when hit overrides the action', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
@@ -1633,6 +1659,34 @@ test('executeBeats applies smoke-bomb right-arc stun from bracketed a-La-Ra acti
   assert.ok(betaBeat0);
   assert.equal(betaBeat0.action, 'DamageIcon');
   assert.equal(betaBeat0.stunOnly, true);
+});
+
+test('executeBeats treats smoke-bomb bracketed attacks as unblockable', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 0, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [[
+    buildEntry('alpha', '[a-La-Ra]', 87, characters[0].position, characters[0].facing, '0', 0, 0),
+    buildEntry('beta', '[b]', 99, characters[1].position, characters[1].facing),
+  ]];
+
+  beats[0][0].cardId = 'smoke-bomb';
+  beats[0][0].passiveCardId = 'step';
+  beats[0][0].rotationSource = 'selected';
+  beats[0][1].cardId = 'parry';
+  beats[0][1].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters);
+  const betaBeat0 = (result.beats[0] || []).find((entry) => entry.username === 'beta');
+  const betaBeat1 = (result.beats[1] || []).find((entry) => entry.username === 'beta');
+
+  assert.ok(betaBeat0);
+  assert.ok(betaBeat1);
+  assert.equal(betaBeat0.action, '[b]');
+  assert.equal(betaBeat1.action, 'DamageIcon');
+  assert.equal(betaBeat1.stunOnly, true);
 });
 
 test('executeBeats preserves character baseline state in returned characters', () => {

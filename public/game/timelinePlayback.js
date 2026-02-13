@@ -39,6 +39,7 @@ const HEALING_HARMONY_CARD_ID = 'healing-harmony';
 const PARRY_CARD_ID = 'parry';
 const STAB_CARD_ID = 'stab';
 const CROSS_SLASH_CARD_ID = 'cross-slash';
+const SMOKE_BOMB_CARD_ID = 'smoke-bomb';
 // Keep in sync with server-side throw detection.
 const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
 const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
@@ -300,6 +301,13 @@ const isEntryThrow = (entry, options = {}) => {
   if (entry.cardId && ACTIVE_THROW_CARD_IDS.has(entry.cardId)) return true;
   if (entry.passiveCardId && PASSIVE_THROW_CARD_IDS.has(entry.passiveCardId)) return true;
   return false;
+};
+
+const isEntryUnblockable = (entry, options = {}) => {
+  if (!entry || entry.cardId !== SMOKE_BOMB_CARD_ID) return false;
+  const tokenType = `${options.tokenType ?? ''}`.toLowerCase();
+  if (tokenType && tokenType !== 'a' && tokenType !== 'c') return false;
+  return isBracketedAction(`${entry.action ?? ''}`);
 };
 
 const isForwardScale = (value) => Number.isFinite(value) && Math.round(value) === value && value > 0;
@@ -959,15 +967,15 @@ const buildActionSteps = (
       const targetCharacter = targetId ? characterById.get(targetId) : null;
       const targetEntry = targetCharacter ? getBeatEntryForCharacter(beat, targetCharacter) : null;
       const targetState = targetId ? state.get(targetId) : null;
-
       if (token.type === 'a' || token.type === 'c') {
         const isThrow = isEntryThrow(entry, {
           tokenType: token.type,
           actorPosition: origin,
           targetPosition: targetState?.position,
         });
+        const isUnblockable = isEntryUnblockable(entry, { tokenType: token.type });
         const throwBlocked = isThrow && isThrowImmune(targetEntry);
-        const blocked = (isBlocked && !isThrow) || throwBlocked;
+        const blocked = (isBlocked && !isThrow && !isUnblockable) || throwBlocked;
         if (targetId && blocked && directionIndex != null) {
           blockHits.push({ coord: { q: destination.q, r: destination.r }, directionIndex });
         }

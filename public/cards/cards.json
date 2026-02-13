@@ -656,7 +656,7 @@
       "rotations": "*",
       "damage": 0,
       "kbf": 0,
-      "activeText": "{i}: Rotate after this attack. All targets hit by the attack are interrupted, and stunned for 5 - your rotation. \n{X1}: Swap this card with the movement card.",
+      "activeText": "{i}: Rotate after this attack. This attack is unblockable. All targets hit by the attack are interrupted, and stunned for 5 - your rotation. \n{X1}: Swap this card with the movement card.",
       "passiveText": "All movement frames invert their direction."
     },
     {
