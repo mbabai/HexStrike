@@ -71,6 +71,12 @@ Run the Node.js test suite with:
 npm run test
 ```
 
+Check Mongo history connectivity/target selection explicitly with:
+```bash
+npm run test:history-store
+```
+This prints JSON diagnostics (`mode`, `dbName`, `collectionName`, URI source/route) and exits non-zero when Mongo is required but unavailable.
+
 ## Using the lobby UI
 - Select **Quickplay**, **Strike-bot (Hard)**, **Hex-bot (Medium)**, or **Bot-bot (Easy)**, then click **Find Game** to start queue search; the timer counts up while searching.
 - Clicking **Find Game** again cancels the search and leaves the queue.
@@ -96,7 +102,7 @@ npm run test
 - `POST /api/v1/game/forfeit` - `{ userId, gameId }`
 - `POST /api/v1/game/draw-offer` - `{ userId, gameId }` (30-second server cooldown per offerer)
 - `GET /api/v1/history/matches`
-- `GET /api/v1/history/status` - reports active history persistence mode (`mongo` vs `memory`) and selected URI source
+- `GET /api/v1/history/status` - reports active history persistence mode (`mongo` vs `memory`) and selected URI source (`ok=false` with `error` when unavailable)
 - `GET /api/v1/history/games` - list persisted game history entries
 - `GET /api/v1/history/games/:id` - load a specific replayable game history entry
 - `POST /api/v1/history/games/share` - `{ userId, gameId }` -> returns share link

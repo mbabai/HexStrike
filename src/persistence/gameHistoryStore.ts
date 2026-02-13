@@ -40,6 +40,7 @@ export interface GameHistoryDiagnostics {
   nodeEnv: string;
   hostedRuntime: boolean;
   mongoRequired: boolean;
+  mongoConnected: boolean;
   dbName: string;
   collectionName: string;
   mongoUriSource: string;
@@ -349,11 +350,13 @@ export class GameHistoryStore {
     return created;
   }
 
-  async getDiagnostics(): Promise<GameHistoryDiagnostics> {
-    try {
-      await this.ensureInitialized();
-    } catch {
-      // Diagnostics should still return metadata even when initialization fails.
+  async getDiagnostics(options?: { skipInitialization?: boolean }): Promise<GameHistoryDiagnostics> {
+    if (!options?.skipInitialization) {
+      try {
+        await this.ensureInitialized();
+      } catch {
+        // Diagnostics should still return metadata even when initialization fails.
+      }
     }
     const target = this.resolvedTarget ?? this.resolveMongoTarget();
     return {
@@ -361,6 +364,7 @@ export class GameHistoryStore {
       nodeEnv: this.nodeEnv,
       hostedRuntime: this.hostedRuntime,
       mongoRequired: this.mongoRequired,
+      mongoConnected: this.mode === 'mongo',
       dbName: this.dbName,
       collectionName: this.collectionName,
       mongoUriSource: target.uriSource,

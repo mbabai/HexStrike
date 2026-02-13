@@ -3265,19 +3265,20 @@ export function buildServer(port: number) {
 
   const server = createServer(async (req: any, res: any) => {
     const { pathname } = parse(req.url || '', true);
-    if (!pathname) return notFound(res);
-    if (req.method === 'GET' && pathname === '/events') {
-      return serveEvents(req, res);
-    }
-    if (req.method === 'OPTIONS') {
-      res.writeHead(204, {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      });
-      return res.end();
-    }
-    if (pathname.startsWith('/api/v1/lobby')) {
+    try {
+      if (!pathname) return notFound(res);
+      if (req.method === 'GET' && pathname === '/events') {
+        return serveEvents(req, res);
+      }
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        });
+        return res.end();
+      }
+      if (pathname.startsWith('/api/v1/lobby')) {
       if (req.method === 'GET' && pathname === '/api/v1/lobby/state') {
         return respondJson(res, 200, lobby.serialize());
       }
@@ -3309,7 +3310,7 @@ export function buildServer(port: number) {
         return respondJson(res, 200, lobby.serialize());
       }
     }
-    if (pathname.startsWith('/api/v1/match')) {
+      if (pathname.startsWith('/api/v1/match')) {
       if (req.method === 'POST' && pathname === '/api/v1/match/custom') {
         const body = await parseBody(req);
         const result = await createCustomMatch(body);
@@ -3343,7 +3344,7 @@ export function buildServer(port: number) {
         return respondJson(res, 200, match);
       }
     }
-    if (pathname.startsWith('/api/v1/game')) {
+      if (pathname.startsWith('/api/v1/game')) {
       if (req.method === 'GET' && pathname.startsWith('/api/v1/game/') && pathname.endsWith('/snapshot')) {
         const gameId = pathname.split('/')[4];
         const game = await db.findGame(gameId);
@@ -3415,7 +3416,7 @@ export function buildServer(port: number) {
         return respondJson(res, result.status, result.payload);
       }
     }
-    if (pathname.startsWith('/api/v1/replays')) {
+      if (pathname.startsWith('/api/v1/replays')) {
       if (req.method === 'GET' && pathname === '/api/v1/replays') {
         const replays = await historyStore.listReplays(200);
         return respondJson(
@@ -3455,14 +3456,19 @@ export function buildServer(port: number) {
         return respondJson(res, result.status, result.payload);
       }
     }
-    if (pathname.startsWith('/api/v1/history')) {
+      if (pathname.startsWith('/api/v1/history')) {
       if (req.method === 'GET' && pathname === '/api/v1/history/matches') {
         return respondJson(res, 200, await db.listMatches());
       }
       if (req.method === 'GET' && pathname === '/api/v1/history/status') {
         const diagnostics = await historyStore.getDiagnostics();
-        const statusCode = diagnostics.mongoRequired && diagnostics.mode !== 'mongo' ? 503 : 200;
-        return respondJson(res, statusCode, diagnostics);
+        const ok = !diagnostics.mongoRequired || diagnostics.mode === 'mongo';
+        const statusCode = ok ? 200 : 503;
+        return respondJson(res, statusCode, {
+          ok,
+          error: ok ? null : diagnostics.lastInitializationError ?? 'Mongo history store is unavailable.',
+          ...diagnostics,
+        });
       }
       if (req.method === 'POST' && pathname === '/api/v1/history/games/share') {
         let body;
@@ -3503,17 +3509,35 @@ export function buildServer(port: number) {
         return respondJson(res, 200, buildReplayDetail(replay));
       }
     }
-    if (
-      pathname === '/' ||
-      pathname === '/admin' ||
-      pathname === '/admin/' ||
-      pathname === '/cards' ||
-      pathname === '/cards/' ||
-      pathname.startsWith('/public')
-    ) {
-      return handleStatic(res, pathname);
+      if (
+        pathname === '/' ||
+        pathname === '/admin' ||
+        pathname === '/admin/' ||
+        pathname === '/cards' ||
+        pathname === '/cards/' ||
+        pathname.startsWith('/public')
+      ) {
+        return handleStatic(res, pathname);
+      }
+      return notFound(res);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : `${err}`;
+      console.error(`${LOG_PREFIX} request:error`, {
+        method: req.method,
+        pathname,
+        error: message,
+      });
+      const path = `${pathname ?? ''}`;
+      const historyError = path.startsWith('/api/v1/history') || path.startsWith('/api/v1/replays');
+      if (historyError || message.includes('game-history:mongo')) {
+        const diagnostics = await historyStore.getDiagnostics({ skipInitialization: true });
+        return respondJson(res, 503, {
+          error: message,
+          diagnostics,
+        });
+      }
+      return respondJson(res, 500, { error: message });
     }
-    return notFound(res);
   });
 
   server.on('upgrade', (req: any, socket: any) => {
@@ -3526,8 +3550,7 @@ export function buildServer(port: number) {
       const message = err instanceof Error ? err.message : `${err}`;
       console.error(`${LOG_PREFIX} game-history:init failed (${message})`);
       if (!historyStore.isMongoRequired()) return;
-      console.error(`${LOG_PREFIX} game-history:mongo is required in this runtime; shutting down`);
-      process.exit(1);
+      console.error(`${LOG_PREFIX} game-history:mongo is required in this runtime; continuing with diagnostics endpoint`);
     });
     sendRealtimeEvent({ type: 'queueChanged', payload: lobby.serialize() });
     setInterval(() => {
