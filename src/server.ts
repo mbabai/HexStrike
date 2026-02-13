@@ -203,8 +203,6 @@ const WHIRLWIND_MIN_DAMAGE = 12;
 const DRAW_OFFER_COOLDOWN_MS = 30_000;
 const PROD_FAVICON_PATH = '/public/images/X1.png';
 const DEV_FAVICON_PATH = '/public/images/X2.png';
-const IS_DEV_RUNTIME = process.env.HEXSTRIKE_TEMP_LOGS === '1' || process.env.NODE_ENV === 'development';
-const ACTIVE_FAVICON_PATH = IS_DEV_RUNTIME ? DEV_FAVICON_PATH : PROD_FAVICON_PATH;
 const MAX_USERNAME_LENGTH = 24;
 type BotDifficulty = 'easy' | 'medium' | 'hard';
 type BotQueueName = 'botQueue' | 'botHardQueue' | 'botMediumQueue' | 'botEasyQueue';
@@ -259,6 +257,28 @@ const BOT_SELECTION_RULES: Record<BotDifficulty, { removeTop: number; topLimit: 
 const BOT_MAX_DECISION_ATTEMPTS = 12;
 const BOT_MAX_RUN_STEPS = 64;
 const BOT_TEMP_EVENT_CHANNEL = 'easy-bot';
+
+const parseHostname = (hostHeader: unknown): string => {
+  const raw = `${hostHeader ?? ''}`.trim().toLowerCase();
+  if (!raw) return '';
+  const first = raw.split(',')[0]?.trim() ?? '';
+  if (!first) return '';
+  if (first.startsWith('[')) {
+    const closing = first.indexOf(']');
+    if (closing > 1) return first.slice(1, closing);
+    return first;
+  }
+  const colonIndex = first.indexOf(':');
+  return colonIndex >= 0 ? first.slice(0, colonIndex) : first;
+};
+
+const resolveFaviconPathForHost = (hostHeader: unknown): string => {
+  const hostname = parseHostname(hostHeader);
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+    return DEV_FAVICON_PATH;
+  }
+  return PROD_FAVICON_PATH;
+};
 
 const isBotQueue = (queue: QueueName): queue is BotQueueName =>
   BOT_QUEUE_NAMES.includes(queue as BotQueueName);
@@ -2077,7 +2097,7 @@ export function buildServer(port: number) {
     });
   };
 
-  const handleStatic = (res: any, path: string) => {
+  const handleStatic = (req: any, res: any, path: string) => {
     const decodedPath = (() => {
       try {
         return decodeURIComponent(path);
@@ -2088,7 +2108,7 @@ export function buildServer(port: number) {
     const isFaviconRequest = decodedPath === '/favicon.ico' || decodedPath === '/favicon.png';
     const resolved =
       isFaviconRequest
-        ? ACTIVE_FAVICON_PATH
+        ? resolveFaviconPathForHost(req?.headers?.host)
         : decodedPath === '/'
         ? '/public/index.html'
         : decodedPath === '/admin' || decodedPath === '/admin/'
@@ -3529,7 +3549,7 @@ export function buildServer(port: number) {
         pathname === '/favicon.png' ||
         pathname.startsWith('/public')
       ) {
-        return handleStatic(res, pathname);
+        return handleStatic(req, res, pathname);
       }
       return notFound(res);
     } catch (err) {
