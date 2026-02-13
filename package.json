@@ -22,6 +22,7 @@
     "typescript": "^5.5.4"
   },
   "dependencies": {
-    "codex": "^0.2.3"
+    "codex": "^0.2.3",
+    "mongodb": "^6.15.0"
   }
 }

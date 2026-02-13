@@ -730,6 +730,9 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       if (comboSkipped || stunOnlyHit) {
         ctx.filter = 'grayscale(1)';
       }
+      if (token.label === 'Death') {
+        drawDeathBackdrop(ctx, xPos, rowCenterY, drawSize);
+      }
       const emphasisImage = token.emphasized ? getActionArt(EMPHASIS_ICON_KEY) : null;
       if (token.emphasized && emphasisImage && emphasisImage.complete && emphasisImage.naturalWidth > 0) {
         ctx.drawImage(emphasisImage, imageX, imageY, drawSize, drawSize);
@@ -1054,6 +1057,16 @@ const drawFocusBadge = (ctx, x, y, size) => {
   const badgeX = x + size / 2 - badgeSize / 2;
   const badgeY = y + size - badgeSize * 0.2;
   ctx.drawImage(icon, badgeX, badgeY, badgeSize, badgeSize);
+};
+
+const drawDeathBackdrop = (ctx, centerX, centerY, size) => {
+  const radius = Math.max(6, size * 0.47);
+  ctx.save();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 };
 
 const drawKnockbackBadge = (ctx, x, y, size, distance, theme) => {

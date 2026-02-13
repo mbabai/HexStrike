@@ -5,15 +5,20 @@ export const createGameOverView = ({
   overlay,
   message,
   button,
+  shareButton,
   saveButton,
   onContinue,
+  onShare,
   onSaveReplay,
 } = {}) => {
+  const secondaryButton = shareButton || saveButton || null;
+  const onSecondaryAction = onShare || onSaveReplay;
+
   if (button && typeof onContinue === 'function') {
     button.addEventListener('click', () => onContinue());
   }
-  if (saveButton && typeof onSaveReplay === 'function') {
-    saveButton.addEventListener('click', () => onSaveReplay());
+  if (secondaryButton && typeof onSecondaryAction === 'function') {
+    secondaryButton.addEventListener('click', () => onSecondaryAction());
   }
 
   const setHidden = (hidden) => {
@@ -30,12 +35,12 @@ export const createGameOverView = ({
     if (value && typeof value === 'object') {
       return {
         continueInFlight: Boolean(value.continueInFlight),
-        saveInFlight: Boolean(value.saveInFlight),
+        shareInFlight: Boolean(value.shareInFlight || value.saveInFlight),
       };
     }
     return {
       continueInFlight: Boolean(value),
-      saveInFlight: false,
+      shareInFlight: false,
     };
   };
 
@@ -49,8 +54,8 @@ export const createGameOverView = ({
     setHidden(!isGameOver);
     if (!isGameOver) {
       button.disabled = false;
-      if (saveButton) {
-        saveButton.disabled = false;
+      if (secondaryButton) {
+        secondaryButton.disabled = false;
       }
       return;
     }
@@ -64,8 +69,8 @@ export const createGameOverView = ({
             ? 'Draw agreed.'
             : 'Game over.';
     button.disabled = normalizedStatus.continueInFlight;
-    if (saveButton) {
-      saveButton.disabled = normalizedStatus.saveInFlight;
+    if (secondaryButton) {
+      secondaryButton.disabled = normalizedStatus.shareInFlight;
     }
   };
 
@@ -77,8 +82,8 @@ export const createGameOverView = ({
     if (button) {
       button.disabled = false;
     }
-    if (saveButton) {
-      saveButton.disabled = false;
+    if (secondaryButton) {
+      secondaryButton.disabled = false;
     }
   };
 

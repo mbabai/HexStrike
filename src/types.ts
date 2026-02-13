@@ -365,13 +365,18 @@ export interface ReplayPlayerDoc {
   username: string;
   characterId: CharacterId;
   characterName?: string;
+  result?: ReplayResult;
 }
+
+export type ReplayResult = 'win' | 'loss' | 'draw' | 'unknown';
 
 export interface ReplayDoc {
   id: string;
   sourceGameId: string;
   sourceMatchId?: string;
   players: ReplayPlayerDoc[];
+  matchOutcome?: MatchOutcome;
+  sharePath?: string;
   state: {
     public: GamePublicState;
   };

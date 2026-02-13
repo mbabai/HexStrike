@@ -4,6 +4,7 @@ import { readFile } from 'fs';
 import { createHash, randomUUID } from 'crypto';
 import { createLobbyStore } from './state/lobby';
 import { MemoryDb } from './persistence/memoryDb';
+import { GameHistoryStore } from './persistence/gameHistoryStore';
 import { assignMatchUsernames } from './matchmaking/usernames';
 import { CHARACTER_IDS } from './game/characters';
 import { createInitialGameState } from './game/state';
@@ -65,6 +66,7 @@ import {
   QueueName,
   ReplayDoc,
   ReplayPlayerDoc,
+  ReplayResult,
 } from './types';
 import type { AbilityDiscardResult } from './game/cardRules';
 
@@ -763,6 +765,7 @@ const buildTimelineSummary = (beats: BeatEntry[][], characters: PublicCharacter[
 export function buildServer(port: number) {
   const lobby = createLobbyStore();
   const db = new MemoryDb();
+  const historyStore = new GameHistoryStore(db);
   const sseClients = new Map<string, any>();
   const wsClients = new Map<string, WsClient>();
   const pendingActionSets = new Map<string, PendingActionBatch>();
@@ -775,6 +778,7 @@ export function buildServer(port: number) {
   const botUsersByGame = new Map<string, Set<string>>();
   const botRunsInProgress = new Set<string>();
   const botRunsQueued = new Set<string>();
+  const historySaveInFlight = new Map<string, Promise<ReplayDoc | null>>();
   const winsRequired = 3;
   let anonymousCounter = 0;
 
@@ -943,9 +947,37 @@ export function buildServer(port: number) {
   const cloneReplayPublicState = (publicState: GameStateDoc['public']) =>
     JSON.parse(JSON.stringify(publicState ?? {})) as GameStateDoc['public'];
 
+  const buildReplaySharePath = (replayId: string) => `/?g=${encodeURIComponent(replayId)}`;
+
+  const buildReplayShareUrl = (sharePath: string) => {
+    const base = `${process.env.APP_BASE_URL ?? ''}`.trim();
+    if (!base) return sharePath;
+    try {
+      return new URL(sharePath, base).toString();
+    } catch {
+      return sharePath;
+    }
+  };
+
+  const resolveReplayResult = (
+    outcome: GameStateDoc['public']['matchOutcome'] | undefined,
+    userId: string,
+  ): ReplayResult => {
+    if (!outcome || !userId) return 'unknown';
+    if (outcome.reason === 'draw-agreement') {
+      const drawUsers = Array.isArray(outcome.drawUserIds) ? outcome.drawUserIds : [];
+      if (drawUsers.includes(userId)) return 'draw';
+      return 'unknown';
+    }
+    if (outcome.winnerUserId && outcome.winnerUserId === userId) return 'win';
+    if (outcome.loserUserId && outcome.loserUserId === userId) return 'loss';
+    return 'unknown';
+  };
+
   const buildReplayPlayers = (match: MatchDoc, game: GameDoc): ReplayPlayerDoc[] => {
     const characterNameByUserId = new Map<string, string>();
     const characters = ensureBaselineCharacters(game.state.public);
+    const outcome = game.state?.public?.matchOutcome;
     characters.forEach((character) => {
       if (character?.userId && character?.characterName) {
         characterNameByUserId.set(character.userId, character.characterName);
@@ -956,21 +988,81 @@ export function buildServer(port: number) {
       username: player.username,
       characterId: player.characterId,
       characterName: characterNameByUserId.get(player.userId),
+      result: resolveReplayResult(outcome, player.userId),
     }));
   };
 
-  const buildReplaySummary = (replay: ReplayDoc) => ({
-    id: replay.id,
-    sourceGameId: replay.sourceGameId,
-    sourceMatchId: replay.sourceMatchId ?? null,
-    players: replay.players,
-    createdAt: replay.createdAt,
-  });
+  const withReplaySharePath = (replay: ReplayDoc): ReplayDoc => {
+    if (replay.sharePath) return replay;
+    return {
+      ...replay,
+      sharePath: buildReplaySharePath(replay.id),
+    };
+  };
 
-  const buildReplayDetail = (replay: ReplayDoc) => ({
-    ...buildReplaySummary(replay),
-    state: replay.state,
-  });
+  const buildReplaySummary = (replayDoc: ReplayDoc) => {
+    const replay = withReplaySharePath(replayDoc);
+    const sharePath = replay.sharePath ?? buildReplaySharePath(replay.id);
+    return {
+      id: replay.id,
+      sourceGameId: replay.sourceGameId,
+      sourceMatchId: replay.sourceMatchId ?? null,
+      players: replay.players,
+      matchOutcome: replay.matchOutcome ?? replay.state?.public?.matchOutcome ?? null,
+      sharePath,
+      shareUrl: buildReplayShareUrl(sharePath),
+      createdAt: replay.createdAt,
+    };
+  };
+
+  const buildReplayDetail = (replayDoc: ReplayDoc) => {
+    const replay = withReplaySharePath(replayDoc);
+    return {
+      ...buildReplaySummary(replay),
+      state: replay.state,
+    };
+  };
+
+  const createOrGetReplayForGame = async (game: GameDoc, match: MatchDoc) => {
+    const existing = await historyStore.findReplayByGameId(game.id);
+    if (existing) return { replay: existing, created: false };
+    const replay = await historyStore.createReplay({
+      sourceGameId: game.id,
+      sourceMatchId: game.matchId,
+      players: buildReplayPlayers(match, game),
+      matchOutcome: game.state?.public?.matchOutcome,
+      sharePath: undefined,
+      state: {
+        public: cloneReplayPublicState(game.state.public),
+      },
+    });
+    return { replay, created: true };
+  };
+
+  const ensureGameHistoryForGame = async (
+    game: GameDoc | undefined,
+    matchHint?: MatchDoc,
+  ): Promise<ReplayDoc | null> => {
+    if (!game?.state?.public?.matchOutcome) return null;
+    const inFlight = historySaveInFlight.get(game.id);
+    if (inFlight) return inFlight;
+    const task = (async () => {
+      try {
+        const match = matchHint ?? (await db.findMatch(game.matchId));
+        if (!match) return null;
+        const { replay } = await createOrGetReplayForGame(game, match);
+        return replay;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : `${err}`;
+        console.warn(`${LOG_PREFIX} history:save failed`, { gameId: game.id, error: message });
+        return null;
+      } finally {
+        historySaveInFlight.delete(game.id);
+      }
+    })();
+    historySaveInFlight.set(game.id, task);
+    return task;
+  };
 
   const saveReplay = async (body: Record<string, unknown>): Promise<ReplayResponse> => {
     const userId = (body.userId as string) || (body.userID as string);
@@ -994,19 +1086,55 @@ export function buildServer(port: number) {
     if (!outcome) {
       return { ok: false, status: 409, error: 'Game is not complete yet' };
     }
-    const existing = await db.findReplayByGameId(game.id);
+    const existing = await historyStore.findReplayByGameId(game.id);
     if (existing) {
       return { ok: true, status: 200, payload: buildReplayDetail(existing) };
     }
-    const replay = await db.createReplay({
-      sourceGameId: game.id,
-      sourceMatchId: game.matchId,
-      players: buildReplayPlayers(match, game),
-      state: {
-        public: cloneReplayPublicState(game.state.public),
-      },
-    });
+    const replay = await ensureGameHistoryForGame(game, match);
+    if (!replay) {
+      return { ok: false, status: 500, error: 'Failed to save game history' };
+    }
     return { ok: true, status: 201, payload: buildReplayDetail(replay) };
+  };
+
+  const shareReplay = async (body: Record<string, unknown>): Promise<ReplayResponse> => {
+    const userId = (body.userId as string) || (body.userID as string);
+    const gameId = (body.gameId as string) || (body.gameID as string);
+    if (!userId || !gameId) {
+      return { ok: false, status: 400, error: 'Invalid share payload' };
+    }
+    const game = await db.findGame(gameId);
+    if (!game) {
+      return { ok: false, status: 404, error: 'Game not found' };
+    }
+    const match = await db.findMatch(game.matchId);
+    if (!match) {
+      return { ok: false, status: 404, error: 'Match not found' };
+    }
+    const isParticipant = match.players.some((player) => player.userId === userId);
+    if (!isParticipant) {
+      return { ok: false, status: 403, error: 'User not in match' };
+    }
+    const outcome = game.state?.public?.matchOutcome ?? null;
+    if (!outcome) {
+      return { ok: false, status: 409, error: 'Game is not complete yet' };
+    }
+    const replay = await ensureGameHistoryForGame(game, match);
+    if (!replay) {
+      return { ok: false, status: 500, error: 'Failed to prepare share link' };
+    }
+    const summary = buildReplaySummary(replay);
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        id: summary.id,
+        sourceGameId: summary.sourceGameId,
+        sourceMatchId: summary.sourceMatchId,
+        sharePath: summary.sharePath,
+        shareUrl: summary.shareUrl,
+      },
+    };
   };
 
   const buildDeckStatesForMatch = async (match: MatchDoc, game: GameDoc) => {
@@ -1676,6 +1804,9 @@ export function buildServer(port: number) {
 
   const sendGameUpdate = (match: MatchDoc | undefined, game: GameDoc, deckStates?: Map<string, DeckState>) => {
     if (!match) return;
+    if (game.state?.public?.matchOutcome) {
+      void ensureGameHistoryForGame(game, match);
+    }
     const exited = matchExitUsers.get(game.id);
     match.players.forEach((player) => {
       if (exited?.has(player.userId)) return;
@@ -1873,6 +2004,9 @@ export function buildServer(port: number) {
       if (game) {
         await ensureBotUsersForGame(game, match);
         const deckStates = await ensureDeckStatesForGame(game, match);
+        if (game.state?.public?.matchOutcome) {
+          void ensureGameHistoryForGame(game, match);
+        }
         logGameState(game, match);
         const view = buildGameViewForPlayer(game, userId, deckStates);
         sendRealtimeEvent({ type: 'game:update', payload: view }, userId);
@@ -3283,7 +3417,7 @@ export function buildServer(port: number) {
     }
     if (pathname.startsWith('/api/v1/replays')) {
       if (req.method === 'GET' && pathname === '/api/v1/replays') {
-        const replays = await db.listReplays(200);
+        const replays = await historyStore.listReplays(200);
         return respondJson(
           res,
           200,
@@ -3301,7 +3435,7 @@ export function buildServer(port: number) {
         if (!replayId) {
           return respondJson(res, 400, { error: 'Replay id is required' });
         }
-        const replay = await db.findReplay(replayId);
+        const replay = await historyStore.findReplay(replayId);
         if (!replay) {
           return notFound(res);
         }
@@ -3325,8 +3459,43 @@ export function buildServer(port: number) {
       if (req.method === 'GET' && pathname === '/api/v1/history/matches') {
         return respondJson(res, 200, await db.listMatches());
       }
+      if (req.method === 'POST' && pathname === '/api/v1/history/games/share') {
+        let body;
+        try {
+          body = await parseBody(req);
+        } catch (err) {
+          return respondJson(res, 400, { error: 'Invalid share payload' });
+        }
+        const result = await shareReplay(body);
+        if (!result.ok) {
+          return respondJson(res, result.status, { error: result.error });
+        }
+        return respondJson(res, result.status, result.payload);
+      }
       if (req.method === 'GET' && pathname === '/api/v1/history/games') {
-        return respondJson(res, 200, await db.listGames());
+        const replays = await historyStore.listReplays(200);
+        return respondJson(
+          res,
+          200,
+          replays.map((replay) => buildReplaySummary(replay)),
+        );
+      }
+      if (req.method === 'GET' && pathname.startsWith('/api/v1/history/games/')) {
+        const replaySegment = pathname.split('/')[5] ?? '';
+        let replayId = '';
+        try {
+          replayId = decodeURIComponent(replaySegment);
+        } catch {
+          return respondJson(res, 400, { error: 'Invalid game history id' });
+        }
+        if (!replayId) {
+          return respondJson(res, 400, { error: 'Game history id is required' });
+        }
+        const replay = await historyStore.findReplay(replayId);
+        if (!replay) {
+          return notFound(res);
+        }
+        return respondJson(res, 200, buildReplayDetail(replay));
       }
     }
     if (
@@ -3348,6 +3517,7 @@ export function buildServer(port: number) {
 
   server.listen(port, () => {
     lobby.clearQueues();
+    void historyStore.listReplays(1).catch(() => undefined);
     sendRealtimeEvent({ type: 'queueChanged', payload: lobby.serialize() });
     setInterval(() => {
       void matchmakeQuickplay();

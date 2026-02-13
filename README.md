@@ -22,6 +22,33 @@ HexStrike is a dependency-light Node.js lobby and matchmaking prototype with a b
 
 Set `PORT` to change the server port.
 
+## Environment
+The server loads `.env` automatically when present.
+
+- `NODE_ENV` (`development` or `production`)
+- `PORT`
+- `APP_BASE_URL` (used for absolute share links)
+- `MONGODB_LOCAL_URI` (used when `NODE_ENV !== production`)
+- `MONGODB_PROD_URI` (used when `NODE_ENV === production`)
+- `MONGODB_DB_NAME` (default `HexStrike`)
+- `MONGODB_GAMES_COLLECTION` (default `games`)
+
+Production URI fallback keys are also supported:
+- `MONGODB_ATLAS_CONNECTION_STRING`
+- `MONGODB_ATLAS_URI`
+- `MONGODB_URI`
+- `MongoDB-Atlas-ConnectionString`
+
+### Azure Key Vault reuse (App Service)
+If you already have `MongoDB-Atlas-ConnectionString` in Key Vault, easiest path:
+1. Enable System Assigned Identity on your App Service.
+2. Grant that identity Key Vault secret read permissions (`Get`, optionally `List`) on `byMarcellKeyVault`.
+3. In App Service Configuration, add either:
+   - `MONGODB_PROD_URI = @Microsoft.KeyVault(SecretUri=https://<vault>.vault.azure.net/secrets/MongoDB-Atlas-ConnectionString/)`
+   - or `MongoDB-Atlas-ConnectionString = @Microsoft.KeyVault(...)` (the server now supports this name directly).
+4. Set `NODE_ENV=production` and `APP_BASE_URL=https://<your-app-domain>`.
+5. Restart the app.
+
 ## Development
 `npm run dev` builds, runs tests, then starts the server with auto-reload. If tests fail, the server will not start.
 
@@ -67,7 +94,10 @@ npm run test
 - `POST /api/v1/game/forfeit` - `{ userId, gameId }`
 - `POST /api/v1/game/draw-offer` - `{ userId, gameId }` (30-second server cooldown per offerer)
 - `GET /api/v1/history/matches`
-- `GET /api/v1/history/games`
+- `GET /api/v1/history/games` - list persisted game history entries
+- `GET /api/v1/history/games/:id` - load a specific replayable game history entry
+- `POST /api/v1/history/games/share` - `{ userId, gameId }` -> returns share link
 
 ## Notes
-- Data is stored in memory only; restarting the server resets users, matches, and games.
+- Users, lobbies, active matches, and active games are in memory and reset on restart.
+- Completed game history is persisted to MongoDB (`HexStrike.games`) when Mongo is reachable; otherwise it falls back to in-memory storage.

@@ -247,7 +247,7 @@ export const initGame = () => {
   const gameOverOverlay = document.getElementById('gameOverOverlay');
   const gameOverMessage = document.getElementById('gameOverMessage');
   const gameOverDone = document.getElementById('gameOverDone');
-  const gameOverSaveReplay = document.getElementById('gameOverSaveReplay');
+  const gameOverShareButton = document.getElementById('gameOverShareButton');
   const gameMenu = document.getElementById('gameMenu');
   const gameMenuToggle = document.getElementById('gameMenuToggle');
   const gameMenuPanel = document.getElementById('gameMenuPanel');
@@ -280,7 +280,7 @@ export const initGame = () => {
   let pendingInteractionId = null;
   let pendingInteractionType = null;
   let gameOverInFlight = false;
-  let replaySaveInFlight = false;
+  let shareLinkInFlight = false;
   let didInitTimelinePosition = false;
   let lastComboKey = null;
   let lastComboRequired = false;
@@ -687,12 +687,12 @@ export const initGame = () => {
     overlay: gameOverOverlay,
     message: gameOverMessage,
     button: gameOverDone,
-    saveButton: gameOverSaveReplay,
+    shareButton: gameOverShareButton,
     onContinue: () => {
       void handleGameOverDone();
     },
-    onSaveReplay: () => {
-      void handleSaveReplay();
+    onShare: () => {
+      void handleShareGame();
     },
   });
 
@@ -704,7 +704,7 @@ export const initGame = () => {
     const outcome = getMatchOutcome(gameState?.state?.public);
     gameOverView.update(outcome, localUserId, {
       continueInFlight: gameOverInFlight,
-      saveInFlight: replaySaveInFlight,
+      shareInFlight: shareLinkInFlight,
     });
   };
 
@@ -1236,48 +1236,67 @@ export const initGame = () => {
     return buildReplaySnapshotFromState(gameState);
   };
 
-  const copyCurrentReplayLink = async () => {
-    const replayPayload = getCurrentReplayPayload();
-    if (!replayPayload) {
-      throw new Error('Replay data is unavailable.');
+  const requestShareLinkForGame = async (gameId) => {
+    const response = await fetch('/api/v1/history/games/share', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: localUserId,
+        gameId,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = payload?.error ? `${payload.error}` : 'Failed to prepare share link.';
+      throw new Error(message);
     }
-    const shareUrl = buildReplayShareUrl(replayPayload);
-    if (!shareUrl) {
+    const shareUrl = `${payload?.shareUrl ?? ''}`.trim();
+    if (shareUrl) return shareUrl;
+    const replayId = `${payload?.id ?? ''}`.trim();
+    const fallback = replayId ? buildReplayShareUrl(replayId) : null;
+    if (!fallback) {
       throw new Error('Unable to build replay link.');
     }
+    return fallback;
+  };
+
+  const copyCurrentReplayLink = async () => {
+    const replayPayload = getCurrentReplayPayload();
+    const replayId = `${replayPayload?.id ?? ''}`.trim();
+    if (replayId) {
+      const shareUrl = buildReplayShareUrl(replayId);
+      if (!shareUrl) {
+        throw new Error('Unable to build replay link.');
+      }
+      await copyTextToClipboard(shareUrl);
+      return shareUrl;
+    }
+    const sourceGameId = `${replayPayload?.sourceGameId ?? ''}`.trim();
+    if (!sourceGameId) {
+      throw new Error('Replay data is unavailable.');
+    }
+    const shareUrl = await requestShareLinkForGame(sourceGameId);
     await copyTextToClipboard(shareUrl);
     return shareUrl;
   };
 
-  const handleSaveReplay = async () => {
+  const handleShareGame = async () => {
     if (isReplayMode()) return;
     const outcome = getMatchOutcome(gameState?.state?.public);
-    if (!outcome || !gameState?.id || replaySaveInFlight) return;
-    replaySaveInFlight = true;
+    if (!outcome || !gameState?.id || shareLinkInFlight) return;
+    shareLinkInFlight = true;
     refreshGameOver();
     try {
-      const response = await fetch('/api/v1/replays', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: localUserId,
-          gameId: gameState.id,
-        }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const message = payload?.error ? `${payload.error}` : 'Failed to save replay.';
-        throw new Error(message);
-      }
-      window.dispatchEvent(new CustomEvent('hexstrike:replay-saved', { detail: payload }));
-      activeReplay = buildReplaySnapshotFromState(payload);
-      showToast('Saved', { variant: 'success', durationMs: 3000 });
+      const shareUrl = await requestShareLinkForGame(gameState.id);
+      await copyTextToClipboard(shareUrl);
+      window.dispatchEvent(new CustomEvent('hexstrike:game-history-updated'));
+      showToast('link copied to clipboard', { variant: 'success', durationMs: 2000 });
     } catch (err) {
-      console.error('Failed to save replay', err);
-      const message = err instanceof Error ? err.message : 'Failed to save replay.';
+      console.error('Failed to copy share link', err);
+      const message = err instanceof Error ? err.message : 'Failed to copy share link.';
       window.alert(message);
     } finally {
-      replaySaveInFlight = false;
+      shareLinkInFlight = false;
       refreshGameOver();
     }
   };
@@ -1335,7 +1354,7 @@ export const initGame = () => {
       gameMenuForfeit.textContent = isReplayMode() ? 'Leave Replay' : 'Forfeit';
     }
     if (gameMenuOfferDraw) {
-      gameMenuOfferDraw.textContent = isReplayMode() ? 'Share Replay' : 'Offer Draw';
+      gameMenuOfferDraw.textContent = isReplayMode() ? 'Share' : 'Offer Draw';
     }
   };
 
@@ -1621,7 +1640,7 @@ export const initGame = () => {
     clearHavenHover();
     interactionSubmitInFlight = false;
     gameOverInFlight = false;
-    replaySaveInFlight = false;
+    shareLinkInFlight = false;
     didInitTimelinePosition = false;
     pendingActionPreview.clear();
     lastComboKey = null;

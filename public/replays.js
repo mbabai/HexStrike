@@ -2,13 +2,31 @@ import { loadCharacterCatalog } from './shared/characterCatalog.js';
 import { buildReplayShareUrl, copyTextToClipboard, parseReplayLinkParams } from './replayShare.mjs';
 import { showToast } from './toast.js';
 
+const RESULT_ICON_BY_KEY = {
+  win: '/public/images/Victory.png',
+  loss: '/public/images/Death.png',
+  draw: '/public/images/Handshake.png',
+};
+
+const RESULT_LABEL_BY_KEY = {
+  win: 'Win',
+  loss: 'Loss',
+  draw: 'Draw',
+};
+
 const formatReplayTimestamp = (value) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Unknown time';
   return date.toLocaleString();
 };
 
-const getReplayName = (replay) => formatReplayTimestamp(replay?.createdAt);
+const getReplayLabel = (replay) => `Played ${formatReplayTimestamp(replay?.createdAt)}`;
+
+const normalizeResult = (value) => {
+  const normalized = `${value ?? ''}`.trim().toLowerCase();
+  if (normalized === 'win' || normalized === 'loss' || normalized === 'draw') return normalized;
+  return null;
+};
 
 const setOverlayVisible = (overlay, visible) => {
   if (!overlay) return;
@@ -17,18 +35,16 @@ const setOverlayVisible = (overlay, visible) => {
   overlay.setAttribute('aria-hidden', (!show).toString());
 };
 
-const setReplayUrl = (replayId = null, encodedPayload = null) => {
+const setReplayUrl = (replayId = null) => {
   const url = new URL(window.location.href);
   if (replayId) {
-    url.searchParams.set('r', replayId);
-    url.searchParams.delete('replay');
-  } else {
+    url.searchParams.set('g', replayId);
     url.searchParams.delete('r');
     url.searchParams.delete('replay');
-  }
-  if (encodedPayload) {
-    window.history.replaceState({}, '', `${url.pathname}${url.search}#${encodedPayload}`);
-    return;
+  } else {
+    url.searchParams.delete('g');
+    url.searchParams.delete('r');
+    url.searchParams.delete('replay');
   }
   window.history.replaceState({}, '', `${url.pathname}${url.search}`);
 };
@@ -43,20 +59,20 @@ const setBusyText = (listRoot, text) => {
 };
 
 const fetchReplayList = async () => {
-  const response = await fetch('/api/v1/replays', { method: 'GET' });
+  const response = await fetch('/api/v1/history/games', { method: 'GET' });
   const payload = await response.json().catch(() => []);
   if (!response.ok) {
-    const message = payload?.error ? `${payload.error}` : 'Failed to load saved replays.';
+    const message = payload?.error ? `${payload.error}` : 'Failed to load games history.';
     throw new Error(message);
   }
   return Array.isArray(payload) ? payload : [];
 };
 
 const fetchReplayDetail = async (replayId) => {
-  const response = await fetch(`/api/v1/replays/${encodeURIComponent(replayId)}`, { method: 'GET' });
+  const response = await fetch(`/api/v1/history/games/${encodeURIComponent(replayId)}`, { method: 'GET' });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = payload?.error ? `${payload.error}` : 'Replay not found.';
+    const message = payload?.error ? `${payload.error}` : 'Game history entry not found.';
     throw new Error(message);
   }
   return payload;
@@ -74,7 +90,7 @@ export const initReplays = async () => {
     const catalog = await loadCharacterCatalog();
     characterById = catalog?.byId ?? new Map();
   } catch (err) {
-    console.warn('Failed to load character catalog for replay list', err);
+    console.warn('Failed to load character catalog for games history list', err);
   }
 
   let replayList = [];
@@ -86,10 +102,15 @@ export const initReplays = async () => {
   };
 
   const shareReplay = async (replay) => {
-    const detail = replay?.state?.public ? replay : await fetchReplayDetail(replay.id);
-    const shareUrl = buildReplayShareUrl(detail);
+    const serverShareUrl = `${replay?.shareUrl ?? ''}`.trim();
+    if (serverShareUrl) {
+      await copyTextToClipboard(serverShareUrl);
+      return serverShareUrl;
+    }
+    const replayId = `${replay?.id ?? ''}`.trim();
+    const shareUrl = replayId ? buildReplayShareUrl(replayId) : null;
     if (!shareUrl) {
-      throw new Error('Unable to build replay link');
+      throw new Error('Unable to build share link');
     }
     await copyTextToClipboard(shareUrl);
     return shareUrl;
@@ -116,15 +137,28 @@ export const initReplays = async () => {
     name.className = 'saved-replay-player-name';
     name.textContent = player.username || 'Unknown';
 
+    const result = normalizeResult(player?.result);
     badge.appendChild(portrait);
     badge.appendChild(name);
+    if (result) {
+      const resultBadge = document.createElement('span');
+      resultBadge.className = `saved-replay-player-result is-${result}`;
+      resultBadge.title = RESULT_LABEL_BY_KEY[result];
+      resultBadge.setAttribute('aria-label', RESULT_LABEL_BY_KEY[result]);
+      const resultIcon = document.createElement('img');
+      resultIcon.src = RESULT_ICON_BY_KEY[result];
+      resultIcon.alt = RESULT_LABEL_BY_KEY[result];
+      resultIcon.loading = 'lazy';
+      resultBadge.appendChild(resultIcon);
+      badge.appendChild(resultBadge);
+    }
     return badge;
   };
 
   const renderReplayList = () => {
     listRoot.innerHTML = '';
     if (!replayList.length) {
-      setBusyText(listRoot, 'No saved replays yet.');
+      setBusyText(listRoot, 'No games in history yet.');
       return;
     }
     replayList.forEach((replay) => {
@@ -143,7 +177,7 @@ export const initReplays = async () => {
 
       const title = document.createElement('p');
       title.className = 'saved-replay-name';
-      title.textContent = getReplayName(replay);
+      title.textContent = getReplayLabel(replay);
 
       header.appendChild(players);
       header.appendChild(title);
@@ -154,12 +188,12 @@ export const initReplays = async () => {
       const viewButton = document.createElement('button');
       viewButton.type = 'button';
       viewButton.className = 'btn btn-primary btn-small';
-      viewButton.textContent = 'View';
+      viewButton.textContent = 'Watch Replay';
       viewButton.addEventListener('click', async () => {
         viewButton.disabled = true;
         try {
           const detail = await fetchReplayDetail(replay.id);
-          setReplayUrl(detail.id, null);
+          setReplayUrl(detail.id);
           setOverlayVisible(overlay, false);
           openReplay(detail);
         } catch (err) {
@@ -198,12 +232,12 @@ export const initReplays = async () => {
   const refreshReplayList = async () => {
     if (loadingList) return;
     loadingList = true;
-    setBusyText(listRoot, 'Loading replays...');
+    setBusyText(listRoot, 'Loading games history...');
     try {
       replayList = await fetchReplayList();
       renderReplayList();
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load saved replays.';
+      const message = err instanceof Error ? err.message : 'Failed to load games history.';
       setBusyText(listRoot, message);
     } finally {
       loadingList = false;
@@ -231,19 +265,15 @@ export const initReplays = async () => {
     setOverlayVisible(overlay, false);
   });
 
-  window.addEventListener('hexstrike:replay-saved', () => {
+  window.addEventListener('hexstrike:game-history-updated', () => {
     void refreshReplayList();
   });
 
   window.addEventListener('hexstrike:replay-closed', () => {
-    setReplayUrl(null, null);
+    setReplayUrl(null);
   });
 
-  const { replayId, replay: replayFromPayload } = parseReplayLinkParams();
-  if (replayFromPayload?.state?.public) {
-    openReplay(replayFromPayload);
-    return;
-  }
+  const { replayId } = parseReplayLinkParams();
   if (replayId) {
     try {
       const replay = await fetchReplayDetail(replayId);
