@@ -30,8 +30,10 @@ The server loads `.env` automatically when present.
 - `APP_BASE_URL` (used for absolute share links)
 - `MONGODB_LOCAL_URI` (used when `NODE_ENV !== production`)
 - `MONGODB_PROD_URI` (used when `NODE_ENV === production`)
+- `MONGODB_URI` (global override; used in any environment when set)
 - `MONGODB_DB_NAME` (default `HexStrike`)
 - `MONGODB_GAMES_COLLECTION` (default `games`)
+- `HEXSTRIKE_REQUIRE_MONGO_HISTORY` (`true/false`, defaults to `true` on hosted/production runtimes and `false` locally)
 
 Production URI fallback keys are also supported:
 - `MONGODB_ATLAS_CONNECTION_STRING`
@@ -94,10 +96,12 @@ npm run test
 - `POST /api/v1/game/forfeit` - `{ userId, gameId }`
 - `POST /api/v1/game/draw-offer` - `{ userId, gameId }` (30-second server cooldown per offerer)
 - `GET /api/v1/history/matches`
+- `GET /api/v1/history/status` - reports active history persistence mode (`mongo` vs `memory`) and selected URI source
 - `GET /api/v1/history/games` - list persisted game history entries
 - `GET /api/v1/history/games/:id` - load a specific replayable game history entry
 - `POST /api/v1/history/games/share` - `{ userId, gameId }` -> returns share link
 
 ## Notes
 - Users, lobbies, active matches, and active games are in memory and reset on restart.
-- Completed game history is persisted to MongoDB (`HexStrike.games`) when Mongo is reachable; otherwise it falls back to in-memory storage.
+- Completed game history is persisted to MongoDB (`HexStrike.games`) when Mongo is reachable.
+- In hosted/production runtimes, history storage requires Mongo by default and the server exits on startup if Mongo is unavailable (set `HEXSTRIKE_REQUIRE_MONGO_HISTORY=false` to allow fallback).

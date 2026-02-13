@@ -3459,6 +3459,11 @@ export function buildServer(port: number) {
       if (req.method === 'GET' && pathname === '/api/v1/history/matches') {
         return respondJson(res, 200, await db.listMatches());
       }
+      if (req.method === 'GET' && pathname === '/api/v1/history/status') {
+        const diagnostics = await historyStore.getDiagnostics();
+        const statusCode = diagnostics.mongoRequired && diagnostics.mode !== 'mongo' ? 503 : 200;
+        return respondJson(res, statusCode, diagnostics);
+      }
       if (req.method === 'POST' && pathname === '/api/v1/history/games/share') {
         let body;
         try {
@@ -3517,7 +3522,13 @@ export function buildServer(port: number) {
 
   server.listen(port, () => {
     lobby.clearQueues();
-    void historyStore.listReplays(1).catch(() => undefined);
+    void historyStore.listReplays(1).catch((err) => {
+      const message = err instanceof Error ? err.message : `${err}`;
+      console.error(`${LOG_PREFIX} game-history:init failed (${message})`);
+      if (!historyStore.isMongoRequired()) return;
+      console.error(`${LOG_PREFIX} game-history:mongo is required in this runtime; shutting down`);
+      process.exit(1);
+    });
     sendRealtimeEvent({ type: 'queueChanged', payload: lobby.serialize() });
     setInterval(() => {
       void matchmakeQuickplay();

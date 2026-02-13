@@ -59,6 +59,8 @@ declare module 'path' {
 declare var process: {
   env: Record<string, string | undefined>;
   cwd(): string;
+  exit(code?: number): never;
+  exitCode?: number;
 };
 
 declare class Buffer extends Uint8Array {

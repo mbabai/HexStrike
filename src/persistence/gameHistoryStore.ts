@@ -8,13 +8,43 @@ const DEFAULT_DB_NAME = 'HexStrike';
 const DEFAULT_COLLECTION_NAME = 'games';
 const DEFAULT_LOCAL_URI = 'mongodb://localhost:27017';
 const MAX_LIST_LIMIT = 500;
+const HOSTED_RUNTIME_KEYS = [
+  'WEBSITE_SITE_NAME',
+  'WEBSITE_INSTANCE_ID',
+  'K_SERVICE',
+  'RENDER',
+  'RAILWAY_ENVIRONMENT',
+  'DYNO',
+  'VERCEL',
+  'AWS_EXECUTION_ENV',
+];
 
 type ReplayCreatePayload = Omit<ReplayDoc, 'id' | 'createdAt' | 'updatedAt'>;
 
 type StoreMode = 'mongo' | 'memory';
 
+type MongoTargetRoute = 'override' | 'production' | 'hosted-production' | 'development-local';
+
+interface MongoTarget {
+  uri: string;
+  uriSource: string;
+  route: MongoTargetRoute;
+}
+
 interface MongoReplayDoc extends ReplayDoc {
   _id?: unknown;
+}
+
+export interface GameHistoryDiagnostics {
+  mode: StoreMode;
+  nodeEnv: string;
+  hostedRuntime: boolean;
+  mongoRequired: boolean;
+  dbName: string;
+  collectionName: string;
+  mongoUriSource: string;
+  mongoRoute: MongoTargetRoute;
+  lastInitializationError: string | null;
 }
 
 const normalizeString = (value: unknown): string => `${value ?? ''}`.trim();
@@ -26,6 +56,20 @@ const resolveEnvValue = (...keys: string[]): string => {
   }
   return '';
 };
+
+const parseBooleanEnv = (value: unknown, defaultValue: boolean): boolean => {
+  const normalized = normalizeString(value).toLowerCase();
+  if (!normalized) return defaultValue;
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return defaultValue;
+};
+
+const detectHostedRuntime = (): boolean =>
+  HOSTED_RUNTIME_KEYS.some((key) => {
+    const value = normalizeString(process.env[key]);
+    return Boolean(value);
+  });
 
 const toDate = (value: unknown, fallback: Date): Date => {
   if (value instanceof Date && Number.isFinite(value.getTime())) return value;
@@ -62,6 +106,10 @@ export class GameHistoryStore {
 
   private readonly nodeEnv: string;
 
+  private readonly hostedRuntime: boolean;
+
+  private readonly mongoRequired: boolean;
+
   private readonly localUri: string;
 
   private readonly prodUri: string;
@@ -78,11 +126,18 @@ export class GameHistoryStore {
 
   private mode: StoreMode = 'memory';
 
+  private lastInitializationError: string | null = null;
+
+  private resolvedTarget: MongoTarget | null = null;
+
   constructor(fallbackDb: MemoryDb) {
     this.fallbackDb = fallbackDb;
     this.dbName = normalizeString(process.env.MONGODB_DB_NAME) || DEFAULT_DB_NAME;
     this.collectionName = normalizeString(process.env.MONGODB_GAMES_COLLECTION) || DEFAULT_COLLECTION_NAME;
     this.nodeEnv = normalizeString(process.env.NODE_ENV).toLowerCase() || 'development';
+    this.hostedRuntime = detectHostedRuntime();
+    const defaultRequireMongo = this.nodeEnv === 'production' || this.hostedRuntime;
+    this.mongoRequired = parseBooleanEnv(process.env.HEXSTRIKE_REQUIRE_MONGO_HISTORY, defaultRequireMongo);
     this.localUri =
       resolveEnvValue('MONGODB_LOCAL_URI', 'MONGODB_DEV_URI', 'MONGODB_URI_LOCAL') || DEFAULT_LOCAL_URI;
     this.prodUri = resolveEnvValue(
@@ -116,19 +171,67 @@ export class GameHistoryStore {
     return this.mode;
   }
 
-  private resolveMongoUri(): string {
-    if (this.nodeEnv === 'production') {
-      return this.prodUri;
+  isMongoRequired(): boolean {
+    return this.mongoRequired;
+  }
+
+  private resolveMongoTarget(): MongoTarget {
+    const overrideUri = resolveEnvValue('MONGODB_URI');
+    if (overrideUri) {
+      return {
+        uri: overrideUri,
+        uriSource: 'MONGODB_URI',
+        route: 'override',
+      };
     }
-    return this.localUri;
+    if (this.nodeEnv === 'production') {
+      return {
+        uri: this.prodUri,
+        uriSource: this.prodUriSource,
+        route: 'production',
+      };
+    }
+    if (this.hostedRuntime && this.prodUri) {
+      return {
+        uri: this.prodUri,
+        uriSource: this.prodUriSource,
+        route: 'hosted-production',
+      };
+    }
+    return {
+      uri: this.localUri,
+      uriSource: this.localUriSource,
+      route: 'development-local',
+    };
+  }
+
+  private formatMongoMissingUriMessage(target: MongoTarget): string {
+    return `${LOG_PREFIX} game-history:mongo skipped (missing URI) route=${target.route} uriSource=${target.uriSource} db=${this.dbName} collection=${this.collectionName}`;
+  }
+
+  private formatMongoUnavailableMessage(target: MongoTarget, errorMessage: string): string {
+    return `${LOG_PREFIX} game-history:mongo unavailable (${errorMessage}) route=${target.route} uriSource=${target.uriSource} db=${this.dbName} collection=${this.collectionName}`;
+  }
+
+  private failOrFallback(logMessage: string): never | void {
+    this.mode = 'memory';
+    this.lastInitializationError = logMessage;
+    if (this.mongoRequired) {
+      throw new Error(logMessage);
+    }
+    console.warn(`${logMessage}, using memory store`);
   }
 
   private async initializeMongo(): Promise<void> {
-    const uri = this.resolveMongoUri();
+    const target = this.resolveMongoTarget();
+    this.resolvedTarget = target;
+    const uri = target.uri;
     if (!uri) {
-      console.warn(`${LOG_PREFIX} game-history:mongo skipped (missing URI), using memory store`);
-      this.mode = 'memory';
-      return;
+      const message = this.formatMongoMissingUriMessage(target);
+      this.client = null;
+      this.collection = null;
+      this.failOrFallback(message);
+      return undefined;
     }
     try {
       this.client = new MongoClient(uri, {
@@ -147,15 +250,15 @@ export class GameHistoryStore {
       await this.collection.createIndex({ sourceGameId: 1 }, { unique: true });
       await this.collection.createIndex({ createdAt: -1 });
       this.mode = 'mongo';
+      this.lastInitializationError = null;
       console.log(
-        `${LOG_PREFIX} game-history:mongo connected (${this.nodeEnv}) db=${this.dbName} collection=${this.collectionName} uriSource=${this.nodeEnv === 'production' ? this.prodUriSource : this.localUriSource}`,
+        `${LOG_PREFIX} game-history:mongo connected (${this.nodeEnv}) db=${this.dbName} collection=${this.collectionName} uriSource=${target.uriSource} route=${target.route} required=${this.mongoRequired}`,
       );
     } catch (err) {
       this.client = null;
       this.collection = null;
-      this.mode = 'memory';
       const message = err instanceof Error ? err.message : `${err}`;
-      console.warn(`${LOG_PREFIX} game-history:mongo unavailable (${message}), using memory store`);
+      this.failOrFallback(this.formatMongoUnavailableMessage(target, message));
     }
   }
 
@@ -244,5 +347,25 @@ export class GameHistoryStore {
       created.updatedAt = new Date();
     }
     return created;
+  }
+
+  async getDiagnostics(): Promise<GameHistoryDiagnostics> {
+    try {
+      await this.ensureInitialized();
+    } catch {
+      // Diagnostics should still return metadata even when initialization fails.
+    }
+    const target = this.resolvedTarget ?? this.resolveMongoTarget();
+    return {
+      mode: this.mode,
+      nodeEnv: this.nodeEnv,
+      hostedRuntime: this.hostedRuntime,
+      mongoRequired: this.mongoRequired,
+      dbName: this.dbName,
+      collectionName: this.collectionName,
+      mongoUriSource: target.uriSource,
+      mongoRoute: target.route,
+      lastInitializationError: this.lastInitializationError,
+    };
   }
 }
