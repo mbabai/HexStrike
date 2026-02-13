@@ -1438,6 +1438,78 @@ test('executeBeats applies stab rear-arc bonus from B, LB, and RB', () => {
   });
 });
 
+test('executeBeats applies stab rear-arc bonus for rotated target facings', () => {
+  const rearByTargetFacing = [
+    { targetFacing: 0, rear: { q: 1, r: 0 } },
+    { targetFacing: 60, rear: { q: 0, r: 1 } },
+    { targetFacing: 120, rear: { q: -1, r: 1 } },
+    { targetFacing: 180, rear: { q: -1, r: 0 } },
+    { targetFacing: 240, rear: { q: 0, r: -1 } },
+    { targetFacing: 300, rear: { q: 1, r: -1 } },
+  ];
+  const attackerFacingByForwardVector = new Map([
+    ['1,0', 180],
+    ['1,-1', 120],
+    ['0,-1', 60],
+    ['-1,0', 0],
+    ['-1,1', 300],
+    ['0,1', 240],
+  ]);
+
+  rearByTargetFacing.forEach(({ targetFacing, rear }) => {
+    const attackVector = {
+      q: rear.q === 0 ? 0 : -rear.q,
+      r: rear.r === 0 ? 0 : -rear.r,
+    };
+    const attackerFacing = attackerFacingByForwardVector.get(`${attackVector.q},${attackVector.r}`);
+    assert.notEqual(attackerFacing, undefined, `Missing attacker facing for vector ${attackVector.q},${attackVector.r}`);
+    const expectedTargetPosition = { q: attackVector.q * 2, r: attackVector.r * 2 };
+    const label = `target-facing-${targetFacing}`;
+
+    const characters = [
+      {
+        userId: 'alpha',
+        username: 'alpha',
+        position: { q: rear.q, r: rear.r },
+        facing: attackerFacing,
+        characterId: 'murelious',
+        characterName: 'Alpha',
+      },
+      {
+        userId: 'beta',
+        username: 'beta',
+        position: { q: 0, r: 0 },
+        facing: targetFacing,
+        characterId: 'murelious',
+        characterName: 'Beta',
+      },
+    ];
+
+    const beats = [[
+      buildEntry('alpha', '[a]', 20, characters[0].position, characters[0].facing, '', 3, 1),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ]];
+    beats[0][0].cardId = 'stab';
+    beats[0][0].passiveCardId = 'step';
+
+    const result = executeBeats(beats, characters);
+    const beat0 = result.beats[0] || [];
+    const betaEntry = beat0.find((entry) => entry.username === 'beta');
+    const hit = (betaEntry?.consequences ?? []).find((effect) => effect?.type === 'hit');
+
+    assert.ok(betaEntry, `Missing beta entry for ${label}`);
+    assert.ok(hit, `Missing hit consequence for ${label}`);
+    assert.equal(betaEntry.damage, 6, `Expected +3 damage bonus for ${label}`);
+    assert.deepEqual(
+      hit,
+      { type: 'hit', damageDelta: 6, knockbackDistance: 2 },
+      `Expected +3 KBF bonus for ${label}`,
+    );
+    assert.equal(betaEntry.location.q, expectedTargetPosition.q, `Unexpected knockback q for ${label}`);
+    assert.equal(betaEntry.location.r, expectedTargetPosition.r, `Unexpected knockback r for ${label}`);
+  });
+});
+
 test('executeBeats swaps reflex dodge on incoming W-hit and ends the set on a successful avoid', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },

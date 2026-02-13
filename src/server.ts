@@ -204,6 +204,7 @@ const DRAW_OFFER_COOLDOWN_MS = 30_000;
 const PROD_FAVICON_PATH = '/public/images/X1.png';
 const DEV_FAVICON_PATH = '/public/images/X2.png';
 const IS_DEV_RUNTIME = process.env.HEXSTRIKE_TEMP_LOGS === '1' || process.env.NODE_ENV === 'development';
+const ACTIVE_FAVICON_PATH = IS_DEV_RUNTIME ? DEV_FAVICON_PATH : PROD_FAVICON_PATH;
 const MAX_USERNAME_LENGTH = 24;
 type BotDifficulty = 'easy' | 'medium' | 'hard';
 type BotQueueName = 'botQueue' | 'botHardQueue' | 'botMediumQueue' | 'botEasyQueue';
@@ -2068,7 +2069,10 @@ export function buildServer(port: number) {
     pendingInvites.delete(user.id);
     void sendActiveMatchState(user.id);
     req.on('close', () => {
-      sseClients.delete(user.id);
+      // EventSource reconnect can overlap sockets; only clear if this response is still current.
+      if (sseClients.get(user.id) === res) {
+        sseClients.delete(user.id);
+      }
       matchDisconnects.forEach((set) => set.delete(user.id));
     });
   };
@@ -2081,8 +2085,11 @@ export function buildServer(port: number) {
         return path;
       }
     })();
+    const isFaviconRequest = decodedPath === '/favicon.ico' || decodedPath === '/favicon.png';
     const resolved =
-      decodedPath === '/'
+      isFaviconRequest
+        ? ACTIVE_FAVICON_PATH
+        : decodedPath === '/'
         ? '/public/index.html'
         : decodedPath === '/admin' || decodedPath === '/admin/'
           ? '/public/admin.html'
@@ -2097,14 +2104,17 @@ export function buildServer(port: number) {
       } else {
         let type = 'text/plain';
         if (resolved.endsWith('.html')) type = 'text/html';
+        if (resolved.endsWith('.json')) type = 'application/json';
         if (resolved.endsWith('.css')) type = 'text/css';
         if (resolved.endsWith('.js') || resolved.endsWith('.mjs')) type = 'text/javascript';
-        res.writeHead(200, { 'Content-Type': type });
-        if (IS_DEV_RUNTIME && resolved.endsWith('.html')) {
-          const html = data.toString('utf8').replaceAll(PROD_FAVICON_PATH, DEV_FAVICON_PATH);
-          res.end(html);
-          return;
+        if (resolved.endsWith('.png')) type = 'image/png';
+        if (resolved.endsWith('.svg')) type = 'image/svg+xml';
+        if (resolved.endsWith('.ico')) type = 'image/x-icon';
+        const headers: Record<string, string> = { 'Content-Type': type };
+        if (isFaviconRequest) {
+          headers['Cache-Control'] = 'no-store';
         }
+        res.writeHead(200, headers);
         res.end(data);
       }
     });
@@ -3515,6 +3525,8 @@ export function buildServer(port: number) {
         pathname === '/admin/' ||
         pathname === '/cards' ||
         pathname === '/cards/' ||
+        pathname === '/favicon.ico' ||
+        pathname === '/favicon.png' ||
         pathname.startsWith('/public')
       ) {
         return handleStatic(res, pathname);

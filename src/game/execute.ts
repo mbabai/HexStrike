@@ -271,7 +271,9 @@ const isBehindTarget = (
   };
   const directionIndex = getDirectionIndex(delta);
   if (directionIndex == null) return false;
-  const facingIndex = getFacingRotationSteps(targetState.facing);
+  const forward = applyFacingToVector(LOCAL_DIRECTIONS.F, targetState.facing);
+  const facingIndex = getDirectionIndex(forward);
+  if (facingIndex == null) return false;
   const rearRightIndex = (facingIndex + 2) % 6;
   const rearIndex = (facingIndex + 3) % 6;
   const rearLeftIndex = (facingIndex + 4) % 6;
