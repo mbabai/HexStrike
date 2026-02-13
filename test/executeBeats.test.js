@@ -759,7 +759,7 @@ test('executeBeats preserves action when hit after acting and records consequenc
   assert.equal(alphaBeat1.action, 'DamageIcon');
 });
 
-test('executeBeats applies only one hit per target for a multi-token attack in the same beat', () => {
+test('executeBeats applies each hit in a multi-token attack in the same beat', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
     { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
@@ -778,11 +778,12 @@ test('executeBeats applies only one hit per target for a multi-token attack in t
   const hitConsequences = (betaEntry?.consequences ?? []).filter((effect) => effect?.type === 'hit');
 
   assert.ok(betaEntry);
-  assert.equal(betaEntry.damage, 3);
-  assert.equal(betaEntry.location.q, 2);
+  assert.equal(betaEntry.damage, 6);
+  assert.equal(betaEntry.location.q, 3);
   assert.equal(betaEntry.location.r, 0);
-  assert.equal(hitConsequences.length, 1);
+  assert.equal(hitConsequences.length, 2);
   assert.deepEqual(hitConsequences[0], { type: 'hit', damageDelta: 3, knockbackDistance: 1 });
+  assert.deepEqual(hitConsequences[1], { type: 'hit', damageDelta: 3, knockbackDistance: 1 });
 });
 
 test('executeBeats preserves rotations when hit overrides the action', () => {
@@ -895,6 +896,85 @@ test('executeBeats moves bow shot arrows and applies damage on hit', () => {
 
   assert.ok(betaEntry);
   assert.equal(betaEntry.damage, 4);
+  assert.equal((result.boardTokens || []).length, 0);
+});
+
+test('executeBeats resolves existing arrows before movement actions', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+  ];
+  const beats = [[buildEntry('alpha', 'm', 20, characters[0].position, characters[0].facing)]];
+  const boardTokens = [
+    { id: 'arrow:0', type: 'arrow', position: { q: 1, r: 0 }, facing: 0, ownerUserId: 'beta' },
+  ];
+
+  const result = executeBeats(beats, characters, undefined, boardTokens);
+  const beat0 = result.beats[0] || [];
+  const alphaEntry = beat0.find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.action, 'DamageIcon');
+  assert.equal(alphaEntry.damage, 4);
+  assert.equal((result.boardTokens || []).length, 0);
+});
+
+test('executeBeats applies arrow hits when long movement passes through an arrow hex', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+  ];
+  const beats = [[buildEntry('alpha', '2m', 20, characters[0].position, characters[0].facing)]];
+  const boardTokens = [
+    { id: 'arrow:0', type: 'arrow', position: { q: 2, r: 0 }, facing: 0, ownerUserId: 'beta' },
+  ];
+
+  const result = executeBeats(beats, characters, undefined, boardTokens);
+  const beat0 = result.beats[0] || [];
+  const alphaEntry = beat0.find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.action, 'DamageIcon');
+  assert.equal(alphaEntry.damage, 4);
+  assert.equal((result.boardTokens || []).length, 0);
+});
+
+test('executeBeats lets long jumps pass over arrow hexes without taking damage', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+  ];
+  const beats = [[buildEntry('alpha', '2j', 20, characters[0].position, characters[0].facing)]];
+  const boardTokens = [
+    { id: 'arrow:0', type: 'arrow', position: { q: 2, r: 0 }, facing: 0, ownerUserId: 'beta' },
+  ];
+
+  const result = executeBeats(beats, characters, undefined, boardTokens);
+  const beat0 = result.beats[0] || [];
+  const alphaEntry = beat0.find((entry) => entry.username === 'alpha');
+  const arrows = (result.boardTokens || []).filter((token) => token.type === 'arrow');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.action, '2j');
+  assert.equal(alphaEntry.damage, 0);
+  assert.deepEqual(alphaEntry.location, { q: 2, r: 0 });
+  assert.equal(arrows.length, 1);
+  assert.deepEqual(arrows[0].position, { q: 1, r: 0 });
+});
+
+test('executeBeats still hits jumps that land on an arrow destination', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+  ];
+  const beats = [[buildEntry('alpha', '2j', 20, characters[0].position, characters[0].facing)]];
+  const boardTokens = [
+    { id: 'arrow:0', type: 'arrow', position: { q: 1, r: 0 }, facing: 180, ownerUserId: 'beta' },
+  ];
+
+  const result = executeBeats(beats, characters, undefined, boardTokens);
+  const beat0 = result.beats[0] || [];
+  const alphaEntry = beat0.find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.action, 'DamageIcon');
+  assert.equal(alphaEntry.damage, 4);
   assert.equal((result.boardTokens || []).length, 0);
 });
 

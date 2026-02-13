@@ -59,11 +59,13 @@ Win by forcing the opponent to lose. A player loses if either:
 - Actions resolve by priority (higher first); ties go to player order.
 - If you are hit before your action resolves, your action is skipped for that beat.
 - Within a beat, each token uses your starting position and facing for that beat. Tokens resolve in order.
+- Pre-existing arrow/projectile tokens resolve first each beat before player action tokens.
 
 ## Movement
 - m: move step-by-step along the path, stopping before an occupied hex.
 - j: jump directly to the destination; you cannot land on an occupied hex.
 - c: resolves its attack first, then its movement.
+- Moving through an arrow hex can trigger a hit during movement; jumps only check for arrow hits on the landing hex.
 
 ## Attacks and blocks
 - a and c attacks target the destination hex of their path.

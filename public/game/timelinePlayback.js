@@ -1856,6 +1856,80 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
       }
     };
 
+    const nextTokens = [];
+    tokens.forEach((token) => {
+      if (token.type !== ARROW_TOKEN_TYPE || !existingArrowIds.has(token.id)) {
+        nextTokens.push(token);
+        return;
+      }
+      const forward = applyFacingToVector(LOCAL_DIRECTIONS.F, token.facing ?? 0);
+      const nextPosition = { q: token.position.q + forward.q, r: token.position.r + forward.r };
+      const targetId = occupancy.get(coordKey(nextPosition));
+      const removeToken = () => {
+        if (!isCurrentBeat) {
+          return;
+        }
+        tokenSteps.push({
+          kind: 'token',
+          tokenId: token.id,
+          tokenType: token.type,
+          facingAfter: token.facing,
+          moveDestination: nextPosition,
+          moveType: 'c',
+          movePath: buildPathFromPositions(token.position, [nextPosition], nextPosition),
+          attackOrigin: { q: token.position.q, r: token.position.r },
+          attackTargets: [{ q: nextPosition.q, r: nextPosition.r }],
+          damageChanges: [],
+          positionChanges: [],
+          hitTargets: [],
+          removeToken: true,
+        });
+      };
+
+      if (targetId) {
+        applyArrowHit({
+          token,
+          nextPosition,
+          targetId,
+          forward,
+          isCurrentBeat,
+        });
+        return;
+      }
+
+      const distance = getDistanceToLand(nextPosition, land);
+      if (distance >= ARROW_LAND_DISTANCE_LIMIT) {
+        removeToken();
+        return;
+      }
+
+      if (isCurrentBeat) {
+        tokenSteps.push({
+          kind: 'token',
+          tokenId: token.id,
+          tokenType: token.type,
+          facingAfter: token.facing,
+          moveDestination: nextPosition,
+          moveType: 'c',
+          movePath: buildPathFromPositions(token.position, [nextPosition], nextPosition),
+          attackOrigin: { q: token.position.q, r: token.position.r },
+          attackTargets: [{ q: nextPosition.q, r: nextPosition.r }],
+          damageChanges: [],
+          positionChanges: [],
+          hitTargets: [],
+          removeToken: false,
+        });
+        return;
+      }
+      nextTokens.push({
+        ...token,
+        position: { q: nextPosition.q, r: nextPosition.r },
+      });
+    });
+    if (!isCurrentBeat) {
+      tokens.splice(0, tokens.length, ...nextTokens);
+    }
+
     ordered.forEach((entry) => {
       const actorId = userLookup.get(resolveEntryKey(entry));
       if (!actorId || !processedActors.has(actorId)) return;
@@ -1989,79 +2063,7 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
       removeEtherealPlatformToken(targetHex, isCurrentBeat);
     });
 
-    const nextTokens = [];
-    tokens.forEach((token) => {
-      if (token.type !== ARROW_TOKEN_TYPE || !existingArrowIds.has(token.id)) {
-        nextTokens.push(token);
-        return;
-      }
-      const forward = applyFacingToVector(LOCAL_DIRECTIONS.F, token.facing ?? 0);
-      const nextPosition = { q: token.position.q + forward.q, r: token.position.r + forward.r };
-      const targetId = occupancy.get(coordKey(nextPosition));
-      const removeToken = () => {
-        if (!isCurrentBeat) {
-          return;
-        }
-        tokenSteps.push({
-          kind: 'token',
-          tokenId: token.id,
-          tokenType: token.type,
-          facingAfter: token.facing,
-          moveDestination: nextPosition,
-          moveType: 'c',
-          movePath: buildPathFromPositions(token.position, [nextPosition], nextPosition),
-          attackOrigin: { q: token.position.q, r: token.position.r },
-          attackTargets: [{ q: nextPosition.q, r: nextPosition.r }],
-          damageChanges: [],
-          positionChanges: [],
-          hitTargets: [],
-          removeToken: true,
-        });
-      };
-
-      if (targetId) {
-        applyArrowHit({
-          token,
-          nextPosition,
-          targetId,
-          forward,
-          isCurrentBeat,
-        });
-        return;
-      }
-
-      const distance = getDistanceToLand(nextPosition, land);
-      if (distance >= ARROW_LAND_DISTANCE_LIMIT) {
-        removeToken();
-        return;
-      }
-
-      if (isCurrentBeat) {
-        tokenSteps.push({
-          kind: 'token',
-          tokenId: token.id,
-          tokenType: token.type,
-          facingAfter: token.facing,
-          moveDestination: nextPosition,
-          moveType: 'c',
-          movePath: buildPathFromPositions(token.position, [nextPosition], nextPosition),
-          attackOrigin: { q: token.position.q, r: token.position.r },
-          attackTargets: [{ q: nextPosition.q, r: nextPosition.r }],
-          damageChanges: [],
-          positionChanges: [],
-          hitTargets: [],
-          removeToken: false,
-        });
-        return;
-      }
-      nextTokens.push({
-        ...token,
-        position: { q: nextPosition.q, r: nextPosition.r },
-      });
-    });
-
     if (!isCurrentBeat) {
-      tokens.splice(0, tokens.length, ...nextTokens);
       applyBeatEntriesToState(beat);
       continue;
     }

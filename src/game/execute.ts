@@ -1150,22 +1150,6 @@ export const executeBeatsWithInteractions = (
     });
   };
 
-  const clearActionFields = (entry: BeatEntry) => {
-    entry.action = DEFAULT_ACTION;
-    entry.rotation = '';
-    entry.priority = 0;
-    if ('rotationSource' in entry) delete entry.rotationSource;
-    if ('interaction' in entry) delete entry.interaction;
-    if ('attackDamage' in entry) delete entry.attackDamage;
-    if ('attackKbf' in entry) delete entry.attackKbf;
-    if ('comboStarter' in entry) delete entry.comboStarter;
-    if ('cardId' in entry) delete entry.cardId;
-    if ('passiveCardId' in entry) delete entry.passiveCardId;
-    if ('havenPassiveSkipApplied' in entry) delete entry.havenPassiveSkipApplied;
-    if ('stunOnly' in entry) delete entry.stunOnly;
-    if ('focusCardId' in entry) delete entry.focusCardId;
-  };
-
   const copyActionFields = (
     target: BeatEntry,
     source: BeatEntry,
@@ -1230,21 +1214,36 @@ export const executeBeatsWithInteractions = (
   };
 
   const shiftCharacterActionSetLeft = (character: PublicCharacter, fromBeatIndex: number) => {
-    const sequence: BeatEntry[] = [];
+    const sequence: Array<{ beatIndex: number; entry: BeatEntry }> = [];
     for (let i = fromBeatIndex; i < normalizedBeats.length; i += 1) {
       const beat = normalizedBeats[i];
       const entry = findEntryForCharacter(beat, character);
       if (!entry) break;
-      sequence.push(entry);
+      if (i > fromBeatIndex && isActionSetStart(entry)) {
+        break;
+      }
+      sequence.push({ beatIndex: i, entry });
       if (isOpenBeatAction(entry.action ?? DEFAULT_ACTION)) {
         break;
       }
     }
     if (sequence.length < 2) return;
     for (let i = 0; i < sequence.length - 1; i += 1) {
-      copyActionFields(sequence[i], sequence[i + 1], { preserveSelectedRotation: i === 0 });
+      copyActionFields(sequence[i].entry, sequence[i + 1].entry, { preserveSelectedRotation: i === 0 });
     }
-    clearActionFields(sequence[sequence.length - 1]);
+    const trailing = sequence[sequence.length - 1];
+    const trailingBeat = normalizedBeats[trailing.beatIndex];
+    if (trailingBeat?.length) {
+      for (let i = trailingBeat.length - 1; i >= 0; i -= 1) {
+        const candidate = trailingBeat[i];
+        if (candidate === trailing.entry || matchesEntryForCharacter(candidate, character)) {
+          trailingBeat.splice(i, 1);
+        }
+      }
+    }
+    while (normalizedBeats.length > 0 && !normalizedBeats[normalizedBeats.length - 1]?.length) {
+      normalizedBeats.pop();
+    }
   };
 
   const applyStateSnapshotToEntry = (
@@ -2860,7 +2859,14 @@ export const executeBeatsWithInteractions = (
       updatedInteractions.push(created);
       interactionById.set(interactionId, created);
     };
-    const resolveArrowHit = (targetId: string, ownerId: string, forward: { q: number; r: number }) => {
+    const resolveArrowHit = (
+      targetId: string,
+      ownerId: string,
+      forward: { q: number; r: number },
+      options: { preserveAction?: boolean; requestRerun?: boolean } = {},
+    ) => {
+      const preserveAction = options.preserveAction ?? true;
+      const requestRerun = options.requestRerun ?? true;
       const targetState = state.get(targetId);
       if (!targetState) return;
         const targetCharacter = characterById.get(targetId);
@@ -2889,7 +2895,9 @@ export const executeBeatsWithInteractions = (
             actionSetRotationByUser.set(targetId, refreshedRotation);
           }
           registerBlockActions(targetId, swappedEntry, targetState);
-          rerunIfCurrentFrameChanged(targetId, beforeSignature, { causeActorId: targetId });
+          if (requestRerun) {
+            rerunIfCurrentFrameChanged(targetId, beforeSignature, { causeActorId: targetId });
+          }
         }
       }
       const hasHammerPassive =
@@ -3029,10 +3037,12 @@ export const executeBeatsWithInteractions = (
       }
       if (shouldStun) {
         const beforeSignature = currentBeatActionSignature(targetId);
-        applyHitTimeline(targetId, index, targetState, knockedSteps, true);
-        rerunIfCurrentFrameChanged(targetId, beforeSignature, {
-          causeActorId: safeOwnerId || targetId,
-        });
+        applyHitTimeline(targetId, index, targetState, knockedSteps, preserveAction);
+        if (requestRerun) {
+          rerunIfCurrentFrameChanged(targetId, beforeSignature, {
+            causeActorId: safeOwnerId || targetId,
+          });
+        }
       }
       recordHitConsequence(targetId, index, targetState, adjustedDamage, knockedSteps);
         if (safeOwnerId && safeOwnerId !== targetId && hasHammerPassive) {
@@ -3077,6 +3087,30 @@ export const executeBeatsWithInteractions = (
           }
         }
       }
+    };
+    const findArrowTokenAt = (coord: { q: number; r: number }) =>
+      boardTokens.find(
+        (token) => token.type === ARROW_TOKEN_TYPE && token.position.q === coord.q && token.position.r === coord.r,
+      ) ?? null;
+    const removeBoardTokenById = (tokenId: string) => {
+      for (let i = boardTokens.length - 1; i >= 0; i -= 1) {
+        if (boardTokens[i]?.id !== tokenId) continue;
+        boardTokens.splice(i, 1);
+        return true;
+      }
+      return false;
+    };
+    const consumeArrowAtPosition = (
+      targetId: string,
+      coord: { q: number; r: number },
+      options: { preserveAction?: boolean; requestRerun?: boolean } = {},
+    ) => {
+      const arrowToken = findArrowTokenAt(coord);
+      if (!arrowToken) return false;
+      removeBoardTokenById(arrowToken.id);
+      const forward = applyFacingToVector(LOCAL_DIRECTIONS.F, arrowToken.facing);
+      resolveArrowHit(targetId, arrowToken.ownerUserId ?? '', forward, options);
+      return true;
     };
     const spawnArrowToken = (coord: { q: number; r: number }, facing: number, ownerId: string) => {
       const key = coordKey(coord);
@@ -3192,6 +3226,32 @@ export const executeBeatsWithInteractions = (
         disabledActors.add(counter.attackerId);
       });
       parryCountersByBeat.delete(index);
+    }
+    if (existingArrowIds.size) {
+      const nextTokens: BoardToken[] = [];
+      boardTokens.forEach((token) => {
+        if (token.type !== ARROW_TOKEN_TYPE) {
+          nextTokens.push(token);
+          return;
+        }
+        if (!existingArrowIds.has(token.id)) {
+          nextTokens.push(token);
+          return;
+        }
+        const forward = applyFacingToVector(LOCAL_DIRECTIONS.F, token.facing);
+        const nextPosition = { q: token.position.q + forward.q, r: token.position.r + forward.r };
+        const targetId = occupancy.get(coordKey(nextPosition));
+        if (targetId) {
+          resolveArrowHit(targetId, token.ownerUserId ?? '', forward, { preserveAction: false, requestRerun: false });
+          return;
+        }
+        const distance = getDistanceToLand(nextPosition, landTiles);
+        if (distance >= ARROW_LAND_DISTANCE_LIMIT) {
+          return;
+        }
+        nextTokens.push({ ...token, position: { q: nextPosition.q, r: nextPosition.r } });
+      });
+      boardTokens.splice(0, boardTokens.length, ...nextTokens);
     }
     const ordered = beat
       .slice()
@@ -3476,8 +3536,10 @@ export const executeBeatsWithInteractions = (
           }
         }
       const tokens = parseActionTokens(entry.action ?? '');
+      let interruptedByArrow = false;
 
       tokens.forEach((token) => {
+        if (interruptedByArrow) return;
         const isGrapplingHookCharge =
           entry.cardId === GRAPPLING_HOOK_CARD_ID && token.type === 'c' && isBracketedAction(entry.action ?? '');
         const { positions, destination, lastStep } = isGrapplingHookCharge
@@ -3900,6 +3962,17 @@ export const executeBeatsWithInteractions = (
               break;
             }
             finalPosition = stepPosition;
+            const arrowAtStep = findArrowTokenAt(stepPosition);
+            if (arrowAtStep) {
+              if (!sameCoord(finalPosition, actorState.position)) {
+                occupancy.delete(coordKey(actorState.position));
+                actorState.position = { q: finalPosition.q, r: finalPosition.r };
+                occupancy.set(coordKey(actorState.position), actorId);
+              }
+              consumeArrowAtPosition(actorId, actorState.position, { preserveAction: false, requestRerun: false });
+              interruptedByArrow = true;
+              break;
+            }
           }
           if (blockedBy) {
             const blockDiscard = getPassiveBlockDiscardCount(entry.passiveCardId);
@@ -3909,12 +3982,12 @@ export const executeBeatsWithInteractions = (
               queueDiscard(blockedBy, blockDiscard, 'opponent', targetEntry);
             }
           }
-          if (!sameCoord(finalPosition, actorState.position)) {
+          if (!interruptedByArrow && !sameCoord(finalPosition, actorState.position)) {
             occupancy.delete(coordKey(actorState.position));
             actorState.position = { q: finalPosition.q, r: finalPosition.r };
             occupancy.set(coordKey(actorState.position), actorId);
           }
-          if (token.type === 'm' && !sameCoord(finalPosition, origin)) {
+          if (!interruptedByArrow && token.type === 'm' && !sameCoord(finalPosition, origin)) {
             if (entry.passiveCardId === BURNING_STRIKE_CARD_ID) {
               queueDelayedPassiveFireHex(index + 1, origin, actorId);
             }
@@ -3929,6 +4002,9 @@ export const executeBeatsWithInteractions = (
             occupancy.delete(coordKey(actorState.position));
             actorState.position = { q: destination.q, r: destination.r };
             occupancy.set(coordKey(actorState.position), actorId);
+            if (consumeArrowAtPosition(actorId, actorState.position, { preserveAction: false, requestRerun: false })) {
+              interruptedByArrow = true;
+            }
           }
         }
       });
@@ -4008,33 +4084,6 @@ export const executeBeatsWithInteractions = (
           haltIndex = index;
         }
       });
-    }
-
-    if (existingArrowIds.size) {
-      const nextTokens: BoardToken[] = [];
-      boardTokens.forEach((token) => {
-        if (token.type !== ARROW_TOKEN_TYPE) {
-          nextTokens.push(token);
-          return;
-        }
-        if (!existingArrowIds.has(token.id)) {
-          nextTokens.push(token);
-          return;
-        }
-        const forward = applyFacingToVector(LOCAL_DIRECTIONS.F, token.facing);
-        const nextPosition = { q: token.position.q + forward.q, r: token.position.r + forward.r };
-        const targetId = occupancy.get(coordKey(nextPosition));
-        if (targetId) {
-          resolveArrowHit(targetId, token.ownerUserId ?? '', forward);
-          return;
-        }
-        const distance = getDistanceToLand(nextPosition, landTiles);
-        if (distance >= ARROW_LAND_DISTANCE_LIMIT) {
-          return;
-        }
-        nextTokens.push({ ...token, position: { q: nextPosition.q, r: nextPosition.r } });
-      });
-      boardTokens.splice(0, boardTokens.length, ...nextTokens);
     }
 
     if (fireTokenKeys.size || ephemeralFireKeys.size) {

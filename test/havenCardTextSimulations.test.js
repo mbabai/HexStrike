@@ -147,6 +147,7 @@ test('Haven passive skips the first W on abyss movement timelines', async () => 
   const beat0 = findEntry(result.beats[0], actor);
   const beat1 = findEntry(result.beats[1], actor);
   const beat2 = findEntry(result.beats[2], actor);
+  const beat3 = findEntry(result.beats[3], actor);
   assert.ok(beat0);
   assert.ok(beat1);
   assert.ok(beat2);
@@ -154,6 +155,7 @@ test('Haven passive skips the first W on abyss movement timelines', async () => 
   assert.equal(beat0.rotation, 'R1');
   assert.equal(beat1.action, 'W');
   assert.equal(beat2.action, 'E');
+  assert.equal(beat3, null);
 });
 
 test('Haven passive does not skip the first W while on land', async () => {
@@ -223,12 +225,11 @@ test('Haven passive skips the first W even when it appears after movement entrie
   assert.ok(beat1);
   assert.ok(beat2);
   assert.ok(beat3);
-  assert.ok(beat4);
+  assert.equal(beat4, null);
   assert.equal(beat0.action, 'm');
   assert.equal(beat1.action, '[m]');
   assert.equal(beat2.action, 'W');
   assert.equal(beat3.action, 'E');
-  assert.equal(beat4.action, 'E');
 });
 
 test('Haven passive skip is idempotent across reruns and does not swallow later Absorb draw', async () => {

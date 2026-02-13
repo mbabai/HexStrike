@@ -97,6 +97,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Ninja Roll passive only transforms exact `{a}` or `[a]` tokens; do not broaden other attack strings (ex: `a-2a`, `a-La-Ra`).
 - Card-text timeline edits (add/remove/replace actions) should use `actionListTransforms` helpers on both server/client to keep precision and parity.
 - Bracketed multi-token actions (ex: `[a-La-Ra]`, `[b-Lb-Rb]`) must normalize the whole action before splitting by `-`; otherwise trailing tokens parse as `Ra]`/`Rb]` and silently drop right-side attacks/blocks. Keep `splitActionTokens`/`parseActionTokens` in `src/game/cardText/actionListTransforms.ts`, `src/game/execute.ts`, and `public/game/timelinePlayback.js` mirrored with `public/game/cardText/actionListTransforms.js`.
+- Multi-token attacks can apply multiple hits to the same target in one beat when later tokens still connect after the first hit/knockback; do not dedupe per-target hit resolution within the beat.
 - Card additions/edits must update simulation coverage in `test/cardTimelineSimulations.test.js` (or equivalent) so every card has active + passive timeline assertions through `validateActionSubmission` -> `applyActionSetToBeats` -> `executeBeats`.
 - If card text introduces new action tokens (ex: `2c`, `B2m`, `B3j`), the HUD needs `/public/images/{token}.png`; generate via `scripts/hex_diagrams_creator.py` (or the `action-diagram-creator` skill, which outputs to `public/images`).
 - Ability cards are never exhausted; on use they leave the hand immediately and are placed under the ability deck (client and server).
@@ -128,6 +129,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
 - Timeline gold highlight uses the earliest `E` beat across all players, not the currently viewed beat.
 - Timeline play/pause replaces the center beat label; hit detection is a circular button in `public/game/timeIndicatorView.js` and auto-advance pacing is driven by the speed slider interval in `public/game.js`.
+- Timeline now includes double-arrow controls flanking the single-step arrows (`jump-left`/`jump-right`) that snap to beat 0 and the current max beat; keep `getTimeIndicatorHit` targets and `controls.js` handling aligned.
 - Timeline playback should advance beat-by-beat to the stop index; do not auto-jump the time indicator to the latest stop index on `game:update` or intermediate animations will be skipped.
 - Timeline tooltips use `cardId`/`passiveCardId` on beat entries for active/passive names; symbol instructions still come from `{X1}/{X2}/{i}` fragments in `activeText`.
 - Timeline tooltip action-set start prefers `rotationSource: 'selected'` and falls back to non-empty `rotation` when the source flag is missing (legacy data).
@@ -144,6 +146,8 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Keep `getDirectionIndex` logic in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized so visuals match server resolution.
 - Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.
 - Arrow/projectile hits must respect block walls; client token playback derives block lookups from block effects to stop arrows on blocks.
+- Existing arrows resolve/move before beat action tokens; keep this phase order synchronized between `src/game/execute.ts` and `public/game/timelinePlayback.js` so movement-through-arrow and jump-landing outcomes match.
+- Movement/charge should check arrow collisions step-by-step on traversed hexes, while jumps only check the landing hex; keep both server and client token playback behavior in sync.
 - Board tokens live in `public.boardTokens`; `executeBeatsWithInteractions` rebuilds fire/arrow tokens from beats, moves only pre-existing arrows each beat, and applies fire damage after arrow resolution.
 - Server re-execution must seed token playback from timeline state (empty replay seed today), not from the latest `public.boardTokens`, or historical beats will be contaminated by future fire/arrow tokens.
 - Haven active uses a `customInteractions` entry of type `haven-platform`; client targeting/hover math is centralized in `public/game/havenInteraction.mjs` and renderer should stay draw-only via `interactionHighlightState`.

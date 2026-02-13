@@ -56,6 +56,24 @@ export const bindControls = (canvas, viewState, pointerState, config = GAME_CONF
           timeIndicatorViewModel.togglePlaying?.();
           return;
         }
+        if (hit === 'jump-left') {
+          timeIndicatorViewModel.isPlaying = false;
+          if (typeof timeIndicatorViewModel.jumpToStart === 'function') {
+            timeIndicatorViewModel.jumpToStart();
+          } else {
+            timeIndicatorViewModel.setValue?.(0);
+          }
+          return;
+        }
+        if (hit === 'jump-right') {
+          timeIndicatorViewModel.isPlaying = false;
+          if (typeof timeIndicatorViewModel.jumpToEnd === 'function') {
+            timeIndicatorViewModel.jumpToEnd();
+          } else {
+            timeIndicatorViewModel.setValue?.(Number.MAX_SAFE_INTEGER);
+          }
+          return;
+        }
         const direction = hit === 'left' ? -1 : 1;
         const started = timeIndicatorViewModel.press(direction, performance.now(), event.pointerId);
         if (started) {

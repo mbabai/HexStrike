@@ -34,6 +34,9 @@ const HAND_TRIGGER_STACK_OFFSET = 0.22;
 const REWIND_RETURN_CARD_HEIGHT = 0.62;
 const REWIND_RETURN_CARD_ASPECT = 0.72;
 const REWIND_RETURN_STACK_OFFSET = 0.22;
+const JUMP_ARROW_MIN_WIDTH = 22;
+const JUMP_ARROW_WIDTH_FACTOR = 0.74;
+const JUMP_ARROW_OVERLAP_FACTOR = 0.4;
 
 const getActionArt = (action) => {
   const key = action || ACTION_ICON_FALLBACK;
@@ -326,6 +329,20 @@ export const getTimeIndicatorLayout = (viewport) => {
     width: arrowWidth,
     height: timeHeight,
   };
+  const jumpArrowWidth = Math.max(JUMP_ARROW_MIN_WIDTH, arrowWidth * JUMP_ARROW_WIDTH_FACTOR);
+  const jumpArrowOverlap = jumpArrowWidth * JUMP_ARROW_OVERLAP_FACTOR;
+  const leftJumpArrow = {
+    x: leftArrow.x - jumpArrowWidth + jumpArrowOverlap,
+    y,
+    width: jumpArrowWidth,
+    height: timeHeight,
+  };
+  const rightJumpArrow = {
+    x: rightArrow.x + rightArrow.width - jumpArrowOverlap,
+    y,
+    width: jumpArrowWidth,
+    height: timeHeight,
+  };
   const portraitRadius = actionHeight / 2;
   const portraitBorderWidth = Math.max(1.5, portraitRadius * CHARACTER_TOKEN_STYLE.borderFactor);
   const playSize = Math.max(PLAY_BUTTON_MIN_SIZE, timeHeight * 0.8);
@@ -348,6 +365,8 @@ export const getTimeIndicatorLayout = (viewport) => {
     actionHeight,
     leftArrow,
     rightArrow,
+    leftJumpArrow,
+    rightJumpArrow,
     numberArea,
     arrowWidth,
     innerPadding,
@@ -374,13 +393,17 @@ const getRowLayout = (layout, rowIndex) => {
     width: layout.arrowWidth,
     height: rowHeight,
   };
+  const leftJumpArrow = rowIndex === 0 ? layout.leftJumpArrow : null;
+  const rightJumpArrow = rowIndex === 0 ? layout.rightJumpArrow : null;
 
-  return { y, rowHeight, numberArea, leftArrow, rightArrow };
+  return { y, rowHeight, numberArea, leftArrow, rightArrow, leftJumpArrow, rightJumpArrow };
 };
 
 export const getTimeIndicatorHit = (layout, x, y) => {
   if (!layout) return null;
   if (layout.playButton && isPointInCircle(x, y, layout.playButton)) return 'play';
+  if (layout.leftJumpArrow && isPointInRect(x, y, layout.leftJumpArrow)) return 'jump-left';
+  if (layout.rightJumpArrow && isPointInRect(x, y, layout.rightJumpArrow)) return 'jump-right';
   if (isPointInRect(x, y, layout.leftArrow)) return 'left';
   if (isPointInRect(x, y, layout.rightArrow)) return 'right';
   return null;
@@ -618,8 +641,14 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
   }
 
   const arrowColor = theme.accentStrong || '#d5a34a';
+  if (topRow.leftJumpArrow) {
+    drawDoubleArrow(ctx, topRow.leftJumpArrow, 'left', arrowColor, leftDisabled ? 0.35 : 0.95);
+  }
   drawArrow(ctx, topRow.leftArrow, 'left', arrowColor, leftDisabled ? 0.35 : 0.95);
   drawArrow(ctx, topRow.rightArrow, 'right', arrowColor, rightDisabled ? 0.35 : 0.95);
+  if (topRow.rightJumpArrow) {
+    drawDoubleArrow(ctx, topRow.rightJumpArrow, 'right', arrowColor, rightDisabled ? 0.35 : 0.95);
+  }
 
   if (!characters.length) return;
   const beatLookup = beats.map((beat) => {
@@ -1175,12 +1204,7 @@ const drawPlayButton = (ctx, playButton, theme, isPlaying) => {
   ctx.restore();
 };
 
-const drawArrow = (ctx, rect, direction, color, alpha) => {
-  const cx = rect.x + rect.width / 2;
-  const cy = rect.y + rect.height / 2;
-  const size = Math.min(rect.width, rect.height) * 0.4;
-  ctx.fillStyle = color;
-  ctx.globalAlpha = alpha;
+const drawArrowGlyph = (ctx, cx, cy, size, direction) => {
   ctx.beginPath();
   if (direction === 'left') {
     ctx.moveTo(cx + size * 0.6, cy - size);
@@ -1193,7 +1217,30 @@ const drawArrow = (ctx, rect, direction, color, alpha) => {
   }
   ctx.closePath();
   ctx.fill();
-  ctx.globalAlpha = 1;
+};
+
+const drawArrow = (ctx, rect, direction, color, alpha) => {
+  const cx = rect.x + rect.width / 2;
+  const cy = rect.y + rect.height / 2;
+  const size = Math.min(rect.width, rect.height) * 0.4;
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.globalAlpha = alpha;
+  drawArrowGlyph(ctx, cx, cy, size, direction);
+  ctx.restore();
+};
+
+const drawDoubleArrow = (ctx, rect, direction, color, alpha) => {
+  const cx = rect.x + rect.width / 2;
+  const cy = rect.y + rect.height / 2;
+  const size = Math.min(rect.width, rect.height) * 0.34;
+  const separation = size * 1.55;
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.globalAlpha = alpha;
+  drawArrowGlyph(ctx, cx - separation / 2, cy, size, direction);
+  drawArrowGlyph(ctx, cx + separation / 2, cy, size, direction);
+  ctx.restore();
 };
 
 const drawRoundedRect = (ctx, x, y, width, height, radius) => {

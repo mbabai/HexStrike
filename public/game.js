@@ -132,6 +132,10 @@ const buildTimelineSummary = (gameState) => {
 
 const createTimeIndicatorViewModel = ({ getMaxIndex }) => {
   let holdState = null;
+  const clearHoldState = () => {
+    holdState = null;
+    viewModel.isHolding = false;
+  };
   const viewModel = {
     value: 0,
     isPlaying: true,
@@ -151,6 +155,16 @@ const createTimeIndicatorViewModel = ({ getMaxIndex }) => {
       viewModel.setValue(viewModel.value + direction);
       return true;
     },
+    jumpToStart() {
+      clearHoldState();
+      viewModel.setValue(0);
+      return viewModel.value;
+    },
+    jumpToEnd() {
+      clearHoldState();
+      viewModel.setValue(Number.MAX_SAFE_INTEGER);
+      return viewModel.value;
+    },
     press(direction, now, pointerId) {
       if (!viewModel.canStep(direction)) return false;
       viewModel.isPlaying = false;
@@ -167,8 +181,7 @@ const createTimeIndicatorViewModel = ({ getMaxIndex }) => {
     release(pointerId) {
       if (!holdState) return;
       if (pointerId == null || holdState.pointerId === pointerId) {
-        holdState = null;
-        viewModel.isHolding = false;
+        clearHoldState();
       }
     },
     updateHold(now) {
@@ -178,8 +191,7 @@ const createTimeIndicatorViewModel = ({ getMaxIndex }) => {
       const steps = Math.max(1, Math.floor(elapsed / holdState.delay));
       for (let i = 0; i < steps; i += 1) {
         if (!viewModel.step(holdState.direction)) {
-          holdState = null;
-          viewModel.isHolding = false;
+          clearHoldState();
           return;
         }
       }
