@@ -106,6 +106,27 @@ export const appendInlineText = (container, text) => {
       if (part.startsWith('{') && part.endsWith('}')) {
         const token = part.slice(1, -1).trim();
         if (!token) return;
+        const normalizedToken = token.toLowerCase();
+        if (normalizedToken === 'red damage capsule') {
+          const capsule = document.createElement('span');
+          capsule.className = 'card-inline-damage-capsule';
+          capsule.textContent = '12';
+          capsule.setAttribute('aria-label', token);
+          container.appendChild(capsule);
+          return;
+        }
+        if (normalizedToken === 'throw kbf icon') {
+          const throwKbf = document.createElement('span');
+          throwKbf.className = 'card-inline-throw-kbf';
+          throwKbf.setAttribute('role', 'img');
+          throwKbf.setAttribute('aria-label', token);
+          const throwText = document.createElement('span');
+          throwText.className = 'card-inline-throw-kbf-value';
+          throwText.textContent = 'T';
+          throwKbf.appendChild(throwText);
+          container.appendChild(throwKbf);
+          return;
+        }
         const image = document.createElement('img');
         image.className = 'card-inline-icon';
         image.src = `/public/images/${token}.png`;

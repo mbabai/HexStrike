@@ -23,6 +23,7 @@ import { loadCharacterCatalog } from './shared/characterCatalog.js';
 import { createDiscardPrompt } from './game/discardPrompt.mjs';
 import { createDrawPrompt } from './game/drawPrompt.mjs';
 import { createHandTriggerPrompt } from './game/handTriggerPrompt.mjs';
+import { createTutorialGuide } from './game/tutorialGuide.mjs';
 import { axialToPixel, getHexSize } from './shared/hex.mjs';
 import {
   HAVEN_PLATFORM_INTERACTION_TYPE,
@@ -287,6 +288,7 @@ export const initGame = () => {
   let discardPrompt = null;
   let drawPrompt = null;
   let handTriggerPrompt = null;
+  let tutorialGuide = null;
   let havenHoverKey = null;
   let gameMenuUi = null;
   let nextAutoAdvanceAt = null;
@@ -701,6 +703,10 @@ export const initGame = () => {
       gameOverView.hide();
       return;
     }
+    if (tutorialGuide?.isActive?.()) {
+      gameOverView.hide();
+      return;
+    }
     const outcome = getMatchOutcome(gameState?.state?.public);
     gameOverView.update(outcome, localUserId, {
       continueInFlight: gameOverInFlight,
@@ -896,6 +902,7 @@ export const initGame = () => {
         throw new Error(message);
       }
       console.log(`${LOG_PREFIX} action:set ack`, { status: response.status, gameId: gameState.id });
+      tutorialGuide?.notifyActionSubmitted?.({ activeCardId, passiveCardId, rotation });
       if (actionHud) actionHud.clearSelection();
     } catch (err) {
       console.error('Failed to submit action set', err);
@@ -946,6 +953,10 @@ export const initGame = () => {
       console.log(`${LOG_PREFIX} interaction:ack`, {
         status: response.status,
         interactionId: pendingInteractionId,
+      });
+      tutorialGuide?.notifyInteractionSubmitted?.({
+        type: 'throw',
+        directionIndex: Math.round(directionIndex),
       });
     } catch (err) {
       console.error('Failed to resolve throw', err);
@@ -1014,6 +1025,12 @@ export const initGame = () => {
         status: response.status,
         interactionId: pendingInteractionId,
       });
+      if (isCombo) {
+        tutorialGuide?.notifyInteractionSubmitted?.({
+          type: 'combo',
+          continueChoice: Boolean(continueChoice),
+        });
+      }
     } catch (err) {
       console.error('Failed to resolve interaction choice', err);
       const message = err instanceof Error
@@ -1501,6 +1518,22 @@ export const initGame = () => {
     void submitDrawOffer();
   };
 
+  tutorialGuide = createTutorialGuide({
+    gameArea,
+    canvas,
+    movementHand,
+    abilityHand,
+    activeSlot,
+    passiveSlot,
+    rotationWheel,
+    comboAccept,
+    throwModal,
+    localUserId,
+    onReturnToLobby: () => {
+      void handleGameOverDone();
+    },
+  });
+
   actionHud = createActionHud({
     root: actionHudRoot,
     movementHand,
@@ -1631,6 +1664,8 @@ export const initGame = () => {
     gameState = null;
     viewMode = null;
     activeReplay = null;
+    tutorialGuide?.reset?.();
+    tutorialGuide?.sync?.({ gameState: null, isReplayMode: false });
     setGameMenuLabels();
     tooltip.setGameState(null);
     lastHudKey = null;
@@ -1870,6 +1905,10 @@ export const initGame = () => {
     }
     refreshActionHud();
     refreshInteractionOverlay();
+    tutorialGuide?.sync?.({
+      gameState,
+      isReplayMode: isReplayMode(),
+    });
     refreshGameOver();
     const scene = timelinePlayback.getScene();
     const pendingPreview = pendingActionPreview.getTimelinePreview(gameState, localUserId);

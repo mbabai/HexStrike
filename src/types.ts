@@ -1,4 +1,5 @@
 export type QueueName =
+  | 'tutorialQueue'
   | 'quickplayQueue'
   | 'rankedQueue'
   | 'botQueue'
@@ -7,6 +8,7 @@ export type QueueName =
   | 'botEasyQueue';
 
 export interface LobbySnapshot {
+  tutorialQueue: string[];
   quickplayQueue: string[];
   rankedQueue: string[];
   botQueue: string[];
@@ -14,6 +16,10 @@ export interface LobbySnapshot {
   botMediumQueue: string[];
   botEasyQueue: string[];
   inGame: string[];
+}
+
+export interface TutorialPublicState {
+  enabled: boolean;
 }
 
 export type CharacterId =
@@ -300,6 +306,7 @@ export interface GamePublicState {
   pendingActions?: PendingActions;
   customInteractions: CustomInteraction[];
   matchOutcome?: MatchOutcome;
+  tutorial?: TutorialPublicState;
 }
 
 export interface EngineState {

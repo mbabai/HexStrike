@@ -11,6 +11,7 @@ export interface LobbyStore extends LobbySnapshot {
 }
 
 const queues: QueueName[] = [
+  'tutorialQueue',
   'quickplayQueue',
   'rankedQueue',
   'botQueue',
@@ -21,6 +22,7 @@ const queues: QueueName[] = [
 
 export function createLobbyStore(): LobbyStore {
   const state: LobbySnapshot = {
+    tutorialQueue: [],
     quickplayQueue: [],
     rankedQueue: [],
     botQueue: [],
@@ -46,6 +48,7 @@ export function createLobbyStore(): LobbyStore {
   };
 
   const serialize = (): LobbySnapshot => ({
+    tutorialQueue: [...state.tutorialQueue],
     quickplayQueue: [...state.quickplayQueue],
     rankedQueue: [...state.rankedQueue],
     botQueue: [...state.botQueue],
@@ -92,6 +95,7 @@ export function createLobbyStore(): LobbyStore {
   };
 
   const clearQueues = () => {
+    state.tutorialQueue.splice(0, state.tutorialQueue.length);
     state.quickplayQueue.splice(0, state.quickplayQueue.length);
     state.rankedQueue.splice(0, state.rankedQueue.length);
     state.botQueue.splice(0, state.botQueue.length);

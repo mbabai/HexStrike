@@ -4,6 +4,7 @@ const USERNAME_KEY = 'hexstrikeUsername';
 const USERNAME_CUSTOM_KEY = 'hexstrikeUsernameCustom';
 const ACCOUNT_DECKS_KEY = 'hexstrikeAccountDecks';
 const TIMELINE_SPEED_KEY = 'hexstrikeTimelineSpeed';
+const QUEUE_PREFERENCE_KEY = 'hexstrikeQueuePreference';
 const USERNAME_MAX_LENGTH = 24;
 const ANONYMOUS_NAME_PATTERN = /^anonymous\d+$/i;
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
@@ -132,5 +133,19 @@ export const setTimelineSpeedPreference = (speed) => {
   const normalized = clampTimelineSpeed(speed);
   if (normalized === null) return null;
   writeCookie(TIMELINE_SPEED_KEY, `${normalized}`);
+  return normalized;
+};
+
+export const getQueuePreference = () => {
+  const value = readCookie(QUEUE_PREFERENCE_KEY);
+  if (!value) return null;
+  const trimmed = `${value}`.trim();
+  return trimmed || null;
+};
+
+export const setQueuePreference = (queueName) => {
+  const normalized = `${queueName ?? ''}`.trim();
+  if (!normalized) return null;
+  writeCookie(QUEUE_PREFERENCE_KEY, normalized);
   return normalized;
 };

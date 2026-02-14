@@ -204,6 +204,117 @@ const DRAW_OFFER_COOLDOWN_MS = 30_000;
 const PROD_FAVICON_PATH = '/public/images/X1.png';
 const DEV_FAVICON_PATH = '/public/images/X2.png';
 const MAX_USERNAME_LENGTH = 24;
+const TUTORIAL_QUEUE_NAME: QueueName = 'tutorialQueue';
+const TUTORIAL_BOT_USERNAME = 'Strylan';
+const TUTORIAL_BOT_ID_PREFIX = 'tutorial-bot';
+const TUTORIAL_PLAYER_CHARACTER_ID: CharacterId = 'monkey-queen';
+const TUTORIAL_BOT_CHARACTER_ID: CharacterId = 'strylan';
+const TUTORIAL_MAX_RUN_STEPS = 64;
+const TUTORIAL_THROW_DIRECTION_BEHIND = 'behind';
+
+const TUTORIAL_PLAYER_DECK: DeckDefinition = {
+  movement: ['step', 'advance', 'fleche', 'backflip'],
+  ability: [
+    'fumikomi',
+    'jab',
+    'cross-slash',
+    'feint',
+    'hip-throw',
+    'smash-attack',
+    'guard',
+    'iron-will',
+    'long-thrust',
+    'sinking-shot',
+    'hammer',
+    'parry',
+  ],
+};
+
+const TUTORIAL_BOT_DECK: DeckDefinition = {
+  movement: ['step', 'advance', 'fleche', 'backflip'],
+  ability: [
+    'long-thrust',
+    'sinking-shot',
+    'parry',
+    'guard',
+    'jab',
+    'cross-slash',
+    'feint',
+    'iron-will',
+    'hip-throw',
+    'smash-attack',
+    'hammer',
+    'reflex-dodge',
+  ],
+};
+
+type TutorialActionStep = {
+  activeCardId: string;
+  passiveCardIds: string[];
+  rotation: string;
+  minPlayerActionIndex?: number;
+  minInteractionIndex?: number;
+};
+
+type TutorialInteractionStep = {
+  interactionType: 'combo' | 'throw';
+  continueChoice?: boolean;
+  throwDirection?: typeof TUTORIAL_THROW_DIRECTION_BEHIND;
+};
+
+interface TutorialSession {
+  gameId: string;
+  matchId: string;
+  playerUserId: string;
+  botUserId: string;
+  playerActionIndex: number;
+  botActionIndex: number;
+  interactionIndex: number;
+}
+
+const TUTORIAL_PLAYER_ACTION_SEQUENCE: TutorialActionStep[] = [
+  { activeCardId: 'step', passiveCardIds: ['fumikomi'], rotation: '0' },
+  { activeCardId: 'jab', passiveCardIds: ['fleche'], rotation: '0' },
+  { activeCardId: 'cross-slash', passiveCardIds: ['step'], rotation: '0' },
+  { activeCardId: 'step', passiveCardIds: ['guard'], rotation: 'R1' },
+  { activeCardId: 'hip-throw', passiveCardIds: ['step'], rotation: '3' },
+  { activeCardId: 'feint', passiveCardIds: ['step'], rotation: '0' },
+  { activeCardId: 'smash-attack', passiveCardIds: ['step', 'advance', 'fleche', 'backflip'], rotation: '3' },
+];
+
+const TUTORIAL_BOT_ACTION_SEQUENCE: TutorialActionStep[] = [
+  { activeCardId: 'fleche', passiveCardIds: ['long-thrust'], rotation: '0', minPlayerActionIndex: 1 },
+  {
+    activeCardId: 'guard',
+    passiveCardIds: ['step'],
+    rotation: '0',
+    minPlayerActionIndex: 3,
+  },
+  { activeCardId: 'advance', passiveCardIds: ['sinking-shot'], rotation: '0', minPlayerActionIndex: 3 },
+  { activeCardId: 'fleche', passiveCardIds: ['jab'], rotation: '0', minPlayerActionIndex: 5 },
+  {
+    activeCardId: 'parry',
+    passiveCardIds: ['step'],
+    rotation: 'R1',
+    minPlayerActionIndex: 5,
+    minInteractionIndex: 2,
+  },
+];
+
+const TUTORIAL_INTERACTION_SEQUENCE: TutorialInteractionStep[] = [
+  { interactionType: 'combo', continueChoice: true },
+  { interactionType: 'throw', throwDirection: TUTORIAL_THROW_DIRECTION_BEHIND },
+];
+
+const TUTORIAL_BOT_FALLBACK_ACTIONS: TutorialActionStep[] = [
+  { activeCardId: 'step', passiveCardIds: ['jab'], rotation: '0' },
+  { activeCardId: 'feint', passiveCardIds: ['backflip'], rotation: '0' },
+  { activeCardId: 'fleche', passiveCardIds: ['guard'], rotation: '0' },
+  { activeCardId: 'cross-slash', passiveCardIds: ['backflip'], rotation: '0' },
+  { activeCardId: 'hammer', passiveCardIds: ['backflip'], rotation: '0' },
+  { activeCardId: 'iron-will', passiveCardIds: ['backflip'], rotation: '0' },
+];
+
 type BotDifficulty = 'easy' | 'medium' | 'hard';
 type BotQueueName = 'botQueue' | 'botHardQueue' | 'botMediumQueue' | 'botEasyQueue';
 
@@ -243,6 +354,15 @@ const BOT_QUEUE_CONFIGS: Record<BotQueueName, BotQueueConfig> = {
 };
 
 const BOT_QUEUE_NAMES = Object.keys(BOT_QUEUE_CONFIGS) as BotQueueName[];
+const ALL_QUEUE_NAMES: QueueName[] = [
+  TUTORIAL_QUEUE_NAME,
+  'quickplayQueue',
+  'rankedQueue',
+  'botQueue',
+  'botHardQueue',
+  'botMediumQueue',
+  'botEasyQueue',
+];
 const BOT_DEFAULT_CONFIG = BOT_QUEUE_CONFIGS.botHardQueue;
 const BOT_FALLBACK_CONFIG_BY_DIFFICULTY: Record<BotDifficulty, BotQueueConfig> = {
   hard: BOT_QUEUE_CONFIGS.botHardQueue,
@@ -283,6 +403,9 @@ const resolveFaviconPathForHost = (hostHeader: unknown): string => {
 const isBotQueue = (queue: QueueName): queue is BotQueueName =>
   BOT_QUEUE_NAMES.includes(queue as BotQueueName);
 
+const isQueueName = (value: unknown): value is QueueName =>
+  typeof value === 'string' && ALL_QUEUE_NAMES.includes(value as QueueName);
+
 const normalizeBotDifficulty = (value: unknown): BotDifficulty => {
   if (value === 'easy' || value === 'medium' || value === 'hard') return value;
   return BOT_DEFAULT_CONFIG.difficulty;
@@ -301,6 +424,58 @@ const isComboAction = (value: unknown): boolean => normalizeActionLabel(value).t
 
 const cardHasCombo = (card: { actions?: unknown[] } | undefined | null): boolean =>
   Array.isArray(card?.actions) && card.actions.some((action) => isComboAction(action));
+
+const normalizeCardId = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : `${value ?? ''}`.trim();
+
+const normalizeRotationLabel = (value: unknown): string => `${value ?? ''}`.trim().toUpperCase();
+
+const normalizeDegrees = (value: number) => {
+  const normalized = ((value % 360) + 360) % 360;
+  return Number.isFinite(normalized) ? normalized : 0;
+};
+
+const rotateAxialCW = (coord: { q: number; r: number }) => ({ q: -coord.r, r: coord.q + coord.r });
+
+const rotateAxial = (coord: { q: number; r: number }, steps: number) => {
+  let rotated = { ...coord };
+  const normalized = ((steps % 6) + 6) % 6;
+  for (let i = 0; i < normalized; i += 1) {
+    rotated = rotateAxialCW(rotated);
+  }
+  return rotated;
+};
+
+const getFacingRotationSteps = (facing: number) => {
+  const steps = Math.round((normalizeDegrees(facing) - 180) / 60);
+  return ((steps % 6) + 6) % 6;
+};
+
+const applyFacingToVector = (vector: { q: number; r: number }, facing: number) =>
+  rotateAxial(vector, getFacingRotationSteps(facing));
+
+const getDirectionIndex = (delta: { q: number; r: number }) => {
+  for (let i = 0; i < AXIAL_DIRECTIONS.length; i += 1) {
+    const dir = AXIAL_DIRECTIONS[i];
+    if (dir.q === 0 && delta.q !== 0) continue;
+    if (dir.r === 0 && delta.r !== 0) continue;
+    if (dir.q !== 0) {
+      const scale = delta.q / dir.q;
+      if (Number.isFinite(scale) && scale > 0 && Math.round(scale) === scale && dir.r * scale === delta.r) return i;
+      continue;
+    }
+    if (dir.r !== 0) {
+      const scale = delta.r / dir.r;
+      if (Number.isFinite(scale) && scale > 0 && Math.round(scale) === scale && dir.q * scale === delta.q) return i;
+    }
+  }
+  return null;
+};
+
+const getFacingBehindDirectionIndex = (facing: number): number | null => {
+  const back = applyFacingToVector({ q: -1, r: 0 }, facing);
+  return getDirectionIndex(back);
+};
 
 const buildComboAvailability = (deckStates: Map<string, DeckState>, catalog: CardCatalog) => {
   const availability = new Map<string, boolean>();
@@ -795,10 +970,13 @@ export function buildServer(port: number) {
   const matchDisconnects = new Map<string, Set<string>>();
   const matchExitUsers = new Map<string, Set<string>>();
   const queuedDecks = new Map<string, DeckDefinition>();
+  const tutorialSessionsByGame = new Map<string, TutorialSession>();
   const gameDeckStates = new Map<string, Map<string, DeckState>>();
   const botUsersByGame = new Map<string, Set<string>>();
   const botRunsInProgress = new Set<string>();
   const botRunsQueued = new Set<string>();
+  const tutorialRunsInProgress = new Set<string>();
+  const tutorialRunsQueued = new Set<string>();
   const historySaveInFlight = new Map<string, Promise<ReplayDoc | null>>();
   const winsRequired = 3;
   let anonymousCounter = 0;
@@ -821,6 +999,220 @@ export function buildServer(port: number) {
     const candidate = value.trim().toLowerCase();
     if (!candidate) return undefined;
     return CHARACTER_IDS.includes(candidate as CharacterId) ? (candidate as CharacterId) : undefined;
+  };
+
+  const isTutorialQueue = (queue: QueueName): boolean => queue === TUTORIAL_QUEUE_NAME;
+
+  const cloneDeckDefinition = (deck: DeckDefinition): DeckDefinition => ({
+    movement: Array.isArray(deck.movement) ? [...deck.movement] : [],
+    ability: Array.isArray(deck.ability) ? [...deck.ability] : [],
+  });
+
+  const getTutorialSession = (gameId: string | null | undefined): TutorialSession | null => {
+    if (!gameId) return null;
+    return tutorialSessionsByGame.get(gameId) ?? null;
+  };
+
+  const consumeTutorialPlayerAction = (session: TutorialSession, expectedIndex: number) => {
+    if (session.playerActionIndex !== expectedIndex) return;
+    session.playerActionIndex += 1;
+  };
+
+  const consumeTutorialBotAction = (session: TutorialSession, expectedIndex: number) => {
+    if (session.botActionIndex !== expectedIndex) return;
+    session.botActionIndex += 1;
+  };
+
+  const consumeTutorialInteraction = (session: TutorialSession, expectedIndex: number) => {
+    if (session.interactionIndex !== expectedIndex) return;
+    session.interactionIndex += 1;
+  };
+
+  const getTutorialActorRole = (session: TutorialSession, userId: string): 'player' | 'bot' | null => {
+    if (userId === session.playerUserId) return 'player';
+    if (userId === session.botUserId) return 'bot';
+    return null;
+  };
+
+  const isTutorialActionMatch = (
+    step: TutorialActionStep,
+    activeCardId: string,
+    passiveCardId: string,
+    rotation: string,
+  ): boolean => {
+    if (activeCardId !== normalizeCardId(step.activeCardId)) return false;
+    if (!step.passiveCardIds.map((id) => normalizeCardId(id)).includes(passiveCardId)) return false;
+    if (rotation !== normalizeRotationLabel(step.rotation)) return false;
+    return true;
+  };
+
+  const canRunTutorialBotStep = (session: TutorialSession, step: TutorialActionStep): boolean => {
+    if (Number.isFinite(step.minPlayerActionIndex) && session.playerActionIndex < Number(step.minPlayerActionIndex)) {
+      return false;
+    }
+    if (Number.isFinite(step.minInteractionIndex) && session.interactionIndex < Number(step.minInteractionIndex)) {
+      return false;
+    }
+    return true;
+  };
+
+  type TutorialActionValidationResult =
+    | {
+        ok: true;
+        session: TutorialSession | null;
+        consumeRole: 'player' | 'bot' | null;
+        consumeIndex: number | null;
+      }
+    | { ok: false; error: string };
+
+  const validateTutorialActionRequest = ({
+    gameId,
+    userId,
+    activeCardId,
+    passiveCardId,
+    rotation,
+  }: {
+    gameId: string;
+    userId: string;
+    activeCardId: unknown;
+    passiveCardId: unknown;
+    rotation: unknown;
+  }): TutorialActionValidationResult => {
+    const session = getTutorialSession(gameId);
+    if (!session) {
+      return { ok: true, session: null, consumeRole: null, consumeIndex: null };
+    }
+    const role = getTutorialActorRole(session, userId);
+    if (!role) {
+      return { ok: false, error: 'Tutorial action rejected: user is not part of this tutorial match.' };
+    }
+    const normalizedActive = normalizeCardId(activeCardId);
+    const normalizedPassive = normalizeCardId(passiveCardId);
+    const normalizedRotation = normalizeRotationLabel(rotation);
+
+    if (role === 'player') {
+      const expectedStep = TUTORIAL_PLAYER_ACTION_SEQUENCE[session.playerActionIndex] ?? null;
+      if (!expectedStep) {
+        return { ok: false, error: 'Tutorial action rejected: tutorial sequence is already complete.' };
+      }
+      if (normalizedActive !== normalizeCardId(expectedStep.activeCardId)) {
+        return { ok: false, error: 'Tutorial action rejected: incorrect active card for this step.' };
+      }
+      if (!expectedStep.passiveCardIds.map((id) => normalizeCardId(id)).includes(normalizedPassive)) {
+        return { ok: false, error: 'Tutorial action rejected: incorrect passive card for this step.' };
+      }
+      if (normalizedRotation !== normalizeRotationLabel(expectedStep.rotation)) {
+        return { ok: false, error: 'Tutorial action rejected: incorrect rotation for this step.' };
+      }
+      return {
+        ok: true,
+        session,
+        consumeRole: 'player',
+        consumeIndex: session.playerActionIndex,
+      };
+    }
+
+    const expectedStep = TUTORIAL_BOT_ACTION_SEQUENCE[session.botActionIndex] ?? null;
+    const allowFallback =
+      session.playerActionIndex > 0 && session.botActionIndex >= TUTORIAL_BOT_ACTION_SEQUENCE.length;
+    if (expectedStep && canRunTutorialBotStep(session, expectedStep)) {
+      if (isTutorialActionMatch(expectedStep, normalizedActive, normalizedPassive, normalizedRotation)) {
+        return {
+          ok: true,
+          session,
+          consumeRole: 'bot',
+          consumeIndex: session.botActionIndex,
+        };
+      }
+      if (allowFallback) {
+        return { ok: true, session, consumeRole: null, consumeIndex: null };
+      }
+      return { ok: false, error: 'Tutorial bot action rejected: expected scripted tutorial action.' };
+    }
+
+    if (!allowFallback) {
+      return { ok: false, error: 'Tutorial bot action rejected: wait for the player tutorial step.' };
+    }
+
+    return { ok: true, session, consumeRole: null, consumeIndex: null };
+  };
+
+  const getTutorialThrowBehindDirection = (
+    interaction: CustomInteraction,
+    characters: PublicCharacter[],
+    beats: BeatEntry[][],
+  ): number | null => {
+    const actorKey = `${interaction.actorUserId ?? ''}`.trim();
+    if (!actorKey) return null;
+    const actor = characters.find((candidate) => candidate.userId === actorKey || candidate.username === actorKey);
+    if (!actor) return null;
+    const beatIndex = Number.isFinite(interaction.beatIndex) ? Math.max(0, Math.round(interaction.beatIndex)) : 0;
+    const actorEntry = getLastEntryForCharacter(beats, actor, beatIndex);
+    const facing = Number.isFinite(actorEntry?.facing)
+      ? Number(actorEntry?.facing)
+      : Number.isFinite(actor.facing)
+        ? Number(actor.facing)
+        : null;
+    if (facing === null) return null;
+    return getFacingBehindDirectionIndex(facing);
+  };
+
+  const validateTutorialInteractionRequest = ({
+    gameId,
+    userId,
+    interaction,
+    continueChoice,
+    directionIndex,
+    characters,
+    beats,
+  }: {
+    gameId: string;
+    userId: string;
+    interaction: CustomInteraction;
+    continueChoice?: boolean | null;
+    directionIndex?: number | null;
+    characters: PublicCharacter[];
+    beats: BeatEntry[][];
+  }):
+    | { ok: true; session: TutorialSession | null; consumeIndex: number | null }
+    | { ok: false; error: string } => {
+    const session = getTutorialSession(gameId);
+    if (!session) {
+      return { ok: true, session: null, consumeIndex: null };
+    }
+    const role = getTutorialActorRole(session, userId);
+    if (role !== 'player') {
+      return { ok: false, error: 'Tutorial interaction rejected: only the player may resolve this tutorial step.' };
+    }
+
+    if (interaction.type !== 'combo' && interaction.type !== 'throw') {
+      return { ok: true, session, consumeIndex: null };
+    }
+
+    const step = TUTORIAL_INTERACTION_SEQUENCE[session.interactionIndex] ?? null;
+    if (!step) {
+      return { ok: false, error: 'Tutorial interaction rejected: tutorial sequence is already complete.' };
+    }
+    if (step.interactionType !== interaction.type) {
+      return { ok: false, error: 'Tutorial interaction rejected: wait for the next highlighted tutorial step.' };
+    }
+    if (interaction.type !== step.interactionType) {
+      return { ok: false, error: 'Tutorial interaction rejected: incorrect interaction type for this step.' };
+    }
+    if (step.interactionType === 'combo') {
+      if (continueChoice !== true || step.continueChoice !== true) {
+        return { ok: false, error: 'Tutorial interaction rejected: choose Yes to continue the combo.' };
+      }
+      return { ok: true, session, consumeIndex: session.interactionIndex };
+    }
+    if (step.interactionType === 'throw' && step.throwDirection === TUTORIAL_THROW_DIRECTION_BEHIND) {
+      const expectedDirection = getTutorialThrowBehindDirection(interaction, characters, beats);
+      if (expectedDirection != null && directionIndex !== expectedDirection) {
+        return { ok: false, error: 'Tutorial interaction rejected: throw the opponent behind you.' };
+      }
+      return { ok: true, session, consumeIndex: session.interactionIndex };
+    }
+    return { ok: true, session, consumeIndex: session.interactionIndex };
   };
 
   const getDrawOfferCooldownRemainingSeconds = (gameId: string, userId: string, nowMs = Date.now()): number => {
@@ -1193,6 +1585,7 @@ export function buildServer(port: number) {
   };
 
   const buildGameViewForPlayer = (game: GameDoc, userId: string, deckStates?: Map<string, DeckState>) => {
+    const tutorialSession = getTutorialSession(game.id);
     const resolvedDeckStates = deckStates ?? gameDeckStates.get(game.id);
     if (resolvedDeckStates) {
       const focusInteractions = game.state?.public?.customInteractions ?? [];
@@ -1259,6 +1652,7 @@ export function buildServer(port: number) {
       state: {
         public: {
           ...publicState,
+          tutorial: tutorialSession ? { enabled: true } : publicState.tutorial,
           characters: charactersWithAbilityCounts,
           beats,
           timeline: beats,
@@ -1389,6 +1783,41 @@ export function buildServer(port: number) {
     }
   };
 
+  const createTutorialMatchForUser = async (user: { id: string; username: string }) => {
+    const player = await upsertUserFromRequest(user.id, user.username, TUTORIAL_PLAYER_CHARACTER_ID);
+    const botId = `${TUTORIAL_BOT_ID_PREFIX}-${randomUUID()}`;
+    const bot = await db.upsertUser({
+      id: botId,
+      username: TUTORIAL_BOT_USERNAME,
+      elo: 1000,
+      characterId: TUTORIAL_BOT_CHARACTER_ID,
+    });
+    queuedDecks.set(player.id, cloneDeckDefinition(TUTORIAL_PLAYER_DECK));
+    queuedDecks.set(bot.id, cloneDeckDefinition(TUTORIAL_BOT_DECK));
+    try {
+      const { match, game } = await createMatchWithUsers([
+        { id: player.id, username: player.username },
+        { id: bot.id, username: bot.username },
+      ]);
+      game.state.public.tutorial = { enabled: true };
+      const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
+      tutorialSessionsByGame.set(updatedGame.id, {
+        gameId: updatedGame.id,
+        matchId: match.id,
+        playerUserId: player.id,
+        botUserId: bot.id,
+        playerActionIndex: 0,
+        botActionIndex: 0,
+        interactionIndex: 0,
+      });
+      sendGameUpdate(match, updatedGame, gameDeckStates.get(updatedGame.id));
+      return { match, game: updatedGame };
+    } finally {
+      queuedDecks.delete(player.id);
+      queuedDecks.delete(bot.id);
+    }
+  };
+
   const getPendingInteractionRecipientId = (interaction?: CustomInteraction | null): string | null => {
     if (!interaction) return null;
     if (interaction.type === 'discard') {
@@ -1511,6 +1940,134 @@ export function buildServer(port: number) {
     setTimeout(() => {
       void runBotsForGame(gameId, reason);
     }, 0);
+  };
+
+  const scheduleTutorialRun = (gameId: string, reason: string) => {
+    if (!gameId) return;
+    if (tutorialRunsInProgress.has(gameId)) {
+      tutorialRunsQueued.add(gameId);
+      return;
+    }
+    if (tutorialRunsQueued.has(gameId)) return;
+    tutorialRunsQueued.add(gameId);
+    setTimeout(() => {
+      void runTutorialForGame(gameId, reason);
+    }, 0);
+  };
+
+  const runTutorialForGame = async (gameId: string, reason: string) => {
+    if (!gameId) return;
+    if (tutorialRunsInProgress.has(gameId)) {
+      tutorialRunsQueued.add(gameId);
+      return;
+    }
+    tutorialRunsQueued.delete(gameId);
+    tutorialRunsInProgress.add(gameId);
+    writeDevTempEvent('tutorial-bot', { stage: 'run:start', gameId, reason });
+    try {
+      for (let stepIndex = 0; stepIndex < TUTORIAL_MAX_RUN_STEPS; stepIndex += 1) {
+        const game = await db.findGame(gameId);
+        if (!game) return;
+        if (game.state?.public?.matchOutcome) return;
+        const session = getTutorialSession(gameId);
+        if (!session) return;
+
+        const publicState = game.state.public;
+        const pendingInteraction = (publicState.customInteractions ?? []).find(
+          (interaction) => interaction?.status === 'pending',
+        );
+        if (pendingInteraction) {
+          const recipientId = getPendingInteractionRecipientId(pendingInteraction);
+          if (recipientId !== session.botUserId) return;
+          return;
+        }
+
+        let botRequired = false;
+        const pendingActions = publicState.pendingActions;
+        if (pendingActions) {
+          const required = Array.isArray(pendingActions.requiredUserIds) ? pendingActions.requiredUserIds : [];
+          const submitted = new Set(
+            Array.isArray(pendingActions.submittedUserIds) ? pendingActions.submittedUserIds : [],
+          );
+          botRequired = required.includes(session.botUserId) && !submitted.has(session.botUserId);
+        } else {
+          const beats = publicState.beats ?? publicState.timeline ?? [];
+          const characters = ensureBaselineCharacters(publicState);
+          const atBat = getCharactersAtEarliestE(beats, characters);
+          botRequired = atBat.some((character) => character.userId === session.botUserId);
+        }
+        if (!botRequired) return;
+
+        const expectedBotStep = TUTORIAL_BOT_ACTION_SEQUENCE[session.botActionIndex] ?? null;
+        const canUseExpectedBotStep = Boolean(expectedBotStep && canRunTutorialBotStep(session, expectedBotStep));
+        const allowFallback =
+          session.playerActionIndex > 0 && session.botActionIndex >= TUTORIAL_BOT_ACTION_SEQUENCE.length;
+        if (!canUseExpectedBotStep && !allowFallback) return;
+
+        const actionCandidates = [
+          ...(canUseExpectedBotStep && expectedBotStep ? [expectedBotStep] : []),
+          ...(allowFallback ? TUTORIAL_BOT_FALLBACK_ACTIONS : []),
+        ];
+        const uniqueCandidates = actionCandidates.filter((candidate, index, collection) => {
+          const signature = `${normalizeCardId(candidate.activeCardId)}|${normalizeCardId(candidate.passiveCardIds[0])}|${normalizeRotationLabel(candidate.rotation)}`;
+          return (
+            collection.findIndex((entry) => {
+              const compareSignature = `${normalizeCardId(entry.activeCardId)}|${normalizeCardId(entry.passiveCardIds[0])}|${normalizeRotationLabel(entry.rotation)}`;
+              return compareSignature === signature;
+            }) === index
+          );
+        });
+
+        let actionSubmitted = false;
+        let lastFailure: { status: number; error?: string; code?: string } | null = null;
+        for (const candidate of uniqueCandidates) {
+          const result = await submitActionSet({
+            userId: session.botUserId,
+            gameId,
+            activeCardId: candidate.activeCardId,
+            passiveCardId: candidate.passiveCardIds[0] ?? '',
+            rotation: candidate.rotation,
+          });
+          writeDevTempEvent('tutorial-bot', {
+            stage: 'action:attempt',
+            gameId,
+            stepIndex,
+            scripted: canUseExpectedBotStep && expectedBotStep === candidate,
+            expectedBotActionIndex: session.botActionIndex,
+            activeCardId: candidate.activeCardId,
+            passiveCardId: candidate.passiveCardIds[0] ?? '',
+            rotation: candidate.rotation,
+            ok: result.ok,
+            status: result.status,
+            error: result.error ?? null,
+            code: result.code ?? null,
+          });
+          if (result.ok) {
+            actionSubmitted = true;
+            break;
+          }
+          lastFailure = { status: result.status, error: result.error, code: result.code };
+        }
+        if (!actionSubmitted) {
+          console.warn(`${LOG_PREFIX} tutorial-bot action failed`, {
+            gameId,
+            status: lastFailure?.status ?? null,
+            error: lastFailure?.error ?? null,
+            code: lastFailure?.code ?? null,
+          });
+          return;
+        }
+      }
+      console.warn(`${LOG_PREFIX} tutorial-bot step limit reached`, { gameId, limit: TUTORIAL_MAX_RUN_STEPS });
+    } finally {
+      tutorialRunsInProgress.delete(gameId);
+      if (tutorialRunsQueued.has(gameId)) {
+        tutorialRunsQueued.delete(gameId);
+        setTimeout(() => {
+          void runTutorialForGame(gameId, 'queued');
+        }, 0);
+      }
+    }
   };
 
   const runBotsForGame = async (gameId: string, reason: string) => {
@@ -1773,6 +2330,8 @@ export function buildServer(port: number) {
     const publicState = game.state.public;
     if (publicState.matchOutcome) return;
     const botIds = botUsersByGame.get(game.id) ?? new Set<string>();
+    const tutorialSession = getTutorialSession(game.id);
+    const isTutorialBotUser = (userId: string) => Boolean(tutorialSession && tutorialSession.botUserId === userId);
     const pending = publicState.pendingActions;
     const interactions = publicState.customInteractions ?? [];
     const pendingInteraction = interactions.find((interaction) => interaction.status === 'pending');
@@ -1787,6 +2346,8 @@ export function buildServer(port: number) {
       };
       if (botIds.has(recipientId)) {
         scheduleBotRun(game.id, 'pending-interaction');
+      } else if (isTutorialBotUser(recipientId)) {
+        scheduleTutorialRun(game.id, 'pending-interaction');
       } else {
         sendRealtimeEvent({ type: 'input:request', payload }, recipientId);
       }
@@ -1798,6 +2359,8 @@ export function buildServer(port: number) {
         if (!submitted.has(userId)) {
           if (botIds.has(userId)) {
             scheduleBotRun(game.id, 'pending-actions');
+          } else if (isTutorialBotUser(userId)) {
+            scheduleTutorialRun(game.id, 'pending-actions');
           } else {
             sendRealtimeEvent({ type: 'input:request', payload: { ...pending, gameId: game.id } }, userId);
           }
@@ -1814,6 +2377,8 @@ export function buildServer(port: number) {
     requiredUserIds.forEach((userId) => {
       if (botIds.has(userId)) {
         scheduleBotRun(game.id, 'at-bat');
+      } else if (isTutorialBotUser(userId)) {
+        scheduleTutorialRun(game.id, 'at-bat');
       } else {
         sendRealtimeEvent(
           { type: 'input:request', payload: { gameId: game.id, beatIndex: earliestIndex, requiredUserIds } },
@@ -1825,6 +2390,9 @@ export function buildServer(port: number) {
 
   const sendGameUpdate = (match: MatchDoc | undefined, game: GameDoc, deckStates?: Map<string, DeckState>) => {
     if (!match) return;
+    if (getTutorialSession(game.id)) {
+      game.state.public.tutorial = { enabled: true };
+    }
     if (game.state?.public?.matchOutcome) {
       void ensureGameHistoryForGame(game, match);
     }
@@ -1875,10 +2443,15 @@ export function buildServer(port: number) {
     pendingActionSets.delete(game.id);
   };
   const handleJoin = async (body: Record<string, unknown>) => {
-    const characterId = normalizeCharacterId(body.characterId || body.characterID);
-    const user = await upsertUserFromRequest(body.userId as string, body.username as string, characterId);
-    const assignedUser = await ensureUserCharacter(user);
-    if (body.deck) {
+    const requestedQueue = isQueueName(body.queue) ? body.queue : 'quickplayQueue';
+    const forcedCharacterId = isTutorialQueue(requestedQueue)
+      ? TUTORIAL_PLAYER_CHARACTER_ID
+      : normalizeCharacterId(body.characterId || body.characterID);
+    const user = await upsertUserFromRequest(body.userId as string, body.username as string, forcedCharacterId);
+    const assignedUser = isTutorialQueue(requestedQueue)
+      ? await upsertUserFromRequest(user.id, user.username, TUTORIAL_PLAYER_CHARACTER_ID)
+      : await ensureUserCharacter(user);
+    if (!isTutorialQueue(requestedQueue) && body.deck) {
       const catalog = await loadCardCatalog();
       const parsed = parseDeckDefinition(body.deck, catalog);
       if (!parsed.deck || parsed.errors.length) {
@@ -1889,15 +2462,24 @@ export function buildServer(port: number) {
         throw new Error('Deck must include 4 movement cards and 12 ability cards.');
       }
       queuedDecks.set(assignedUser.id, parsed.deck);
-    } else {
+    } else if (!isTutorialQueue(requestedQueue)) {
       queuedDecks.delete(assignedUser.id);
     }
-    const queue = (body.queue as QueueName) || 'quickplayQueue';
+    const queue = requestedQueue;
     lobby.addToQueue(assignedUser.id, queue);
     if (queue === 'quickplayQueue') {
       console.log(`[lobby] ${assignedUser.username} (${assignedUser.id}) joined quickplay queue`);
     }
-    if (isBotQueue(queue)) {
+    if (isTutorialQueue(queue)) {
+      console.log(`[lobby] ${assignedUser.username} (${assignedUser.id}) requested tutorial match`);
+      try {
+        await createTutorialMatchForUser({ id: assignedUser.id, username: assignedUser.username });
+      } catch (err) {
+        lobby.removeFromQueue(assignedUser.id, queue);
+        const message = err instanceof Error ? err.message : 'Failed to create tutorial match.';
+        throw new Error(message);
+      }
+    } else if (isBotQueue(queue)) {
       const queueConfig = BOT_QUEUE_CONFIGS[queue] ?? BOT_DEFAULT_CONFIG;
       console.log(
         `[lobby] ${assignedUser.username} (${assignedUser.id}) requested ${queueConfig.username} (${queueConfig.difficulty}) match`,
@@ -2199,6 +2781,29 @@ export function buildServer(port: number) {
       logActionSetEvent('rejected', { reason: 'pending-interaction' });
       return { ok: false, status: 409, error: 'Action set rejected: pending interaction in progress' };
     }
+    const tutorialActionValidation = validateTutorialActionRequest({
+      gameId,
+      userId,
+      activeCardId,
+      passiveCardId,
+      rotation,
+    });
+    if ('error' in tutorialActionValidation) {
+      console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'tutorial-step-mismatch' });
+      logActionSetEvent('rejected', { reason: 'tutorial-step-mismatch' });
+      return { ok: false, status: 409, error: tutorialActionValidation.error, code: 'tutorial-step-mismatch' };
+    }
+    let tutorialActionStepConsumed = false;
+    const consumeTutorialActionStepIfNeeded = () => {
+      if (tutorialActionStepConsumed) return;
+      if (!tutorialActionValidation.session) return;
+      if (tutorialActionValidation.consumeRole === 'player' && tutorialActionValidation.consumeIndex != null) {
+        consumeTutorialPlayerAction(tutorialActionValidation.session, tutorialActionValidation.consumeIndex);
+      } else if (tutorialActionValidation.consumeRole === 'bot' && tutorialActionValidation.consumeIndex != null) {
+        consumeTutorialBotAction(tutorialActionValidation.session, tutorialActionValidation.consumeIndex);
+      }
+      tutorialActionStepConsumed = true;
+    };
       const beats = game.state?.public?.beats ?? game.state?.public?.timeline ?? [];
       const character = characters.find((candidate) => candidate.userId === userId);
       const normalizedActiveCardId = typeof activeCardId === 'string' ? activeCardId.trim() : '';
@@ -2320,6 +2925,7 @@ export function buildServer(port: number) {
         console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: error.code, error });
         return { ok: false, status: 409, error: error.message, code: error.code };
       }
+      consumeTutorialActionStepIfNeeded();
       if (comboInteraction) {
         interactions = interactions.filter((item) => item.id !== comboInteraction.id);
         game.state.public.customInteractions = interactions;
@@ -2441,6 +3047,7 @@ export function buildServer(port: number) {
       console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: error.code, error });
       return { ok: false, status: 409, error: error.message, code: error.code };
     }
+    consumeTutorialActionStepIfNeeded();
     if (comboInteraction) {
       interactions = interactions.filter((item) => item.id !== comboInteraction.id);
       game.state.public.customInteractions = interactions;
@@ -2825,8 +3432,29 @@ export function buildServer(port: number) {
         console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'invalid-direction' });
         return { ok: false, status: 400, error: 'Invalid throw direction' };
       }
+      const tutorialInteractionValidation = validateTutorialInteractionRequest({
+        gameId,
+        userId,
+        interaction,
+        continueChoice: null,
+        directionIndex: Math.round(resolvedDirection),
+        characters,
+        beats,
+      });
+      if ('error' in tutorialInteractionValidation) {
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'tutorial-step-mismatch' });
+        return {
+          ok: false,
+          status: 409,
+          error: tutorialInteractionValidation.error,
+          code: 'tutorial-step-mismatch',
+        };
+      }
       interaction.status = 'resolved';
       interaction.resolution = { directionIndex: Math.round(resolvedDirection) };
+      if (tutorialInteractionValidation.session && tutorialInteractionValidation.consumeIndex != null) {
+        consumeTutorialInteraction(tutorialInteractionValidation.session, tutorialInteractionValidation.consumeIndex);
+      }
     } else if (
       interaction.type === 'combo' ||
       interaction.type === GUARD_CONTINUE_INTERACTION_TYPE ||
@@ -2874,6 +3502,24 @@ export function buildServer(port: number) {
         console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason });
         return { ok: false, status: 400, error };
       }
+      const tutorialInteractionValidation = validateTutorialInteractionRequest({
+        gameId,
+        userId,
+        interaction,
+        continueChoice: resolvedContinue,
+        directionIndex: null,
+        characters,
+        beats,
+      });
+      if ('error' in tutorialInteractionValidation) {
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'tutorial-step-mismatch' });
+        return {
+          ok: false,
+          status: 409,
+          error: tutorialInteractionValidation.error,
+          code: 'tutorial-step-mismatch',
+        };
+      }
       interaction.status = 'resolved';
       if (interaction.type === REWIND_RETURN_INTERACTION_TYPE) {
         interaction.resolution = {
@@ -2882,6 +3528,9 @@ export function buildServer(port: number) {
         };
       } else {
         interaction.resolution = { continue: resolvedContinue };
+      }
+      if (tutorialInteractionValidation.session && tutorialInteractionValidation.consumeIndex != null) {
+        consumeTutorialInteraction(tutorialInteractionValidation.session, tutorialInteractionValidation.consumeIndex);
       }
     } else if (interaction.type === 'haven-platform') {
       const rawTargetHex = (body as { targetHex?: unknown })?.targetHex;
@@ -3337,6 +3986,9 @@ export function buildServer(port: number) {
         botUsersByGame.clear();
         botRunsInProgress.clear();
         botRunsQueued.clear();
+        tutorialSessionsByGame.clear();
+        tutorialRunsInProgress.clear();
+        tutorialRunsQueued.clear();
         return respondJson(res, 200, lobby.serialize());
       }
     }
@@ -3362,6 +4014,11 @@ export function buildServer(port: number) {
           const exitSet = matchExitUsers.get(match.gameId) ?? new Set<string>();
           exitSet.add(userId);
           matchExitUsers.set(match.gameId, exitSet);
+          if (tutorialSessionsByGame.has(match.gameId)) {
+            tutorialSessionsByGame.delete(match.gameId);
+            tutorialRunsInProgress.delete(match.gameId);
+            tutorialRunsQueued.delete(match.gameId);
+          }
         }
         lobby.removeFromQueue(userId);
         return respondJson(res, 200, { ok: true });
@@ -3576,6 +4233,8 @@ export function buildServer(port: number) {
     void handleWsUpgrade(req, socket);
   });
 
+  let matchmakingInterval: ReturnType<typeof setInterval> | null = null;
+
   server.listen(port, () => {
     lobby.clearQueues();
     void historyStore.listReplays(1).catch((err) => {
@@ -3585,9 +4244,19 @@ export function buildServer(port: number) {
       console.error(`${LOG_PREFIX} game-history:mongo is required in this runtime; continuing with diagnostics endpoint`);
     });
     sendRealtimeEvent({ type: 'queueChanged', payload: lobby.serialize() });
-    setInterval(() => {
+    matchmakingInterval = setInterval(() => {
       void matchmakeQuickplay();
     }, 2000);
+    if (typeof (matchmakingInterval as any)?.unref === 'function') {
+      (matchmakingInterval as any).unref();
+    }
+  });
+
+  server.on('close', () => {
+    if (matchmakingInterval) {
+      clearInterval(matchmakingInterval);
+      matchmakingInterval = null;
+    }
   });
 
   return server;

@@ -1,0 +1,41 @@
+{
+  "buttons": {
+    "continue": "Continue",
+    "returnToLobby": "Return To Lobby",
+    "submit": "Hit Sumbit to see what happens!"
+  },
+  "steps": {
+    "introWelcome": "Welcome to HexStrike! The objective of the game is to knock your opponent off land (green hexes) without falling off yourself. If you go 5 or more tiles away from land into the abyss (dark blue hexes), or if you have no cards to play while in the abyss, you lose!",
+    "timelineTurn": "When your turn is up, you will see {E} on the timeline above. Multiple players can have turns simultaneously.",
+    "selectStepActive": "Let us start by selecting your ACTIVE card. We are far from our opponent, so select STEP by clicking it, or drag it to the Active slot.",
+    "selectFumikomiPassive": "Great. To make a legal move, select a PASSIVE card of the other type. Green cards are movement, purple cards are abilities. Let us use Fumikomi so we can build on it later.",
+    "selectRotationOpen": "Fantastic. Last step: select rotation 0 to keep facing the same direction while we move in.",
+    "timelineMoving": "Look at that, things are moving. Check the timeline anytime, and rewind if you miss anything. In this case, your opponent chose a longer sequence of actions, so you can see ahead into the future. If two actions occur on the same 'beat' on the timeline, the one with higher priority goes first. The priority number is shown on teh golden badge, which is also in the upper right corner of each card.",
+    "cardSymbols": "You can browse your cards and read the symbols. {m} moves in a straight line, {2j} jumps, {a} attacks, {a-La-Ra} attacks multiple angles, and {c} attacks then moves. {i} {X1} {X2} are modifiers that change how the card works in the active text. You'll read the card text itself to see what they do.",
+    "selectJabActive": "Let's get in a quick attack before our opponent can react. Select Jab as your ACTIVE card.",
+    "selectFlechePassive": "Now choose Fleche as your PASSIVE card. Its passive removes a final {W} and speeds this move up. {W} is just a WAIT action. It does nothing, so removing them is almost always a good idea.",
+    "selectRotationJab": "Our opponent is straight ahead, so keep rotation at 0 and submit. No fancy footwork just yet.",
+    "damageAndKbfExplainer": "Great hit! On a card, damage is shown in the lower left with {DamageIcon} and Knockback Factor (KBF) is shown with {KnockBackIcon}. You can see how much damage was actually dealt on the timeline in the {red damage capsule}, and it is also tracked on the characters. On the timeline, you can also see how far they were launched with your attack in the {KnockBackIcon} (in this case, 0). The more damage your opponent has accumulated and the higher the card's KBF, the further the opponent will get launched!",
+    "comboYes": "You triggered {Co}, a combo window. When a card with {Co} lands a hit, you get to move onto another similar attack card early, as long as there is one in your hand. Choose Yes to chain into another combo card.",
+    "selectCrossSlashActive": "Fantastic, now select Cross Slash as your ACTIVE card.",
+    "selectStepPassive": "Pick Step as the passive card.",
+    "selectRotationCrossSlash": "Rotate 0 and submit.",
+    "crossSlashResolution": "Look how far they flew. Cross Slash has strong {KnockBackIcon} KBF. We are out of combo cards now, so the chain ends. On {E}, if your character is on LAND, your hand refills: movement is always these 4 cards, and abilities redraw from your 12-card deck. But be careful, you do not get to refresh your hand if you are over the ABYSS. And if you have no cards left over the ABYSS, you lose the game!",
+    "selectFeintActive": "You are now selecting a move as the same time as your opponent. Given that he might come back, let's get out of the way. Select Step as your ACTIVE card to move out of the line.",
+    "selectFlechePassiveAgain": "Use Guard as passive, just in case they try to hit you as you move.",
+    "selectRotationDodge": "Rotate R1 to move out of the way. Now we're dancin'.",
+    "hipThrowIntro": "They moved out of the way. Let us punish it with Hip Throw. Throw attacks with {throw kbf icon} always launch a fixed distance, are unblockable, and let you choose direction.",
+    "selectHipThrowActive": "Select Hip Throw as ACTIVE.",
+    "selectStepPassiveHipThrow": "Use Step as passive so we still have simple movement coverage.",
+    "selectRotationHipThrow": "Rotate 3 so we face the right way, then submit.",
+    "throwDirection": "Great grab! Now let's throw them over your shoulder, into the abyss to keep the close, but off the land. Click the arrow that is pointed at your character.",
+    "selectFeintScoutActive": "Hmm, you and the opponent are again in a simultaneous move. They probably expect you to attack, and will move out of the way or block. We can Feint to see what they do before choosing our own significant action. Go ahead and select Feint.",
+    "selectStepPassiveScout": "Let's reserve our larger moves just in case we get displaced. Use Step for passive",
+    "selectRotationScoutFeint": "Feint doesn't allow much rotation, as you can see the allowed rotations in the upper right of the card. A * allow for any rotation, otherwise cards give a range. We're only pausing for a single beat, so let's stay facing the same way.",
+    "finishIntro": "Perfect. Your opponent used Parry too early, leaving themselved open to a delayed attack. Use Smash Attack to finish this. The timeline shows Parry ends before Smash connects, guaranteeing you the hit.",
+    "selectSmashActive": "Select Smash Attack as ACTIVE.",
+    "selectAnyMovementPassive": "Any movement card works for passive. Pick your favorite.",
+    "selectRotationFinish": "Set rotation to 3 so you do not miss, then submit.",
+    "victoryOutro": "Congrats! You knocked your enemy out of the arena. Now take your skills into real matches against friends or bots."
+  }
+}
