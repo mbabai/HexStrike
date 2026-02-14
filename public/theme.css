@@ -1215,6 +1215,10 @@ small {
   pointer-events: none;
 }
 
+.tutorial-overlay[hidden] {
+  display: none;
+}
+
 .tutorial-bubble {
   position: absolute;
   width: min(420px, calc(100% - 28px));
@@ -1229,6 +1233,10 @@ small {
   border: 4px solid rgba(239, 194, 94, 0.96);
   border-radius: 18px;
   box-shadow: 0 0 0 2px rgba(47, 28, 2, 0.72), 0 0 28px rgba(255, 205, 80, 0.42);
+}
+
+.tutorial-bubble[hidden] {
+  display: none;
 }
 
 .tutorial-bubble.is-center {

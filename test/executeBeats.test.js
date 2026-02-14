@@ -1003,6 +1003,41 @@ test('executeBeats blocks bow shot arrows when the target blocks the incoming di
   assert.equal(Boolean(hit), false);
 });
 
+test('executeBeats lets parry block existing arrows without scheduling a parry counter', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 2, r: 0 }, facing: 0, characterId: 'murelious', characterName: 'Beta' },
+  ];
+  const beats = [
+    [
+      buildEntry('alpha', '[b]', 20, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'E', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+  beats[0][0].cardId = 'parry';
+  beats[0][0].passiveCardId = 'step';
+  const boardTokens = [{ id: 'arrow:0', type: 'arrow', position: { q: 1, r: 0 }, facing: 0, ownerUserId: 'beta' }];
+
+  const result = executeBeats(beats, characters, undefined, boardTokens);
+  const beat0 = result.beats[0] || [];
+  const beat1 = result.beats[1] || [];
+  const alphaEntry = beat0.find((entry) => entry.username === 'alpha');
+  const betaBeat1Entry = beat1.find((entry) => entry.username === 'beta');
+  const parryInteraction = (result.interactions || []).find((interaction) => interaction.type === 'parry');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.damage, 0);
+  assert.equal((result.boardTokens || []).length, 0);
+  assert.equal(Boolean(parryInteraction), false);
+  assert.ok(betaBeat1Entry);
+  assert.equal(betaBeat1Entry.action, 'W');
+  assert.equal(betaBeat1Entry.damage, 0);
+});
+
 test('executeBeats queues Absorb draws when a bracketed block stops damage', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },

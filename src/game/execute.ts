@@ -2804,6 +2804,29 @@ export const executeBeatsWithInteractions = (
       });
       return directions;
     };
+    const getProjectedBlockSource = (
+      actorId: string,
+      entry: BeatEntry | null | undefined,
+      actorState: { position: { q: number; r: number }; facing: number } | undefined,
+      blockDirection: number | null,
+    ): BlockSource | undefined => {
+      if (!entry || !actorState || blockDirection == null) return undefined;
+      const tokens = parseActionTokens(entry.action ?? '');
+      for (const token of tokens) {
+        if (token.type !== 'b') continue;
+        const { lastStep } = buildPath(actorState.position, token.steps, actorState.facing);
+        const blockVector = lastStep ?? applyFacingToVector(LOCAL_DIRECTIONS.F, actorState.facing);
+        const blockDirectionIndex = getDirectionIndex(blockVector);
+        if (blockDirectionIndex !== blockDirection) continue;
+        return {
+          actorId,
+          cardId: entry.cardId ?? undefined,
+          passiveCardId: entry.passiveCardId ?? undefined,
+          action: entry.action ?? undefined,
+        };
+      }
+      return undefined;
+    };
     const forceActionSetEndAtBeat = (
       targetId: string,
       beatIndex: number,
@@ -2910,7 +2933,9 @@ export const executeBeatsWithInteractions = (
       const blockDirection = getDirectionIndex({ q: -forward.q, r: -forward.r });
       if (blockDirection != null) {
         const targetKey = coordKey(targetState.position);
-        const blockSource = blockMap.get(targetKey)?.get(blockDirection);
+        const blockSource =
+          blockMap.get(targetKey)?.get(blockDirection) ??
+          getProjectedBlockSource(targetId, targetEntry, targetState, blockDirection);
         if (blockSource) {
           const blockAction = blockSource.action ?? targetEntry?.action;
           const blockCardId = blockSource.cardId ?? targetEntry?.cardId;

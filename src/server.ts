@@ -1668,7 +1668,7 @@ export function buildServer(port: number) {
       state: {
         public: {
           ...publicState,
-          tutorial: tutorialSession ? { enabled: true } : publicState.tutorial,
+          tutorial: tutorialSession ? { enabled: true } : undefined,
           characters: charactersWithAbilityCounts,
           beats,
           timeline: beats,

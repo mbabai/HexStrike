@@ -134,11 +134,13 @@ export const createTutorialGuide = ({
   const overlay = document.createElement('div');
   overlay.className = 'tutorial-overlay';
   overlay.hidden = true;
+  overlay.style.display = 'none';
   overlay.setAttribute('aria-hidden', 'true');
 
   const bubble = document.createElement('div');
   bubble.className = 'tutorial-bubble panel';
   bubble.hidden = true;
+  bubble.style.display = 'none';
   bubble.setAttribute('aria-hidden', 'true');
   const copy = document.createElement('div');
   copy.className = 'tutorial-bubble-copy';
@@ -346,10 +348,13 @@ export const createTutorialGuide = ({
   };
 
   const setOverlayState = (visible) => {
-    overlay.hidden = !visible;
-    overlay.setAttribute('aria-hidden', (!visible).toString());
-    bubble.hidden = !visible;
-    bubble.setAttribute('aria-hidden', (!visible).toString());
+    const isVisible = Boolean(visible);
+    overlay.hidden = !isVisible;
+    overlay.style.display = isVisible ? '' : 'none';
+    overlay.setAttribute('aria-hidden', (!isVisible).toString());
+    bubble.hidden = !isVisible;
+    bubble.style.display = isVisible ? '' : 'none';
+    bubble.setAttribute('aria-hidden', (!isVisible).toString());
   };
 
   const setBubblePosition = (positionId) => {
@@ -483,6 +488,15 @@ export const createTutorialGuide = ({
     state.botUserId = null;
   };
 
+  const hideTutorialUi = () => {
+    setOverlayState(false);
+    clearElementClasses();
+    clearHighlightBoxes();
+    clearHighlightPointers();
+    gameArea.classList.remove('tutorial-gating');
+    state.active = false;
+  };
+
   const shouldEnableTutorial = (gameState, isReplayMode) =>
     Boolean(gameState?.state?.public?.tutorial?.enabled) && !isReplayMode;
 
@@ -494,12 +508,7 @@ export const createTutorialGuide = ({
     if (!enabled) {
       state.enabled = false;
       state.gameId = null;
-      state.active = false;
-      setOverlayState(false);
-      clearElementClasses();
-      clearHighlightBoxes();
-      clearHighlightPointers();
-      gameArea.classList.remove('tutorial-gating');
+      hideTutorialUi();
       return;
     }
 
