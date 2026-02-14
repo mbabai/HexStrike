@@ -252,6 +252,7 @@ export const initGame = () => {
   const gameMenu = document.getElementById('gameMenu');
   const gameMenuToggle = document.getElementById('gameMenuToggle');
   const gameMenuPanel = document.getElementById('gameMenuPanel');
+  const gameMenuRulebook = document.getElementById('gameMenuRulebook');
   const gameMenuForfeit = document.getElementById('gameMenuForfeit');
   const gameMenuOfferDraw = document.getElementById('gameMenuOfferDraw');
   const gameMenuModalOverlay = document.getElementById('gameMenuModalOverlay');
@@ -298,6 +299,7 @@ export const initGame = () => {
   const pendingActionPreview = createPendingActionPreview();
 
   const isReplayMode = () => viewMode === VIEW_MODE_REPLAY;
+  const isTutorialMatch = () => !isReplayMode() && Boolean(gameState?.state?.public?.tutorial?.enabled);
 
   const buildReplaySnapshotFromState = (stateLike) => {
     const normalized = normalizeReplayPayload(stateLike);
@@ -1324,7 +1326,12 @@ export const initGame = () => {
       return;
     }
     const outcome = getMatchOutcome(gameState?.state?.public);
-    if (!outcome || !gameState?.matchId || gameOverInFlight) return;
+    if (!outcome) return;
+    await leaveCurrentMatch();
+  };
+
+  const leaveCurrentMatch = async () => {
+    if (!gameState?.matchId || gameOverInFlight) return;
     gameOverInFlight = true;
     refreshGameOver();
     try {
@@ -1367,10 +1374,19 @@ export const initGame = () => {
   };
 
   const setGameMenuLabels = () => {
+    const tutorialMatch = isTutorialMatch();
+    if (gameMenuRulebook) {
+      gameMenuRulebook.hidden = false;
+      gameMenuRulebook.style.display = '';
+      gameMenuRulebook.setAttribute('aria-hidden', 'false');
+    }
     if (gameMenuForfeit) {
-      gameMenuForfeit.textContent = isReplayMode() ? 'Leave Replay' : 'Forfeit';
+      gameMenuForfeit.textContent = isReplayMode() ? 'Leave Replay' : tutorialMatch ? 'Leave Tutorial' : 'Forfeit';
     }
     if (gameMenuOfferDraw) {
+      gameMenuOfferDraw.hidden = tutorialMatch;
+      gameMenuOfferDraw.style.display = tutorialMatch ? 'none' : '';
+      gameMenuOfferDraw.setAttribute('aria-hidden', tutorialMatch.toString());
       gameMenuOfferDraw.textContent = isReplayMode() ? 'Share' : 'Offer Draw';
     }
   };
@@ -1502,9 +1518,19 @@ export const initGame = () => {
     }
   };
 
+  const leaveTutorialFromMenu = async () => {
+    if (isReplayMode() || !isTutorialMatch()) return;
+    gameMenuUi?.setMenuOpen(false);
+    await leaveCurrentMatch();
+  };
+
   const handleGameMenuForfeitAction = () => {
     if (isReplayMode()) {
       requestLeaveReplayConfirmation();
+      return;
+    }
+    if (isTutorialMatch()) {
+      void leaveTutorialFromMenu();
       return;
     }
     requestForfeitConfirmation();
@@ -1515,6 +1541,7 @@ export const initGame = () => {
       void shareReplayFromMenu();
       return;
     }
+    if (isTutorialMatch()) return;
     void submitDrawOffer();
   };
 
@@ -1734,6 +1761,7 @@ export const initGame = () => {
 
   const setGameState = (nextState) => {
     gameState = nextState;
+    setGameMenuLabels();
     tooltip.setGameState(nextState);
     if (isReplayMode()) {
       pendingActionPreview.clear();

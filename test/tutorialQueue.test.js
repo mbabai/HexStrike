@@ -369,6 +369,24 @@ test('tutorial queue uses scripted flow, forced loadout, and strict tutorial cho
 
     const postFinishSnapshot = await getSnapshot();
     assert.ok(postFinishSnapshot?.state?.public, 'expected game state after tutorial finish submission');
+
+    await waitFor(getSnapshot, (snapshot) => Boolean(snapshot?.state?.public?.matchOutcome), { timeoutMs: 12000 });
+
+    const shareAttempt = await client.post('/api/v1/history/games/share', {
+      userId: playerUserId,
+      gameId,
+    });
+    assert.equal(shareAttempt.response.status, 409);
+    assert.equal(shareAttempt.payload?.error, 'Tutorial games are not saved to history.');
+
+    const replayList = await client.get('/api/v1/history/games');
+    assert.equal(replayList.response.status, 200);
+    assert.ok(Array.isArray(replayList.payload), 'expected replay list payload');
+    assert.equal(
+      replayList.payload.some((replay) => `${replay?.sourceGameId ?? ''}` === gameId),
+      false,
+      'tutorial game should not be persisted as replay history',
+    );
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

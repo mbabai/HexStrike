@@ -1013,6 +1013,12 @@ export function buildServer(port: number) {
     return tutorialSessionsByGame.get(gameId) ?? null;
   };
 
+  const isTutorialGame = (game: GameDoc | null | undefined): boolean => {
+    if (!game) return false;
+    if (game.state?.public?.tutorial?.enabled) return true;
+    return Boolean(getTutorialSession(game.id));
+  };
+
   const consumeTutorialPlayerAction = (session: TutorialSession, expectedIndex: number) => {
     if (session.playerActionIndex !== expectedIndex) return;
     session.playerActionIndex += 1;
@@ -1437,6 +1443,9 @@ export function buildServer(port: number) {
   };
 
   const createOrGetReplayForGame = async (game: GameDoc, match: MatchDoc) => {
+    if (isTutorialGame(game)) {
+      throw new Error('Tutorial games are not saved to history.');
+    }
     const existing = await historyStore.findReplayByGameId(game.id);
     if (existing) return { replay: existing, created: false };
     const replay = await historyStore.createReplay({
@@ -1457,6 +1466,7 @@ export function buildServer(port: number) {
     matchHint?: MatchDoc,
   ): Promise<ReplayDoc | null> => {
     if (!game?.state?.public?.matchOutcome) return null;
+    if (isTutorialGame(game)) return null;
     const inFlight = historySaveInFlight.get(game.id);
     if (inFlight) return inFlight;
     const task = (async () => {
@@ -1486,6 +1496,9 @@ export function buildServer(port: number) {
     const game = await db.findGame(gameId);
     if (!game) {
       return { ok: false, status: 404, error: 'Game not found' };
+    }
+    if (isTutorialGame(game)) {
+      return { ok: false, status: 409, error: 'Tutorial games are not saved to history.' };
     }
     const match = await db.findMatch(game.matchId);
     if (!match) {
@@ -1519,6 +1532,9 @@ export function buildServer(port: number) {
     const game = await db.findGame(gameId);
     if (!game) {
       return { ok: false, status: 404, error: 'Game not found' };
+    }
+    if (isTutorialGame(game)) {
+      return { ok: false, status: 409, error: 'Tutorial games are not saved to history.' };
     }
     const match = await db.findMatch(game.matchId);
     if (!match) {
