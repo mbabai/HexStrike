@@ -3195,6 +3195,43 @@ img[src$='Death.png'] {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
 }
 
+.card-inline-emphasis {
+  font-weight: 800;
+  font-size: 1.1em;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+}
+
+.card-inline-emphasis-bold {
+  font-weight: 900;
+}
+
+.card-inline-emphasis-underline {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.09em;
+}
+
+.card-inline-emphasis-key {
+  color: #8fddff;
+  text-shadow: 0 0 8px rgba(125, 207, 255, 0.35);
+}
+
+.card-inline-emphasis-move {
+  color: #77e07f;
+  text-shadow: 0 0 8px rgba(75, 176, 90, 0.35);
+}
+
+.card-inline-emphasis-attack {
+  color: #ff7d73;
+  text-shadow: 0 0 8px rgba(211, 75, 66, 0.38);
+}
+
+.card-inline-emphasis-guard {
+  color: var(--color-accent-strong);
+  text-shadow: 0 0 8px rgba(227, 181, 99, 0.4);
+}
+
 .action-center {
   position: absolute;
   right: var(--action-center-right);

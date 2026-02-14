@@ -114,6 +114,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Pending hand-trigger interactions are globally ordered by `handTriggerOrder`; only the lowest order is interactive (`public/game/handTriggerOrder.mjs` + `src/server.ts`).
 - Action HUD hover targeting is based on the hand column + header band (not card transforms); keep `--action-card-hover-shift` synced with the hover rail in `public/game/actionHud.js`.
 - Action HUD card text uses `public/shared/cardRenderer.js`; call `fitAllCardText` after hand renders so active/passive text fits the surface rows.
+- Inline/tutorial text rendered through `appendInlineText` supports style tags (`<key>`, `<move>`, `<attack>`, `<guard>`, `<u>`, `<b>/<bold>`) plus `{token}` icons; keep parser tags and `public/theme.css` emphasis classes synchronized when adding new emphasis types.
 - Action HUD click selection: empty slots -> active; active filled + same type -> replace active; active filled + different type -> fill passive; both filled -> replace matching type slot; clicking a slotted card returns it to hand.
 - Active/passive slots must be filled with cards from different sides (movement vs ability); only the active card drives the action list and rotation restrictions.
 - Slot assignment overwrites same-type cards in the opposite slot by returning them to the hand.

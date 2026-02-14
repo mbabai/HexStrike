@@ -5,6 +5,15 @@ const DAMAGE_ICON_URL = '/public/images/DamageIcon.png';
 const KNOCKBACK_ICON_URL = '/public/images/KnockBackIcon.png';
 const EMPHASIS_ICON_URL = '/public/images/i.png';
 const CARD_ART_BASE_URL = '/public/images/cardart';
+const INLINE_STYLE_CLASS_BY_TAG = {
+  bold: 'card-inline-emphasis card-inline-emphasis-bold',
+  u: 'card-inline-emphasis card-inline-emphasis-underline',
+  key: 'card-inline-emphasis card-inline-emphasis-key',
+  move: 'card-inline-emphasis card-inline-emphasis-move',
+  attack: 'card-inline-emphasis card-inline-emphasis-attack',
+  guard: 'card-inline-emphasis card-inline-emphasis-guard',
+};
+const INLINE_STYLE_TOKEN_PATTERN = /(\{[^}]+\}|<\/?(?:bold|b|u|key|move|attack|guard)>)/gi;
 
 const stripActionBrackets = (value) => {
   const trimmed = `${value ?? ''}`.trim();
@@ -92,6 +101,44 @@ const buildActionIcon = (action) => {
   return icon;
 };
 
+const normalizeInlineStyleTag = (value) => {
+  const normalized = `${value ?? ''}`.trim().toLowerCase();
+  if (normalized === 'b') return 'bold';
+  return normalized;
+};
+
+const appendInlineIconToken = (parent, part) => {
+  const token = part.slice(1, -1).trim();
+  if (!token) return;
+  const normalizedToken = token.toLowerCase();
+  if (normalizedToken === 'red damage capsule') {
+    const capsule = document.createElement('span');
+    capsule.className = 'card-inline-damage-capsule';
+    capsule.textContent = '12';
+    capsule.setAttribute('aria-label', token);
+    parent.appendChild(capsule);
+    return;
+  }
+  if (normalizedToken === 'throw kbf icon') {
+    const throwKbf = document.createElement('span');
+    throwKbf.className = 'card-inline-throw-kbf';
+    throwKbf.setAttribute('role', 'img');
+    throwKbf.setAttribute('aria-label', token);
+    const throwText = document.createElement('span');
+    throwText.className = 'card-inline-throw-kbf-value';
+    throwText.textContent = 'T';
+    throwKbf.appendChild(throwText);
+    parent.appendChild(throwKbf);
+    return;
+  }
+  const image = document.createElement('img');
+  image.className = 'card-inline-icon';
+  image.src = `/public/images/${token}.png`;
+  image.alt = token;
+  image.loading = 'lazy';
+  parent.appendChild(image);
+};
+
 export const appendInlineText = (container, text) => {
   container.textContent = '';
   if (!text) return;
@@ -100,43 +147,58 @@ export const appendInlineText = (container, text) => {
     if (lineIndex > 0) {
       container.appendChild(document.createElement('br'));
     }
-    const parts = line.split(/(\{[^}]+\})/g);
-    parts.forEach((part) => {
-      if (!part) return;
-      if (part.startsWith('{') && part.endsWith('}')) {
-        const token = part.slice(1, -1).trim();
-        if (!token) return;
-        const normalizedToken = token.toLowerCase();
-        if (normalizedToken === 'red damage capsule') {
-          const capsule = document.createElement('span');
-          capsule.className = 'card-inline-damage-capsule';
-          capsule.textContent = '12';
-          capsule.setAttribute('aria-label', token);
-          container.appendChild(capsule);
-          return;
-        }
-        if (normalizedToken === 'throw kbf icon') {
-          const throwKbf = document.createElement('span');
-          throwKbf.className = 'card-inline-throw-kbf';
-          throwKbf.setAttribute('role', 'img');
-          throwKbf.setAttribute('aria-label', token);
-          const throwText = document.createElement('span');
-          throwText.className = 'card-inline-throw-kbf-value';
-          throwText.textContent = 'T';
-          throwKbf.appendChild(throwText);
-          container.appendChild(throwKbf);
-          return;
-        }
-        const image = document.createElement('img');
-        image.className = 'card-inline-icon';
-        image.src = `/public/images/${token}.png`;
-        image.alt = token;
-        image.loading = 'lazy';
-        container.appendChild(image);
-        return;
+    const stack = [container];
+    let cursor = 0;
+    const pushText = (value) => {
+      if (!value) return;
+      stack[stack.length - 1].appendChild(document.createTextNode(value));
+    };
+    for (const match of line.matchAll(INLINE_STYLE_TOKEN_PATTERN)) {
+      const token = match[0];
+      const index = Number.isFinite(match.index) ? match.index : 0;
+      if (index > cursor) {
+        pushText(line.slice(cursor, index));
       }
-      container.appendChild(document.createTextNode(part));
-    });
+      if (token.startsWith('{') && token.endsWith('}')) {
+        appendInlineIconToken(stack[stack.length - 1], token);
+        cursor = index + token.length;
+        continue;
+      }
+      const isClosing = token.startsWith('</');
+      const rawTag = token.replace(/[</>]/g, '');
+      const tag = normalizeInlineStyleTag(rawTag);
+      if (!isClosing) {
+        const className = INLINE_STYLE_CLASS_BY_TAG[tag];
+        if (!className) {
+          pushText(token);
+          cursor = index + token.length;
+          continue;
+        }
+        const span = document.createElement('span');
+        span.className = className;
+        span.dataset.inlineTag = tag;
+        stack[stack.length - 1].appendChild(span);
+        stack.push(span);
+        cursor = index + token.length;
+        continue;
+      }
+      let foundIndex = -1;
+      for (let i = stack.length - 1; i > 0; i -= 1) {
+        if (stack[i]?.dataset?.inlineTag === tag) {
+          foundIndex = i;
+          break;
+        }
+      }
+      if (foundIndex >= 0) {
+        stack.length = foundIndex;
+      } else {
+        pushText(token);
+      }
+      cursor = index + token.length;
+    }
+    if (cursor < line.length) {
+      pushText(line.slice(cursor));
+    }
   });
 };
 
