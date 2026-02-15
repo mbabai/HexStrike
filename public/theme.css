@@ -1305,9 +1305,9 @@ small {
 .tutorial-highlight-box {
   position: absolute;
   border-radius: 14px;
-  border: 4px solid rgba(239, 194, 94, 0.96);
-  box-shadow: 0 0 0 2px rgba(47, 28, 2, 0.7), 0 0 24px rgba(255, 205, 80, 0.75);
-  animation: tutorialGoldPulse 1.1s ease-in-out infinite;
+  border: var(--action-card-border-width) solid var(--color-damage);
+  box-shadow: 0 0 0 1px rgba(211, 75, 66, 0.4), 0 0 14px rgba(211, 75, 66, 0.7);
+  animation: comboPulse 1.1s ease-in-out infinite;
   pointer-events: none;
 }
 
@@ -1338,16 +1338,24 @@ small {
 }
 
 .tutorial-highlight-target {
-  outline: 4px solid rgba(239, 194, 94, 0.96);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 2px rgba(47, 28, 2, 0.7), 0 0 24px rgba(255, 205, 80, 0.75) !important;
-  animation: tutorialGoldPulse 1.1s ease-in-out infinite;
+  border-color: var(--color-damage) !important;
+  box-shadow: 0 0 0 1px rgba(211, 75, 66, 0.4), 0 0 14px rgba(211, 75, 66, 0.7) !important;
+  animation: comboPulse 1.1s ease-in-out infinite;
 }
 
 .action-card.tutorial-highlight-target.tutorial-highlight-thick,
 .action-slot-drop.tutorial-highlight-target.tutorial-highlight-thick {
-  outline: none;
-  animation: tutorialThickGoldPulse 0.9s cubic-bezier(0.35, 0, 0.2, 1) infinite;
+  animation: comboPulse 1.1s ease-in-out infinite;
+}
+
+.action-card.tutorial-highlight-target {
+  box-shadow: none !important;
+}
+
+.action-card.tutorial-highlight-target::after {
+  border-color: var(--color-damage);
+  box-shadow: 0 0 0 1px rgba(211, 75, 66, 0.4), 0 0 14px rgba(211, 75, 66, 0.7);
+  animation: comboPulse 1.1s ease-in-out infinite;
 }
 
 .action-slot-drop.tutorial-highlight-target.tutorial-highlight-thick {
@@ -1355,22 +1363,22 @@ small {
 }
 
 .rotation-wedge.tutorial-highlight-target path {
-  stroke: rgba(239, 194, 94, 1);
+  stroke: var(--color-damage);
   stroke-width: 5;
-  fill: rgba(239, 194, 94, 0.24);
-  filter: drop-shadow(0 0 12px rgba(255, 205, 80, 0.92)) drop-shadow(0 0 24px rgba(255, 205, 80, 0.7));
-  animation: tutorialRotationPulse 0.9s cubic-bezier(0.35, 0, 0.2, 1) infinite;
+  fill: rgba(211, 75, 66, 0.24);
+  filter: drop-shadow(0 0 14px rgba(211, 75, 66, 0.7));
+  animation: tutorialRotationPulse 1.1s ease-in-out infinite;
 }
 
 .rotation-center.tutorial-highlight-target circle {
-  stroke: rgba(239, 194, 94, 1);
+  stroke: var(--color-damage);
   stroke-width: 3;
-  filter: drop-shadow(0 0 10px rgba(255, 205, 80, 0.85));
+  filter: drop-shadow(0 0 8px rgba(211, 75, 66, 0.75));
 }
 
 .throw-arrow.tutorial-highlight-target,
 #comboAccept.tutorial-highlight-target {
-  box-shadow: 0 0 0 2px rgba(47, 28, 2, 0.7), 0 0 24px rgba(255, 205, 80, 0.9) !important;
+  box-shadow: 0 0 0 1px rgba(211, 75, 66, 0.4), 0 0 14px rgba(211, 75, 66, 0.7) !important;
 }
 
 .game-area.tutorial-gating .action-hud .action-card,
@@ -1460,10 +1468,10 @@ small {
 @keyframes tutorialGoldPulse {
   0%,
   100% {
-    box-shadow: 0 0 0 2px rgba(47, 28, 2, 0.65), 0 0 14px rgba(255, 205, 80, 0.55);
+    box-shadow: 0 0 0 1px rgba(211, 75, 66, 0.35), 0 0 10px rgba(211, 75, 66, 0.45);
   }
   50% {
-    box-shadow: 0 0 0 3px rgba(47, 28, 2, 0.82), 0 0 32px rgba(255, 205, 80, 0.95);
+    box-shadow: 0 0 0 2px rgba(211, 75, 66, 0.6), 0 0 18px rgba(211, 75, 66, 0.85);
   }
 }
 
@@ -1515,13 +1523,13 @@ small {
   0%,
   100% {
     stroke-width: 5;
-    fill: rgba(239, 194, 94, 0.2);
-    filter: drop-shadow(0 0 10px rgba(255, 205, 80, 0.8)) drop-shadow(0 0 22px rgba(255, 205, 80, 0.62));
+    fill: rgba(211, 75, 66, 0.24);
+    filter: drop-shadow(0 0 14px rgba(211, 75, 66, 0.7));
   }
   50% {
-    stroke-width: 9;
-    fill: rgba(239, 194, 94, 0.48);
-    filter: drop-shadow(0 0 22px rgba(255, 205, 80, 1)) drop-shadow(0 0 40px rgba(255, 205, 80, 0.9));
+    stroke-width: 5;
+    fill: rgba(211, 75, 66, 0.32);
+    filter: drop-shadow(0 0 18px rgba(211, 75, 66, 0.85));
   }
 }
 
@@ -1531,17 +1539,15 @@ small {
     box-shadow:
       var(--shadow-soft),
       inset 0 1px 0 var(--color-highlight-soft),
-      0 0 0 6px rgba(239, 194, 94, 0.68),
-      0 0 28px rgba(255, 205, 80, 0.74),
-      0 0 46px rgba(255, 205, 80, 0.5);
+      0 0 0 1px rgba(211, 75, 66, 0.35),
+      0 0 10px rgba(211, 75, 66, 0.45);
   }
   50% {
     box-shadow:
       var(--shadow-soft),
       inset 0 1px 0 var(--color-highlight-soft),
-      0 0 0 14px rgba(239, 194, 94, 0.98),
-      0 0 62px rgba(255, 205, 80, 1),
-      0 0 96px rgba(255, 205, 80, 0.76);
+      0 0 0 2px rgba(211, 75, 66, 0.6),
+      0 0 18px rgba(211, 75, 66, 0.85);
   }
 }
 
@@ -3307,10 +3313,10 @@ img[src$='Death.png'] {
   font-weight: 900;
 }
 
-.card-inline-emphasis-underline {
-  text-decoration: underline;
-  text-decoration-thickness: 2px;
-  text-underline-offset: 0.09em;
+.card-inline-emphasis-purple {
+  color: #b786ff;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
 .card-inline-emphasis-key {

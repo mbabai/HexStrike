@@ -7,7 +7,7 @@ const EMPHASIS_ICON_URL = '/public/images/i.png';
 const CARD_ART_BASE_URL = '/public/images/cardart';
 const INLINE_STYLE_CLASS_BY_TAG = {
   bold: 'card-inline-emphasis card-inline-emphasis-bold',
-  u: 'card-inline-emphasis card-inline-emphasis-underline',
+  u: 'card-inline-emphasis-purple',
   key: 'card-inline-emphasis card-inline-emphasis-key',
   move: 'card-inline-emphasis card-inline-emphasis-move',
   attack: 'card-inline-emphasis card-inline-emphasis-attack',
