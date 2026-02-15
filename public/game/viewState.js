@@ -1,7 +1,7 @@
 import { GAME_CONFIG } from './config.js';
 
 export const createViewState = () => ({
-  scale: 1,
+  scale: GAME_CONFIG.defaultScale,
   offset: { x: 0, y: 0 },
   velocity: { x: 0, y: 0 },
   dragging: false,

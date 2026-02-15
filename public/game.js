@@ -1672,6 +1672,9 @@ export const initGame = () => {
     timeIndicatorViewModel.isPlaying = mode !== VIEW_MODE_REPLAY;
     resetAutoAdvanceClock();
     if (actionHud) actionHud.setHidden(mode === VIEW_MODE_REPLAY);
+    if (mode === VIEW_MODE_LIVE) {
+      viewState.scale = GAME_CONFIG.defaultScale;
+    }
     renderer.resize();
     centerView(viewState, renderer.viewport);
     applyThrowLayout(getPendingThrowInteraction());
