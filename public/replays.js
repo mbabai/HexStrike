@@ -14,18 +14,113 @@ const RESULT_LABEL_BY_KEY = {
   draw: 'Draw',
 };
 
+const SORT_KEY_DATE = 'date';
+const SORT_KEY_BEATS = 'beats';
+const SORT_KEY_ZONE = 'zone';
+const SORT_DIRECTION_ASC = 'asc';
+const SORT_DIRECTION_DESC = 'desc';
+
 const formatReplayTimestamp = (value) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Unknown time';
   return date.toLocaleString();
 };
 
-const getReplayLabel = (replay) => `Played ${formatReplayTimestamp(replay?.createdAt)}`;
+const getReplayTimestamp = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 0;
+  return date.getTime();
+};
 
 const normalizeResult = (value) => {
   const normalized = `${value ?? ''}`.trim().toLowerCase();
   if (normalized === 'win' || normalized === 'loss' || normalized === 'draw') return normalized;
   return null;
+};
+
+const normalizeSortDirection = (value) => {
+  const normalized = `${value ?? ''}`.trim().toLowerCase();
+  return normalized === SORT_DIRECTION_ASC ? SORT_DIRECTION_ASC : SORT_DIRECTION_DESC;
+};
+
+const getReplayDateValue = (replay) => getReplayTimestamp(replay?.createdAt);
+
+const getReplayBeatsToEnd = (replay) => {
+  const summaryValue = Number(replay?.beatsToEnd);
+  if (Number.isFinite(summaryValue)) return Math.max(0, Math.round(summaryValue));
+  const outcomeBeat = Number(replay?.matchOutcome?.beatIndex);
+  if (Number.isFinite(outcomeBeat)) return Math.max(0, Math.round(outcomeBeat) + 1);
+  const beats = replay?.state?.public?.beats;
+  if (Array.isArray(beats)) return beats.length;
+  return 0;
+};
+
+const getReplayZoneDistance = (replay) => {
+  const summaryValue = Number(replay?.lossZoneDistance);
+  if (Number.isFinite(summaryValue)) return Math.max(0, Math.round(summaryValue));
+  const lossMethod = `${replay?.lossMethod ?? ''}`.trim().toLowerCase();
+  if (!lossMethod.startsWith('zone')) return null;
+  const match = lossMethod.match(/zone\s+(\d+)/);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.round(parsed));
+};
+
+const getReplayLossMethod = (replay) => {
+  const summaryValue = `${replay?.lossMethod ?? ''}`.trim();
+  if (summaryValue) return summaryValue;
+  const reason = `${replay?.matchOutcome?.reason ?? ''}`.trim().toLowerCase();
+  if (reason === 'no-cards-abyss') return 'fall';
+  if (reason === 'far-from-land') {
+    const zone = getReplayZoneDistance(replay);
+    return Number.isFinite(zone) ? `zone ${zone}` : 'zone';
+  }
+  if (reason === 'forfeit') return 'forfeit';
+  if (reason === 'draw-agreement') return 'draw';
+  return 'unknown';
+};
+
+const normalizeFilterText = (value) => `${value ?? ''}`.trim().toLowerCase();
+
+const matchesPlayerFilter = (replay, filterText) => {
+  const normalizedFilter = normalizeFilterText(filterText);
+  if (!normalizedFilter) return true;
+  // "%text%" semantics: case-insensitive substring match on player usernames.
+  const replayPlayers = Array.isArray(replay?.players) ? replay.players : [];
+  return replayPlayers.some((player) => {
+    const username = `${player?.username ?? ''}`.trim().toLowerCase();
+    return username.includes(normalizedFilter);
+  });
+};
+
+const sortReplayList = (replays, sortKey, sortDirection) => {
+  const direction = normalizeSortDirection(sortDirection) === SORT_DIRECTION_ASC ? 1 : -1;
+  const list = Array.isArray(replays) ? [...replays] : [];
+  list.sort((a, b) => {
+    if (sortKey === SORT_KEY_DATE) {
+      const dateDelta = getReplayDateValue(a) - getReplayDateValue(b);
+      if (dateDelta) return dateDelta * direction;
+    } else if (sortKey === SORT_KEY_BEATS) {
+      const beatDelta = getReplayBeatsToEnd(a) - getReplayBeatsToEnd(b);
+      if (beatDelta) return beatDelta * direction;
+    } else if (sortKey === SORT_KEY_ZONE) {
+      const zoneA = getReplayZoneDistance(a);
+      const zoneB = getReplayZoneDistance(b);
+      const hasA = Number.isFinite(zoneA);
+      const hasB = Number.isFinite(zoneB);
+      if (!hasA && hasB) return 1;
+      if (hasA && !hasB) return -1;
+      if (hasA && hasB) {
+        const zoneDelta = zoneA - zoneB;
+        if (zoneDelta) return zoneDelta * direction;
+      }
+    }
+    const fallbackDateDelta = getReplayDateValue(b) - getReplayDateValue(a);
+    if (fallbackDateDelta) return fallbackDateDelta;
+    return `${a?.id ?? ''}`.localeCompare(`${b?.id ?? ''}`);
+  });
+  return list;
 };
 
 const setOverlayVisible = (overlay, visible) => {
@@ -83,6 +178,9 @@ export const initReplays = async () => {
   const overlay = document.getElementById('savedReplaysOverlay');
   const closeButton = document.getElementById('savedReplaysClose');
   const listRoot = document.getElementById('savedReplaysList');
+  const filterInput = document.getElementById('savedReplaysPlayerFilter');
+  const sortDirectionToggle = document.getElementById('savedReplaysSortDirectionToggle');
+  const sortButtons = overlay ? Array.from(overlay.querySelectorAll('.saved-replays-sort-btn')) : [];
   if (!openButton || !overlay || !closeButton || !listRoot) return;
 
   let characterById = new Map();
@@ -95,6 +193,9 @@ export const initReplays = async () => {
 
   let replayList = [];
   let loadingList = false;
+  let playerFilter = '';
+  let sortKey = SORT_KEY_DATE;
+  let sortDirection = SORT_DIRECTION_DESC;
 
   const openReplay = (replay) => {
     if (!replay?.state?.public) return;
@@ -114,6 +215,38 @@ export const initReplays = async () => {
     }
     await copyTextToClipboard(shareUrl);
     return shareUrl;
+  };
+
+  const setSortButtonState = () => {
+    sortButtons.forEach((button) => {
+      const key = `${button.dataset.sortKey ?? ''}`.trim().toLowerCase();
+      button.classList.toggle('is-active', key === sortKey);
+    });
+    if (sortDirectionToggle) {
+      sortDirectionToggle.textContent =
+        sortDirection === SORT_DIRECTION_ASC ? 'Ascending' : 'Descending';
+      sortDirectionToggle.setAttribute(
+        'aria-label',
+        `Sort order: ${sortDirection === SORT_DIRECTION_ASC ? 'ascending' : 'descending'}`,
+      );
+    }
+  };
+
+  const createMetric = (labelText, valueText) => {
+    const metric = document.createElement('p');
+    metric.className = 'saved-replay-metric';
+
+    const label = document.createElement('span');
+    label.className = 'saved-replay-metric-label';
+    label.textContent = labelText;
+
+    const value = document.createElement('span');
+    value.className = 'saved-replay-metric-value';
+    value.textContent = valueText;
+
+    metric.appendChild(label);
+    metric.appendChild(value);
+    return metric;
   };
 
   const buildPlayerBadge = (player) => {
@@ -161,7 +294,16 @@ export const initReplays = async () => {
       setBusyText(listRoot, 'No games in history yet.');
       return;
     }
-    replayList.forEach((replay) => {
+    const visibleReplays = sortReplayList(
+      replayList.filter((replay) => matchesPlayerFilter(replay, playerFilter)),
+      sortKey,
+      sortDirection,
+    );
+    if (!visibleReplays.length) {
+      setBusyText(listRoot, 'No games match that player filter.');
+      return;
+    }
+    visibleReplays.forEach((replay) => {
       const row = document.createElement('article');
       row.className = 'saved-replay-row panel';
 
@@ -175,12 +317,14 @@ export const initReplays = async () => {
         players.appendChild(buildPlayerBadge(player));
       });
 
-      const title = document.createElement('p');
-      title.className = 'saved-replay-name';
-      title.textContent = getReplayLabel(replay);
+      const metrics = document.createElement('div');
+      metrics.className = 'saved-replay-metrics';
+      metrics.appendChild(createMetric('Date', formatReplayTimestamp(replay?.createdAt)));
+      metrics.appendChild(createMetric('Beats', `${getReplayBeatsToEnd(replay)}`));
+      metrics.appendChild(createMetric('Termination', getReplayLossMethod(replay)));
 
       header.appendChild(players);
-      header.appendChild(title);
+      header.appendChild(metrics);
 
       const actions = document.createElement('div');
       actions.className = 'saved-replay-actions';
@@ -243,6 +387,35 @@ export const initReplays = async () => {
       loadingList = false;
     }
   };
+
+  if (filterInput) {
+    filterInput.addEventListener('input', () => {
+      playerFilter = `${filterInput.value ?? ''}`;
+      renderReplayList();
+    });
+  }
+
+  sortButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      const requestedKey = `${button.dataset.sortKey ?? ''}`.trim().toLowerCase();
+      if (requestedKey !== SORT_KEY_DATE && requestedKey !== SORT_KEY_BEATS && requestedKey !== SORT_KEY_ZONE) {
+        return;
+      }
+      sortKey = requestedKey;
+      setSortButtonState();
+      renderReplayList();
+    });
+  });
+
+  if (sortDirectionToggle) {
+    sortDirectionToggle.addEventListener('click', () => {
+      sortDirection = sortDirection === SORT_DIRECTION_ASC ? SORT_DIRECTION_DESC : SORT_DIRECTION_ASC;
+      setSortButtonState();
+      renderReplayList();
+    });
+  }
+
+  setSortButtonState();
 
   openButton.addEventListener('click', () => {
     setOverlayVisible(overlay, true);

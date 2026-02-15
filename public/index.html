@@ -212,6 +212,25 @@
           <h2 id="savedReplaysTitle">Games History</h2>
           <button id="savedReplaysClose" class="btn btn-ghost btn-small" type="button">Close</button>
         </div>
+        <div class="saved-replays-controls">
+          <label class="saved-replays-player-filter" for="savedReplaysPlayerFilter">
+            <span>Player</span>
+            <input
+              id="savedReplaysPlayerFilter"
+              class="saved-replays-filter-input"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </label>
+          <div class="saved-replays-sort-controls" role="group" aria-label="Sort games history columns">
+            <span class="saved-replays-sort-label">Sort</span>
+            <button id="savedReplaysSortDate" class="btn btn-ghost btn-small saved-replays-sort-btn" type="button" data-sort-key="date">Date</button>
+            <button id="savedReplaysSortBeats" class="btn btn-ghost btn-small saved-replays-sort-btn" type="button" data-sort-key="beats">Beats</button>
+            <button id="savedReplaysSortZone" class="btn btn-ghost btn-small saved-replays-sort-btn" type="button" data-sort-key="zone">Termination</button>
+            <button id="savedReplaysSortDirectionToggle" class="btn btn-ghost btn-small saved-replays-order-toggle" type="button" aria-label="Toggle sort direction">Descending</button>
+          </div>
+        </div>
         <div id="savedReplaysList" class="saved-replays-list" aria-live="polite"></div>
       </div>
     </div>

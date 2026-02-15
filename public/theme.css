@@ -1758,7 +1758,7 @@ small {
   max-height: 88vh;
   overflow: hidden;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -1773,11 +1773,64 @@ small {
   margin: 0;
 }
 
+.saved-replays-controls {
+  grid-row: 2;
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.saved-replays-player-filter {
+  display: grid;
+  gap: 6px;
+  width: min(100%, 360px);
+}
+
+.saved-replays-player-filter > span {
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-subtle);
+}
+
+.saved-replays-filter-input {
+  display: block;
+  width: 100%;
+}
+
+.saved-replays-sort-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.saved-replays-sort-label {
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-subtle);
+}
+
+.saved-replays-sort-btn.is-active {
+  border-color: var(--color-accent);
+  color: var(--color-accent-strong);
+}
+
+.saved-replays-order-toggle {
+  margin-left: auto;
+  min-width: 136px;
+}
+
 .saved-replays-list {
+  grid-row: 3;
   display: grid;
   gap: 12px;
   overflow: auto;
   padding-right: 2px;
+  min-height: 0;
 }
 
 .saved-replays-empty {
@@ -1864,10 +1917,50 @@ img[src$='Death.png'] {
   font-size: 0.9rem;
 }
 
+.saved-replay-metrics {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.saved-replay-metric {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--color-divider);
+  border-radius: 10px;
+  background: var(--color-surface-1-muted);
+  display: grid;
+  gap: 2px;
+}
+
+.saved-replay-metric-label {
+  color: var(--color-subtle);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.saved-replay-metric-value {
+  color: var(--color-text);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
 .saved-replay-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+@media (max-width: 700px) {
+  .saved-replay-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .saved-replays-order-toggle {
+    margin-left: 0;
+  }
 }
 
 .deck-preview {

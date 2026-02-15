@@ -1378,6 +1378,150 @@ export function buildServer(port: number) {
     }
   };
 
+  const normalizeReplayIndex = (value: unknown): number | null => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return null;
+    return Math.max(0, Math.round(numeric));
+  };
+
+  const toFiniteHexCoord = (value: unknown): HexCoord | null => {
+    if (!value || typeof value !== 'object') return null;
+    const coord = value as Partial<HexCoord>;
+    const q = Number(coord.q);
+    const r = Number(coord.r);
+    if (!Number.isFinite(q) || !Number.isFinite(r)) return null;
+    return { q: Math.round(q), r: Math.round(r) };
+  };
+
+  const getHexDistance = (a: HexCoord, b: HexCoord): number => {
+    const dq = a.q - b.q;
+    const dr = a.r - b.r;
+    const ds = (a.q + a.r) - (b.q + b.r);
+    return (Math.abs(dq) + Math.abs(dr) + Math.abs(ds)) / 2;
+  };
+
+  const resolveReplayLossZoneDistance = (
+    replay: ReplayDoc,
+    outcome: NonNullable<GameStateDoc['public']['matchOutcome']>,
+  ): number | null => {
+    if (!outcome || outcome.reason !== 'far-from-land' || !outcome.loserUserId) return null;
+    const publicState = replay.state?.public;
+    if (!publicState) return null;
+    const landTiles = Array.isArray(publicState.land)
+      ? publicState.land.map((tile) => toFiniteHexCoord(tile)).filter(Boolean) as HexCoord[]
+      : [];
+    if (!landTiles.length) return null;
+
+    const characters = Array.isArray(publicState.startingCharacters) && publicState.startingCharacters.length
+      ? publicState.startingCharacters
+      : Array.isArray(publicState.characters)
+        ? publicState.characters
+        : [];
+    const target = characters.find(
+      (character) =>
+        character?.userId === outcome.loserUserId
+        || character?.username === outcome.loserUserId,
+    );
+    const keys = new Set<string>();
+    if (outcome.loserUserId) keys.add(outcome.loserUserId);
+    if (target?.userId) keys.add(target.userId);
+    if (target?.username) keys.add(target.username);
+    const replayPlayer = Array.isArray(replay.players)
+      ? replay.players.find(
+          (player) =>
+            player.userId === outcome.loserUserId
+            || player.username === outcome.loserUserId,
+        )
+      : null;
+    if (replayPlayer?.userId) keys.add(replayPlayer.userId);
+    if (replayPlayer?.username) keys.add(replayPlayer.username);
+    if (!keys.size) return null;
+
+    let lastLocation = toFiniteHexCoord(target?.position);
+    const beats = Array.isArray(publicState.beats) ? publicState.beats : [];
+    const outcomeIndex = normalizeReplayIndex(outcome.beatIndex);
+    const scanLimit = outcomeIndex === null
+      ? beats.length - 1
+      : Math.min(outcomeIndex, beats.length - 1);
+
+    for (let index = 0; index <= scanLimit; index += 1) {
+      const beat = beats[index];
+      if (!Array.isArray(beat)) continue;
+      const entry = beat.find((item) => {
+        const key = `${item?.userId ?? item?.userID ?? item?.username ?? ''}`.trim();
+        return key && keys.has(key);
+      });
+      if (!entry) continue;
+      const location = toFiniteHexCoord(entry.location);
+      if (location) lastLocation = location;
+    }
+
+    if (!lastLocation) return null;
+    let minDistance = Number.POSITIVE_INFINITY;
+    landTiles.forEach((tile) => {
+      const distance = getHexDistance(lastLocation as HexCoord, tile);
+      if (distance < minDistance) minDistance = distance;
+    });
+    if (!Number.isFinite(minDistance)) return null;
+    return Math.max(0, Math.round(minDistance));
+  };
+
+  const buildReplaySummaryStats = (
+    replay: ReplayDoc,
+    outcome: GameStateDoc['public']['matchOutcome'] | null,
+  ): { beatsToEnd: number | null; lossMethod: string | null; lossZoneDistance: number | null } => {
+    const outcomeIndex = normalizeReplayIndex(outcome?.beatIndex);
+    const beatsLength = Array.isArray(replay.state?.public?.beats) ? replay.state.public.beats.length : null;
+    const beatsToEnd = outcomeIndex !== null ? outcomeIndex + 1 : beatsLength;
+
+    if (!outcome) {
+      return {
+        beatsToEnd,
+        lossMethod: null,
+        lossZoneDistance: null,
+      };
+    }
+
+    if (outcome.reason === 'no-cards-abyss') {
+      return {
+        beatsToEnd,
+        lossMethod: 'fall',
+        lossZoneDistance: null,
+      };
+    }
+
+    if (outcome.reason === 'far-from-land') {
+      const zoneDistance = resolveReplayLossZoneDistance(replay, outcome);
+      return {
+        beatsToEnd,
+        lossMethod: Number.isFinite(zoneDistance) ? `zone ${zoneDistance}` : 'zone',
+        lossZoneDistance: Number.isFinite(zoneDistance) ? zoneDistance : null,
+      };
+    }
+
+    if (outcome.reason === 'forfeit') {
+      return {
+        beatsToEnd,
+        lossMethod: 'forfeit',
+        lossZoneDistance: null,
+      };
+    }
+
+    if (outcome.reason === 'draw-agreement') {
+      return {
+        beatsToEnd,
+        lossMethod: 'draw',
+        lossZoneDistance: null,
+      };
+    }
+
+    return {
+      beatsToEnd,
+      lossMethod: null,
+      lossZoneDistance: null,
+    };
+  };
+
   const resolveReplayResult = (
     outcome: GameStateDoc['public']['matchOutcome'] | undefined,
     userId: string,
@@ -1422,12 +1566,17 @@ export function buildServer(port: number) {
   const buildReplaySummary = (replayDoc: ReplayDoc) => {
     const replay = withReplaySharePath(replayDoc);
     const sharePath = replay.sharePath ?? buildReplaySharePath(replay.id);
+    const outcome = replay.matchOutcome ?? replay.state?.public?.matchOutcome ?? null;
+    const stats = buildReplaySummaryStats(replay, outcome);
     return {
       id: replay.id,
       sourceGameId: replay.sourceGameId,
       sourceMatchId: replay.sourceMatchId ?? null,
       players: replay.players,
-      matchOutcome: replay.matchOutcome ?? replay.state?.public?.matchOutcome ?? null,
+      matchOutcome: outcome,
+      beatsToEnd: stats.beatsToEnd,
+      lossMethod: stats.lossMethod,
+      lossZoneDistance: stats.lossZoneDistance,
       sharePath,
       shareUrl: buildReplayShareUrl(sharePath),
       createdAt: replay.createdAt,
