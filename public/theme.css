@@ -24,6 +24,7 @@
   --color-accent: #d5a34a;
   --color-accent-strong: #f3c05b;
   --color-accent-deep: #b38137;
+  --color-gold-title: #e7c777;
   --color-accent-glow: rgba(213, 163, 74, 0.25);
   --color-accent-glow-strong: rgba(213, 163, 74, 0.55);
   --color-player-accent: #7dcfff;
@@ -2068,6 +2069,12 @@ img[src$='Death.png'] {
   transition: color 120ms ease, text-shadow 120ms ease;
 }
 
+.deck-builder-gold-title {
+  color: var(--color-gold-title);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
 .deck-builder-subtitle.is-capacity-pulse {
   animation: deckBuilderCapacityPulse 380ms ease 1;
 }
@@ -3060,6 +3067,11 @@ img[src$='Death.png'] {
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
+}
+
+.action-card-title.is-unique-movement {
+  color: var(--color-gold-title);
+  text-shadow: 0 0 10px rgba(213, 163, 74, 0.45);
 }
 
 .action-card-badges {

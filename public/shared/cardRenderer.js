@@ -5,6 +5,7 @@ const DAMAGE_ICON_URL = '/public/images/DamageIcon.png';
 const KNOCKBACK_ICON_URL = '/public/images/KnockBackIcon.png';
 const EMPHASIS_ICON_URL = '/public/images/i.png';
 const CARD_ART_BASE_URL = '/public/images/cardart';
+const UNIQUE_MOVEMENT_CARD_IDS = new Set(['grappling-hook', 'fleche', 'leap']);
 const INLINE_STYLE_CLASS_BY_TAG = {
   bold: 'card-inline-emphasis card-inline-emphasis-bold',
   u: 'card-inline-emphasis-purple',
@@ -65,6 +66,15 @@ const formatStatValue = (value) => {
   const raw = `${value}`.trim();
   if (!raw) return '0';
   return raw.toUpperCase() === 'T' ? 'T' : raw;
+};
+
+const isNonZeroStatValue = (value) => {
+  if (value === null || value === undefined || value === '') return false;
+  const raw = `${value}`.trim();
+  if (!raw) return false;
+  if (raw.toUpperCase() === 'T') return true;
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) && parsed !== 0;
 };
 
 const buildStatBadge = (type, value, iconUrl) => {
@@ -248,6 +258,11 @@ export const fitAllCardText = (root = document) => {
   root.querySelectorAll('.action-card-surface-row').forEach((row) => fitTextToRow(row));
 };
 
+const shouldRenderStatBadges = (card) => {
+  if (card?.type === 'ability') return true;
+  return isNonZeroStatValue(card?.damage) || isNonZeroStatValue(card?.kbf);
+};
+
 export const buildCardElement = (card, options = {}) => {
   const { asButton = false, className = '' } = options;
   const element = document.createElement(asButton ? 'button' : 'div');
@@ -272,6 +287,9 @@ export const buildCardElement = (card, options = {}) => {
 
   const title = document.createElement('span');
   title.className = 'action-card-title';
+  if (card.type === 'movement' && UNIQUE_MOVEMENT_CARD_IDS.has(card.id)) {
+    title.classList.add('is-unique-movement');
+  }
   title.textContent = card.name;
   title.title = card.name;
   header.appendChild(title);
@@ -347,7 +365,7 @@ export const buildCardElement = (card, options = {}) => {
   body.appendChild(actions);
   body.appendChild(surface);
 
-  if (card.type === 'ability') {
+  if (shouldRenderStatBadges(card)) {
     const stats = document.createElement('div');
     stats.className = 'action-card-stats';
     stats.appendChild(buildStatBadge('damage', card.damage, DAMAGE_ICON_URL));

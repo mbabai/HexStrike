@@ -4,10 +4,32 @@ import { getOrCreateUserId, getSelectedDeckId, getStoredCustomDecks, setStoredCu
 const LEGACY_DECK_STORAGE_PREFIX = 'hexstrikeDecks:';
 const LEGACY_DECK_STORAGE_VERSION_PREFIX = 'hexstrikeDecksVersion:';
 const LEGACY_DECK_STORAGE_VERSION = 2;
+const REQUIRED_MOVEMENT_CARD_ID = 'step';
+const MAX_MOVEMENT_CARDS = 4;
+const UNIQUE_MOVEMENT_CARD_IDS = new Set(['grappling-hook', 'fleche', 'leap']);
 let baseDecksPromise = null;
 
 const getLegacyDeckStorageKey = (userId) => `${LEGACY_DECK_STORAGE_PREFIX}${userId}`;
 const getLegacyDeckStorageVersionKey = (userId) => `${LEGACY_DECK_STORAGE_VERSION_PREFIX}${userId}`;
+
+const isUniqueMovementCard = (cardId) => UNIQUE_MOVEMENT_CARD_IDS.has(`${cardId ?? ''}`.trim());
+
+const normalizeMovementCards = (cards) => {
+  const source = Array.isArray(cards) ? cards : [];
+  const normalized = [];
+  let hasUniqueMovement = false;
+  source.forEach((rawCardId) => {
+    const cardId = `${rawCardId ?? ''}`.trim();
+    if (!cardId || cardId === REQUIRED_MOVEMENT_CARD_ID) return;
+    if (normalized.includes(cardId)) return;
+    if (isUniqueMovementCard(cardId)) {
+      if (hasUniqueMovement) return;
+      hasUniqueMovement = true;
+    }
+    normalized.push(cardId);
+  });
+  return [REQUIRED_MOVEMENT_CARD_ID, ...normalized].slice(0, MAX_MOVEMENT_CARDS);
+};
 
 const normalizeDeckDefinition = (deck, index) => {
   if (!deck || typeof deck !== 'object') {
@@ -15,7 +37,7 @@ const normalizeDeckDefinition = (deck, index) => {
       id: `deck-${index}`,
       name: `Deck ${index + 1}`,
       characterId: '',
-      movement: [],
+      movement: [REQUIRED_MOVEMENT_CARD_ID],
       ability: [],
       isBase: false,
     };
@@ -23,9 +45,7 @@ const normalizeDeckDefinition = (deck, index) => {
   const id = typeof deck.id === 'string' && deck.id.trim() ? deck.id.trim() : `deck-${index}`;
   const name = typeof deck.name === 'string' && deck.name.trim() ? deck.name.trim() : id;
   const characterId = typeof deck.characterId === 'string' ? deck.characterId.trim() : '';
-  const movement = Array.isArray(deck.movement)
-    ? deck.movement.map((cardId) => `${cardId}`.trim()).filter(Boolean)
-    : [];
+  const movement = normalizeMovementCards(deck.movement);
   const ability = Array.isArray(deck.ability)
     ? deck.ability.map((cardId) => `${cardId}`.trim()).filter(Boolean)
     : [];

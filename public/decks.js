@@ -14,6 +14,10 @@ import {
 
 const REQUIRED_MOVEMENT = 4;
 const REQUIRED_ABILITY = 12;
+const REQUIRED_MOVEMENT_CARD_ID = 'step';
+const UNIQUE_MOVEMENT_CARD_IDS = new Set(['grappling-hook', 'fleche', 'leap']);
+const UNIQUE_MOVEMENT_LIMIT_MESSAGE_HTML =
+  'Only one <span class="deck-builder-gold-title">GOLD TITLE</span> card per deck.';
 
 const CHARACTER_OPTIONS_FALLBACK = [
   { id: 'murelious', name: 'Murelious', image: '/public/images/Murelious.png', powerText: '' },
@@ -99,6 +103,31 @@ const sortCards = (cards, sortKey) => {
     return list.sort((a, b) => getNumericValue(b.kbf) - getNumericValue(a.kbf));
   }
   return list.sort((a, b) => a.name.localeCompare(b.name));
+};
+
+const isUniqueMovementCard = (cardId) => UNIQUE_MOVEMENT_CARD_IDS.has(`${cardId ?? ''}`.trim());
+
+const normalizeMovementSelection = (movementIds) => {
+  const normalized = [];
+  let hasUniqueMovement = false;
+  const source = Array.isArray(movementIds) ? movementIds : [];
+  source.forEach((rawCardId) => {
+    const cardId = `${rawCardId ?? ''}`.trim();
+    if (!cardId || cardId === REQUIRED_MOVEMENT_CARD_ID) return;
+    if (normalized.includes(cardId)) return;
+    if (isUniqueMovementCard(cardId)) {
+      if (hasUniqueMovement) return;
+      hasUniqueMovement = true;
+    }
+    normalized.push(cardId);
+  });
+  return [REQUIRED_MOVEMENT_CARD_ID, ...normalized].slice(0, REQUIRED_MOVEMENT);
+};
+
+const hasUniqueMovementConflict = (movementIds, nextCardId) => {
+  if (!isUniqueMovementCard(nextCardId)) return false;
+  const selected = Array.isArray(movementIds) ? movementIds : [];
+  return selected.some((cardId) => isUniqueMovementCard(cardId));
 };
 
 export const initDecks = async () => {
@@ -201,7 +230,7 @@ export const initDecks = async () => {
 
   const builderState = {
     characterId: null,
-    movement: [],
+    movement: normalizeMovementSelection([]),
     ability: [],
     typeFilter: deckTypeFilter.value,
     sort: deckSort.value,
@@ -212,7 +241,11 @@ export const initDecks = async () => {
   };
 
   let builderTextFitRaf = null;
+  let builderSubtitleResetTimeout = null;
   let playerName = getStoredUsername() || 'anonymous';
+  const builderSubtitleDefaultText =
+    `${deckBuilderSubtitle.textContent ?? ''}`.trim() ||
+    'Pick a character, 4 movement cards, and 12 ordered ability cards.';
 
   const fitBuilderCardText = () => {
     if (builderOverlay.hidden) return;
@@ -229,6 +262,52 @@ export const initDecks = async () => {
       builderTextFitRaf = null;
       fitBuilderCardText();
     });
+  };
+
+  const resetBuilderSubtitle = () => {
+    if (builderSubtitleResetTimeout !== null) {
+      clearTimeout(builderSubtitleResetTimeout);
+      builderSubtitleResetTimeout = null;
+    }
+    deckBuilderSubtitle.textContent = builderSubtitleDefaultText;
+  };
+
+  const showBuilderSubtitleMessage = (html, durationMs = 2000) => {
+    if (builderSubtitleResetTimeout !== null) {
+      clearTimeout(builderSubtitleResetTimeout);
+      builderSubtitleResetTimeout = null;
+    }
+    deckBuilderSubtitle.innerHTML = html;
+    if (!Number.isFinite(durationMs) || durationMs <= 0) return;
+    builderSubtitleResetTimeout = setTimeout(() => {
+      builderSubtitleResetTimeout = null;
+      deckBuilderSubtitle.textContent = builderSubtitleDefaultText;
+    }, durationMs);
+  };
+
+  const pulseBuilderSubtitle = () => {
+    deckBuilderSubtitle.classList.remove('is-capacity-pulse');
+    void deckBuilderSubtitle.offsetWidth;
+    deckBuilderSubtitle.classList.add('is-capacity-pulse');
+    setTimeout(() => {
+      deckBuilderSubtitle.classList.remove('is-capacity-pulse');
+    }, 420);
+  };
+
+  const playCapacityShake = (element, options = {}) => {
+    const { subtitleHtml = '', subtitleDurationMs = 0 } = options;
+    if (subtitleHtml) {
+      showBuilderSubtitleMessage(subtitleHtml, subtitleDurationMs);
+    }
+    pulseBuilderSubtitle();
+    if (!element) return;
+    element.classList.remove('is-shaking');
+    // Force reflow so repeated rejects restart the animation.
+    void element.offsetWidth;
+    element.classList.add('is-shaking');
+    setTimeout(() => {
+      element.classList.remove('is-shaking');
+    }, 360);
   };
 
   const renderPlayerName = () => {
@@ -277,6 +356,8 @@ export const initDecks = async () => {
 
   const isDeckComplete = () =>
     Boolean(builderState.characterId) &&
+    builderState.movement.includes(REQUIRED_MOVEMENT_CARD_ID) &&
+    builderState.movement.filter((cardId) => isUniqueMovementCard(cardId)).length <= 1 &&
     builderState.movement.length === REQUIRED_MOVEMENT &&
     builderState.ability.length === REQUIRED_ABILITY;
 
@@ -442,7 +523,7 @@ export const initDecks = async () => {
 
   const resetBuilder = () => {
     builderState.characterId = null;
-    builderState.movement = [];
+    builderState.movement = normalizeMovementSelection([]);
     builderState.ability = [];
     builderState.draggingAbilityId = null;
     builderState.suppressClick = false;
@@ -454,7 +535,7 @@ export const initDecks = async () => {
 
   const loadBuilderFromDeck = (deck) => {
     builderState.characterId = deck.characterId || null;
-    builderState.movement = [...deck.movement];
+    builderState.movement = normalizeMovementSelection(deck.movement);
     builderState.ability = [...deck.ability];
     builderState.editingDeckId = deck.id;
     builderState.editingDeckIsBase = Boolean(deck.isBase);
@@ -516,26 +597,6 @@ export const initDecks = async () => {
   };
 
   const renderLibrary = () => {
-    const pulseBuilderSubtitle = () => {
-      deckBuilderSubtitle.classList.remove('is-capacity-pulse');
-      void deckBuilderSubtitle.offsetWidth;
-      deckBuilderSubtitle.classList.add('is-capacity-pulse');
-      setTimeout(() => {
-        deckBuilderSubtitle.classList.remove('is-capacity-pulse');
-      }, 420);
-    };
-
-    const playCapacityShake = (element) => {
-      element.classList.remove('is-shaking');
-      // Force reflow so repeated rejects restart the animation.
-      void element.offsetWidth;
-      element.classList.add('is-shaking');
-      pulseBuilderSubtitle();
-      setTimeout(() => {
-        element.classList.remove('is-shaking');
-      }, 360);
-    };
-
     const allCards = [...catalog.movement, ...catalog.ability];
     const selected = new Set([...builderState.movement, ...builderState.ability]);
     const filtered = allCards.filter((card) => {
@@ -554,11 +615,18 @@ export const initDecks = async () => {
       cardElement.addEventListener('click', () => {
         if (isSelected) return;
         if (card.type === 'movement') {
+          if (hasUniqueMovementConflict(builderState.movement, card.id)) {
+            playCapacityShake(cardElement, {
+              subtitleHtml: UNIQUE_MOVEMENT_LIMIT_MESSAGE_HTML,
+              subtitleDurationMs: 2000,
+            });
+            return;
+          }
           if (builderState.movement.length >= REQUIRED_MOVEMENT) {
             playCapacityShake(cardElement);
             return;
           }
-          builderState.movement = [...builderState.movement, card.id];
+          builderState.movement = normalizeMovementSelection([...builderState.movement, card.id]);
         } else if (card.type === 'ability') {
           if (builderState.ability.length >= REQUIRED_ABILITY) {
             playCapacityShake(cardElement);
@@ -574,9 +642,15 @@ export const initDecks = async () => {
     fitBuilderCardText();
   };
 
-  const removeSelectedCard = (cardId, type) => {
+  const removeSelectedCard = (cardId, type, feedbackElement = null) => {
     if (type === 'movement') {
-      builderState.movement = builderState.movement.filter((id) => id !== cardId);
+      if (cardId === REQUIRED_MOVEMENT_CARD_ID) {
+        playCapacityShake(feedbackElement);
+        return;
+      }
+      builderState.movement = normalizeMovementSelection(
+        builderState.movement.filter((id) => id !== cardId),
+      );
     } else if (type === 'ability') {
       builderState.ability = builderState.ability.filter((id) => id !== cardId);
     }
@@ -619,7 +693,7 @@ export const initDecks = async () => {
 
     hitbox.addEventListener('click', () => {
       if (builderState.suppressClick) return;
-      removeSelectedCard(cardId, type);
+      removeSelectedCard(cardId, type, cardElement);
     });
 
     if (allowDrag) {
@@ -695,6 +769,7 @@ export const initDecks = async () => {
 
   const openBuilder = (deck = null) => {
     resetBuilder();
+    resetBuilderSubtitle();
     if (deck) {
       loadBuilderFromDeck(deck);
       deckBuilderTitle.textContent = 'Edit Deck';
@@ -712,6 +787,7 @@ export const initDecks = async () => {
 
   const closeBuilder = () => {
     closeCharacterOverlay();
+    resetBuilderSubtitle();
     builderOverlay.hidden = true;
   };
 
@@ -723,7 +799,7 @@ export const initDecks = async () => {
     const payload = {
       name,
       characterId: builderState.characterId,
-      movement: [...builderState.movement],
+      movement: normalizeMovementSelection(builderState.movement),
       ability: [...builderState.ability],
     };
 

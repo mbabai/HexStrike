@@ -14,6 +14,7 @@ Win by forcing the opponent to lose. A player loses if either:
 
 ## Setup
 1. Each player chooses a character and a deck (4 movement, 12 ability, no duplicates).
+   - Deck building restrictions: `Step` is required in every deck and cannot be removed, and only one gold-titled movement card may be included per deck.
 2. Place characters on opposite ends of land at the starting hexes; they face each other.
 3. Each player lays out their 4 movement cards as available.
 4. Each player draws the top 4 ability cards to form their hand; the remaining ability cards form the ability deck in deck order.
