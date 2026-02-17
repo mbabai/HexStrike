@@ -51,7 +51,7 @@
       "id": "fleche",
       "name": "Fleche",
       "type": "movement",
-      "priority": 25,
+      "priority": 62,
       "actions": [
         "W",
         "m",
@@ -104,7 +104,7 @@
       "id": "leap",
       "name": "Leap",
       "type": "movement",
-      "priority": 32,
+      "priority": 66
       "actions": [
         "W",
         "W",
