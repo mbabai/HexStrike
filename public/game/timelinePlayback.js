@@ -421,19 +421,20 @@ const parseActionTokens = (action) => {
     .filter((token) => token.type);
 };
 
+const isExactActionSymbolToken = (token, symbol) =>
+  token.type === `${symbol ?? ''}`.trim().toLowerCase() && token.path === '';
+
+const isExactGrapplingHookPassiveAttack = (token, tokenCount) =>
+  tokenCount === 1 && isExactActionSymbolToken(token, 'a');
+
 const applyGiganticStaffAction = (action) => {
   const trimmed = `${action ?? ''}`.trim();
   if (!trimmed) return action;
   const bracketed = isBracketedTokenAction(trimmed);
   const label = normalizeActionToken(trimmed);
   if (!label) return action;
-  if (label[label.length - 1]?.toLowerCase() !== 'm') return action;
-  const path = label.slice(0, -1);
-  const match = path.match(/^(.*?)(\d+)?$/);
-  const prefix = match?.[1] ?? '';
-  const distance = match?.[2] ? Math.max(2, Number(match[2])) : 2;
-  const nextPath = `${prefix}${distance || ''}`;
-  const nextLabel = `${nextPath}j`;
+  if (label.toLowerCase() !== 'm') return action;
+  const nextLabel = '2j';
   return bracketed ? `[${nextLabel}]` : nextLabel;
 };
 
@@ -1067,7 +1068,8 @@ const buildActionSteps = (
             const damageReduction = getHealingHarmonyReduction(targetEntry);
             const adjustedDamage = applyDamageToUser(targetId, Math.max(0, rawDamage - damageReduction));
             damageChanges.push({ targetId, delta: adjustedDamage });
-            const usesGrapplingHookPassive = hasGrapplingHookPassive && token.type === 'a';
+            const usesGrapplingHookPassive =
+              hasGrapplingHookPassive && isExactGrapplingHookPassiveAttack(token, tokens.length);
             const attackDirection = getKnockbackDirection(origin, destination, lastStep);
             const knockbackPath = [{ q: targetState.position.q, r: targetState.position.r }];
             const { knockbackDirection, flipPosition } = applyGrapplingHookPassiveFlip(
@@ -2007,14 +2009,14 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
       }
 
       if (entry.passiveCardId === BURNING_STRIKE_CARD_ID) {
-        const hasMoveToken = actionTokens.some((token) => token.type === 'm');
+        const hasMoveToken = actionTokens.some((token) => isExactActionSymbolToken(token, 'm'));
         if (hasMoveToken && !sameCoord(endPosition, origin)) {
           queueDelayedPassiveFire(index + 1, origin, actorId);
         }
       }
 
       if (entry.passiveCardId === BOW_SHOT_CARD_ID) {
-        const hasMoveToken = actionTokens.some((token) => token.type === 'm');
+        const hasMoveToken = actionTokens.some((token) => isExactActionSymbolToken(token, 'm'));
         const rotationMagnitude = getRotationMagnitude(actionSetRotationByUser.get(actorId) ?? '');
         if (hasMoveToken && (rotationMagnitude === 1 || rotationMagnitude === 2) && !sameCoord(endPosition, origin)) {
           const actionSetFacing = actionSetFacingByUser.get(actorId) ?? originState.facing ?? 0;

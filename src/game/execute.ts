@@ -295,13 +295,8 @@ const applyGiganticStaffAction = (action: string): string => {
   const bracketed = isBracketedAction(trimmed);
   const label = normalizeActionToken(trimmed);
   if (!label) return action;
-  if (label[label.length - 1]?.toLowerCase() !== 'm') return action;
-  const path = label.slice(0, -1);
-  const match = path.match(/^(.*?)(\d+)?$/);
-  const prefix = match?.[1] ?? '';
-  const distance = match?.[2] ? Math.max(2, Number(match[2])) : 2;
-  const nextPath = `${prefix}${distance || ''}`;
-  const nextLabel = `${nextPath}j`;
+  if (label.toLowerCase() !== 'm') return action;
+  const nextLabel = '2j';
   return bracketed ? `[${nextLabel}]` : nextLabel;
 };
 
@@ -316,6 +311,16 @@ const parseActionTokens = (action: string) => {
     })
     .filter((token) => token.type);
 };
+
+const isExactActionSymbolToken = (
+  token: { type: string; path: string },
+  symbol: string,
+): boolean => token.type === `${symbol ?? ''}`.trim().toLowerCase() && token.path === '';
+
+const isExactGrapplingHookPassiveAttack = (
+  token: { type: string; path: string },
+  tokenCount: number,
+): boolean => tokenCount === 1 && isExactActionSymbolToken(token, 'a');
 
 const buildPath = (origin: { q: number; r: number }, steps: Array<{ dir: string; distance: number }>, facing: number) => {
   const positions: Array<{ q: number; r: number }> = [];
@@ -3867,7 +3872,8 @@ export const executeBeatsWithInteractions = (
                 ) {
                   addFireHexToken(destination, actorId);
                 }
-                const usesGrapplingHookPassive = hasGrapplingHookPassive && token.type === 'a';
+                const usesGrapplingHookPassive =
+                  hasGrapplingHookPassive && isExactGrapplingHookPassiveAttack(token, tokens.length);
                 const attackDirection = getKnockbackDirection(origin, destination, lastStep);
                 const { knockbackDirection } = applyGrapplingHookPassiveFlip(
                   usesGrapplingHookPassive,
@@ -4017,7 +4023,7 @@ export const executeBeatsWithInteractions = (
             actorState.position = { q: finalPosition.q, r: finalPosition.r };
             occupancy.set(coordKey(actorState.position), actorId);
           }
-          if (!interruptedByArrow && token.type === 'm' && !sameCoord(finalPosition, origin)) {
+          if (!interruptedByArrow && isExactActionSymbolToken(token, 'm') && !sameCoord(finalPosition, origin)) {
             if (entry.passiveCardId === BURNING_STRIKE_CARD_ID) {
               queueDelayedPassiveFireHex(index + 1, origin, actorId);
             }

@@ -94,7 +94,8 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Action-set insertion is per player: replace that player's first open slot (missing entry or `E`), fill empty beats in place, and avoid shifting other players' beats.
 - Action-set rotations use the player-selected rotation only on the first action entry; later rotations are reserved for card-text injections and should set `rotationSource: 'forced'`.
 - Action-set submissions must include `activeCardId`, `passiveCardId`, and `rotation`; the server rebuilds the action list from the card catalog and rejects unavailable or exhausted cards.
-- Fleche passive skips the final `W` in the active ability action list if any prior action token contains an `a`; keep `src/game/cardText/passiveMovement.ts` and `public/game/cardText/passiveMovement.js` in sync.
+- Card-text symbol placeholders (`{a}`, `{m}`, `{W}`, etc.) should match exact action symbols by default; only broaden to type-wide matching when the text explicitly says general categories like "attacks", "movement", or "jumps."
+- Fleche passive skips the final `W` only when a prior token contains an exact `a` symbol (for example `a` or `2a-a`, but not `2a` alone); keep `src/game/cardText/passiveMovement.ts` and `public/game/cardText/passiveMovement.js` in sync.
 - Ninja Roll passive only transforms exact `{a}` or `[a]` tokens; do not broaden other attack strings (ex: `a-2a`, `a-La-Ra`).
 - Card-text timeline edits (add/remove/replace actions) should use `actionListTransforms` helpers on both server/client to keep precision and parity.
 - Bracketed multi-token actions (ex: `[a-La-Ra]`, `[b-Lb-Rb]`) must normalize the whole action before splitting by `-`; otherwise trailing tokens parse as `Ra]`/`Rb]` and silently drop right-side attacks/blocks. Keep `splitActionTokens`/`parseActionTokens` in `src/game/cardText/actionListTransforms.ts`, `src/game/execute.ts`, and `public/game/timelinePlayback.js` mirrored with `public/game/cardText/actionListTransforms.js`.
@@ -181,7 +182,8 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - The combo modal is filtered to the actor's beat entry by userId/username; keep interaction actor resolution aligned with roster identifiers.
 - Cards can opt out of throw keyword detection by id (e.g., `grappling-hook`).
 - Grappling Hook uses `cardStartTerrain` plus adjacency to gate its conditional throw (throw only if the action set started on land and the hit target is directly adjacent on the `{c}` beat), and its `{i}` bracketed charge stops at the first land tile or target in front.
-- Grappling Hook passive flips landed `{a}` hits to the opposite side of the attacker before knockback; keep the inversion logic in sync between `src/game/execute.ts` and `public/game/timelinePlayback.js`.
+- `{m}` symbol effects (Burning Strike passive fire, Bow Shot passive arrows, Gigantic Staff abyss conversion) only trigger on exact `m` tokens; do not trigger from `2m`/`Bm`.
+- Grappling Hook passive flips landed exact `{a}` hits to the opposite side of the attacker before knockback; keep the inversion logic in sync between `src/game/execute.ts` and `public/game/timelinePlayback.js`.
 - Pending throw interactions must surface the throw modal even if the beat is already resolved; don't filter throws by resolved index in the UI selector.
 - Skipped combos keep the `Co` symbol on the timeline and are marked with `comboSkipped` for UI greying; do not replace with `W`.
 - Server-side deck state is tracked per game (in memory); refreshes resolve only when the earliest `E` is on land (gated by `lastRefreshIndex`), clearing movement exhaustion and drawing up to max hand size.

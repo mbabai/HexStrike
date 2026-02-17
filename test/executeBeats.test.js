@@ -731,6 +731,47 @@ test('executeBeats flips targets for Grappling Hook passive hits', () => {
   assert.equal(betaEntry.location.r, 0);
 });
 
+test('executeBeats does not flip targets for Grappling Hook passive on non-exact attack variants', () => {
+  const runBeat = (action, targetPosition, withPassive) => {
+    const characters = [
+      { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+      { userId: 'beta', username: 'beta', position: { q: targetPosition.q, r: targetPosition.r }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+    ];
+
+    const beats = [
+      [
+        buildEntry('alpha', action, 20, characters[0].position, characters[0].facing, '', 2, 1),
+        buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+      ],
+    ];
+
+    if (withPassive) {
+      beats[0][0].passiveCardId = 'grappling-hook';
+    }
+
+    const result = executeBeats(beats, characters);
+    const beat0 = result.beats[0] || [];
+    return beat0.find((entry) => entry.username === 'beta');
+  };
+
+  const cases = [
+    { action: '2a', targetPosition: { q: 2, r: 0 } },
+    { action: 'a-La-Ra', targetPosition: { q: 1, r: 0 } },
+  ];
+
+  cases.forEach(({ action, targetPosition }) => {
+    const withPassive = runBeat(action, targetPosition, true);
+    const withoutPassive = runBeat(action, targetPosition, false);
+
+    assert.ok(withPassive, `Expected target entry for ${action} (with passive)`);
+    assert.ok(withoutPassive, `Expected target entry for ${action} (without passive)`);
+    assert.ok(withPassive.damage > 0, `Expected ${action} to land`);
+    assert.equal(withPassive.damage, withoutPassive.damage, `${action}: damage mismatch`);
+    assert.equal(withPassive.location.q, withoutPassive.location.q, `${action}: location.q mismatch`);
+    assert.equal(withPassive.location.r, withoutPassive.location.r, `${action}: location.r mismatch`);
+  });
+});
+
 test('executeBeats preserves action when hit after acting and records consequences', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
@@ -869,6 +910,43 @@ test('executeBeats spawns a bow shot arrow on X1', () => {
   assert.equal(tokens[0].type, 'arrow');
   assert.deepEqual(tokens[0].position, { q: 1, r: 0 });
   assert.equal(tokens[0].facing, 180);
+});
+
+test('executeBeats passive bow-shot spawns an arrow on exact m movement', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+  ];
+
+  const beats = [[buildEntry('alpha', 'm', 20, characters[0].position, characters[0].facing, 'R1')]];
+  beats[0][0].cardId = 'step';
+  beats[0][0].passiveCardId = 'bow-shot';
+  beats[0][0].rotationSource = 'selected';
+
+  const result = executeBeats(beats, characters);
+  const arrows = (result.boardTokens || []).filter((token) => token.type === 'arrow');
+
+  assert.equal(arrows.length, 1);
+});
+
+test('executeBeats passive bow-shot ignores non-exact movement tokens', () => {
+  const runBeat = (action) => {
+    const characters = [
+      { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    ];
+
+    const beats = [[buildEntry('alpha', action, 20, characters[0].position, characters[0].facing, 'R1')]];
+    beats[0][0].cardId = 'step';
+    beats[0][0].passiveCardId = 'bow-shot';
+    beats[0][0].rotationSource = 'selected';
+
+    const result = executeBeats(beats, characters);
+    return (result.boardTokens || []).filter((token) => token.type === 'arrow');
+  };
+
+  ['2m', 'Bm'].forEach((action) => {
+    const arrows = runBeat(action);
+    assert.equal(arrows.length, 0, `Expected no passive bow-shot arrows for ${action}`);
+  });
 });
 
 test('executeBeats moves bow shot arrows and applies damage on hit', () => {
@@ -1231,6 +1309,38 @@ test('executeBeats delays burning strike passive fire for multi-m actions and ke
   assert.equal(alphaBeat1.damage, 0);
   assert.deepEqual(alphaBeat0.location, { q: 1, r: 0 });
   assert.equal(originFireCount, 1);
+});
+
+test('executeBeats burning strike passive ignores non-exact movement tokens', () => {
+  const runBeat = (action) => {
+    const characters = [
+      { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+      { userId: 'beta', username: 'beta', position: { q: 4, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+    ];
+
+    const beats = [
+      [
+        buildEntry('alpha', action, 20, characters[0].position, characters[0].facing, '', 0, 0),
+        buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+      ],
+      [
+        buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+        buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+      ],
+    ];
+    beats[0][0].cardId = 'step';
+    beats[0][0].passiveCardId = 'burning-strike';
+
+    const result = executeBeats(beats, characters);
+    return (result.boardTokens || []).filter(
+      (token) => token.type === 'fire-hex' && token.position.q === 0 && token.position.r === 0,
+    );
+  };
+
+  ['2m', 'Bm'].forEach((action) => {
+    const originFires = runBeat(action);
+    assert.equal(originFires.length, 0, `Expected no passive burning-strike fire for ${action}`);
+  });
 });
 
 test('executeBeats creates jab draw interactions on bracketed attacks', () => {
@@ -1983,6 +2093,32 @@ test('executeBeats converts Gigantic Staff movement to 2j when on abyss', () => 
 
   assert.ok(alphaEntry);
   assert.equal(alphaEntry.action, '2j');
+});
+
+test('executeBeats keeps non-exact movement tokens unchanged for Gigantic Staff passive on abyss', () => {
+  const runBeat = (action) => {
+    const characters = [
+      { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+      { userId: 'beta', username: 'beta', position: { q: 2, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+    ];
+    const beats = [
+      [
+        buildEntry('alpha', action, 10, characters[0].position, characters[0].facing),
+        buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+      ],
+    ];
+    beats[0][0].passiveCardId = 'gigantic-staff';
+
+    const land = [{ q: 99, r: 99 }];
+    const result = executeBeats(beats, characters, land);
+    return (result.beats[0] || []).find((entry) => entry.username === 'alpha');
+  };
+
+  ['2m', 'Bm'].forEach((action) => {
+    const alphaEntry = runBeat(action);
+    assert.ok(alphaEntry);
+    assert.equal(alphaEntry.action, action, `Expected Gigantic Staff passive to leave ${action} unchanged`);
+  });
 });
 
 test('executeBeats applies cross-slash passive self damage at action start', () => {

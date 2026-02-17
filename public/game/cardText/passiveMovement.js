@@ -1,10 +1,10 @@
 import {
-  actionHasAttackToken,
   isBracketedAction,
   mapActionList,
   normalizeActionToken,
   patchActionEntry,
   removeActionAtIndex,
+  splitActionTokens,
 } from './actionListTransforms.js';
 
 const WAIT_ACTION = 'W';
@@ -17,8 +17,14 @@ const getLastWaitIndex = (actionList) => {
   return null;
 };
 
+const actionHasExactSymbol = (action, symbol) => {
+  const normalizedSymbol = `${symbol ?? ''}`.trim().toLowerCase();
+  if (!normalizedSymbol) return false;
+  return splitActionTokens(action).some((token) => normalizeActionToken(token).toLowerCase() === normalizedSymbol);
+};
+
 const hasAttackBeforeIndex = (actionList, index) =>
-  actionList.slice(0, index).some((entry) => actionHasAttackToken(entry.action));
+  actionList.slice(0, index).some((entry) => actionHasExactSymbol(entry.action, 'a'));
 
 const applyFlechePassiveText = (actionList, activeCard) => {
   if (activeCard?.type !== 'ability') return actionList;
