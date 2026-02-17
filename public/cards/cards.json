@@ -104,7 +104,7 @@
       "id": "leap",
       "name": "Leap",
       "type": "movement",
-      "priority": 66
+      "priority": 66,
       "actions": [
         "W",
         "W",
