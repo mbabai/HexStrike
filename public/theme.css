@@ -3074,6 +3074,10 @@ img[src$='Death.png'] {
   text-shadow: 0 0 10px rgba(213, 163, 74, 0.45);
 }
 
+.action-card-title.is-mandatory-movement {
+  color: #90d4d4;
+}
+
 .action-card-badges {
   position: absolute;
   inset: 0;

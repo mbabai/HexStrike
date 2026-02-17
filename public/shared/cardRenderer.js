@@ -6,6 +6,7 @@ const KNOCKBACK_ICON_URL = '/public/images/KnockBackIcon.png';
 const EMPHASIS_ICON_URL = '/public/images/i.png';
 const CARD_ART_BASE_URL = '/public/images/cardart';
 const UNIQUE_MOVEMENT_CARD_IDS = new Set(['grappling-hook', 'fleche', 'leap']);
+const MANDATORY_MOVEMENT_CARD_IDS = new Set(['step']);
 const INLINE_STYLE_CLASS_BY_TAG = {
   bold: 'card-inline-emphasis card-inline-emphasis-bold',
   u: 'card-inline-emphasis-purple',
@@ -287,6 +288,9 @@ export const buildCardElement = (card, options = {}) => {
 
   const title = document.createElement('span');
   title.className = 'action-card-title';
+  if (MANDATORY_MOVEMENT_CARD_IDS.has(card.id)) {
+    title.classList.add('is-mandatory-movement');
+  }
   if (card.type === 'movement' && UNIQUE_MOVEMENT_CARD_IDS.has(card.id)) {
     title.classList.add('is-unique-movement');
   }
