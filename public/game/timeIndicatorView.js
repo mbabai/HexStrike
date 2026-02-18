@@ -2,6 +2,7 @@ import { CHARACTER_IMAGE_SOURCES, CHARACTER_TOKEN_STYLE } from './characterToken
 import { getEarliestPendingInteractionIndex, getTimelineStopIndex } from './beatTimeline.js';
 import { getActiveHandTriggerId } from './handTriggerOrder.mjs';
 import { drawNameCapsule } from './portraitBadges.js';
+import { getFfaScoreMapAtBeat, isFfaEnabled, isFfaPlayerInvulnerableAtBeat } from './ffaState.js';
 
 const DEFAULT_BORDER_SIZE = { width: 640, height: 64 };
 const DEFAULT_ACTION = 'E';
@@ -37,6 +38,24 @@ const REWIND_RETURN_STACK_OFFSET = 0.22;
 const JUMP_ARROW_MIN_WIDTH = 22;
 const JUMP_ARROW_WIDTH_FACTOR = 0.74;
 const JUMP_ARROW_OVERLAP_FACTOR = 0.4;
+const THREE_PLAYER_TIMELINE_SCALE = 0.9;
+const FOUR_PLAYER_TIMELINE_SCALE = 0.75;
+let timeIndicatorPlayerCount = 2;
+
+export const setTimeIndicatorPlayerCount = (playerCount) => {
+  const parsed = Number(playerCount);
+  if (!Number.isFinite(parsed)) {
+    timeIndicatorPlayerCount = 2;
+    return;
+  }
+  timeIndicatorPlayerCount = Math.max(1, Math.round(parsed));
+};
+
+const getTimelineSizeScale = () => {
+  if (timeIndicatorPlayerCount >= 4) return FOUR_PLAYER_TIMELINE_SCALE;
+  if (timeIndicatorPlayerCount >= 3) return THREE_PLAYER_TIMELINE_SCALE;
+  return 1;
+};
 
 const getActionArt = (action) => {
   const key = action || ACTION_ICON_FALLBACK;
@@ -123,6 +142,12 @@ const getOutcomeMarkerAction = (matchOutcome, character, beatIndex) => {
     return 'Handshake';
   }
   if (matchesOutcomeCharacter(character, matchOutcome.loserUserId)) return 'Death';
+  if (
+    Array.isArray(matchOutcome.loserUserIds) &&
+    matchOutcome.loserUserIds.some((userId) => matchesOutcomeCharacter(character, userId))
+  ) {
+    return 'Death';
+  }
   if (matchesOutcomeCharacter(character, matchOutcome.winnerUserId)) return 'Victory';
   return null;
 };
@@ -293,9 +318,10 @@ export const getTimeIndicatorLayout = (viewport) => {
   const maxWidth = Math.max(180, viewport.width - padding * 4);
   const borderWidth = DEFAULT_BORDER_SIZE.width;
   const borderHeight = DEFAULT_BORDER_SIZE.height;
+  const timelineSizeScale = getTimelineSizeScale();
   let scale = Math.min(1, maxWidth / borderWidth);
-  let width = borderWidth * scale;
-  let actionHeight = borderHeight * scale;
+  let width = borderWidth * scale * timelineSizeScale;
+  let actionHeight = borderHeight * scale * timelineSizeScale;
   let timeHeight = actionHeight * 0.7;
   let portraitOverlap = Math.max(2, actionHeight * 0.8);
   let groupWidth = width + actionHeight - portraitOverlap;
@@ -304,8 +330,8 @@ export const getTimeIndicatorLayout = (viewport) => {
   if (maxGroupWidth && groupWidth > maxGroupWidth) {
     const adjust = maxGroupWidth / groupWidth;
     scale *= adjust;
-    width = borderWidth * scale;
-    actionHeight = borderHeight * scale * 1.5;
+    width = borderWidth * scale * timelineSizeScale;
+    actionHeight = borderHeight * scale * 1.5 * timelineSizeScale;
     timeHeight = actionHeight * 0.5;
     portraitOverlap = Math.max(2, actionHeight * 0.08);
     groupWidth = width + actionHeight - portraitOverlap;
@@ -412,9 +438,11 @@ export const getTimeIndicatorHit = (layout, x, y) => {
 export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y) => {
   if (!layout) return null;
   const characters = gameState?.state?.public?.characters ?? [];
+  setTimeIndicatorPlayerCount(characters.length || 2);
   const beats = gameState?.state?.public?.beats ?? [];
   const interactions = gameState?.state?.public?.customInteractions ?? [];
   const matchOutcome = gameState?.state?.public?.matchOutcome ?? null;
+  const highlightIndex = getTimelineStopIndex(beats, characters, interactions);
   if (!characters.length || !beats.length) return null;
   const offsets = TIMELINE_OFFSETS;
   const value = viewModel?.value ?? 0;
@@ -449,10 +477,11 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
       const baseEntry = beatLookup[beatIndex]?.get(lookupKey);
       const baseAction = `${baseEntry?.action ?? ''}`.trim();
       const outcomeAction = getOutcomeMarkerAction(matchOutcome, character, beatIndex);
+      const implicitOpenBeat = !baseEntry && beatIndex === highlightIndex;
       const action =
         outcomeAction && (!baseEntry || baseAction === DEFAULT_ACTION)
           ? outcomeAction
-          : baseEntry?.action ?? ACTION_ICON_FALLBACK;
+          : baseEntry?.action ?? (implicitOpenBeat ? DEFAULT_ACTION : ACTION_ICON_FALLBACK);
       const entry = baseEntry
         ? { ...baseEntry, action }
         : action && action !== ACTION_ICON_FALLBACK
@@ -558,6 +587,9 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
 };
 
 export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, localUserId, pendingPreview) => {
+  const publicState = gameState?.state?.public ?? null;
+  const characters = gameState?.state?.public?.characters ?? [];
+  setTimeIndicatorPlayerCount(characters.length || 2);
   const layout = getTimeIndicatorLayout(viewport);
   if (!layout) return;
 
@@ -569,10 +601,11 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
   const rightDisabled = viewModel?.canStep ? !viewModel.canStep(1) : false;
   const offsets = TIMELINE_OFFSETS;
 
-  const characters = gameState?.state?.public?.characters ?? [];
-  const beats = gameState?.state?.public?.beats ?? [];
-  const interactions = gameState?.state?.public?.customInteractions ?? [];
-  const matchOutcome = gameState?.state?.public?.matchOutcome ?? null;
+  const beats = publicState?.beats ?? [];
+  const interactions = publicState?.customInteractions ?? [];
+  const matchOutcome = publicState?.matchOutcome ?? null;
+  const ffaEnabled = isFfaEnabled(publicState);
+  const ffaScoreByUserId = ffaEnabled ? getFfaScoreMapAtBeat(publicState, beats, characters, value) : null;
   const highlightIndex = getTimelineStopIndex(beats, characters, interactions);
   const handTriggerLookup = buildHandTriggerLookup(interactions, characters);
   const rewindReturnLookup = buildRewindReturnLookup(interactions, characters);
@@ -688,10 +721,11 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       const usePreview =
         !outcomeMarkerAction && previewEntry && (!baseEntry || baseAction === DEFAULT_ACTION);
       const entry = usePreview ? previewEntry : baseEntry;
+      const implicitOpenBeat = !entry && beatIndex === highlightIndex;
       const action =
         outcomeMarkerAction && (!baseEntry || baseAction === DEFAULT_ACTION)
           ? outcomeMarkerAction
-          : entry?.action ?? ACTION_ICON_FALLBACK;
+          : entry?.action ?? (implicitOpenBeat ? DEFAULT_ACTION : ACTION_ICON_FALLBACK);
       const xPos = rowCenterX + offset * rowSpacing;
       const shouldFade = fadeAfterIndex !== null && beatIndex > fadeAfterIndex;
       const handTriggerKey = `${lookupKey}:${beatIndex}`;
@@ -760,6 +794,9 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
           ctx.drawImage(comboBadge, comboX, comboY, comboSize, comboSize);
         }
       }
+      if (isFfaPlayerInvulnerableAtBeat(publicState, character.userId, beatIndex)) {
+        drawShieldBadge(ctx, imageX, imageY, drawSize);
+      }
       const hitSummary = getHitSummary(entry);
       if (hitSummary) {
         drawKnockbackBadge(ctx, imageX, imageY, drawSize, hitSummary.knockbackDistance, theme);
@@ -814,6 +851,9 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       isWaiting ? blinkAlpha : 1,
     );
     drawNameCapsule(ctx, portraitX, portraitY, portraitRadius, character.username || character.userId, theme);
+    if (ffaEnabled) {
+      drawFfaScoreBadges(ctx, portraitX, portraitY, portraitRadius, ffaScoreByUserId?.get(character.userId) ?? 0);
+    }
 
     if (index === characters.length - 1) return;
     previousSeparator = { numberArea: row.numberArea, y: row.y + row.rowHeight };
@@ -1057,6 +1097,39 @@ const drawFocusBadge = (ctx, x, y, size) => {
   const badgeX = x + size / 2 - badgeSize / 2;
   const badgeY = y + size - badgeSize * 0.2;
   ctx.drawImage(icon, badgeX, badgeY, badgeSize, badgeSize);
+};
+
+const drawShieldBadge = (ctx, x, y, size) => {
+  const icon = getActionArt('shield');
+  if (!icon || !icon.complete || icon.naturalWidth === 0) return;
+  const badgeSize = Math.max(10, size * 0.34);
+  const padding = Math.max(2, size * 0.04);
+  const badgeX = x + size - badgeSize - padding;
+  const badgeY = y + padding;
+  ctx.drawImage(icon, badgeX, badgeY, badgeSize, badgeSize);
+};
+
+const drawFfaScoreBadges = (ctx, centerX, centerY, radius, score) => {
+  const safeScore = Number.isFinite(score) ? Math.max(0, Math.floor(score)) : 0;
+  if (!safeScore) return;
+  const icon = getActionArt('Victory');
+  const badgeSize = Math.max(20, radius * 1.24);
+  const gap = Math.max(1, badgeSize * 0.14);
+  const startX = centerX - radius - gap - badgeSize;
+  const y = centerY - radius - badgeSize * 0.18;
+  for (let index = 0; index < safeScore; index += 1) {
+    const x = startX - index * (badgeSize + gap);
+    if (icon && icon.complete && icon.naturalWidth > 0) {
+      ctx.drawImage(icon, x, y, badgeSize, badgeSize);
+      continue;
+    }
+    ctx.save();
+    ctx.fillStyle = '#f6d866';
+    ctx.beginPath();
+    ctx.arc(x + badgeSize / 2, y + badgeSize / 2, badgeSize / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 };
 
 const drawDeathBackdrop = (ctx, centerX, centerY, size) => {

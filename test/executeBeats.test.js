@@ -60,6 +60,81 @@ test('executeBeats applies rotations before action resolution even when disabled
   assert.equal(betaEntry.facing, 240);
 });
 
+test('executeBeats preserves explicit respawn location when replaying from calculated history', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 5, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      { ...buildEntry('alpha', 'W', 20, characters[0].position, characters[0].facing), calculated: true },
+      {
+        ...buildEntry('beta', 'Death', 0, { q: 5, r: 0 }, characters[1].facing),
+        damage: 8,
+        calculated: true,
+      },
+    ],
+    [
+      buildEntry('alpha', 'W', 20, characters[0].position, characters[0].facing),
+      {
+        ...buildEntry('beta', 'E', 0, { q: 0, r: 0 }, characters[1].facing),
+        damage: 0,
+        respawn: true,
+      },
+    ],
+  ];
+
+  const result = executeBeats(beats, characters);
+  const betaBeat1 = (result.beats[1] || []).find((entry) => entry.username === 'beta');
+
+  assert.ok(betaBeat1);
+  assert.deepEqual(betaBeat1.location, { q: 0, r: 0 });
+  assert.equal(betaBeat1.damage, 0);
+  assert.equal(betaBeat1.respawn, true);
+});
+
+test('executeBeats preserves future respawn location when halting on an earlier unresolved beat', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 5, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      { ...buildEntry('alpha', 'W', 20, characters[0].position, characters[0].facing), calculated: true },
+      {
+        ...buildEntry('beta', 'Death', 0, { q: 5, r: 0 }, characters[1].facing),
+        damage: 7,
+        calculated: true,
+      },
+    ],
+    [
+      buildEntry('alpha', 'E', 0, characters[0].position, characters[0].facing),
+      {
+        ...buildEntry('beta', 'Death', 0, { q: 5, r: 0 }, characters[1].facing),
+        damage: 7,
+      },
+    ],
+    [
+      buildEntry('alpha', 'W', 20, characters[0].position, characters[0].facing),
+      {
+        ...buildEntry('beta', 'E', 0, { q: 0, r: 0 }, characters[1].facing),
+        damage: 0,
+        respawn: true,
+      },
+    ],
+  ];
+
+  const result = executeBeats(beats, characters);
+  const betaBeat2 = (result.beats[2] || []).find((entry) => entry.username === 'beta');
+
+  assert.ok(betaBeat2);
+  assert.deepEqual(betaBeat2.location, { q: 0, r: 0 });
+  assert.equal(betaBeat2.damage, 0);
+  assert.equal(betaBeat2.respawn, true);
+});
+
 test('executeBeats skips combo choice on missed attacks and keeps Co symbol', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
@@ -792,7 +867,12 @@ test('executeBeats preserves action when hit after acting and records consequenc
   assert.ok(alphaEntry);
   assert.equal(alphaEntry.action, 'W');
   assert.ok(Array.isArray(alphaEntry.consequences));
-  assert.deepEqual(alphaEntry.consequences[0], { type: 'hit', damageDelta: 2, knockbackDistance: 1 });
+  assert.deepEqual(alphaEntry.consequences[0], {
+    type: 'hit',
+    damageDelta: 2,
+    knockbackDistance: 1,
+    sourceUserId: 'beta',
+  });
 
   const beat1 = result.beats[1] || [];
   const alphaBeat1 = beat1.find((entry) => entry.username === 'alpha');
@@ -823,8 +903,18 @@ test('executeBeats applies each hit in a multi-token attack in the same beat', (
   assert.equal(betaEntry.location.q, 3);
   assert.equal(betaEntry.location.r, 0);
   assert.equal(hitConsequences.length, 2);
-  assert.deepEqual(hitConsequences[0], { type: 'hit', damageDelta: 3, knockbackDistance: 1 });
-  assert.deepEqual(hitConsequences[1], { type: 'hit', damageDelta: 3, knockbackDistance: 1 });
+  assert.deepEqual(hitConsequences[0], {
+    type: 'hit',
+    damageDelta: 3,
+    knockbackDistance: 1,
+    sourceUserId: 'alpha',
+  });
+  assert.deepEqual(hitConsequences[1], {
+    type: 'hit',
+    damageDelta: 3,
+    knockbackDistance: 1,
+    sourceUserId: 'alpha',
+  });
 });
 
 test('executeBeats preserves rotations when hit overrides the action', () => {
@@ -1575,7 +1665,7 @@ test('executeBeats applies stab rear-arc bonus from B, LB, and RB', () => {
     assert.equal(betaEntry.damage, 6, `Expected +3 damage bonus for ${label}`);
     assert.deepEqual(
       hit,
-      { type: 'hit', damageDelta: 6, knockbackDistance: 2 },
+      { type: 'hit', damageDelta: 6, knockbackDistance: 2, sourceUserId: 'alpha' },
       `Expected +3 KBF bonus for ${label}`,
     );
     assert.equal(betaEntry.location.q, expectedTargetPosition.q, `Unexpected knockback q for ${label}`);
@@ -1647,7 +1737,7 @@ test('executeBeats applies stab rear-arc bonus for rotated target facings', () =
     assert.equal(betaEntry.damage, 6, `Expected +3 damage bonus for ${label}`);
     assert.deepEqual(
       hit,
-      { type: 'hit', damageDelta: 6, knockbackDistance: 2 },
+      { type: 'hit', damageDelta: 6, knockbackDistance: 2, sourceUserId: 'alpha' },
       `Expected +3 KBF bonus for ${label}`,
     );
     assert.equal(betaEntry.location.q, expectedTargetPosition.q, `Unexpected knockback q for ${label}`);
@@ -2203,7 +2293,7 @@ test('executeBeats resolves parry counters even when a defender is at E', () => 
   assert.ok(attackerEntry);
   assert.equal(attackerEntry.action, 'DamageIcon');
   assert.equal(hitConsequences.length, 1);
-  assert.deepEqual(hitConsequences[0], { type: 'hit', damageDelta: 4, knockbackDistance: 1 });
+  assert.deepEqual(hitConsequences[0], { type: 'hit', damageDelta: 4, knockbackDistance: 1, sourceUserId: 'def' });
 });
 
 test('parry stun does not trap future submissions on calculated history E beats', () => {

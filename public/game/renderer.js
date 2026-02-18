@@ -4,6 +4,7 @@ import { CHARACTER_IMAGE_SOURCES, getCharacterTokenMetrics, getFacingArrowPoints
 import { AXIAL_DIRECTIONS, LAND_HEXES, axialToPixel, getHexSize, getWorldBounds } from '../shared/hex.mjs';
 import { drawNameCapsule } from './portraitBadges.js';
 import { buildAbyssPathLabels, drawAbyssGrid, drawAbyssPathLabels } from './abyssRendering.mjs';
+import { isFfaPlayerOutAtBeat } from './ffaState.js';
 
 const getTheme = () => {
   const css = getComputedStyle(document.documentElement);
@@ -450,6 +451,99 @@ const drawAttackArc = (ctx, origin, targets, size, color, alpha, progress) => {
   ctx.restore();
 };
 
+const drawAttackPoint = (ctx, from, to, size, color, alpha, progress, lengthHint = 'short', reachScale = 1) => {
+  if (!from || !to) return;
+  const safeAlpha = clamp(alpha, 0, 1);
+  const safeProgress = clamp(progress, 0, 1);
+  if (!safeAlpha || !safeProgress) return;
+
+  const fromPixel = axialToPixel(from.q, from.r, size);
+  const toPixel = axialToPixel(to.q, to.r, size);
+  const dx = toPixel.x - fromPixel.x;
+  const dy = toPixel.y - fromPixel.y;
+  const fullDistance = Math.hypot(dx, dy);
+  if (fullDistance < 1) return;
+
+  const safeReachScale = Number.isFinite(reachScale) ? Math.max(0.5, reachScale) : 1;
+  const hexWidth = size * Math.sqrt(3);
+  const extendedDistance = (fullDistance + hexWidth * 0.35) * safeReachScale;
+  const visibleDistance = extendedDistance * safeProgress;
+  if (visibleDistance < 1) return;
+
+  const ux = dx / fullDistance;
+  const uy = dy / fullDistance;
+  const nx = -uy;
+  const ny = ux;
+
+  const widthScale =
+    2 *
+    (lengthHint === 'long'
+      ? 1.28
+      : lengthHint === 'medium'
+        ? 1.14
+        : 1);
+  const baseTailHalf = Math.max(3, size * 0.28 * widthScale);
+  const tailHalf = Math.min(baseTailHalf, visibleDistance * 0.42);
+  const bodyHalf = tailHalf * 0.62;
+  const bevelHalf = tailHalf * 0.34;
+  const curve =
+    (lengthHint === 'long'
+      ? size * 0.04
+      : lengthHint === 'medium'
+        ? size * 0.05
+        : size * 0.06) *
+    safeProgress;
+
+  const bodyDistance = visibleDistance * 0.74;
+  const bevelDistance = visibleDistance * 0.9;
+  const tip = {
+    x: fromPixel.x + ux * visibleDistance,
+    y: fromPixel.y + uy * visibleDistance,
+  };
+  const tailLeft = {
+    x: fromPixel.x + nx * tailHalf,
+    y: fromPixel.y + ny * tailHalf,
+  };
+  const tailRight = {
+    x: fromPixel.x - nx * tailHalf,
+    y: fromPixel.y - ny * tailHalf,
+  };
+  const bodyLeft = {
+    x: fromPixel.x + ux * bodyDistance + nx * (bodyHalf + curve),
+    y: fromPixel.y + uy * bodyDistance + ny * (bodyHalf + curve),
+  };
+  const bodyRight = {
+    x: fromPixel.x + ux * bodyDistance - nx * (bodyHalf + curve),
+    y: fromPixel.y + uy * bodyDistance - ny * (bodyHalf + curve),
+  };
+  const bevelLeft = {
+    x: fromPixel.x + ux * bevelDistance + nx * bevelHalf,
+    y: fromPixel.y + uy * bevelDistance + ny * bevelHalf,
+  };
+  const bevelRight = {
+    x: fromPixel.x + ux * bevelDistance - nx * bevelHalf,
+    y: fromPixel.y + uy * bevelDistance - ny * bevelHalf,
+  };
+
+  ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = size * 0.3;
+  const gradient = ctx.createLinearGradient(fromPixel.x, fromPixel.y, tip.x, tip.y);
+  gradient.addColorStop(0, withAlpha(color, safeAlpha * 0.14));
+  gradient.addColorStop(0.62, withAlpha(color, safeAlpha * 0.72));
+  gradient.addColorStop(1, withAlpha(color, safeAlpha));
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.moveTo(tailLeft.x, tailLeft.y);
+  ctx.quadraticCurveTo(bodyLeft.x, bodyLeft.y, bevelLeft.x, bevelLeft.y);
+  ctx.lineTo(tip.x, tip.y);
+  ctx.lineTo(bevelRight.x, bevelRight.y);
+  ctx.quadraticCurveTo(bodyRight.x, bodyRight.y, tailRight.x, tailRight.y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+};
+
 const getEdgeIndexForDirection = (size, directionIndex) => {
   const dir = AXIAL_DIRECTIONS[((directionIndex % 6) + 6) % 6] ?? AXIAL_DIRECTIONS[0];
   const dirPixel = axialToPixel(dir.q, dir.r, size);
@@ -500,12 +594,17 @@ const drawBlockEdge = (ctx, coord, size, color, alpha, directionIndex, offset) =
 const drawActionEffects = (ctx, effects, size, theme) => {
   if (!Array.isArray(effects) || !effects.length) return;
   const trails = [];
+  const points = [];
   const arcs = [];
   const blocks = [];
 
   effects.forEach((effect) => {
     if (effect.type === 'trail') {
       trails.push(effect);
+      return;
+    }
+    if (effect.type === 'attackPoint') {
+      points.push(effect);
       return;
     }
     if (effect.type === 'attackArc') {
@@ -537,6 +636,21 @@ const drawActionEffects = (ctx, effects, size, theme) => {
           : 0.44;
     const taperToEnd = true;
     drawTrail(ctx, effect.path, size, trailColor, alpha, widthScale, taperToEnd);
+  });
+
+  points.forEach((effect) => {
+    const alpha = typeof effect.alpha === 'number' ? effect.alpha : 0.85;
+    drawAttackPoint(
+      ctx,
+      effect.from,
+      effect.to,
+      size,
+      theme.actionAttack || theme.damage,
+      alpha,
+      effect.progress ?? 1,
+      effect.lengthHint ?? 'short',
+      effect.reachScale ?? 1,
+    );
   });
 
   arcs.forEach((effect) => {
@@ -707,21 +821,27 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
       });
     }
 
-    const renderCharacters = scene?.characters ?? gameState?.state?.public?.characters ?? [];
+    const publicState = gameState?.state?.public ?? null;
+    const renderCharacters = scene?.characters ?? publicState?.characters ?? [];
+    const beatsForFilter = publicState?.beats ?? [];
+    const timelineBeatIndex = beatsForFilter.length ? Math.min(timeIndicatorViewModel?.value ?? 0, beatsForFilter.length - 1) : 0;
+    const boardCharacters = renderCharacters.filter(
+      (character) => !isFfaPlayerOutAtBeat(publicState, character?.userId, timelineBeatIndex),
+    );
     const effects = scene?.effects ?? [];
-    const boardTokens = scene?.boardTokens ?? gameState?.state?.public?.boardTokens ?? [];
-    const abyssLabels = buildAbyssPathLabels(renderCharacters, land);
+    const boardTokens = scene?.boardTokens ?? publicState?.boardTokens ?? [];
+    const abyssLabels = buildAbyssPathLabels(boardCharacters, land);
     drawAbyssPathLabels(ctx, abyssLabels, size, theme);
     drawInteractionHexHighlights(ctx, size, interactionOverlayState);
     drawBoardTokens(ctx, boardTokens, size, theme, getTokenArt);
     drawActionEffects(ctx, effects, size, theme);
 
-    if (renderCharacters.length) {
+    if (boardCharacters.length) {
       const metrics = getCharacterTokenMetrics(size);
-      const beats = gameState?.state?.public?.beats ?? [];
-      const beatIndex = beats.length ? Math.min(timeIndicatorViewModel?.value ?? 0, beats.length - 1) : -1;
+      const beats = publicState?.beats ?? [];
+      const beatIndex = beats.length ? timelineBeatIndex : -1;
       const beatLookup = beatIndex >= 0 ? beats[beatIndex] : null;
-      renderCharacters.forEach((character) => {
+      boardCharacters.forEach((character) => {
         const { x, y } = axialToPixel(character.position.q, character.position.r, size);
         const renderOffset = character.renderOffset ?? null;
         const offsetX = renderOffset ? renderOffset.x * size : 0;

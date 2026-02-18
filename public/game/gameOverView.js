@@ -66,7 +66,7 @@ export const createGameOverView = ({
         : localOutcome === 'lose'
           ? 'You lose'
           : localOutcome === 'draw'
-            ? 'Draw agreed.'
+            ? 'Draw.'
             : 'Game over.';
     button.disabled = normalizedStatus.continueInFlight;
     if (secondaryButton) {

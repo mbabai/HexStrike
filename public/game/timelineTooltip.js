@@ -1,11 +1,12 @@
 import { getBeatEntryForCharacter } from './beatTimeline.js';
-import { getTimeIndicatorActionTarget, getTimeIndicatorLayout } from './timeIndicatorView.js';
+import { getTimeIndicatorActionTarget, getTimeIndicatorLayout, setTimeIndicatorPlayerCount } from './timeIndicatorView.js';
 import { extractHandTriggerText } from './handTriggerText.mjs';
 import { appendInlineText } from '../shared/cardRenderer.js';
 import { axialToPixel, getHexSize } from '../shared/hex.mjs';
 import { GAME_CONFIG } from './config.js';
 import { getCharacterTokenMetrics } from './characterTokens.mjs';
 import { actionHasAttackToken } from './cardText/actionListTransforms.js';
+import { isFfaPlayerInvulnerableAtBeat } from './ffaState.js';
 
 const DAMAGE_ICON_ACTION = 'DamageIcon';
 const DEFAULT_ACTION = 'E';
@@ -51,7 +52,11 @@ const getEndMarkerTooltip = (action, outcome, character, beatIndex) => {
     return { title: 'Victory', status: '', instruction: 'Win.' };
   }
   if (label === 'Death') {
-    if (outcome.reason === 'forfeit' && matchesOutcomeCharacter(character, outcome.loserUserId)) {
+    const isForfeitLoser =
+      matchesOutcomeCharacter(character, outcome.loserUserId) ||
+      (Array.isArray(outcome.loserUserIds) &&
+        outcome.loserUserIds.some((userId) => matchesOutcomeCharacter(character, userId)));
+    if (outcome.reason === 'forfeit' && isForfeitLoser) {
       return { title: 'Death', status: 'Forfeit.', instruction: '' };
     }
     return { title: 'Death', status: '', instruction: 'Defeat.' };
@@ -485,6 +490,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       hide();
       return;
     }
+    setTimeIndicatorPlayerCount(gameState?.state?.public?.characters?.length ?? 2);
     const rect = canvas.getBoundingClientRect();
     const layout = getTimeIndicatorLayout({ width: rect.width, height: rect.height });
     let target = getTimeIndicatorActionTarget(
@@ -624,6 +630,11 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     const beats = gameState?.state?.public?.beats ?? [];
     const matchOutcome = gameState?.state?.public?.matchOutcome ?? null;
     const entry = target.entry;
+    const isInvulnerable = isFfaPlayerInvulnerableAtBeat(
+      gameState?.state?.public,
+      target.character?.userId,
+      target.beatIndex,
+    );
     const endMarker = getEndMarkerTooltip(entry?.action, matchOutcome, target.character, target.beatIndex);
     if (endMarker) {
       const key = ['outcome-marker', target.character?.userId, target.beatIndex, endMarker.title, endMarker.status, endMarker.instruction]
@@ -665,8 +676,11 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     const focusCard = focusCardId ? cardMetadata.byId.get(focusCardId) : null;
     const activeName = activeCard?.name ?? '';
     const activeTitle = interruptedContext.interrupted && activeName ? `${activeName} (Interrupted)` : activeName;
+    const fallbackTitle = isInvulnerable ? 'Invulnerable' : '';
+    const resolvedTitle = activeTitle || fallbackTitle;
     const attackStatsLine = buildAttackStatsLine(activeCard, entry);
     const interruptedLine = interruptedContext.interrupted ? 'Interrupted before resolution.' : '';
+    const invulnerableLine = isInvulnerable ? 'Invulnerable.' : '';
     const passiveName = passiveCard?.name ?? '';
     const instructionText = activeCard?.symbolText?.get(target.symbol) ?? '';
     const instructionLine = instructionText ? `{${target.symbol}}: ${instructionText}` : '';
@@ -682,7 +696,9 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       !focusLine &&
       !characterPowerLine &&
       !attackStatsLine &&
-      !interruptedLine
+      !interruptedLine &&
+      !invulnerableLine &&
+      !resolvedTitle
     ) {
       hide();
       return;
@@ -693,9 +709,10 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       target.symbol,
       activeCardId ?? 'none',
       passiveCardId ?? 'none',
-      activeTitle,
+      resolvedTitle,
       attackStatsLine,
       interruptedLine,
+      invulnerableLine,
       instructionLine,
       passiveTextValue,
       characterPowerLine,
@@ -703,10 +720,11 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       focusLine,
     ].join(':');
     if (key !== lastTooltipKey) {
-      title.textContent = activeTitle;
-      title.hidden = !activeTitle;
+      title.textContent = resolvedTitle;
+      title.hidden = !resolvedTitle;
       renderAttackStats(attackStatsLine);
-      renderStatus(interruptedLine);
+      const statusLine = [interruptedLine, invulnerableLine].filter(Boolean).join(' ');
+      renderStatus(statusLine);
       if (instructionLine) {
         instruction.hidden = false;
         appendInlineText(instruction, instructionLine);

@@ -75,6 +75,9 @@ const getOutcomeActionForCharacter = (outcome: MatchOutcome, character: PublicCh
   if (typeof outcome.loserUserId === 'string' && matchesOutcomeUser(character, outcome.loserUserId)) {
     return 'Death';
   }
+  if (Array.isArray(outcome.loserUserIds) && outcome.loserUserIds.some((userId) => matchesOutcomeUser(character, userId))) {
+    return 'Death';
+  }
   if (typeof outcome.winnerUserId === 'string' && matchesOutcomeUser(character, outcome.winnerUserId)) {
     return 'Victory';
   }

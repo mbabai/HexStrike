@@ -130,3 +130,74 @@ test('applyActionSetToBeats preserves committed future starts while pruning stal
   assert.equal(updated[3][0].rotationSource, 'selected');
   assert.equal(updated[3][0].cardId, 'dash');
 });
+
+test('applyActionSetToBeats seeds from the open start entry state when replacing E', () => {
+  const characters = [
+    {
+      userId: 'target',
+      username: 'target',
+      characterId: 'murelious',
+      characterName: 'Murelious',
+      position: { q: 9, r: 9 },
+      facing: 180,
+      damage: 99,
+    },
+    {
+      userId: 'other',
+      username: 'other',
+      characterId: 'zenytha',
+      characterName: 'Zenytha',
+      position: { q: -1, r: 0 },
+      facing: 0,
+      damage: 0,
+    },
+  ];
+
+  const beats = [
+    [
+      {
+        username: 'target',
+        action: 'E',
+        rotation: '',
+        priority: 0,
+        damage: 0,
+        location: { q: 0, r: 0 },
+        terrain: 'land',
+        facing: 60,
+        calculated: false,
+      },
+      {
+        username: 'other',
+        action: 'E',
+        rotation: '',
+        priority: 0,
+        damage: 0,
+        location: { q: -1, r: 0 },
+        terrain: 'land',
+        facing: 0,
+        calculated: false,
+      },
+    ],
+  ];
+
+  const actionList = [
+    {
+      action: 'm',
+      rotation: '0',
+      priority: 10,
+      damage: 0,
+      kbf: 0,
+      cardId: 'step',
+      passiveCardId: 'step',
+      rotationSource: 'selected',
+    },
+  ];
+
+  const updated = applyActionSetToBeats(beats, characters, 'target', actionList);
+  const targetEntry = updated[0].find((entry) => entry.username === 'target');
+  assert.ok(targetEntry);
+  assert.deepEqual(targetEntry.location, { q: 0, r: 0 });
+  assert.equal(targetEntry.damage, 0);
+  assert.equal(targetEntry.facing, 60);
+});
+

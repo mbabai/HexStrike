@@ -7,14 +7,14 @@ test('lobby store manages queues and emits updates', async () => {
   const lobby = createLobbyStore();
   const firstEvent = once(lobby.events, 'queueChanged');
 
-  lobby.addToQueue('user-1', 'quickplayQueue');
+  lobby.addToQueue('user-1', 'quickplay1v1Queue');
 
   const [snapshot] = await firstEvent;
-  assert.deepEqual(snapshot.quickplayQueue, ['user-1']);
+  assert.deepEqual(snapshot.quickplay1v1Queue, ['user-1']);
 
   lobby.addToQueue('user-1', 'rankedQueue');
   let current = lobby.serialize();
-  assert.deepEqual(current.quickplayQueue, []);
+  assert.deepEqual(current.quickplay1v1Queue, []);
   assert.deepEqual(current.rankedQueue, ['user-1']);
 
   lobby.addToQueue('user-2', 'rankedQueue');

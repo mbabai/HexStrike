@@ -53,3 +53,24 @@ test('createInitialGameState seeds starting characters', async () => {
     facing: 180,
   });
 });
+
+test('createInitialGameState seeds 3-player inward facings', async () => {
+  const players = [
+    { userId: 'player-a', username: 'Player A', characterId: 'murelious' },
+    { userId: 'player-b', username: 'Player B', characterId: 'monkey-queen' },
+    { userId: 'player-c', username: 'Player C', characterId: 'zenytha' },
+  ];
+
+  const state = await createInitialGameState(players);
+
+  assert.equal(state.public.characters.length, 3);
+  assert.deepEqual(state.public.characters.map((character) => ({
+    username: character.username,
+    position: character.position,
+    facing: character.facing,
+  })), [
+    { username: 'Player A', position: { q: 2, r: 0 }, facing: 0 },
+    { username: 'Player B', position: { q: 1, r: -3 }, facing: 240 },
+    { username: 'Player C', position: { q: -2, r: 1 }, facing: 120 },
+  ]);
+});

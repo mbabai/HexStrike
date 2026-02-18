@@ -1,6 +1,7 @@
 import { LAND_HEXES } from '../shared/hex.mjs';
 import { getPassiveKbfReduction, isThrowImmune } from './cardText/combatModifiers.js';
 import { shouldConvertKbfToDiscard } from './cardText/discardEffects.js';
+import { isFfaPlayerInvulnerableAtBeat } from './ffaState.js';
 import {
   isBracketedAction as isBracketedTokenAction,
   normalizeActionToken,
@@ -13,6 +14,7 @@ const FOCUS_ACTION = 'F';
 const WAIT_ACTION = 'W';
 const COMBO_ACTION = 'CO';
 const DAMAGE_ICON_ACTION = 'DamageIcon';
+const END_MARKER_ACTIONS = new Set(['DEATH', 'VICTORY', 'HANDSHAKE']);
 const KNOCKBACK_DIVISOR = 10;
 export const ACTION_DURATION_MS = 1200;
 const MIN_TRAIL_VISIBLE_MS = 90;
@@ -138,6 +140,15 @@ const getSwipeState = (stepProgress) => {
   const swipeIntensity = 1 - swipeFade;
   const attackAlpha = alpha * swipeIntensity;
   return { alpha, easedProgress, swipeProgress, attackAlpha };
+};
+
+const getPointSwipeState = (stepProgress) => {
+  const clamped = clamp(stepProgress, 0, 1);
+  const pointProgress = clamp(clamped / 0.14, 0, 1);
+  const rise = easeInOut(clamp(clamped / 0.1, 0, 1));
+  const lingerFade = clamp((clamped - 0.78) / 0.22, 0, 1);
+  const pointAlpha = rise * (1 - lingerFade);
+  return { pointProgress, pointAlpha };
 };
 
 const getHitState = (stepProgress) => {
@@ -376,7 +387,12 @@ const parsePath = (path) => {
 const isWaitAction = (action) => {
   const trimmed = `${action ?? ''}`.trim().toUpperCase();
   if (!trimmed) return true;
-  if (trimmed === WAIT_ACTION || trimmed === DAMAGE_ICON_ACTION.toUpperCase() || trimmed === COMBO_ACTION) {
+  if (
+    trimmed === WAIT_ACTION ||
+    trimmed === DAMAGE_ICON_ACTION.toUpperCase() ||
+    trimmed === COMBO_ACTION ||
+    END_MARKER_ACTIONS.has(trimmed)
+  ) {
     return true;
   }
   if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
@@ -416,9 +432,78 @@ const parseActionTokens = (action) => {
     .map((token) => {
       const type = token[token.length - 1]?.toLowerCase() ?? '';
       const path = token.slice(0, -1);
-      return { type, path, steps: parsePath(path) };
+      return { raw: token, type, path, steps: parsePath(path) };
     })
     .filter((token) => token.type);
+};
+
+const isClassicAttackSweep = (attackTokens) =>
+  attackTokens.length === 3 &&
+  attackTokens.every((token) => token.tokenType === 'a') &&
+  attackTokens[0].rawLabel === 'a' &&
+  attackTokens[1].rawLabel === 'la' &&
+  attackTokens[2].rawLabel === 'ra';
+
+const getForwardThrustLengthHint = (attackTokens) => {
+  if (!attackTokens.length) return null;
+  if (!attackTokens.every((token) => token.tokenType === 'a')) return null;
+  const key = attackTokens.map((token) => token.rawLabel).join('|');
+  if (key === 'a|2a') return 'medium';
+  if (key === 'a|2a|3a') return 'long';
+  return null;
+};
+
+const getAttackPointReachScale = (attackTokens) => {
+  if (!attackTokens.length) return 1;
+  if (!attackTokens.every((token) => token.tokenType === 'a')) return 1;
+  const key = attackTokens.map((token) => token.rawLabel).join('|');
+  if (key === 'a') return 1.3;
+  if (key === 'a|2a') return 1.2;
+  if (key === 'a|2a|3a') return 1.15;
+  return 1;
+};
+
+const buildAttackVisuals = (origin, attackTokens) => {
+  if (!origin || !Array.isArray(attackTokens) || !attackTokens.length) return [];
+  const normalized = attackTokens
+    .filter((token) => token?.source && token?.target)
+    .map((token) => ({
+      tokenType: `${token.tokenType ?? ''}`.trim().toLowerCase(),
+      rawLabel: `${token.rawLabel ?? ''}`.trim().toLowerCase(),
+      source: { q: token.source.q, r: token.source.r },
+      target: { q: token.target.q, r: token.target.r },
+    }));
+  if (!normalized.length) return [];
+  if (isClassicAttackSweep(normalized)) {
+    return [
+      {
+        style: 'sweep',
+        origin: { q: origin.q, r: origin.r },
+        targets: normalized.map((token) => ({ q: token.target.q, r: token.target.r })),
+      },
+    ];
+  }
+  const reachScale = getAttackPointReachScale(normalized);
+  const thrustHint = getForwardThrustLengthHint(normalized);
+  if (thrustHint) {
+    const farthest = normalized[normalized.length - 1];
+    return [
+      {
+        style: 'point',
+        from: { q: origin.q, r: origin.r },
+        to: { q: farthest.target.q, r: farthest.target.r },
+        lengthHint: thrustHint,
+        reachScale,
+      },
+    ];
+  }
+  return normalized.map((token) => ({
+    style: 'point',
+    from: { q: token.source.q, r: token.source.r },
+    to: { q: token.target.q, r: token.target.r },
+    lengthHint: 'short',
+    reachScale,
+  }));
 };
 
 const isExactActionSymbolToken = (token, symbol) =>
@@ -611,20 +696,22 @@ const findIronWillInteraction = (interactions, beatIndex, attackerId, targetId) 
     return true;
   }) ?? null;
 
-const getLastCalculatedEntryForCharacter = (beats, character, uptoIndex) => {
+const getLastEntryForCharacter = (beats, character, uptoIndex) => {
   if (!Array.isArray(beats) || !beats.length || !character) return null;
   const lastIndex = Math.min(uptoIndex, beats.length - 1);
   for (let i = lastIndex; i >= 0; i -= 1) {
     const entry = getBeatEntryForCharacter(beats[i], character);
-    if (entry && entry.calculated) return entry;
+    if (entry) return entry;
   }
   return null;
 };
 
 const buildCalculatedBaseState = (beats, beatIndex, characters) => {
-  const lookupIndex = Number.isFinite(beatIndex) ? beatIndex - 1 : (beats?.length ?? 0) - 1;
+  const targetIndex = Number.isFinite(beatIndex) ? Math.max(0, Math.round(beatIndex)) : (beats?.length ?? 0) - 1;
+  const currentBeatCalculated = isBeatCalculated(beats?.[targetIndex] ?? []);
+  const lookupIndex = currentBeatCalculated ? targetIndex - 1 : targetIndex;
   return characters.map((character) => {
-    const entry = lookupIndex >= 0 ? getLastCalculatedEntryForCharacter(beats, character, lookupIndex) : null;
+    const entry = lookupIndex >= 0 ? getLastEntryForCharacter(beats, character, lookupIndex) : null;
     const entryAbilityHandCount = getAbilityHandCountFromEntry(entry);
     const characterAbilityHandCount = toAbilityHandCount(character?.abilityHandCount);
     return {
@@ -697,6 +784,7 @@ const buildActionSteps = (
   baseState,
   interactions,
   beatIndex,
+  publicState,
   land,
   characterPowersById = new Map(),
 ) => {
@@ -739,10 +827,40 @@ const buildActionSteps = (
     });
     occupancy.set(coordKey(character.position), character.userId);
   });
+  (beat ?? []).forEach((entry) => {
+    if (!entry?.respawn) return;
+    const key = resolveEntryKey(entry);
+    const actorId = userLookup.get(key) ?? key;
+    if (!actorId) return;
+    const current = state.get(actorId);
+    if (!current) return;
+    const nextPosition =
+      Number.isFinite(entry?.location?.q) && Number.isFinite(entry?.location?.r)
+        ? { q: Math.round(entry.location.q), r: Math.round(entry.location.r) }
+        : { q: current.position.q, r: current.position.r };
+    const nextDamage = Number.isFinite(entry?.damage) ? Math.max(0, Math.floor(entry.damage)) : current.damage ?? 0;
+    const nextFacing = Number.isFinite(entry?.facing) ? normalizeDegrees(entry.facing) : current.facing;
+    const nextAbilityHandCount = toAbilityHandCount(entry?.abilityHandCount);
+    state.set(actorId, {
+      ...current,
+      position: nextPosition,
+      damage: nextDamage,
+      facing: nextFacing,
+      abilityHandCount: nextAbilityHandCount == null ? current.abilityHandCount : nextAbilityHandCount,
+    });
+    const oldKey = coordKey(current.position);
+    if (occupancy.get(oldKey) === actorId) {
+      occupancy.delete(oldKey);
+    }
+    occupancy.set(coordKey(nextPosition), actorId);
+  });
   const getCharacterForUser = (userId) => characterById.get(userId) ?? null;
+  const isTargetInvulnerableAtBeat = (userId) =>
+    Boolean(userId && isFfaPlayerInvulnerableAtBeat(publicState, userId, beatIndex));
   const applyDamageToUser = (userId, rawDamage) => {
     const targetState = state.get(userId);
     if (!targetState) return 0;
+    if (isTargetInvulnerableAtBeat(userId)) return 0;
     const safeDamage = Number.isFinite(rawDamage) ? Math.max(0, Math.floor(rawDamage)) : 0;
     if (!safeDamage) return 0;
     const targetCharacter = getCharacterForUser(userId);
@@ -786,6 +904,7 @@ const buildActionSteps = (
       if (!attackerId) return;
       const targetState = state.get(attackerId);
       if (!targetState) return;
+      if (isTargetInvulnerableAtBeat(attackerId)) return;
       const defenderCharacter = characterById.get(defenderId);
       const targetCharacter = characterById.get(attackerId);
       const targetEntry = targetCharacter ? getBeatEntryForCharacter(beat, targetCharacter) : null;
@@ -870,6 +989,7 @@ const buildActionSteps = (
         positionChanges,
         attackOrigin: null,
         attackTargets: [],
+        attackVisuals: [],
         hitTargets,
         blockHits: [],
         effects: [],
@@ -900,6 +1020,7 @@ const buildActionSteps = (
     const damageChanges = [];
     const positionChanges = [];
     const attackTargets = [];
+    const attackVisualTokens = [];
     const hitTargets = [];
     const blockHits = [];
     let moveDestination = null;
@@ -966,6 +1087,15 @@ const buildActionSteps = (
         effects.push({ type: 'charge', coord: destination });
         attackTargets.push({ q: destination.q, r: destination.r });
       }
+      if (token.type === 'a' || token.type === 'c') {
+        const launchHex = positions.length > 1 ? positions[positions.length - 2] : origin;
+        attackVisualTokens.push({
+          tokenType: token.type,
+          rawLabel: token.raw,
+          source: { q: launchHex.q, r: launchHex.r },
+          target: { q: destination.q, r: destination.r },
+        });
+      }
 
       const isBlocked =
         directionIndex != null &&
@@ -982,10 +1112,11 @@ const buildActionSteps = (
         const isUnblockable = isEntryUnblockable(entry, { tokenType: token.type });
         const throwBlocked = isThrow && isThrowImmune(targetEntry);
         const blocked = (isBlocked && !isThrow && !isUnblockable) || throwBlocked;
+        const targetInvulnerable = Boolean(targetId) && isTargetInvulnerableAtBeat(targetId);
         if (targetId && blocked && directionIndex != null) {
           blockHits.push({ coord: { q: destination.q, r: destination.r }, directionIndex });
         }
-        if (targetId && !blocked) {
+        if (targetId && !blocked && !targetInvulnerable) {
           if (targetState) {
             const fromPosition = { q: targetState.position.q, r: targetState.position.r };
             if (isThrow) {
@@ -1177,16 +1308,28 @@ const buildActionSteps = (
       }
     });
 
+    const finalActorPosition = entry?.location
+      ? { q: entry.location.q, r: entry.location.r }
+      : { q: actorState.position.q, r: actorState.position.r };
+    const finalActorDamage =
+      typeof entry?.damage === 'number'
+        ? entry.damage
+        : Number.isFinite(actorState.damage)
+          ? actorState.damage
+          : 0;
     steps.push({
       actorId,
       facingAfter: actorState.facing,
       moveDestination,
       moveType,
       movePath,
+      finalActorPosition,
+      finalActorDamage,
       damageChanges,
       positionChanges,
       attackOrigin: attackTargets.length ? { q: origin.q, r: origin.r } : null,
       attackTargets,
+      attackVisuals: buildAttackVisuals(origin, attackVisualTokens),
       hitTargets,
       blockHits,
       effects,
@@ -1205,6 +1348,12 @@ const applyStep = (characters, step) => {
     const next = { ...character, facing: step.facingAfter };
     if (step.moveDestination) {
       next.position = { q: step.moveDestination.q, r: step.moveDestination.r };
+    }
+    if (step.finalActorPosition) {
+      next.position = { q: step.finalActorPosition.q, r: step.finalActorPosition.r };
+    }
+    if (typeof step.finalActorDamage === 'number') {
+      next.damage = step.finalActorDamage;
     }
     return next;
   });
@@ -1286,10 +1435,13 @@ const createTokenRenderState = (baseTokens) => {
 };
 
 const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map()) => {
+  const publicState = gameState?.state?.public ?? null;
   const beats = gameState?.state?.public?.beats ?? [];
   const characters = gameState?.state?.public?.characters ?? [];
   const interactions = gameState?.state?.public?.customInteractions ?? [];
   const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
+  const isTargetInvulnerableAtIndex = (userId, index) =>
+    Boolean(userId && isFfaPlayerInvulnerableAtBeat(publicState, userId, index));
   const interactionById = new Map();
   interactions.forEach((interaction) => {
     if (!interaction?.id) return;
@@ -1615,6 +1767,7 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
       baseState,
       interactions,
       index,
+      publicState,
       land,
       characterPowersById,
     );
@@ -1643,6 +1796,7 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
     const applyEndStateDamage = (userId, rawDamage) => {
       const targetState = endStateById.get(userId);
       if (!targetState) return 0;
+      if (isTargetInvulnerableAtIndex(userId, index)) return 0;
       const safeDamage = Number.isFinite(rawDamage) ? Math.max(0, Math.floor(rawDamage)) : 0;
       if (!safeDamage) return 0;
       const targetCharacter = characterById.get(userId);
@@ -1731,6 +1885,26 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
     const applyArrowHit = ({ token, nextPosition, targetId, forward, isCurrentBeat: applyNow }) => {
       const targetState = endStateById.get(targetId);
       if (!targetState) return;
+      if (isTargetInvulnerableAtIndex(targetId, index)) {
+        if (applyNow) {
+          tokenSteps.push({
+            kind: 'token',
+            tokenId: token.id,
+            tokenType: token.type,
+            facingAfter: token.facing,
+            moveDestination: nextPosition,
+            moveType: 'c',
+            movePath: buildPathFromPositions(token.position, [nextPosition], nextPosition),
+            attackOrigin: { q: token.position.q, r: token.position.r },
+            attackTargets: [{ q: nextPosition.q, r: nextPosition.r }],
+            damageChanges: [],
+            positionChanges: [],
+            hitTargets: [],
+            removeToken: true,
+          });
+        }
+        return;
+      }
       const blockDirection = getDirectionIndex({ q: -forward.q, r: -forward.r });
       if (blockDirection != null) {
         const targetKey = coordKey(targetState.position);
@@ -2103,6 +2277,7 @@ export const createTimelinePlayback = () => {
   };
 
   const buildPlayback = (gameState, beatIndex, now) => {
+    const publicState = gameState?.state?.public ?? null;
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
     const interactions = gameState?.state?.public?.customInteractions ?? [];
@@ -2133,6 +2308,7 @@ export const createTimelinePlayback = () => {
       baseState,
       interactions,
       beatIndex,
+      publicState,
       land,
       characterPowersById,
     );
@@ -2311,11 +2487,21 @@ export const createTimelinePlayback = () => {
       applyResolvedAbilityHandCounts();
     }
     if (currentStep && stepProgress > 0) {
+      const currentStepHasVisibleAction =
+        Boolean(currentStep.moveDestination) ||
+        (Array.isArray(currentStep.damageChanges) && currentStep.damageChanges.length > 0) ||
+        (Array.isArray(currentStep.positionChanges) && currentStep.positionChanges.length > 0) ||
+        (Array.isArray(currentStep.attackTargets) && currentStep.attackTargets.length > 0) ||
+        (Array.isArray(currentStep.attackVisuals) && currentStep.attackVisuals.length > 0) ||
+        (Array.isArray(currentStep.hitTargets) && currentStep.hitTargets.length > 0);
+      const shouldApplyFinalActorState = stepProgress >= 1 || !currentStepHasVisibleAction;
       renderCharacters = applyStep(renderCharacters, {
         ...currentStep,
         facingAfter:
           stepProgress >= 1 ? currentStep.facingAfter : currentStepFacingBefore ?? currentStep.facingAfter,
         moveDestination: movementStepProgress >= 1 ? currentStep.moveDestination : null,
+        finalActorPosition: shouldApplyFinalActorState ? currentStep.finalActorPosition : undefined,
+        finalActorDamage: shouldApplyFinalActorState ? currentStep.finalActorDamage : undefined,
         damageChanges: attackStepProgress >= 1 ? currentStep.damageChanges : [],
         positionChanges: attackStepProgress >= 1 ? currentStep.positionChanges : [],
       });
@@ -2338,8 +2524,10 @@ export const createTimelinePlayback = () => {
 
     const movementSwipe = getSwipeState(movementStepProgress);
     const attackSwipe = getSwipeState(attackStepProgress);
+    const pointSwipe = getPointSwipeState(attackStepProgress);
     const { alpha, easedProgress } = movementSwipe;
     const { swipeProgress, attackAlpha } = attackSwipe;
+    const { pointProgress, pointAlpha } = pointSwipe;
     const effects =
       currentStep?.effects?.map((effect) => {
         const baseAlpha =
@@ -2347,7 +2535,7 @@ export const createTimelinePlayback = () => {
         return { ...effect, alpha: baseAlpha };
       }) ?? [];
     const trailEffects = [];
-    const arcEffects = [];
+    const attackEffects = [];
     const blockShake = new Map();
 
     const buildDamagePreview = (changes, baseDamageLookup) => {
@@ -2446,8 +2634,32 @@ export const createTimelinePlayback = () => {
         });
       }
 
-      if (currentStep.attackTargets?.length && currentStep.attackOrigin) {
-        arcEffects.push({
+      if (Array.isArray(currentStep.attackVisuals) && currentStep.attackVisuals.length) {
+        currentStep.attackVisuals.forEach((visual) => {
+          if (visual?.style === 'sweep' && visual.origin && Array.isArray(visual.targets) && visual.targets.length) {
+            attackEffects.push({
+              type: 'attackArc',
+              origin: visual.origin,
+              targets: visual.targets,
+              alpha: attackAlpha * 0.95,
+              progress: swipeProgress,
+            });
+            return;
+          }
+          if (visual?.style === 'point' && visual.from && visual.to) {
+            attackEffects.push({
+              type: 'attackPoint',
+              from: visual.from,
+              to: visual.to,
+              lengthHint: visual.lengthHint ?? 'short',
+              reachScale: Number.isFinite(visual.reachScale) ? visual.reachScale : 1,
+              alpha: pointAlpha * 0.95,
+              progress: pointProgress,
+            });
+          }
+        });
+      } else if (currentStep.attackTargets?.length && currentStep.attackOrigin) {
+        attackEffects.push({
           type: 'attackArc',
           origin: currentStep.attackOrigin,
           targets: currentStep.attackTargets,
@@ -2525,7 +2737,7 @@ export const createTimelinePlayback = () => {
 
     scene = {
       characters: renderCharacters,
-      effects: [...trailEffects, ...effects, ...arcEffects, ...blockEffects],
+      effects: [...trailEffects, ...effects, ...attackEffects, ...blockEffects],
       boardTokens: tokenState.renderTokens,
     };
   };

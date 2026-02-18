@@ -39,6 +39,7 @@ const LOG_PREFIX = '[execute]';
 const WAIT_ACTION = 'W';
 const COMBO_ACTION = 'CO';
 const DAMAGE_ICON_ACTION = 'DamageIcon';
+const END_MARKER_ACTIONS = new Set(['DEATH', 'VICTORY', 'HANDSHAKE']);
 const KNOCKBACK_DIVISOR = 10;
 const THROW_DISTANCE = 2;
 const FIRE_HEX_TOKEN_TYPE = 'fire-hex';
@@ -284,7 +285,12 @@ const isWaitAction = (action: string) => {
   const trimmed = `${action ?? ''}`.trim();
   if (!trimmed) return true;
   const label = normalizeActionLabel(trimmed).toUpperCase();
-  return label === WAIT_ACTION || label === DAMAGE_ICON_ACTION.toUpperCase() || label === COMBO_ACTION;
+  return (
+    label === WAIT_ACTION ||
+    label === DAMAGE_ICON_ACTION.toUpperCase() ||
+    label === COMBO_ACTION ||
+    END_MARKER_ACTIONS.has(label)
+  );
 };
 
 const isComboAction = (action: string) => normalizeActionLabel(action).toUpperCase() === COMBO_ACTION;
@@ -661,7 +667,8 @@ export const executeBeats = (
   characters: PublicCharacter[],
   land?: HexCoord[],
   initialTokens: BoardToken[] = [],
-) => executeBeatsWithInteractions(beats, characters, [], land, undefined, initialTokens);
+  options?: { isUserInvulnerableAtBeat?: (userId: string, beatIndex: number) => boolean },
+) => executeBeatsWithInteractions(beats, characters, [], land, undefined, initialTokens, undefined, undefined, options);
 
 export const executeBeatsWithInteractions = (
   beats: BeatEntry[][],
@@ -672,6 +679,7 @@ export const executeBeatsWithInteractions = (
   initialTokens: BoardToken[] = [],
   handTriggerAvailability?: Map<string, Set<string>>,
   guardContinueAvailability?: Map<string, boolean>,
+  options: { isUserInvulnerableAtBeat?: (userId: string, beatIndex: number) => boolean } = {},
 ): {
   beats: BeatEntry[][];
   characters: PublicCharacter[];
@@ -683,6 +691,8 @@ export const executeBeatsWithInteractions = (
   const comboAvailabilityByUser = comboAvailability ?? new Map<string, boolean>();
   const handTriggerAvailabilityByUser = handTriggerAvailability ?? new Map<string, Set<string>>();
   const guardContinueAvailabilityByUser = guardContinueAvailability ?? new Map<string, boolean>();
+  const isUserInvulnerableAtBeat =
+    typeof options.isUserInvulnerableAtBeat === 'function' ? options.isUserInvulnerableAtBeat : () => false;
   const hasHandTriggerCard = (userId: string, cardId: string) =>
     Boolean(handTriggerAvailabilityByUser.get(userId)?.has(cardId));
   const canOfferGuardContinue = (userId: string) => {
@@ -711,12 +721,18 @@ export const executeBeatsWithInteractions = (
   }
   let tokenCounter = boardTokens.length;
   const fireTokenKeys = new Set<string>();
+  const fireTokenOwnerByKey = new Map<string, string>();
   const platformTokenKeys = new Set<string>();
   const focusTokenByOwner = new Map<string, string>();
   let ephemeralFireKeys = new Set<string>();
   boardTokens.forEach((token) => {
     if (token.type === FIRE_HEX_TOKEN_TYPE) {
-      fireTokenKeys.add(coordKey(token.position));
+      const key = coordKey(token.position);
+      fireTokenKeys.add(key);
+      const ownerId = `${token.ownerUserId ?? ''}`.trim();
+      if (ownerId) {
+        fireTokenOwnerByKey.set(key, ownerId);
+      }
       return;
     }
     if (token.type === ETHEREAL_PLATFORM_TOKEN_TYPE) {
@@ -888,16 +904,25 @@ export const executeBeatsWithInteractions = (
 
   const addFireHexToken = (coord: { q: number; r: number }, ownerId?: string): boolean => {
     const key = coordKey(coord);
+    const normalizedOwnerId = `${ownerId ?? ''}`.trim();
     const onLand = resolveTerrain(coord) === 'land';
     if (onLand) {
-      if (fireTokenKeys.has(key)) return false;
+      if (fireTokenKeys.has(key)) {
+        if (normalizedOwnerId) {
+          fireTokenOwnerByKey.set(key, normalizedOwnerId);
+        }
+        return false;
+      }
       fireTokenKeys.add(key);
+      if (normalizedOwnerId) {
+        fireTokenOwnerByKey.set(key, normalizedOwnerId);
+      }
       boardTokens.push({
         id: nextTokenId(FIRE_HEX_TOKEN_TYPE),
         type: FIRE_HEX_TOKEN_TYPE,
         position: { q: coord.q, r: coord.r },
         facing: 0,
-        ownerUserId: ownerId,
+        ownerUserId: normalizedOwnerId || undefined,
       });
       return true;
     }
@@ -1025,6 +1050,22 @@ export const executeBeatsWithInteractions = (
       const resolved = userLookup.get(key) ?? key;
       const current = resolved ? state.get(resolved) : undefined;
       const character = resolved ? characterById.get(resolved) : undefined;
+      if (current && entry?.respawn) {
+        const respawnLocation = normalizeHexCoord(entry.location);
+        if (respawnLocation) {
+          current.position = { q: respawnLocation.q, r: respawnLocation.r };
+        }
+        if (Number.isFinite(entry?.damage)) {
+          current.damage = Math.max(0, Math.floor(entry.damage));
+        }
+        if (Number.isFinite(entry?.facing)) {
+          current.facing = normalizeDegrees(entry.facing);
+        }
+        const respawnAbilityHandCount = toAbilityHandCount(entry?.abilityHandCount);
+        if (Number.isFinite(respawnAbilityHandCount)) {
+          current.abilityHandCount = respawnAbilityHandCount;
+        }
+      }
       if (character) {
         entry.username = entry.username ?? character.username ?? character.userId;
       }
@@ -1299,14 +1340,29 @@ export const executeBeatsWithInteractions = (
     targetState: { position: { q: number; r: number }; damage: number; facing: number },
     damageDelta: number,
     knockbackDistance: number,
+    sourceUserId?: string,
   ) => {
     const character = characterById.get(targetId);
     if (!character) return;
     const delta = Number.isFinite(damageDelta) ? Math.round(damageDelta) : 0;
     const distance = Number.isFinite(knockbackDistance) ? Math.max(0, Math.round(knockbackDistance)) : 0;
+    const source = `${sourceUserId ?? ''}`.trim();
     const entry = getOrCreateEntryForCharacter(beatIndex, character, targetState);
     const list = Array.isArray(entry.consequences) ? entry.consequences : [];
-    list.push({ type: 'hit', damageDelta: delta, knockbackDistance: distance });
+    const consequence: {
+      type: 'hit';
+      damageDelta: number;
+      knockbackDistance: number;
+      sourceUserId?: string;
+    } = {
+      type: 'hit',
+      damageDelta: delta,
+      knockbackDistance: distance,
+    };
+    if (source) {
+      consequence.sourceUserId = source;
+    }
+    list.push(consequence);
     entry.consequences = list;
   };
 
@@ -2168,10 +2224,21 @@ export const executeBeatsWithInteractions = (
       }
     });
     entriesByUser.forEach((entry, actorId) => {
-      const markedCount = toAbilityHandCount(entry?.abilityHandCount);
-      if (!Number.isFinite(markedCount)) return;
       const actorState = state.get(actorId);
       if (!actorState) return;
+      if (entry?.respawn) {
+        if (Number.isFinite(entry?.location?.q) && Number.isFinite(entry?.location?.r)) {
+          actorState.position = { q: Math.round(entry.location.q), r: Math.round(entry.location.r) };
+        }
+        if (Number.isFinite(entry?.damage)) {
+          actorState.damage = Math.max(0, Math.floor(entry.damage));
+        }
+        if (Number.isFinite(entry?.facing)) {
+          actorState.facing = normalizeDegrees(entry.facing);
+        }
+      }
+      const markedCount = toAbilityHandCount(entry?.abilityHandCount);
+      if (!Number.isFinite(markedCount)) return;
       actorState.abilityHandCount = markedCount;
     });
     updatedInteractions.forEach((interaction) => {
@@ -2465,6 +2532,7 @@ export const executeBeatsWithInteractions = (
       boardTokens: BoardToken[];
       tokenCounter: number;
       fireTokenKeys: Set<string>;
+      fireTokenOwnerByKey: Map<string, string>;
       platformTokenKeys: Set<string>;
       ephemeralFireKeys: Set<string>;
       delayedPassiveFireSpawnsByBeat: Map<number, DelayedPassiveFireSpawn[]>;
@@ -2532,6 +2600,7 @@ export const executeBeatsWithInteractions = (
       })),
       tokenCounter,
       fireTokenKeys: new Set(fireTokenKeys),
+      fireTokenOwnerByKey: new Map(fireTokenOwnerByKey),
       platformTokenKeys: new Set(platformTokenKeys),
       ephemeralFireKeys: new Set(ephemeralFireKeys),
       delayedPassiveFireSpawnsByBeat: new Map(
@@ -2583,6 +2652,13 @@ export const executeBeatsWithInteractions = (
       tokenCounter = snapshot.tokenCounter;
       fireTokenKeys.clear();
       snapshot.fireTokenKeys.forEach((key) => fireTokenKeys.add(key));
+      fireTokenOwnerByKey.clear();
+      snapshot.fireTokenOwnerByKey.forEach((ownerId, key) => {
+        if (!key) return;
+        const safeOwnerId = `${ownerId ?? ''}`.trim();
+        if (!safeOwnerId) return;
+        fireTokenOwnerByKey.set(key, safeOwnerId);
+      });
       platformTokenKeys.clear();
       snapshot.platformTokenKeys.forEach((key) => platformTokenKeys.add(key));
       ephemeralFireKeys = new Set(snapshot.ephemeralFireKeys);
@@ -2855,9 +2931,16 @@ export const executeBeatsWithInteractions = (
       }
       return forced;
     };
-    const applyCharacterDamage = (targetId: string, rawDamage: number): number => {
+    const applyCharacterDamage = (
+      targetId: string,
+      rawDamage: number,
+      options: { ignoreInvulnerability?: boolean } = {},
+    ): number => {
       const targetState = state.get(targetId);
       if (!targetState) return 0;
+      if (!options.ignoreInvulnerability && isUserInvulnerableAtBeat(targetId, index)) {
+        return 0;
+      }
       const safeDamage = Number.isFinite(rawDamage) ? Math.max(0, Math.floor(rawDamage)) : 0;
       if (!safeDamage) return 0;
       const reducedDamage = Math.max(0, safeDamage - getDamageReductionByUser(targetId));
@@ -2902,6 +2985,7 @@ export const executeBeatsWithInteractions = (
       const requestRerun = options.requestRerun ?? true;
       const targetState = state.get(targetId);
       if (!targetState) return;
+      if (isUserInvulnerableAtBeat(targetId, index)) return;
         const targetCharacter = characterById.get(targetId);
         let targetEntry = targetCharacter ? findEntryForCharacter(beat, targetCharacter) : null;
         if (
@@ -3079,12 +3163,12 @@ export const executeBeatsWithInteractions = (
           });
         }
       }
-      recordHitConsequence(targetId, index, targetState, adjustedDamage, knockedSteps);
+      recordHitConsequence(targetId, index, targetState, adjustedDamage, knockedSteps, safeOwnerId || undefined);
         if (safeOwnerId && safeOwnerId !== targetId && hasHammerPassive) {
           const reflected = applyCharacterDamage(safeOwnerId, 2);
           const attackerState = state.get(safeOwnerId);
           if (attackerState && reflected > 0) {
-            recordHitConsequence(safeOwnerId, index, attackerState, reflected, 0);
+            recordHitConsequence(safeOwnerId, index, attackerState, reflected, 0, targetId);
           }
       }
 
@@ -3166,6 +3250,7 @@ export const executeBeatsWithInteractions = (
     ) => {
       let safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
       if (!safeCount) return;
+      if (isUserInvulnerableAtBeat(targetId, index)) return;
       const entryForImmunity =
         targetEntry ??
         (() => {
@@ -3189,6 +3274,7 @@ export const executeBeatsWithInteractions = (
     }
     if (parryCounters?.length) {
       parryCounters.forEach((counter) => {
+        if (isUserInvulnerableAtBeat(counter.attackerId, index)) return;
         const targetState = state.get(counter.attackerId);
         if (!targetState) return;
         const targetCharacter = characterById.get(counter.attackerId);
@@ -3246,7 +3332,14 @@ export const executeBeatsWithInteractions = (
             causeActorId: counter.defenderId || counter.attackerId,
           });
         }
-        recordHitConsequence(counter.attackerId, index, targetState, adjustedDamage, knockedSteps);
+        recordHitConsequence(
+          counter.attackerId,
+          index,
+          targetState,
+          adjustedDamage,
+          knockedSteps,
+          counter.defenderId || undefined,
+        );
           if (
             counter.defenderId &&
             counter.defenderId !== counter.attackerId &&
@@ -3255,7 +3348,7 @@ export const executeBeatsWithInteractions = (
             const defenderState = state.get(counter.defenderId);
             const reflected = applyCharacterDamage(counter.defenderId, 2);
             if (defenderState && reflected > 0) {
-              recordHitConsequence(counter.defenderId, index, defenderState, reflected, 0);
+              recordHitConsequence(counter.defenderId, index, defenderState, reflected, 0, counter.attackerId);
           }
         }
         disabledActors.add(counter.attackerId);
@@ -3653,9 +3746,10 @@ export const executeBeatsWithInteractions = (
           }
           const throwBlocked = isThrow && isThrowImmune(resolvedTargetEntry);
           const blocked = blockedByBlock || throwBlocked;
+          const targetInvulnerable = Boolean(targetId) && isUserInvulnerableAtBeat(targetId, index);
           const comboCardId = entry.cardId ? `${entry.cardId}` : '';
           let activeComboState = comboState;
-          if (!isThrow && targetId && !blockedByBlock) {
+          if (!isThrow && targetId && !blockedByBlock && !targetInvulnerable) {
             if (!activeComboState || activeComboState.cardId !== comboCardId) {
               activeComboState = ensureComboStateForHit(actorId, characterById.get(actorId), comboCardId, index);
             }
@@ -3685,7 +3779,7 @@ export const executeBeatsWithInteractions = (
               queueParryCounter(index, index + 1, targetId, actorId, attackDamage * 2, attackKbf + 1, directionIndex);
             }
           }
-            if (targetId && !blocked) {
+            if (targetId && !blocked && !targetInvulnerable) {
               if (targetState) {
                 const preserveAction =
                   executedActors.has(targetId) && (resolvedTargetEntry?.action ?? DEFAULT_ACTION) !== DAMAGE_ICON_ACTION;
@@ -3723,12 +3817,12 @@ export const executeBeatsWithInteractions = (
                     causeActorId: actorId,
                     causePriority: entry.priority,
                   });
-                  recordHitConsequence(targetId, index, targetState, adjustedDamage, 0);
+                  recordHitConsequence(targetId, index, targetState, adjustedDamage, 0, actorId);
                   if (hasHammerPassive && actorId !== targetId) {
                     const attackerState = state.get(actorId);
                     const reflected = applyCharacterDamage(actorId, 2);
                     if (attackerState && reflected > 0) {
-                      recordHitConsequence(actorId, index, attackerState, reflected, 0);
+                      recordHitConsequence(actorId, index, attackerState, reflected, 0, targetId);
                     }
                   }
                   disabledActors.add(targetId);
@@ -3780,12 +3874,12 @@ export const executeBeatsWithInteractions = (
                       causeActorId: actorId,
                       causePriority: entry.priority,
                     });
-                    recordHitConsequence(targetId, index, targetState, adjustedDamage, knockedSteps);
+                    recordHitConsequence(targetId, index, targetState, adjustedDamage, knockedSteps, actorId);
                     if (hasHammerPassive && actorId !== targetId) {
                       const attackerState = state.get(actorId);
                       const reflected = applyCharacterDamage(actorId, 2);
                       if (attackerState && reflected > 0) {
-                        recordHitConsequence(actorId, index, attackerState, reflected, 0);
+                        recordHitConsequence(actorId, index, attackerState, reflected, 0, targetId);
                       }
                   }
                   disabledActors.add(targetId);
@@ -3930,12 +4024,12 @@ export const executeBeatsWithInteractions = (
                     causePriority: entry.priority,
                   });
                 }
-                recordHitConsequence(targetId, index, targetState, adjustedDamage, knockedSteps);
+                recordHitConsequence(targetId, index, targetState, adjustedDamage, knockedSteps, actorId);
                 if (hasHammerPassive && actorId !== targetId) {
                   const attackerState = state.get(actorId);
                   const reflected = applyCharacterDamage(actorId, 2);
                   if (attackerState && reflected > 0) {
-                    recordHitConsequence(actorId, index, attackerState, reflected, 0);
+                    recordHitConsequence(actorId, index, attackerState, reflected, 0, targetId);
                   }
                 }
                 if (shouldStun) {
@@ -4124,12 +4218,15 @@ export const executeBeatsWithInteractions = (
 
     if (fireTokenKeys.size || ephemeralFireKeys.size) {
       state.forEach((targetState, targetId) => {
+        if (isUserInvulnerableAtBeat(targetId, index)) return;
         const key = coordKey(targetState.position);
         if (!fireTokenKeys.has(key) && !ephemeralFireKeys.has(key)) return;
         if (isFireDamageImmuneByUser(targetId)) return;
         const fireDamage = applyCharacterDamage(targetId, 1);
         if (fireDamage > 0) {
-          recordHitConsequence(targetId, index, targetState, fireDamage, 0);
+          const ownerId = fireTokenOwnerByKey.get(key);
+          const sourceUserId = ownerId && ownerId !== targetId ? ownerId : undefined;
+          recordHitConsequence(targetId, index, targetState, fireDamage, 0, sourceUserId);
         }
       });
     }
@@ -4232,6 +4329,37 @@ export const executeBeatsWithInteractions = (
       breakCount: remainingTimelineBreaks.length,
       breaks: remainingTimelineBreaks.slice(0, 6),
     });
+  }
+
+  const isBeatAllOpenForRoster = (beat: BeatEntry[] | undefined): boolean => {
+    if (!Array.isArray(beat)) return true;
+    return characters.every((character) => {
+      const entry = findEntryForCharacter(beat, character);
+      if (!entry) return true;
+      return isOpenBeatAction(entry.action ?? DEFAULT_ACTION);
+    });
+  };
+
+  while (normalizedBeats.length > 0 && !normalizedBeats[normalizedBeats.length - 1]?.length) {
+    normalizedBeats.pop();
+  }
+
+  if (normalizedBeats.length > 1) {
+    let trailingOpenStart = normalizedBeats.length;
+    for (let i = normalizedBeats.length - 1; i >= 0; i -= 1) {
+      if (!isBeatAllOpenForRoster(normalizedBeats[i])) break;
+      trailingOpenStart = i;
+    }
+    if (trailingOpenStart < normalizedBeats.length - 1) {
+      normalizedBeats.splice(trailingOpenStart + 1);
+    }
+  }
+
+  if (lastCalculated >= normalizedBeats.length) {
+    lastCalculated = normalizedBeats.length - 1;
+  }
+  if (normalizedBeats.length === 0) {
+    lastCalculated = -1;
   }
 
   const updatedCharacters = characters.map((character) => ({

@@ -13,6 +13,15 @@ import { executeBeatsWithInteractions } from './game/execute';
 import { buildReplaySeedTokens } from './game/tokenReplay';
 import { applyMatchOutcomeToBeats, evaluateMatchOutcome } from './game/matchEndRules';
 import { shouldBotAcceptDrawOffer } from './game/drawOfferRules';
+import { applyFfaForfeit, applyFfaLifecycle } from './game/ffaLifecycle';
+import {
+  createInitialFfaState,
+  isFfaEnabled,
+  isFfaPlayerForfeited,
+  isFfaPlayerInvulnerableAtBeat,
+  isFfaPlayerOutAtBeat,
+  listActiveFfaUserIds,
+} from './game/ffaState';
 import {
   getCharacterFirstEIndex,
   getCharacterLocationAtIndex,
@@ -60,6 +69,7 @@ import {
   DeckState,
   GameDoc,
   GameStateDoc,
+  FfaState,
   HexCoord,
   MatchDoc,
   PublicCharacter,
@@ -190,6 +200,33 @@ const attachAbilityHandCountsToCharacters = (
     if (!Number.isFinite(abilityHandCount)) return { ...character };
     return { ...character, abilityHandCount };
   });
+
+const getActionEligibleCharacters = (
+  publicState: GameStateDoc['public'],
+  characters: PublicCharacter[],
+): PublicCharacter[] => {
+  if (!Array.isArray(characters) || !characters.length) return [];
+  const ffaState = publicState?.ffa;
+  if (!isFfaEnabled(ffaState)) return characters;
+  const activeUserIds = new Set(listActiveFfaUserIds(ffaState, characters));
+  return characters.filter((character) => activeUserIds.has(character.userId));
+};
+
+const getAtBatCharactersForPublicState = (
+  publicState: GameStateDoc['public'],
+  beats: BeatEntry[][],
+  characters: PublicCharacter[],
+): { earliestIndex: number; atBatCharacters: PublicCharacter[] } => {
+  const earliestIndex = getTimelineEarliestEIndex(beats, characters);
+  const atBatCharacters = getCharactersAtEarliestE(beats, characters);
+  if (!isFfaEnabled(publicState?.ffa)) {
+    return { earliestIndex, atBatCharacters };
+  }
+  const filtered = atBatCharacters.filter(
+    (character) => !isFfaPlayerOutAtBeat(publicState.ffa, character.userId, earliestIndex),
+  );
+  return { earliestIndex, atBatCharacters: filtered };
+};
 
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const LOG_PREFIX = '[hexstrike]';
@@ -354,9 +391,21 @@ const BOT_QUEUE_CONFIGS: Record<BotQueueName, BotQueueConfig> = {
 };
 
 const BOT_QUEUE_NAMES = Object.keys(BOT_QUEUE_CONFIGS) as BotQueueName[];
+const QUICKPLAY_QUEUE_GROUP: QueueName[] = [
+  'quickplay1v1Queue',
+  'quickplay3pQueue',
+  'quickplay4pQueue',
+];
+const QUICKPLAY_QUEUE_SIZE: Partial<Record<QueueName, number>> = {
+  quickplay1v1Queue: 2,
+  quickplay3pQueue: 3,
+  quickplay4pQueue: 4,
+};
 const ALL_QUEUE_NAMES: QueueName[] = [
   TUTORIAL_QUEUE_NAME,
-  'quickplayQueue',
+  'quickplay1v1Queue',
+  'quickplay3pQueue',
+  'quickplay4pQueue',
   'rankedQueue',
   'botQueue',
   'botHardQueue',
@@ -847,6 +896,7 @@ const executeWithForcedRewindReturns = ({
   handTriggerAvailability,
   guardContinueAvailability,
   deckStates,
+  ffa,
   initialTokens = [],
 }: {
   beats: BeatEntry[][];
@@ -857,6 +907,7 @@ const executeWithForcedRewindReturns = ({
   handTriggerAvailability: Map<string, Set<string>>;
   guardContinueAvailability: Map<string, boolean>;
   deckStates: Map<string, DeckState>;
+  ffa?: FfaState;
   initialTokens?: BoardToken[];
 }) => {
   // Replay execution must seed tokens from timeline/interactions, not the current
@@ -871,6 +922,9 @@ const executeWithForcedRewindReturns = ({
     replaySeedTokens,
     handTriggerAvailability,
     guardContinueAvailability,
+    {
+      isUserInvulnerableAtBeat: (userId, beatIndex) => isFfaPlayerInvulnerableAtBeat(ffa, userId, beatIndex),
+    },
   );
   syncFocusedCardsFromInteractions(deckStates, executed.interactions);
   while (autoResolveForcedRewindReturns(executed.beats, executed.characters, executed.interactions, deckStates)) {
@@ -883,6 +937,9 @@ const executeWithForcedRewindReturns = ({
       replaySeedTokens,
       handTriggerAvailability,
       guardContinueAvailability,
+      {
+        isUserInvulnerableAtBeat: (userId, beatIndex) => isFfaPlayerInvulnerableAtBeat(ffa, userId, beatIndex),
+      },
     );
     syncFocusedCardsFromInteractions(deckStates, executed.interactions);
   }
@@ -1529,10 +1586,12 @@ export function buildServer(port: number) {
     if (!outcome || !userId) return 'unknown';
     if (outcome.reason === 'draw-agreement') {
       const drawUsers = Array.isArray(outcome.drawUserIds) ? outcome.drawUserIds : [];
-      if (drawUsers.includes(userId)) return 'draw';
-      return 'unknown';
+      if (!drawUsers.length || drawUsers.includes(userId)) return 'draw';
+      return 'loss';
     }
     if (outcome.winnerUserId && outcome.winnerUserId === userId) return 'win';
+    if (outcome.winnerUserId && outcome.winnerUserId !== userId) return 'loss';
+    if (Array.isArray(outcome.loserUserIds) && outcome.loserUserIds.includes(userId)) return 'loss';
     if (outcome.loserUserId && outcome.loserUserId === userId) return 'loss';
     return 'unknown';
   };
@@ -1573,6 +1632,7 @@ export function buildServer(port: number) {
       sourceGameId: replay.sourceGameId,
       sourceMatchId: replay.sourceMatchId ?? null,
       players: replay.players,
+      playerCount: Array.isArray(replay.players) ? replay.players.length : null,
       matchOutcome: outcome,
       beatsToEnd: stats.beatsToEnd,
       lossMethod: stats.lossMethod,
@@ -1838,9 +1898,13 @@ export function buildServer(port: number) {
         return { userId, username: user.username };
       }),
     );
+    const quickplayQueue = QUICKPLAY_QUEUE_GROUP.flatMap((queueName) => snapshot[queueName] ?? []);
     return {
       connected: connectedUsers,
-      quickplayQueue: [...snapshot.quickplayQueue],
+      quickplayQueue,
+      quickplay1v1Queue: [...snapshot.quickplay1v1Queue],
+      quickplay3pQueue: [...snapshot.quickplay3pQueue],
+      quickplay4pQueue: [...snapshot.quickplay4pQueue],
       inGame: [...snapshot.inGame],
     };
   };
@@ -2158,7 +2222,7 @@ export function buildServer(port: number) {
         } else {
           const beats = publicState.beats ?? publicState.timeline ?? [];
           const characters = ensureBaselineCharacters(publicState);
-          const atBat = getCharactersAtEarliestE(beats, characters);
+          const { atBatCharacters: atBat } = getAtBatCharactersForPublicState(publicState, beats, characters);
           botRequired = atBat.some((character) => character.userId === session.botUserId);
         }
         if (!botRequired) return;
@@ -2363,7 +2427,7 @@ export function buildServer(port: number) {
             null;
           if (!botUserId) return;
         } else {
-          const atBat = getCharactersAtEarliestE(beats, characters);
+          const { atBatCharacters: atBat } = getAtBatCharactersForPublicState(publicState, beats, characters);
           botUserId = atBat.map((character) => character.userId).find((candidateId) => botIds.has(candidateId)) ?? null;
           if (!botUserId) return;
         }
@@ -2535,8 +2599,13 @@ export function buildServer(port: number) {
     }
     const beats = publicState.beats ?? publicState.timeline ?? [];
     const characters = ensureBaselineCharacters(publicState);
-    const earliestIndex = getTimelineEarliestEIndex(beats, characters);
-    const atBatCharacters = getCharactersAtEarliestE(beats, characters);
+    const eligibleCharacters = getActionEligibleCharacters(publicState, characters);
+    if (!eligibleCharacters.length) return;
+    const { earliestIndex, atBatCharacters } = getAtBatCharactersForPublicState(
+      publicState,
+      beats,
+      eligibleCharacters,
+    );
     const requiredUserIds = Array.from(new Set(atBatCharacters.map((candidate) => candidate.userId).filter(Boolean)));
     if (!requiredUserIds.length) return;
     requiredUserIds.forEach((userId) => {
@@ -2577,6 +2646,29 @@ export function buildServer(port: number) {
     const land = game.state.public.land ?? [];
     const resolvedDeckStates = deckStates ?? gameDeckStates.get(game.id);
     if (!resolvedDeckStates) return false;
+    if (isFfaEnabled(game.state.public.ffa) || characters.length >= 3) {
+      const ffaState = game.state.public.ffa ?? createInitialFfaState(characters);
+      const ffaResult = applyFfaLifecycle({
+        beats,
+        characters,
+        land,
+        deckStates: resolvedDeckStates,
+        ffa: ffaState,
+      });
+      game.state.public.ffa = ffaResult.ffa;
+      if (!ffaResult.outcome) {
+        game.state.public.timeline = beats;
+        game.state.public.beats = beats;
+        return false;
+      }
+      applyMatchOutcomeToBeats(beats, characters, ffaResult.outcome, land);
+      game.state.public.timeline = beats;
+      game.state.public.beats = beats;
+      game.state.public.matchOutcome = ffaResult.outcome;
+      game.state.public.pendingActions = undefined;
+      pendingActionSets.delete(game.id);
+      return true;
+    }
     const outcome = evaluateMatchOutcome(beats, characters, resolvedDeckStates, land);
     if (!outcome) return false;
     applyMatchOutcomeToBeats(beats, characters, outcome, land);
@@ -2608,7 +2700,7 @@ export function buildServer(port: number) {
     pendingActionSets.delete(game.id);
   };
   const handleJoin = async (body: Record<string, unknown>) => {
-    const requestedQueue = isQueueName(body.queue) ? body.queue : 'quickplayQueue';
+    const requestedQueue = isQueueName(body.queue) ? body.queue : 'quickplay1v1Queue';
     const forcedCharacterId = isTutorialQueue(requestedQueue)
       ? TUTORIAL_PLAYER_CHARACTER_ID
       : normalizeCharacterId(body.characterId || body.characterID);
@@ -2632,7 +2724,7 @@ export function buildServer(port: number) {
     }
     const queue = requestedQueue;
     lobby.addToQueue(assignedUser.id, queue);
-    if (queue === 'quickplayQueue') {
+    if (QUICKPLAY_QUEUE_GROUP.includes(queue)) {
       console.log(`[lobby] ${assignedUser.username} (${assignedUser.id}) joined quickplay queue`);
     }
     if (isTutorialQueue(queue)) {
@@ -2748,11 +2840,15 @@ export function buildServer(port: number) {
     matchmakeInProgress = true;
     try {
       let snapshot = lobby.serialize();
-      while (snapshot.quickplayQueue.length >= 2) {
-        const [first, second] = snapshot.quickplayQueue;
-        if (!first || !second) break;
-        await createMatchWithUsers([{ id: first }, { id: second }]);
-        snapshot = lobby.serialize();
+      for (const queueName of QUICKPLAY_QUEUE_GROUP) {
+        const requiredPlayers = QUICKPLAY_QUEUE_SIZE[queueName] ?? 2;
+        while ((snapshot[queueName] ?? []).length >= requiredPlayers) {
+          const queue = snapshot[queueName] ?? [];
+          const selected = queue.slice(0, requiredPlayers).filter(Boolean);
+          if (selected.length < requiredPlayers) break;
+          await createMatchWithUsers(selected.map((id) => ({ id })));
+          snapshot = lobby.serialize();
+        }
       }
     } finally {
       matchmakeInProgress = false;
@@ -2932,12 +3028,18 @@ export function buildServer(port: number) {
       return { ok: false, status: 409, error: 'Match is already over' };
     }
     const characters = game.state?.public ? ensureBaselineCharacters(game.state.public) : [];
+    const ffaState = game.state?.public?.ffa;
     const isPlayer = game.players.some((player) => player.userId === userId);
     const hasCharacter = characters.some((character) => character.userId === userId);
     if (!isPlayer || !hasCharacter) {
       console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'not-in-game' });
       logActionSetEvent('rejected', { reason: 'not-in-game' });
       return { ok: false, status: 403, error: 'User not in game' };
+    }
+    if (isFfaPlayerForfeited(ffaState, userId)) {
+      console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'player-forfeited' });
+      logActionSetEvent('rejected', { reason: 'player-forfeited' });
+      return { ok: false, status: 409, error: 'Forfeited players cannot submit actions.' };
     }
     let interactions = game.state?.public?.customInteractions ?? [];
     const hasPendingInteractions = interactions.some((interaction) => interaction.status === 'pending');
@@ -2992,11 +3094,15 @@ export function buildServer(port: number) {
       console.log(`${LOG_PREFIX} action:set pre`, {
         userId,
         gameId,
-        earliestIndex: getTimelineEarliestEIndex(beats, characters),
+        earliestIndex: getTimelineEarliestEIndex(beats, getActionEligibleCharacters(game.state.public, characters)),
       timeline: buildTimelineSummary(beats, characters),
       pendingActions: game.state?.public?.pendingActions ?? null,
     });
-    if (!isCharacterAtEarliestE(beats, characters, character)) {
+    const eligibleCharacters = getActionEligibleCharacters(game.state.public, characters);
+    if (!eligibleCharacters.length) {
+      return { ok: false, status: 409, error: 'No active players remain in this game.' };
+    }
+    if (!isCharacterAtEarliestE(beats, eligibleCharacters, character)) {
       console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'behind-earliest-e' });
       logActionSetEvent('rejected', { reason: 'behind-earliest-e' });
       return {
@@ -3005,9 +3111,17 @@ export function buildServer(port: number) {
         error: 'Action set rejected: player is behind the earliest timeline beat',
       };
     }
-    const earliestIndex = getTimelineEarliestEIndex(beats, characters);
-    const atBatCharacters = getCharactersAtEarliestE(beats, characters);
+    const { earliestIndex, atBatCharacters } = getAtBatCharactersForPublicState(
+      game.state.public,
+      beats,
+      eligibleCharacters,
+    );
     const atBatUserIds = Array.from(new Set(atBatCharacters.map((candidate) => candidate.userId).filter(Boolean)));
+    if (!atBatUserIds.includes(userId)) {
+      console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'not-required' });
+      logActionSetEvent('rejected', { reason: 'not-required' });
+      return { ok: false, status: 409, error: 'Action set rejected: player is not required for current beat' };
+    }
     const comboInteraction = findComboContinuation(interactions, userId, earliestIndex);
     const comboRequired = Boolean(comboInteraction);
     const match = await db.findMatch(game.matchId);
@@ -3117,6 +3231,7 @@ export function buildServer(port: number) {
         handTriggerAvailability,
         guardContinueAvailability,
         deckStates,
+        ffa: game.state.public.ffa,
         initialTokens: game.state.public.boardTokens ?? [],
       });
       game.state.public.beats = executed.beats;
@@ -3279,6 +3394,7 @@ export function buildServer(port: number) {
       handTriggerAvailability,
       guardContinueAvailability,
       deckStates,
+      ffa: game.state.public.ffa,
       initialTokens: game.state.public.boardTokens ?? [],
     });
     game.state.public.beats = executed.beats;
@@ -3337,11 +3453,64 @@ export function buildServer(port: number) {
     if (!loser) {
       return { ok: false, status: 403, error: 'User not in game' };
     }
+    const beats = game.state.public.beats ?? game.state.public.timeline ?? [];
+    const land = game.state.public.land ?? [];
+    const match = await db.findMatch(game.matchId);
+    const deckStates = await ensureDeckStatesForGame(game, match);
+    if (isFfaEnabled(game.state.public.ffa) || characters.length >= 3) {
+      const eligibleCharacters = getActionEligibleCharacters(game.state.public, characters);
+      const beatIndex = eligibleCharacters.length
+        ? Math.max(0, getTimelineEarliestEIndex(beats, eligibleCharacters))
+        : 0;
+      const forfeitResult = applyFfaForfeit({
+        beats,
+        characters,
+        land,
+        deckStates,
+        ffa: game.state.public.ffa,
+        userId: loser.userId,
+        beatIndex,
+      });
+      if (!forfeitResult.applied) {
+        return { ok: false, status: 409, error: 'Unable to apply forfeit.' };
+      }
+      game.state.public.ffa = forfeitResult.ffa;
+      game.state.public.beats = beats;
+      game.state.public.timeline = beats;
+      game.state.public.pendingActions = undefined;
+      pendingActionSets.delete(game.id);
+      const interactions = game.state.public.customInteractions ?? [];
+      interactions.forEach((interaction) => {
+        if (!interaction || interaction.status !== 'pending') return;
+        if (
+          interaction.actorUserId !== loser.userId &&
+          interaction.targetUserId !== loser.userId &&
+          interaction.sourceUserId !== loser.userId
+        ) {
+          return;
+        }
+        interaction.status = 'resolved';
+        interaction.resolution = {
+          ...(interaction.resolution ?? {}),
+          accepted: false,
+          supersededByForfeit: true,
+        };
+      });
+      game.state.public.customInteractions = interactions;
+      if (forfeitResult.outcome) {
+        applyExplicitOutcome(game, forfeitResult.outcome);
+      } else {
+        applyMatchOutcome(game, deckStates);
+      }
+      const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
+      sendGameUpdate(match, updatedGame, deckStates);
+      const view = buildGameViewForPlayer(updatedGame, userId, deckStates);
+      return { ok: true, status: 200, payload: view };
+    }
     const winner = characters.find((character) => character.userId !== loser.userId);
     if (!winner) {
       return { ok: false, status: 409, error: 'Unable to resolve forfeit winner' };
     }
-    const beats = game.state.public.beats ?? game.state.public.timeline ?? [];
     const beatIndex = Math.max(0, getTimelineEarliestEIndex(beats, characters));
     const outcome: GameStateDoc['public']['matchOutcome'] = {
       winnerUserId: winner.userId,
@@ -3358,8 +3527,6 @@ export function buildServer(port: number) {
       interaction.resolution = { ...(interaction.resolution ?? {}), accepted: false, supersededByForfeit: true };
     });
     game.state.public.customInteractions = interactions;
-    const match = await db.findMatch(game.matchId);
-    const deckStates = await ensureDeckStatesForGame(game, match);
     const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
     sendGameUpdate(match, updatedGame, deckStates);
     const view = buildGameViewForPlayer(updatedGame, userId, deckStates);
@@ -3378,15 +3545,15 @@ export function buildServer(port: number) {
       return { ok: false, status: 409, error: 'Match is already over' };
     }
     const characters = game.state?.public ? ensureBaselineCharacters(game.state.public) : [];
-    const offerer = characters.find((character) => character.userId === userId || character.username === userId);
+    const eligibleCharacters = getActionEligibleCharacters(game.state.public, characters);
+    const offerer = eligibleCharacters.find((character) => character.userId === userId || character.username === userId);
     if (!offerer) {
       return { ok: false, status: 403, error: 'User not in game' };
     }
-    const opponent = characters.find((character) => character.userId !== offerer.userId);
-    if (!opponent) {
-      return { ok: false, status: 409, error: 'Unable to find draw offer recipient' };
+    const recipients = eligibleCharacters.filter((character) => character.userId !== offerer.userId);
+    if (!recipients.length) {
+      return { ok: false, status: 409, error: 'Unable to find draw offer recipients' };
     }
-    const opponentUser = await db.findUser(opponent.userId);
     const nowMs = Date.now();
     const remainingSeconds = getDrawOfferCooldownRemainingSeconds(game.id, offerer.userId, nowMs);
     if (remainingSeconds > 0) {
@@ -3406,54 +3573,78 @@ export function buildServer(port: number) {
       return { ok: false, status: 409, error: 'A draw offer is already pending.', code: 'draw-offer-pending' };
     }
     const beats = game.state.public.beats ?? game.state.public.timeline ?? [];
-    const beatIndex = Math.max(0, getTimelineEarliestEIndex(beats, characters));
-    const interactionId = `${DRAW_OFFER_INTERACTION_TYPE}:${beatIndex}:${offerer.userId}:${opponent.userId}:${randomUUID()}`;
-    if (opponentUser?.isBot) {
-      const botDifficulty = normalizeBotDifficulty(opponentUser?.botDifficulty);
-      const botDamage = getCharacterDamageAtIndex(beats, opponent, beatIndex);
-      const playerDamage = getCharacterDamageAtIndex(beats, offerer, beatIndex);
-      const accepted = shouldBotAcceptDrawOffer(botDifficulty, botDamage, playerDamage);
-      interactions.push({
-        id: interactionId,
-        type: DRAW_OFFER_INTERACTION_TYPE,
-        beatIndex,
-        actorUserId: opponent.userId,
-        targetUserId: opponent.userId,
-        sourceUserId: offerer.userId,
-        status: 'resolved',
-        resolution: {
-          offererUserId: offerer.userId,
-          accepted,
-          autoResolvedByBot: true,
-          botDifficulty,
-          botDamage,
-          playerDamage,
-        },
-      });
-      if (accepted) {
-        const drawUserIds = Array.from(new Set([offerer.userId, opponent.userId]));
-        applyExplicitOutcome(game, {
-          reason: 'draw-agreement',
+    const beatIndex = Math.max(0, getTimelineEarliestEIndex(beats, eligibleCharacters));
+    const offerGroupId = randomUUID();
+    let anyDeclined = false;
+    let decliningUserId: string | null = null;
+    const pendingInGroup: CustomInteraction[] = [];
+    for (const recipient of recipients) {
+      const interactionId = `${DRAW_OFFER_INTERACTION_TYPE}:${beatIndex}:${offerer.userId}:${recipient.userId}:${offerGroupId}`;
+      const recipientUser = await db.findUser(recipient.userId);
+      if (recipientUser?.isBot) {
+        const botDifficulty = normalizeBotDifficulty(recipientUser?.botDifficulty);
+        const botDamage = getCharacterDamageAtIndex(beats, recipient, beatIndex);
+        const playerDamage = getCharacterDamageAtIndex(beats, offerer, beatIndex);
+        const accepted = shouldBotAcceptDrawOffer(botDifficulty, botDamage, playerDamage);
+        if (!accepted && !decliningUserId) {
+          decliningUserId = recipient.userId;
+        }
+        anyDeclined = anyDeclined || !accepted;
+        interactions.push({
+          id: interactionId,
+          type: DRAW_OFFER_INTERACTION_TYPE,
           beatIndex,
-          drawUserIds,
+          actorUserId: recipient.userId,
+          targetUserId: recipient.userId,
+          sourceUserId: offerer.userId,
+          status: 'resolved',
+          resolution: {
+            offererUserId: offerer.userId,
+            offerGroupId,
+            accepted,
+            autoResolvedByBot: true,
+            botDifficulty,
+            botDamage,
+            playerDamage,
+          },
         });
-        interactions.forEach((candidate) => {
-          if (!candidate || candidate.id === interactionId) return;
-          if (candidate.type !== DRAW_OFFER_INTERACTION_TYPE || candidate.status !== 'pending') return;
-          candidate.status = 'resolved';
-          candidate.resolution = { ...(candidate.resolution ?? {}), accepted: false, supersededByDraw: true };
-        });
+        continue;
       }
-    } else {
-      interactions.push({
+      const interaction: CustomInteraction = {
         id: interactionId,
         type: DRAW_OFFER_INTERACTION_TYPE,
         beatIndex,
-        actorUserId: opponent.userId,
-        targetUserId: opponent.userId,
+        actorUserId: recipient.userId,
+        targetUserId: recipient.userId,
         sourceUserId: offerer.userId,
         status: 'pending',
-        resolution: { offererUserId: offerer.userId },
+        resolution: { offererUserId: offerer.userId, offerGroupId },
+      };
+      interactions.push(interaction);
+      pendingInGroup.push(interaction);
+    }
+    if (anyDeclined) {
+      pendingInGroup.forEach((interaction) => {
+        interaction.status = 'resolved';
+        interaction.resolution = {
+          ...(interaction.resolution ?? {}),
+          accepted: false,
+          declinedByUserId: decliningUserId ?? undefined,
+          supersededByDecline: true,
+        };
+      });
+    } else if (!pendingInGroup.length) {
+      const drawUserIds = eligibleCharacters.map((character) => character.userId);
+      applyExplicitOutcome(game, {
+        reason: 'draw-agreement',
+        beatIndex,
+        drawUserIds,
+      });
+      interactions.forEach((candidate) => {
+        if (!candidate || candidate.type !== DRAW_OFFER_INTERACTION_TYPE) return;
+        if (candidate.status !== 'pending') return;
+        candidate.status = 'resolved';
+        candidate.resolution = { ...(candidate.resolution ?? {}), accepted: false, supersededByDraw: true };
       });
     }
     game.state.public.customInteractions = interactions;
@@ -3511,6 +3702,11 @@ export function buildServer(port: number) {
       logInteractionEvent('rejected', { reason: 'not-in-game' });
       return { ok: false, status: 403, error: 'User not in game' };
     }
+    if (isFfaPlayerForfeited(game.state?.public?.ffa, userId)) {
+      console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'player-forfeited' });
+      logInteractionEvent('rejected', { reason: 'player-forfeited' });
+      return { ok: false, status: 409, error: 'Forfeited players cannot resolve interactions.' };
+    }
     const interactions = game.state?.public?.customInteractions ?? [];
     const interaction = interactions.find((item) => item.id === interactionId);
     if (!interaction || interaction.status !== 'pending') {
@@ -3560,32 +3756,57 @@ export function buildServer(port: number) {
         return { ok: false, status: 400, error: 'Invalid draw choice' };
       }
       const offererUserId = `${interaction.sourceUserId ?? interaction.resolution?.offererUserId ?? ''}`.trim();
+      const offerGroupId = `${interaction.resolution?.offerGroupId ?? ''}`.trim();
       interaction.status = 'resolved';
       interaction.resolution = {
         ...(interaction.resolution ?? {}),
         accepted: resolvedAccept,
         offererUserId: offererUserId || undefined,
+        offerGroupId: offerGroupId || undefined,
       };
-      if (resolvedAccept) {
-        const drawUserIds = Array.from(
-          new Set(
-            [interaction.actorUserId, offererUserId]
-              .map((value) => `${value ?? ''}`.trim())
-              .filter((value) => Boolean(value)),
-          ),
-        );
-        const beatIndex = Math.max(0, getTimelineEarliestEIndex(beats, characters));
-        applyExplicitOutcome(game, {
-          reason: 'draw-agreement',
-          beatIndex,
-          drawUserIds,
-        });
-        interactions.forEach((candidate) => {
+      const offerGroup = interactions.filter((candidate) => {
+        if (!candidate || candidate.type !== DRAW_OFFER_INTERACTION_TYPE) return false;
+        const candidateGroupId = `${candidate.resolution?.offerGroupId ?? ''}`.trim();
+        const candidateOfferer = `${candidate.sourceUserId ?? candidate.resolution?.offererUserId ?? ''}`.trim();
+        if (offerGroupId && candidateGroupId !== offerGroupId) return false;
+        return candidateOfferer === offererUserId;
+      });
+      if (!resolvedAccept) {
+        offerGroup.forEach((candidate) => {
           if (!candidate || candidate.id === interaction.id) return;
-          if (candidate.type !== DRAW_OFFER_INTERACTION_TYPE || candidate.status !== 'pending') return;
+          if (candidate.status !== 'pending') return;
           candidate.status = 'resolved';
-          candidate.resolution = { ...(candidate.resolution ?? {}), accepted: false, supersededByDraw: true };
+          candidate.resolution = {
+            ...(candidate.resolution ?? {}),
+            accepted: false,
+            offerGroupId: offerGroupId || undefined,
+            supersededByDecline: true,
+            declinedByUserId: userId,
+          };
         });
+      } else {
+        const anyDeclined = offerGroup.some(
+          (candidate) =>
+            candidate?.status === 'resolved' && candidate?.resolution && candidate.resolution.accepted === false,
+        );
+        const allResolved = offerGroup.every((candidate) => candidate?.status === 'resolved');
+        const allAccepted = allResolved && offerGroup.every((candidate) => candidate?.resolution?.accepted === true);
+        if (!anyDeclined && allAccepted) {
+          const eligibleCharacters = getActionEligibleCharacters(game.state.public, characters);
+          const beatIndex = Math.max(0, getTimelineEarliestEIndex(beats, eligibleCharacters));
+          const drawUserIds = eligibleCharacters.map((character) => character.userId);
+          applyExplicitOutcome(game, {
+            reason: 'draw-agreement',
+            beatIndex,
+            drawUserIds,
+          });
+          interactions.forEach((candidate) => {
+            if (!candidate || candidate.id === interaction.id) return;
+            if (candidate.type !== DRAW_OFFER_INTERACTION_TYPE || candidate.status !== 'pending') return;
+            candidate.status = 'resolved';
+            candidate.resolution = { ...(candidate.resolution ?? {}), accepted: false, supersededByDraw: true };
+          });
+        }
       }
       const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
       sendGameUpdate(match, updatedGame, deckStates);
@@ -3973,6 +4194,7 @@ export function buildServer(port: number) {
       handTriggerAvailability,
       guardContinueAvailability,
       deckStates,
+      ffa: game.state.public.ffa,
       initialTokens: game.state.public.boardTokens ?? [],
     });
     game.state.public.beats = executed.beats;

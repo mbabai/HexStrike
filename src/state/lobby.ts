@@ -12,7 +12,9 @@ export interface LobbyStore extends LobbySnapshot {
 
 const queues: QueueName[] = [
   'tutorialQueue',
-  'quickplayQueue',
+  'quickplay1v1Queue',
+  'quickplay3pQueue',
+  'quickplay4pQueue',
   'rankedQueue',
   'botQueue',
   'botHardQueue',
@@ -23,7 +25,9 @@ const queues: QueueName[] = [
 export function createLobbyStore(): LobbyStore {
   const state: LobbySnapshot = {
     tutorialQueue: [],
-    quickplayQueue: [],
+    quickplay1v1Queue: [],
+    quickplay3pQueue: [],
+    quickplay4pQueue: [],
     rankedQueue: [],
     botQueue: [],
     botHardQueue: [],
@@ -49,7 +53,9 @@ export function createLobbyStore(): LobbyStore {
 
   const serialize = (): LobbySnapshot => ({
     tutorialQueue: [...state.tutorialQueue],
-    quickplayQueue: [...state.quickplayQueue],
+    quickplay1v1Queue: [...state.quickplay1v1Queue],
+    quickplay3pQueue: [...state.quickplay3pQueue],
+    quickplay4pQueue: [...state.quickplay4pQueue],
     rankedQueue: [...state.rankedQueue],
     botQueue: [...state.botQueue],
     botHardQueue: [...state.botHardQueue],
@@ -96,7 +102,9 @@ export function createLobbyStore(): LobbyStore {
 
   const clearQueues = () => {
     state.tutorialQueue.splice(0, state.tutorialQueue.length);
-    state.quickplayQueue.splice(0, state.quickplayQueue.length);
+    state.quickplay1v1Queue.splice(0, state.quickplay1v1Queue.length);
+    state.quickplay3pQueue.splice(0, state.quickplay3pQueue.length);
+    state.quickplay4pQueue.splice(0, state.quickplay4pQueue.length);
     state.rankedQueue.splice(0, state.rankedQueue.length);
     state.botQueue.splice(0, state.botQueue.length);
     state.botHardQueue.splice(0, state.botHardQueue.length);

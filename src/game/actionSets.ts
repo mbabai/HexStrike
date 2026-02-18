@@ -150,11 +150,17 @@ export const applyActionSetToBeats = (
     lastTargetEntry = entry;
     break;
   }
+  const openStartEntry =
+    startIndex >= 0 && startIndex < updated.length
+      ? findEntryForUser(updated[startIndex], target)
+      : undefined;
+  const seedSource =
+    openStartEntry && isOpenBeatAction(openStartEntry.action) ? openStartEntry : lastTargetEntry;
 
   const seed = {
-    damage: typeof lastTargetEntry?.damage === 'number' ? lastTargetEntry.damage : 0,
-    location: cloneLocation(lastTargetEntry?.location ?? target.position),
-    facing: normalizeFacing(lastTargetEntry?.facing, target.facing ?? 0),
+    damage: typeof seedSource?.damage === 'number' ? seedSource.damage : 0,
+    location: cloneLocation(seedSource?.location ?? target.position),
+    facing: normalizeFacing(seedSource?.facing, target.facing ?? 0),
   };
 
   const actions = actionList.map((item, index) => ({

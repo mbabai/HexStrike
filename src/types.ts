@@ -1,6 +1,8 @@
 export type QueueName =
   | 'tutorialQueue'
-  | 'quickplayQueue'
+  | 'quickplay1v1Queue'
+  | 'quickplay3pQueue'
+  | 'quickplay4pQueue'
   | 'rankedQueue'
   | 'botQueue'
   | 'botHardQueue'
@@ -9,7 +11,9 @@ export type QueueName =
 
 export interface LobbySnapshot {
   tutorialQueue: string[];
-  quickplayQueue: string[];
+  quickplay1v1Queue: string[];
+  quickplay3pQueue: string[];
+  quickplay4pQueue: string[];
   rankedQueue: string[];
   botQueue: string[];
   botHardQueue: string[];
@@ -234,6 +238,7 @@ export interface BeatEntry {
   focusCardId?: string;
   cardId?: string;
   passiveCardId?: string;
+  respawn?: boolean;
   abilityHandCount?: number;
   havenPassiveSkipApplied?: boolean;
   stunOnly?: boolean;
@@ -241,6 +246,7 @@ export interface BeatEntry {
     type: 'hit';
     damageDelta: number;
     knockbackDistance: number;
+    sourceUserId?: string;
   }>;
 }
 
@@ -280,9 +286,33 @@ export interface CustomInteraction {
 export interface MatchOutcome {
   winnerUserId?: string;
   loserUserId?: string;
+  loserUserIds?: string[];
   reason: 'no-cards-abyss' | 'far-from-land' | 'forfeit' | 'draw-agreement';
   beatIndex: number;
   drawUserIds?: string[];
+}
+
+export interface BeatRange {
+  startBeatIndex: number;
+  endBeatIndex: number;
+}
+
+export interface FfaPlayerState {
+  score: number;
+  lastHitByUserId: string | null;
+  deathWindows: BeatRange[];
+  invulnerableWindows: BeatRange[];
+  forfeited: boolean;
+}
+
+export interface FfaState {
+  enabled: boolean;
+  pointsToWin: number;
+  deathBeats: number;
+  invulnerableBeats: number;
+  respawnCenter: HexCoord;
+  lastProcessedBeatIndex: number;
+  playerStates: Record<string, FfaPlayerState>;
 }
 
 export interface PublicCharacter {
@@ -306,6 +336,7 @@ export interface GamePublicState {
   pendingActions?: PendingActions;
   customInteractions: CustomInteraction[];
   matchOutcome?: MatchOutcome;
+  ffa?: FfaState;
   tutorial?: TutorialPublicState;
 }
 

@@ -62,7 +62,13 @@ const refresh = async () => {
   try {
     const data = await fetchPresence();
     const connected = Array.isArray(data.connected) ? data.connected : [];
-    const quickplayQueue = Array.isArray(data.quickplayQueue) ? data.quickplayQueue : [];
+    const quickplayQueue = Array.isArray(data.quickplayQueue)
+      ? data.quickplayQueue
+      : [
+          ...(Array.isArray(data.quickplay1v1Queue) ? data.quickplay1v1Queue : []),
+          ...(Array.isArray(data.quickplay3pQueue) ? data.quickplay3pQueue : []),
+          ...(Array.isArray(data.quickplay4pQueue) ? data.quickplay4pQueue : []),
+        ];
     const inGame = Array.isArray(data.inGame) ? data.inGame : [];
     const quickplaySet = new Set(quickplayQueue);
     const inGameSet = new Set(inGame);

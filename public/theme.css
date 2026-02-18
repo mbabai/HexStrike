@@ -2790,6 +2790,7 @@ img[src$='Death.png'] {
   --action-hand-offscreen: 0.3;
   --action-panel-width: min(230px, 28vw);
   --action-center-right: 18px;
+  --action-center-bottom: calc(var(--action-hand-height) * 0.32);
   --action-hand-modal-gap: 18px;
   --action-hand-right: calc(var(--action-panel-width) + var(--action-center-right) + var(--action-hand-modal-gap));
 }
@@ -3358,7 +3359,7 @@ img[src$='Death.png'] {
 .action-center {
   position: absolute;
   right: var(--action-center-right);
-  bottom: calc(var(--action-hand-height) * 0.08);
+  bottom: var(--action-center-bottom);
   display: grid;
   justify-items: center;
   gap: 12px;
@@ -3739,6 +3740,7 @@ img[src$='Death.png'] {
     --action-hand-card-scale: 0.7;
     --action-panel-width: min(180px, 40vw);
     --action-center-right: 10px;
+    --action-center-bottom: calc(var(--action-hand-height) * 0.38);
     --action-hand-modal-gap: 12px;
   }
 
@@ -3750,10 +3752,6 @@ img[src$='Death.png'] {
   .action-hand-ability {
     left: auto;
     right: var(--action-hand-right);
-  }
-
-  .action-center {
-    bottom: calc(var(--action-hand-height) * 0.12);
   }
 
   .rotation-wheel {

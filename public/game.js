@@ -4,6 +4,7 @@ import { createViewState, createPointerState, centerView, applyMomentum } from '
 import { bindControls } from './game/controls.js';
 import { ACTION_DURATION_MS, createTimelinePlayback } from './game/timelinePlayback.js';
 import { createTimelineTooltip } from './game/timelineTooltip.js';
+import { setTimeIndicatorPlayerCount } from './game/timeIndicatorView.js';
 import { GAME_CONFIG } from './game/config.js';
 import { createGameOverView } from './game/gameOverView.js';
 import { getMatchOutcome } from './game/matchEndRules.js';
@@ -49,6 +50,7 @@ const TIMELINE_SPEED_MAX = 3;
 const MAX_HAND_SIZE = 4;
 const VIEW_MODE_LIVE = 'live';
 const VIEW_MODE_REPLAY = 'replay';
+const THREE_PLAYER_DEFAULT_SCALE = 0.55;
 const AXIAL_DIRECTIONS = [
   { q: 1, r: 0 },
   { q: 1, r: -1 },
@@ -59,6 +61,12 @@ const AXIAL_DIRECTIONS = [
 ];
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const getDefaultScaleForPlayerCount = (playerCount) => {
+  const count = Number(playerCount);
+  if (Number.isFinite(count) && count === 3) return THREE_PLAYER_DEFAULT_SCALE;
+  return GAME_CONFIG.defaultScale;
+};
 
 const normalizeActionLabel = (value) => {
   const trimmed = `${value ?? ''}`.trim();
@@ -1764,6 +1772,7 @@ export const initGame = () => {
 
   const setGameState = (nextState) => {
     gameState = nextState;
+    setTimeIndicatorPlayerCount(gameState?.state?.public?.characters?.length ?? 2);
     setGameMenuLabels();
     tooltip.setGameState(nextState);
     if (isReplayMode()) {
@@ -1776,6 +1785,13 @@ export const initGame = () => {
       clearHavenHover();
     }
     if (!didInitTimelinePosition && gameState) {
+      if (!isReplayMode()) {
+        const playerCount = Array.isArray(gameState?.state?.public?.characters)
+          ? gameState.state.public.characters.length
+          : 0;
+        viewState.scale = getDefaultScaleForPlayerCount(playerCount);
+        centerView(viewState, renderer.viewport);
+      }
       if (isReplayMode()) {
         timeIndicatorViewModel.setValue(0);
       } else {

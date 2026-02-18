@@ -8,15 +8,17 @@ import {
 import { getSelectedDeck } from './deckStore.js';
 
 const TUTORIAL_QUEUE = 'tutorialQueue';
-const QUICKPLAY_QUEUE = 'quickplayQueue';
-const RANKED_QUEUE = 'rankedQueue';
+const QUICKPLAY_1V1_QUEUE = 'quickplay1v1Queue';
+const QUICKPLAY_3P_QUEUE = 'quickplay3pQueue';
+const QUICKPLAY_4P_QUEUE = 'quickplay4pQueue';
 const BOT_HARD_QUEUE = 'botHardQueue';
 const BOT_MEDIUM_QUEUE = 'botMediumQueue';
 const BOT_EASY_QUEUE = 'botEasyQueue';
 const KNOWN_QUEUES = new Set([
   TUTORIAL_QUEUE,
-  QUICKPLAY_QUEUE,
-  RANKED_QUEUE,
+  QUICKPLAY_1V1_QUEUE,
+  QUICKPLAY_3P_QUEUE,
+  QUICKPLAY_4P_QUEUE,
   BOT_HARD_QUEUE,
   BOT_MEDIUM_QUEUE,
   BOT_EASY_QUEUE,

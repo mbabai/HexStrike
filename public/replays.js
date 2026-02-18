@@ -83,6 +83,12 @@ const getReplayLossMethod = (replay) => {
 
 const normalizeFilterText = (value) => `${value ?? ''}`.trim().toLowerCase();
 
+const normalizePlayerCountFilter = (value) => {
+  const normalized = `${value ?? ''}`.trim();
+  if (normalized === '2' || normalized === '3' || normalized === '4') return normalized;
+  return 'all';
+};
+
 const matchesPlayerFilter = (replay, filterText) => {
   const normalizedFilter = normalizeFilterText(filterText);
   if (!normalizedFilter) return true;
@@ -92,6 +98,20 @@ const matchesPlayerFilter = (replay, filterText) => {
     const username = `${player?.username ?? ''}`.trim().toLowerCase();
     return username.includes(normalizedFilter);
   });
+};
+
+const matchesPlayerCountFilter = (replay, filterValue) => {
+  const normalized = normalizePlayerCountFilter(filterValue);
+  if (normalized === 'all') return true;
+  const expectedCount = Number(normalized);
+  if (!Number.isFinite(expectedCount)) return true;
+  const summaryCount = Number(replay?.playerCount);
+  const replayCount = Number.isFinite(summaryCount)
+    ? Math.max(0, Math.round(summaryCount))
+    : Array.isArray(replay?.players)
+      ? replay.players.length
+      : 0;
+  return replayCount === expectedCount;
 };
 
 const sortReplayList = (replays, sortKey, sortDirection) => {
@@ -179,6 +199,7 @@ export const initReplays = async () => {
   const closeButton = document.getElementById('savedReplaysClose');
   const listRoot = document.getElementById('savedReplaysList');
   const filterInput = document.getElementById('savedReplaysPlayerFilter');
+  const playerCountFilterSelect = document.getElementById('savedReplaysPlayerCountFilter');
   const sortDirectionToggle = document.getElementById('savedReplaysSortDirectionToggle');
   const sortButtons = overlay ? Array.from(overlay.querySelectorAll('.saved-replays-sort-btn')) : [];
   if (!openButton || !overlay || !closeButton || !listRoot) return;
@@ -194,8 +215,13 @@ export const initReplays = async () => {
   let replayList = [];
   let loadingList = false;
   let playerFilter = '';
+  let playerCountFilter = 'all';
   let sortKey = SORT_KEY_DATE;
   let sortDirection = SORT_DIRECTION_DESC;
+  if (playerCountFilterSelect) {
+    playerCountFilter = normalizePlayerCountFilter(playerCountFilterSelect.value);
+    playerCountFilterSelect.value = playerCountFilter;
+  }
 
   const openReplay = (replay) => {
     if (!replay?.state?.public) return;
@@ -295,12 +321,16 @@ export const initReplays = async () => {
       return;
     }
     const visibleReplays = sortReplayList(
-      replayList.filter((replay) => matchesPlayerFilter(replay, playerFilter)),
+      replayList.filter(
+        (replay) =>
+          matchesPlayerFilter(replay, playerFilter) &&
+          matchesPlayerCountFilter(replay, playerCountFilter),
+      ),
       sortKey,
       sortDirection,
     );
     if (!visibleReplays.length) {
-      setBusyText(listRoot, 'No games match that player filter.');
+      setBusyText(listRoot, 'No games match the selected filters.');
       return;
     }
     visibleReplays.forEach((replay) => {
@@ -312,7 +342,7 @@ export const initReplays = async () => {
 
       const players = document.createElement('div');
       players.className = 'saved-replay-players';
-      const replayPlayers = Array.isArray(replay.players) ? replay.players.slice(0, 2) : [];
+      const replayPlayers = Array.isArray(replay.players) ? replay.players : [];
       replayPlayers.forEach((player) => {
         players.appendChild(buildPlayerBadge(player));
       });
@@ -391,6 +421,13 @@ export const initReplays = async () => {
   if (filterInput) {
     filterInput.addEventListener('input', () => {
       playerFilter = `${filterInput.value ?? ''}`;
+      renderReplayList();
+    });
+  }
+
+  if (playerCountFilterSelect) {
+    playerCountFilterSelect.addEventListener('change', () => {
+      playerCountFilter = normalizePlayerCountFilter(playerCountFilterSelect.value);
       renderReplayList();
     });
   }
