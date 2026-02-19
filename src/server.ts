@@ -268,18 +268,18 @@ const TUTORIAL_PLAYER_DECK: DeckDefinition = {
 };
 
 const TUTORIAL_BOT_DECK: DeckDefinition = {
-  movement: ['step', 'advance', 'fleche', 'backflip'],
+  movement: ['step', 'advance', 'fleche', 'dash'],
   ability: [
     'long-thrust',
     'sinking-shot',
     'parry',
+    'smash-attack',
     'guard',
     'jab',
     'cross-slash',
     'feint',
     'iron-will',
     'hip-throw',
-    'smash-attack',
     'hammer',
     'reflex-dodge',
   ],
@@ -320,9 +320,9 @@ const TUTORIAL_PLAYER_ACTION_SEQUENCE: TutorialActionStep[] = [
 ];
 
 const TUTORIAL_BOT_ACTION_SEQUENCE: TutorialActionStep[] = [
-  { activeCardId: 'fleche', passiveCardIds: ['long-thrust'], rotation: '0', minPlayerActionIndex: 1 },
+  { activeCardId: 'dash', passiveCardIds: ['long-thrust'], rotation: '0', minPlayerActionIndex: 1 },
   {
-    activeCardId: 'guard',
+    activeCardId: 'smash-attack',
     passiveCardIds: ['step'],
     rotation: '0',
     minPlayerActionIndex: 3,
@@ -345,11 +345,11 @@ const TUTORIAL_INTERACTION_SEQUENCE: TutorialInteractionStep[] = [
 
 const TUTORIAL_BOT_FALLBACK_ACTIONS: TutorialActionStep[] = [
   { activeCardId: 'step', passiveCardIds: ['jab'], rotation: '0' },
-  { activeCardId: 'feint', passiveCardIds: ['backflip'], rotation: '0' },
+  { activeCardId: 'feint', passiveCardIds: ['dash'], rotation: '0' },
   { activeCardId: 'fleche', passiveCardIds: ['guard'], rotation: '0' },
-  { activeCardId: 'cross-slash', passiveCardIds: ['backflip'], rotation: '0' },
-  { activeCardId: 'hammer', passiveCardIds: ['backflip'], rotation: '0' },
-  { activeCardId: 'iron-will', passiveCardIds: ['backflip'], rotation: '0' },
+  { activeCardId: 'cross-slash', passiveCardIds: ['dash'], rotation: '0' },
+  { activeCardId: 'hammer', passiveCardIds: ['dash'], rotation: '0' },
+  { activeCardId: 'iron-will', passiveCardIds: ['dash'], rotation: '0' },
 ];
 
 type BotDifficulty = 'easy' | 'medium' | 'hard';
@@ -1089,6 +1089,29 @@ export function buildServer(port: number) {
   const consumeTutorialInteraction = (session: TutorialSession, expectedIndex: number) => {
     if (session.interactionIndex !== expectedIndex) return;
     session.interactionIndex += 1;
+  };
+
+  const applyTutorialComboAvailability = (
+    comboAvailability: Map<string, boolean>,
+    session: TutorialSession | null,
+  ): Map<string, boolean> => {
+    if (!session) return comboAvailability;
+    // Tutorial only teaches combo once; suppress follow-up combo prompts after that step.
+    if (session.interactionIndex > 0) {
+      comboAvailability.set(session.playerUserId, false);
+    }
+    return comboAvailability;
+  };
+
+  const applyTutorialGuardContinueAvailability = (
+    guardContinueAvailability: Map<string, boolean>,
+    session: TutorialSession | null,
+  ): Map<string, boolean> => {
+    if (!session) return guardContinueAvailability;
+    // Guard loop prompts are out of scope for the scripted tutorial flow.
+    guardContinueAvailability.set(session.playerUserId, false);
+    guardContinueAvailability.set(session.botUserId, false);
+    return guardContinueAvailability;
   };
 
   const getTutorialActorRole = (session: TutorialSession, userId: string): 'player' | 'bot' | null => {
@@ -2699,6 +2722,29 @@ export function buildServer(port: number) {
     game.state.public.matchOutcome = outcome;
     pendingActionSets.delete(game.id);
   };
+
+  const maybeCompleteTutorialMatch = (game: GameDoc): boolean => {
+    if (game.state.public.matchOutcome) return false;
+    const session = getTutorialSession(game.id);
+    if (!session) return false;
+    if (session.playerActionIndex < TUTORIAL_PLAYER_ACTION_SEQUENCE.length) return false;
+    if (session.interactionIndex < TUTORIAL_INTERACTION_SEQUENCE.length) return false;
+    const characters = ensureBaselineCharacters(game.state.public);
+    const winner = characters.find((character) => character.userId === session.playerUserId);
+    const loser = characters.find((character) => character.userId === session.botUserId);
+    if (!winner || !loser) return false;
+    const beats = game.state.public.beats ?? game.state.public.timeline ?? [];
+    const beatIndex = Math.max(0, getTimelineEarliestEIndex(beats, characters));
+    const outcome: GameStateDoc['public']['matchOutcome'] = {
+      winnerUserId: winner.userId,
+      loserUserId: loser.userId,
+      reason: 'forfeit',
+      beatIndex,
+    };
+    applyExplicitOutcome(game, outcome);
+    return true;
+  };
+
   const handleJoin = async (body: Record<string, unknown>) => {
     const requestedQueue = isQueueName(body.queue) ? body.queue : 'quickplay1v1Queue';
     const forcedCharacterId = isTutorialQueue(requestedQueue)
@@ -3219,9 +3265,15 @@ export function buildServer(port: number) {
         rotation: rotation ?? '',
       };
       const updatedBeats = applyActionSetToBeats(beats, characters, userId, actionListWithHandCount, [actionPlay]);
-      const comboAvailability = buildComboAvailability(deckStates, catalog);
+      const comboAvailability = applyTutorialComboAvailability(
+        buildComboAvailability(deckStates, catalog),
+        tutorialActionValidation.session,
+      );
       const handTriggerAvailability = buildHandTriggerAvailability(deckStates);
-      const guardContinueAvailability = buildGuardContinueAvailability(deckStates);
+      const guardContinueAvailability = applyTutorialGuardContinueAvailability(
+        buildGuardContinueAvailability(deckStates),
+        tutorialActionValidation.session,
+      );
       const executed = executeWithForcedRewindReturns({
         beats: updatedBeats,
         characters,
@@ -3250,6 +3302,7 @@ export function buildServer(port: number) {
         game.state.public.boardTokens ?? [],
       );
       applyMatchOutcome(game, deckStates);
+      maybeCompleteTutorialMatch(game);
       console.log(`${LOG_PREFIX} action:set post`, {
         userId,
         gameId,
@@ -3382,9 +3435,15 @@ export function buildServer(port: number) {
         updatedBeats = applyActionSetToBeats(updatedBeats, characters, requiredId, submission.actionList, submission.play);
       }
     });
-    const comboAvailability = buildComboAvailability(deckStates, catalog);
+    const comboAvailability = applyTutorialComboAvailability(
+      buildComboAvailability(deckStates, catalog),
+      tutorialActionValidation.session,
+    );
     const handTriggerAvailability = buildHandTriggerAvailability(deckStates);
-    const guardContinueAvailability = buildGuardContinueAvailability(deckStates);
+    const guardContinueAvailability = applyTutorialGuardContinueAvailability(
+      buildGuardContinueAvailability(deckStates),
+      tutorialActionValidation.session,
+    );
     const executed = executeWithForcedRewindReturns({
       beats: updatedBeats,
       characters,
@@ -3415,6 +3474,7 @@ export function buildServer(port: number) {
     game.state.public.pendingActions = undefined;
     pendingActionSets.delete(game.id);
     applyMatchOutcome(game, deckStates);
+    maybeCompleteTutorialMatch(game);
     console.log(`${LOG_PREFIX} action:set post`, {
       userId,
       gameId,
@@ -3725,7 +3785,7 @@ export function buildServer(port: number) {
     const deckStates = await ensureDeckStatesForGame(game, match);
     syncFocusedCardsFromInteractions(deckStates, interactions);
     const catalog = await loadCardCatalog();
-    const comboAvailability = buildComboAvailability(deckStates, catalog);
+    let comboAvailability = buildComboAvailability(deckStates, catalog);
     logInteractionEvent(
       'before-resolve',
       {
@@ -4182,8 +4242,13 @@ export function buildServer(port: number) {
       return { ok: false, status: 400, error: 'Unsupported interaction type' };
     }
 
+    comboAvailability = applyTutorialComboAvailability(comboAvailability, getTutorialSession(gameId));
+    const tutorialSession = getTutorialSession(gameId);
     const handTriggerAvailability = buildHandTriggerAvailability(deckStates);
-    const guardContinueAvailability = buildGuardContinueAvailability(deckStates);
+    const guardContinueAvailability = applyTutorialGuardContinueAvailability(
+      buildGuardContinueAvailability(deckStates),
+      tutorialSession,
+    );
     logInteractionEvent('before-execute', { interactionType: interaction.type }, deckStates);
     const executed = executeWithForcedRewindReturns({
       beats,
@@ -4213,6 +4278,7 @@ export function buildServer(port: number) {
       game.state.public.boardTokens ?? [],
     );
     applyMatchOutcome(game, deckStates);
+    maybeCompleteTutorialMatch(game);
     console.log(`${LOG_PREFIX} interaction:resolve post`, {
       userId,
       gameId,

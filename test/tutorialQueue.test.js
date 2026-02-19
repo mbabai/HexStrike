@@ -259,7 +259,7 @@ test('tutorial queue uses scripted flow, forced loadout, and strict tutorial cho
 
     await waitFor(
       getSnapshot,
-      (snapshot) => hasActionStarter(snapshot, botUserId, 'fleche', 'long-thrust'),
+      (snapshot) => hasActionStarter(snapshot, botUserId, 'dash', 'long-thrust'),
       { timeoutMs: 12000 },
     );
 
@@ -298,7 +298,7 @@ test('tutorial queue uses scripted flow, forced loadout, and strict tutorial cho
 
     await waitFor(
       getSnapshot,
-      (snapshot) => hasActionStarter(snapshot, botUserId, 'guard', 'step'),
+      (snapshot) => hasActionStarter(snapshot, botUserId, 'smash-attack', 'step'),
       { timeoutMs: 12000 },
     );
 

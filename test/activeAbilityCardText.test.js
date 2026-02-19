@@ -51,7 +51,7 @@ test('smoke-bomb active swaps into the passive action list at X1 with selected r
   const actionList = buildActionList('smoke-bomb', 'step', 'R2');
   assert.deepEqual(
     actionList.map((entry) => entry.action),
-    ['W', '[a-La-Ra]', 'W', 'Bm', 'W', 'E'],
+    ['W', '[a-La-Ra]', 'W', 'Bm', 'E'],
   );
   assert.equal(actionList[0].rotation, '');
   assert.equal(actionList[0].rotationSource, undefined);
