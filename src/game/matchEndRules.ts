@@ -1,4 +1,4 @@
-import { BeatEntry, DeckState, HexCoord, MatchOutcome, PublicCharacter } from '../types';
+import { BeatEntry, CustomInteraction, DeckState, HexCoord, MatchOutcome, PublicCharacter } from '../types';
 import {
   getCharacterFirstEIndex,
   getCharacterLocationAtIndex,
@@ -126,13 +126,28 @@ const buildOutcomeEntry = (
   };
 };
 
-const hasPlayableCards = (deckState?: DeckState): boolean => {
+const hasAnyCardsRemaining = (deckState?: DeckState): boolean => {
   if (!deckState) return true;
   const hasAbility = Array.isArray(deckState.abilityHand) && deckState.abilityHand.length > 0;
   const hasMovement = Array.isArray(deckState.movement)
     && deckState.movement.some((cardId) => !deckState.exhaustedMovementIds.has(cardId));
-  return hasAbility && hasMovement;
+  return hasAbility || hasMovement;
 };
+
+const hasPendingDrawInteraction = (
+  interactions: CustomInteraction[] | undefined,
+  actorId: string,
+  beatIndex: number,
+): boolean =>
+  Boolean(
+    interactions?.some((interaction) => {
+      if (!interaction || interaction.type !== 'draw') return false;
+      if (interaction.status !== 'pending') return false;
+      if (interaction.actorUserId !== actorId) return false;
+      if (!Number.isFinite(interaction.beatIndex)) return false;
+      return Math.round(interaction.beatIndex) === beatIndex;
+    }),
+  );
 
 const getDistanceLossIndex = (
   beats: BeatEntry[][],
@@ -246,6 +261,7 @@ export const evaluateMatchOutcome = (
   beats: BeatEntry[][],
   characters: PublicCharacter[],
   deckStates: Map<string, DeckState>,
+  interactions: CustomInteraction[] = [],
   land: HexCoord[] = DEFAULT_LAND_HEXES,
 ): MatchOutcome | null => {
   if (!Array.isArray(characters) || !characters.length) return null;
@@ -270,7 +286,8 @@ export const evaluateMatchOutcome = (
     const location = getCharacterLocationAtIndex(beats, character, beatIndex);
     if (!location) return;
     if (isCoordOnLand(location, landTiles)) return;
-    if (hasPlayableCards(deckStates.get(character.userId))) return;
+    if (hasPendingDrawInteraction(interactions, character.userId, beatIndex)) return;
+    if (hasAnyCardsRemaining(deckStates.get(character.userId))) return;
     losses.push({ userId: character.userId, reason: 'no-cards-abyss', beatIndex });
   });
 

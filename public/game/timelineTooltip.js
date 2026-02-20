@@ -1,7 +1,7 @@
 import { getBeatEntryForCharacter } from './beatTimeline.js';
 import { getTimeIndicatorActionTarget, getTimeIndicatorLayout, setTimeIndicatorPlayerCount } from './timeIndicatorView.js';
 import { extractHandTriggerText } from './handTriggerText.mjs';
-import { appendInlineText } from '../shared/cardRenderer.js';
+import { appendInlineText, buildCardElement, fitAllCardText } from '../shared/cardRenderer.js';
 import { axialToPixel, getHexSize } from '../shared/hex.mjs';
 import { GAME_CONFIG } from './config.js';
 import { getCharacterTokenMetrics } from './characterTokens.mjs';
@@ -312,6 +312,9 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
   focus.className = 'timeline-tooltip-passive';
   const focusText = document.createElement('div');
   focusText.className = 'timeline-tooltip-passive-text';
+  const cardPreview = document.createElement('div');
+  cardPreview.className = 'timeline-tooltip-card-preview';
+  cardPreview.hidden = true;
   text.append(
     title,
     attackStats,
@@ -324,6 +327,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     passiveText,
     focus,
     focusText,
+    cardPreview,
   );
   tooltip.appendChild(text);
   gameArea.appendChild(tooltip);
@@ -335,6 +339,9 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
 
   const hide = () => {
     tooltip.hidden = true;
+    cardPreview.hidden = true;
+    cardPreview.textContent = '';
+    tooltip.classList.remove('has-card-preview');
     lastTooltipKey = null;
   };
 
@@ -376,6 +383,9 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     focusText.hidden = true;
     focus.textContent = '';
     focusText.textContent = '';
+    cardPreview.hidden = true;
+    cardPreview.textContent = '';
+    tooltip.classList.remove('has-card-preview');
   };
 
   const renderAttackStats = (line) => {
@@ -456,6 +466,25 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     focusText.hidden = true;
     focusText.textContent = '';
     return false;
+  };
+
+  const renderCardPreview = (cards) => {
+    const list = Array.isArray(cards) ? cards.filter(Boolean) : [];
+    cardPreview.textContent = '';
+    if (!list.length) {
+      cardPreview.hidden = true;
+      tooltip.classList.remove('has-card-preview');
+      return false;
+    }
+    list.forEach((card) => {
+      const preview = buildCardElement(card, { asButton: false, className: 'timeline-tooltip-card' });
+      preview.style.setProperty('--action-card-scale', '0.42');
+      cardPreview.appendChild(preview);
+    });
+    fitAllCardText(cardPreview);
+    cardPreview.hidden = false;
+    tooltip.classList.add('has-card-preview');
+    return true;
   };
 
   const renderCharacterPowerTooltip = (target) => {
@@ -579,6 +608,45 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
           instruction.textContent = '';
         }
         clearSupplementalSections({ hideDivider: true });
+        lastTooltipKey = key;
+      }
+      tooltip.hidden = false;
+      positionTooltip(target.center.x, target.center.y);
+      return;
+    }
+    if (target.kind === 'movement-pickup') {
+      const movementCardIds = Array.isArray(target.movementCardIds)
+        ? target.movementCardIds.map((id) => `${id ?? ''}`.trim()).filter(Boolean)
+        : [];
+      const movementCards = movementCardIds.map((id) => cardMetadata.byId.get(id)).filter(Boolean);
+      if (!movementCardIds.length && !movementCards.length) {
+        hide();
+        return;
+      }
+      const pickedCount = movementCardIds.length || movementCards.length;
+      const countLabel = pickedCount === 1 ? '1 movement card picked up.' : `${pickedCount} movement cards picked up.`;
+      const names = movementCards.map((card) => card?.name).filter(Boolean);
+      const instructionText = names.length ? names.join(', ') : movementCardIds.join(', ');
+      const key = [
+        'movement-pickup',
+        target.character?.userId ?? target.character?.username ?? '',
+        target.beatIndex,
+        movementCardIds.join(','),
+      ].join(':');
+      if (key !== lastTooltipKey) {
+        title.textContent = 'Movement Pickup';
+        title.hidden = false;
+        renderAttackStats('');
+        renderStatus(countLabel);
+        if (instructionText) {
+          instruction.hidden = false;
+          instruction.textContent = instructionText;
+        } else {
+          instruction.hidden = true;
+          instruction.textContent = '';
+        }
+        clearSupplementalSections({ hideDivider: true });
+        renderCardPreview(movementCards);
         lastTooltipKey = key;
       }
       tooltip.hidden = false;
@@ -720,6 +788,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       focusLine,
     ].join(':');
     if (key !== lastTooltipKey) {
+      clearSupplementalSections({ hideDivider: true });
       title.textContent = resolvedTitle;
       title.hidden = !resolvedTitle;
       renderAttackStats(attackStatsLine);

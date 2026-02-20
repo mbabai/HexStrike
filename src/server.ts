@@ -2676,6 +2676,7 @@ export function buildServer(port: number) {
         characters,
         land,
         deckStates: resolvedDeckStates,
+        interactions: game.state.public.customInteractions ?? [],
         ffa: ffaState,
       });
       game.state.public.ffa = ffaResult.ffa;
@@ -2692,7 +2693,13 @@ export function buildServer(port: number) {
       pendingActionSets.delete(game.id);
       return true;
     }
-    const outcome = evaluateMatchOutcome(beats, characters, resolvedDeckStates, land);
+    const outcome = evaluateMatchOutcome(
+      beats,
+      characters,
+      resolvedDeckStates,
+      game.state.public.customInteractions ?? [],
+      land,
+    );
     if (!outcome) return false;
     applyMatchOutcomeToBeats(beats, characters, outcome, land);
     game.state.public.timeline = beats;

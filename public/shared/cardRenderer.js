@@ -219,6 +219,31 @@ const getCardScale = (element) => {
   return Number.isFinite(scaleValue) && scaleValue > 0 ? scaleValue : 1;
 };
 
+const fitFontSizeToBounds = ({ element, width, height, baseSize, minSize }) => {
+  if (!element || !width || !height) return;
+  const safeBaseSize = Number.isFinite(baseSize) ? Math.max(0, baseSize) : 0;
+  if (!safeBaseSize) return;
+  const safeMinSize = Number.isFinite(minSize) ? Math.min(safeBaseSize, Math.max(0, minSize)) : 0;
+  const epsilon = 0.5;
+  const fits = () => element.scrollHeight <= height + epsilon && element.scrollWidth <= width + epsilon;
+  if (fits()) return;
+  const minRatio = safeBaseSize > 0 ? Math.max(0, Math.min(1, safeMinSize / safeBaseSize)) : 0;
+  let low = minRatio;
+  let high = 1;
+  let bestRatio = minRatio;
+  for (let i = 0; i < 12; i += 1) {
+    const mid = (low + high) / 2;
+    element.style.fontSize = `${safeBaseSize * mid}px`;
+    if (fits()) {
+      bestRatio = mid;
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+  element.style.fontSize = `${Math.max(safeMinSize, safeBaseSize * bestRatio)}px`;
+};
+
 const fitTextToRow = (row) => {
   const text = row.querySelector('.action-card-surface-text');
   if (!text || !text.textContent.trim()) return;
@@ -226,15 +251,10 @@ const fitTextToRow = (row) => {
   const rowHeight = row.clientHeight;
   const rowWidth = row.clientWidth;
   if (!rowHeight || !rowWidth) return;
-  let size = Number.parseFloat(getComputedStyle(text).fontSize) || 10;
+  const baseSize = Number.parseFloat(getComputedStyle(text).fontSize) || 10;
   const scaleValue = getCardScale(row);
   const minSize = 5 * scaleValue;
-  let safety = 0;
-  while ((text.scrollHeight > rowHeight || text.scrollWidth > rowWidth) && size > minSize && safety < 32) {
-    size = Math.max(minSize, size - 0.5);
-    text.style.fontSize = `${size}px`;
-    safety += 1;
-  }
+  fitFontSizeToBounds({ element: text, width: rowWidth, height: rowHeight, baseSize, minSize });
 };
 
 const fitTitleToHeader = (title) => {
@@ -243,15 +263,10 @@ const fitTitleToHeader = (title) => {
   const titleWidth = title.clientWidth;
   const titleHeight = title.clientHeight;
   if (!titleWidth || !titleHeight) return;
-  let size = Number.parseFloat(getComputedStyle(title).fontSize) || 10;
+  const baseSize = Number.parseFloat(getComputedStyle(title).fontSize) || 10;
   const scaleValue = getCardScale(title);
   const minSize = 6 * scaleValue;
-  let safety = 0;
-  while ((title.scrollWidth > titleWidth || title.scrollHeight > titleHeight) && size > minSize && safety < 32) {
-    size = Math.max(minSize, size - 0.5);
-    title.style.fontSize = `${size}px`;
-    safety += 1;
-  }
+  fitFontSizeToBounds({ element: title, width: titleWidth, height: titleHeight, baseSize, minSize });
 };
 
 export const fitAllCardText = (root = document) => {

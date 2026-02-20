@@ -16,22 +16,22 @@ const buildDeckDefinition = () => ({
   ability: ['rewind', 'ability-a', 'ability-b', 'ability-c', 'ability-d'],
 });
 
-const buildCharacter = () => ({
+const buildCharacter = (position = { q: 0, r: 0 }) => ({
   userId: 'alpha',
   username: 'alpha',
-  position: { q: 0, r: 0 },
+  position: { q: position.q, r: position.r },
   facing: 180,
   characterId: 'murelious',
   characterName: 'Alpha',
 });
 
-const buildEBeat = () => [[{
+const buildEBeat = (position = { q: 0, r: 0 }) => [[{
   username: 'alpha',
   action: 'E',
   rotation: '',
   priority: 0,
   damage: 0,
-  location: { q: 0, r: 0 },
+  location: { q: position.q, r: position.r },
   facing: 180,
   calculated: false,
 }]];
@@ -123,4 +123,90 @@ test('resolveLandRefreshes skips draw refresh when active rewind focus interacti
 
   assert.equal(deckState.abilityHand.length, beforeHandSize);
   assert.equal(deckState.lastRefreshIndex, null);
+});
+
+test('resolveLandRefreshes ledge grab queues a pending draw so movement restore can be selected', () => {
+  const deckState = createDeckState({
+    movement: ['move-a'],
+    ability: ['ability-a'],
+  });
+  deckState.abilityHand = [];
+  deckState.abilityDeck = ['ability-a'];
+  deckState.exhaustedMovementIds = new Set(['move-a']);
+  const interactions = [];
+
+  resolveLandRefreshes(
+    new Map([['alpha', deckState]]),
+    buildEBeat({ q: 1, r: 0 }),
+    [buildCharacter({ q: 1, r: 0 })],
+    [{ q: 0, r: 0 }],
+    interactions,
+    undefined,
+    [],
+  );
+
+  assert.deepEqual(deckState.abilityHand, []);
+  assert.deepEqual(deckState.abilityDeck, ['ability-a']);
+  assert.deepEqual(getMovementHandIds(deckState), []);
+  assert.equal(deckState.lastRefreshIndex, 0);
+  assert.equal(interactions.length, 1);
+  assert.equal(interactions[0].type, 'draw');
+  assert.equal(interactions[0].status, 'pending');
+  assert.equal(interactions[0].drawCount, 1);
+  assert.equal(interactions[0].drawMovementCount, 1);
+  assert.equal(interactions[0].resolution?.ledgeGrab, true);
+});
+
+test('resolveLandRefreshes ledge grab requires zero cards left in hand', () => {
+  const deckState = createDeckState({
+    movement: ['move-a'],
+    ability: ['ability-a'],
+  });
+  deckState.abilityHand = [];
+  deckState.abilityDeck = ['ability-a'];
+  deckState.exhaustedMovementIds = new Set();
+  const interactions = [];
+
+  resolveLandRefreshes(
+    new Map([['alpha', deckState]]),
+    buildEBeat({ q: 1, r: 0 }),
+    [buildCharacter({ q: 1, r: 0 })],
+    [{ q: 0, r: 0 }],
+    interactions,
+    undefined,
+    [],
+  );
+
+  assert.deepEqual(deckState.abilityHand, []);
+  assert.deepEqual(deckState.abilityDeck, ['ability-a']);
+  assert.deepEqual(getMovementHandIds(deckState), ['move-a']);
+  assert.equal(deckState.lastRefreshIndex, null);
+  assert.equal(interactions.length, 0);
+});
+
+test('resolveLandRefreshes ledge grab does not trigger when abyss hex is not adjacent to land', () => {
+  const deckState = createDeckState({
+    movement: ['move-a'],
+    ability: ['ability-a'],
+  });
+  deckState.abilityHand = [];
+  deckState.abilityDeck = ['ability-a'];
+  deckState.exhaustedMovementIds = new Set(['move-a']);
+  const interactions = [];
+
+  resolveLandRefreshes(
+    new Map([['alpha', deckState]]),
+    buildEBeat({ q: 2, r: 0 }),
+    [buildCharacter({ q: 2, r: 0 })],
+    [{ q: 0, r: 0 }],
+    interactions,
+    undefined,
+    [],
+  );
+
+  assert.deepEqual(deckState.abilityHand, []);
+  assert.deepEqual(deckState.abilityDeck, ['ability-a']);
+  assert.deepEqual(getMovementHandIds(deckState), []);
+  assert.equal(deckState.lastRefreshIndex, null);
+  assert.equal(interactions.length, 0);
 });

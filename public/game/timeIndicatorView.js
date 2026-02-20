@@ -32,6 +32,9 @@ const BADGE_NUDGE_X = 5;
 const HAND_TRIGGER_CARD_HEIGHT = 0.62;
 const HAND_TRIGGER_CARD_ASPECT = 0.72;
 const HAND_TRIGGER_STACK_OFFSET = 0.22;
+const MOVEMENT_PICKUP_CARD_HEIGHT = 0.62;
+const MOVEMENT_PICKUP_CARD_ASPECT = 0.72;
+const MOVEMENT_PICKUP_STACK_OFFSET = 0.22;
 const REWIND_RETURN_CARD_HEIGHT = 0.62;
 const REWIND_RETURN_CARD_ASPECT = 0.72;
 const REWIND_RETURN_STACK_OFFSET = 0.22;
@@ -240,6 +243,55 @@ const getInteractionActorKey = (actorKeyMap, interaction) =>
   interaction?.targetUserId ??
   null;
 
+const buildMiniCardStackLayout = ({
+  row,
+  xPos,
+  rowSpacing,
+  iconSize,
+  count,
+  heightFactor,
+  aspect,
+  stackOffsetFactor,
+  side = 'left',
+  slotIndex = 0,
+}) => {
+  const safeCount = Number.isFinite(count) ? Math.max(0, Math.round(count)) : 0;
+  if (!safeCount || !row?.numberArea) return null;
+  const cardHeight = iconSize * heightFactor;
+  const cardWidth = cardHeight * aspect;
+  const baseCenterX = side === 'right' ? xPos + rowSpacing * 0.5 : xPos - rowSpacing * 0.5;
+  const safeSlotIndex = side === 'left' ? Math.max(0, Math.round(slotIndex)) : 0;
+  const slotSpacing = cardWidth + Math.max(2, rowSpacing * 0.08);
+  const centerX = baseCenterX - safeSlotIndex * slotSpacing;
+  const minCenterX = row.numberArea.x + cardWidth / 2;
+  const maxCenterX = row.numberArea.x + row.numberArea.width - cardWidth / 2;
+  if (centerX < minCenterX || centerX > maxCenterX) return null;
+  const stackOffset = cardHeight * stackOffsetFactor;
+  const startOffset = -((safeCount - 1) * stackOffset) / 2;
+  return {
+    count: safeCount,
+    centerX,
+    cardWidth,
+    cardHeight,
+    stackOffset,
+    startOffset,
+  };
+};
+
+const getMiniCardStackItemGeometry = (layout, rowCenterY, index) => {
+  if (!layout || !Number.isFinite(index)) return null;
+  const centerY = rowCenterY + layout.startOffset + index * layout.stackOffset;
+  return {
+    centerY,
+    bounds: {
+      x: layout.centerX - layout.cardWidth / 2,
+      y: centerY - layout.cardHeight / 2,
+      width: layout.cardWidth,
+      height: layout.cardHeight,
+    },
+  };
+};
+
 const getInteractionDiscardCount = (interaction) => {
   if (!interaction || typeof interaction !== 'object') return 0;
   if (interaction.type === 'discard') {
@@ -291,6 +343,45 @@ const getInteractionDrawCount = (interaction) => {
     return (abilityCount ?? 0) + (movementCount ?? 0);
   }
   return 0;
+};
+
+const normalizeCardIdList = (value) =>
+  Array.isArray(value)
+    ? value
+        .map((item) => `${item ?? ''}`.trim())
+        .filter(Boolean)
+    : [];
+
+const getInteractionMovementPickupIds = (interaction) => {
+  if (!interaction || typeof interaction !== 'object') return [];
+  if (interaction.type !== 'draw') return [];
+  if (interaction.status !== 'resolved') return [];
+  return normalizeCardIdList(interaction.resolution?.movementCardIds);
+};
+
+const buildMovementPickupLookup = (interactions, characters) => {
+  const lookup = new Map();
+  if (!Array.isArray(interactions) || !Array.isArray(characters) || !characters.length) return lookup;
+  const actorKeyMap = buildActorKeyMap(characters);
+  interactions.forEach((interaction) => {
+    const movementCardIds = getInteractionMovementPickupIds(interaction);
+    if (!movementCardIds.length) return;
+    const beatIndex = getInteractionBeatIndex(interaction);
+    if (beatIndex == null) return;
+    const actorKey = getInteractionActorKey(actorKeyMap, interaction);
+    if (!actorKey) return;
+    const key = `${actorKey}:${beatIndex}`;
+    const existing = lookup.get(key) ?? { movementCardIds: [], interactions: [] };
+    const seen = new Set(existing.movementCardIds);
+    movementCardIds.forEach((cardId) => {
+      if (seen.has(cardId)) return;
+      seen.add(cardId);
+      existing.movementCardIds.push(cardId);
+    });
+    existing.interactions.push(interaction);
+    lookup.set(key, existing);
+  });
+  return lookup;
 };
 
 const buildDrawLookup = (interactions, characters) => {
@@ -461,6 +552,7 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
     return map;
   });
   const handTriggerLookup = buildHandTriggerLookup(interactions, characters);
+  const movementPickupLookup = buildMovementPickupLookup(interactions, characters);
   const rewindReturnLookup = buildRewindReturnLookup(interactions, characters);
 
   for (let rowIndex = 0; rowIndex < characters.length; rowIndex += 1) {
@@ -488,76 +580,102 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
           ? { action }
           : null;
       const xPos = rowCenterX + offset * spacing;
+      const movementPickupKey = `${lookupKey}:${beatIndex}`;
+      const movementPickup = movementPickupLookup.get(movementPickupKey) ?? null;
+      const movementPickupIds = Array.isArray(movementPickup?.movementCardIds)
+        ? movementPickup.movementCardIds
+        : [];
+      const movementPickupLayout = buildMiniCardStackLayout({
+        row,
+        xPos,
+        rowSpacing: spacing,
+        iconSize,
+        count: movementPickupIds.length,
+        heightFactor: MOVEMENT_PICKUP_CARD_HEIGHT,
+        aspect: MOVEMENT_PICKUP_CARD_ASPECT,
+        stackOffsetFactor: MOVEMENT_PICKUP_STACK_OFFSET,
+        side: 'left',
+        slotIndex: 0,
+      });
+      if (movementPickupLayout) {
+        for (let i = 0; i < movementPickupLayout.count; i += 1) {
+          const geometry = getMiniCardStackItemGeometry(movementPickupLayout, rowCenterY, i);
+          if (!geometry || !isPointInRect(x, y, geometry.bounds)) continue;
+          return {
+            kind: 'movement-pickup',
+            beatIndex,
+            character,
+            interactions: movementPickup.interactions,
+            movementCardIds: [...movementPickupIds],
+            center: { x: movementPickupLayout.centerX, y: geometry.centerY },
+            size: Math.max(movementPickupLayout.cardWidth, movementPickupLayout.cardHeight),
+          };
+        }
+      }
       const rewindReturnKey = `${lookupKey}:${beatIndex}`;
       const rewindReturns = rewindReturnLookup.get(rewindReturnKey) ?? [];
-      if (rewindReturns.length) {
-        const cardHeight = iconSize * REWIND_RETURN_CARD_HEIGHT;
-        const cardWidth = cardHeight * REWIND_RETURN_CARD_ASPECT;
-        const cardCenterX = xPos - spacing * 0.5;
-        const minCenterX = row.numberArea.x + cardWidth / 2;
-        const maxCenterX = row.numberArea.x + row.numberArea.width - cardWidth / 2;
-        if (cardCenterX >= minCenterX && cardCenterX <= maxCenterX) {
-          const stackOffset = cardHeight * REWIND_RETURN_STACK_OFFSET;
-          const startOffset = -((rewindReturns.length - 1) * stackOffset) / 2;
-          for (let i = 0; i < rewindReturns.length; i += 1) {
-            const centerY = rowCenterY + startOffset + i * stackOffset;
-            const bounds = {
-              x: cardCenterX - cardWidth / 2,
-              y: centerY - cardHeight / 2,
-              width: cardWidth,
-              height: cardHeight,
-            };
-            if (!isPointInRect(x, y, bounds)) continue;
-            const interaction = rewindReturns[i];
-            const cardId =
-              interaction?.cardId ?? interaction?.abilityCardId ?? interaction?.movementCardId ?? 'rewind';
-            return {
-              kind: 'rewind-return',
-              beatIndex,
-              character,
-              interaction,
-              cardId,
-              cardType: interaction?.cardType ?? null,
-              center: { x: cardCenterX, y: centerY },
-              size: Math.max(cardWidth, cardHeight),
-            };
-          }
+      const rewindSlotIndex = movementPickupIds.length ? 1 : 0;
+      const rewindReturnLayout = buildMiniCardStackLayout({
+        row,
+        xPos,
+        rowSpacing: spacing,
+        iconSize,
+        count: rewindReturns.length,
+        heightFactor: REWIND_RETURN_CARD_HEIGHT,
+        aspect: REWIND_RETURN_CARD_ASPECT,
+        stackOffsetFactor: REWIND_RETURN_STACK_OFFSET,
+        side: 'left',
+        slotIndex: rewindSlotIndex,
+      });
+      if (rewindReturnLayout) {
+        for (let i = 0; i < rewindReturnLayout.count; i += 1) {
+          const geometry = getMiniCardStackItemGeometry(rewindReturnLayout, rowCenterY, i);
+          if (!geometry || !isPointInRect(x, y, geometry.bounds)) continue;
+          const interaction = rewindReturns[i];
+          const cardId =
+            interaction?.cardId ?? interaction?.abilityCardId ?? interaction?.movementCardId ?? 'rewind';
+          return {
+            kind: 'rewind-return',
+            beatIndex,
+            character,
+            interaction,
+            cardId,
+            cardType: interaction?.cardType ?? null,
+            center: { x: rewindReturnLayout.centerX, y: geometry.centerY },
+            size: Math.max(rewindReturnLayout.cardWidth, rewindReturnLayout.cardHeight),
+          };
         }
       }
       const handTriggerKey = `${lookupKey}:${beatIndex}`;
       const handTriggers = handTriggerLookup.get(handTriggerKey) ?? [];
-      if (handTriggers.length) {
-        const cardHeight = iconSize * HAND_TRIGGER_CARD_HEIGHT;
-        const cardWidth = cardHeight * HAND_TRIGGER_CARD_ASPECT;
-        const cardCenterX = xPos + spacing * 0.5;
-        const minCenterX = row.numberArea.x + cardWidth / 2;
-        const maxCenterX = row.numberArea.x + row.numberArea.width - cardWidth / 2;
-        if (cardCenterX >= minCenterX && cardCenterX <= maxCenterX) {
-          const stackOffset = cardHeight * HAND_TRIGGER_STACK_OFFSET;
-          const startOffset = -((handTriggers.length - 1) * stackOffset) / 2;
-          for (let i = 0; i < handTriggers.length; i += 1) {
-            const centerY = rowCenterY + startOffset + i * stackOffset;
-            const bounds = {
-              x: cardCenterX - cardWidth / 2,
-              y: centerY - cardHeight / 2,
-              width: cardWidth,
-              height: cardHeight,
-            };
-            if (!isPointInRect(x, y, bounds)) continue;
-            const interaction = handTriggers[i];
-            const cardId =
-              interaction?.cardId ?? interaction?.abilityCardId ?? interaction?.movementCardId ?? '';
-            return {
-              kind: 'hand-trigger',
-              beatIndex,
-              character,
-              interaction,
-              cardId,
-              cardType: interaction?.cardType ?? null,
-              center: { x: cardCenterX, y: centerY },
-              size: Math.max(cardWidth, cardHeight),
-            };
-          }
+      const handTriggerLayout = buildMiniCardStackLayout({
+        row,
+        xPos,
+        rowSpacing: spacing,
+        iconSize,
+        count: handTriggers.length,
+        heightFactor: HAND_TRIGGER_CARD_HEIGHT,
+        aspect: HAND_TRIGGER_CARD_ASPECT,
+        stackOffsetFactor: HAND_TRIGGER_STACK_OFFSET,
+        side: 'right',
+      });
+      if (handTriggerLayout) {
+        for (let i = 0; i < handTriggerLayout.count; i += 1) {
+          const geometry = getMiniCardStackItemGeometry(handTriggerLayout, rowCenterY, i);
+          if (!geometry || !isPointInRect(x, y, geometry.bounds)) continue;
+          const interaction = handTriggers[i];
+          const cardId =
+            interaction?.cardId ?? interaction?.abilityCardId ?? interaction?.movementCardId ?? '';
+          return {
+            kind: 'hand-trigger',
+            beatIndex,
+            character,
+            interaction,
+            cardId,
+            cardType: interaction?.cardType ?? null,
+            center: { x: handTriggerLayout.centerX, y: geometry.centerY },
+            size: Math.max(handTriggerLayout.cardWidth, handTriggerLayout.cardHeight),
+          };
         }
       }
       if (!entry) continue;
@@ -608,6 +726,7 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
   const ffaScoreByUserId = ffaEnabled ? getFfaScoreMapAtBeat(publicState, beats, characters, value) : null;
   const highlightIndex = getTimelineStopIndex(beats, characters, interactions);
   const handTriggerLookup = buildHandTriggerLookup(interactions, characters);
+  const movementPickupLookup = buildMovementPickupLookup(interactions, characters);
   const rewindReturnLookup = buildRewindReturnLookup(interactions, characters);
   const discardLookup = buildDiscardLookup(interactions, characters);
   const drawLookup = buildDrawLookup(interactions, characters);
@@ -728,6 +847,15 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
           : entry?.action ?? (implicitOpenBeat ? DEFAULT_ACTION : ACTION_ICON_FALLBACK);
       const xPos = rowCenterX + offset * rowSpacing;
       const shouldFade = fadeAfterIndex !== null && beatIndex > fadeAfterIndex;
+      const movementPickupKey = `${lookupKey}:${beatIndex}`;
+      const movementPickup = movementPickupLookup.get(movementPickupKey) ?? null;
+      const movementPickupIds = Array.isArray(movementPickup?.movementCardIds)
+        ? movementPickup.movementCardIds
+        : [];
+      if (movementPickupIds.length) {
+        const cardAlpha = shouldFade ? 0.28 : 1;
+        drawMovementPickupCards(ctx, row, xPos, rowCenterY, rowSpacing, iconSize, movementPickupIds, theme, cardAlpha);
+      }
       const handTriggerKey = `${lookupKey}:${beatIndex}`;
       const handTriggers = handTriggerLookup.get(handTriggerKey) ?? [];
       if (handTriggers.length) {
@@ -738,7 +866,19 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       const rewindReturns = rewindReturnLookup.get(rewindReturnKey) ?? [];
       if (rewindReturns.length) {
         const cardAlpha = shouldFade ? 0.28 : 1;
-        drawRewindReturnCards(ctx, row, xPos, rowCenterY, rowSpacing, iconSize, rewindReturns, theme, cardAlpha);
+        const rewindSlotIndex = movementPickupIds.length ? 1 : 0;
+        drawRewindReturnCards(
+          ctx,
+          row,
+          xPos,
+          rowCenterY,
+          rowSpacing,
+          iconSize,
+          rewindReturns,
+          theme,
+          cardAlpha,
+          rewindSlotIndex,
+        );
       }
       const discardKey = `${lookupKey}:${beatIndex}`;
       const discardCount = discardLookup.get(discardKey) ?? 0;
@@ -934,11 +1074,36 @@ const getHandTriggerFill = (interaction, theme) => {
   return theme.cardAbility || theme.actionAttack || theme.accentStrong;
 };
 
+const getMovementPickupFill = (theme) => theme.cardMovement || theme.actionMove || '#33d06b';
+
 const getRewindReturnFill = (interaction, theme) => {
   if (interaction?.resolution?.returnToAnchor) {
     return theme.cardMovement || theme.actionMove || theme.accent;
   }
   return theme.cardAbility || theme.actionAttack || theme.accentStrong;
+};
+
+const drawMovementPickupCard = (ctx, centerX, centerY, width, height, theme, alpha = 1) => {
+  const x = centerX - width / 2;
+  const y = centerY - height / 2;
+  const radius = Math.max(2, height * 0.18);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.fillStyle = getMovementPickupFill(theme);
+  drawRoundedRect(ctx, x, y, width, height, radius);
+  ctx.fill();
+  ctx.strokeStyle = theme.panelStrong || theme.textDark || '#000000';
+  ctx.lineWidth = Math.max(1, height * 0.08);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.16)';
+  drawRoundedRect(ctx, x + width * 0.08, y + height * 0.1, width * 0.84, height * 0.26, radius * 0.8);
+  ctx.fill();
+  ctx.fillStyle = theme.panelStrong || theme.textDark || '#000000';
+  ctx.font = `700 ${Math.max(8, height * 0.45)}px ${theme.fontBody}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('+', x + width * 0.5, y + height * 0.56);
+  ctx.restore();
 };
 
 const drawHandTriggerCard = (ctx, centerX, centerY, width, height, interaction, theme, alpha = 1) => {
@@ -990,6 +1155,15 @@ const drawRewindReturnCard = (ctx, centerX, centerY, width, height, interaction,
   ctx.restore();
 };
 
+const drawMiniCardStack = (layout, rowCenterY, drawItem) => {
+  if (!layout || !Number.isFinite(rowCenterY) || typeof drawItem !== 'function') return;
+  for (let index = 0; index < layout.count; index += 1) {
+    const geometry = getMiniCardStackItemGeometry(layout, rowCenterY, index);
+    if (!geometry) continue;
+    drawItem(geometry, index);
+  }
+};
+
 const drawHandTriggerCards = (
   ctx,
   row,
@@ -1002,17 +1176,28 @@ const drawHandTriggerCards = (
   alpha = 1,
 ) => {
   if (!handTriggers.length) return;
-  const cardHeight = iconSize * HAND_TRIGGER_CARD_HEIGHT;
-  const cardWidth = cardHeight * HAND_TRIGGER_CARD_ASPECT;
-  const cardCenterX = xPos + rowSpacing * 0.5;
-  const minCenterX = row.numberArea.x + cardWidth / 2;
-  const maxCenterX = row.numberArea.x + row.numberArea.width - cardWidth / 2;
-  if (cardCenterX < minCenterX || cardCenterX > maxCenterX) return;
-  const stackOffset = cardHeight * HAND_TRIGGER_STACK_OFFSET;
-  const startOffset = -((handTriggers.length - 1) * stackOffset) / 2;
-  handTriggers.forEach((interaction, index) => {
-    const centerY = rowCenterY + startOffset + index * stackOffset;
-    drawHandTriggerCard(ctx, cardCenterX, centerY, cardWidth, cardHeight, interaction, theme, alpha);
+  const layout = buildMiniCardStackLayout({
+    row,
+    xPos,
+    rowSpacing,
+    iconSize,
+    count: handTriggers.length,
+    heightFactor: HAND_TRIGGER_CARD_HEIGHT,
+    aspect: HAND_TRIGGER_CARD_ASPECT,
+    stackOffsetFactor: HAND_TRIGGER_STACK_OFFSET,
+    side: 'right',
+  });
+  drawMiniCardStack(layout, rowCenterY, ({ centerY }, index) => {
+    drawHandTriggerCard(
+      ctx,
+      layout.centerX,
+      centerY,
+      layout.cardWidth,
+      layout.cardHeight,
+      handTriggers[index],
+      theme,
+      alpha,
+    );
   });
 };
 
@@ -1026,19 +1211,69 @@ const drawRewindReturnCards = (
   rewindReturns,
   theme,
   alpha = 1,
+  slotIndex = 0,
 ) => {
   if (!rewindReturns.length) return;
-  const cardHeight = iconSize * REWIND_RETURN_CARD_HEIGHT;
-  const cardWidth = cardHeight * REWIND_RETURN_CARD_ASPECT;
-  const cardCenterX = xPos - rowSpacing * 0.5;
-  const minCenterX = row.numberArea.x + cardWidth / 2;
-  const maxCenterX = row.numberArea.x + row.numberArea.width - cardWidth / 2;
-  if (cardCenterX < minCenterX || cardCenterX > maxCenterX) return;
-  const stackOffset = cardHeight * REWIND_RETURN_STACK_OFFSET;
-  const startOffset = -((rewindReturns.length - 1) * stackOffset) / 2;
-  rewindReturns.forEach((interaction, index) => {
-    const centerY = rowCenterY + startOffset + index * stackOffset;
-    drawRewindReturnCard(ctx, cardCenterX, centerY, cardWidth, cardHeight, interaction, theme, alpha);
+  const layout = buildMiniCardStackLayout({
+    row,
+    xPos,
+    rowSpacing,
+    iconSize,
+    count: rewindReturns.length,
+    heightFactor: REWIND_RETURN_CARD_HEIGHT,
+    aspect: REWIND_RETURN_CARD_ASPECT,
+    stackOffsetFactor: REWIND_RETURN_STACK_OFFSET,
+    side: 'left',
+    slotIndex,
+  });
+  drawMiniCardStack(layout, rowCenterY, ({ centerY }, index) => {
+    drawRewindReturnCard(
+      ctx,
+      layout.centerX,
+      centerY,
+      layout.cardWidth,
+      layout.cardHeight,
+      rewindReturns[index],
+      theme,
+      alpha,
+    );
+  });
+};
+
+const drawMovementPickupCards = (
+  ctx,
+  row,
+  xPos,
+  rowCenterY,
+  rowSpacing,
+  iconSize,
+  movementCardIds,
+  theme,
+  alpha = 1,
+) => {
+  if (!Array.isArray(movementCardIds) || !movementCardIds.length) return;
+  const layout = buildMiniCardStackLayout({
+    row,
+    xPos,
+    rowSpacing,
+    iconSize,
+    count: movementCardIds.length,
+    heightFactor: MOVEMENT_PICKUP_CARD_HEIGHT,
+    aspect: MOVEMENT_PICKUP_CARD_ASPECT,
+    stackOffsetFactor: MOVEMENT_PICKUP_STACK_OFFSET,
+    side: 'left',
+    slotIndex: 0,
+  });
+  drawMiniCardStack(layout, rowCenterY, ({ centerY }) => {
+    drawMovementPickupCard(
+      ctx,
+      layout.centerX,
+      centerY,
+      layout.cardWidth,
+      layout.cardHeight,
+      theme,
+      alpha,
+    );
   });
 };
 

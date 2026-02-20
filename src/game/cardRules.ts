@@ -28,6 +28,7 @@ import { buildCardActionList } from './cardText/actionListBuilder';
 const ROTATION_LABELS = ['0', 'R1', 'R2', '3', 'L2', 'L1'];
 const REWIND_CARD_ID = 'rewind';
 const REWIND_FOCUS_INTERACTION_TYPE = 'rewind-focus';
+const DRAW_SELECTION_MAX_MOVEMENT = 3;
 
 export const isActionValidationFailure = (result: ActionValidationResult): result is { ok: false; error: CardValidationError } =>
   !result.ok;
@@ -118,6 +119,44 @@ const isCoordOnLand = (location: HexCoord | undefined, land: HexCoord[]): boolea
   const key = buildCoordKey(location);
   if (!key) return false;
   return land.some((tile) => buildCoordKey(tile) === key);
+};
+
+const axialDistance = (a: HexCoord, b: HexCoord): number => {
+  const aq = Math.round(a.q);
+  const ar = Math.round(a.r);
+  const bq = Math.round(b.q);
+  const br = Math.round(b.r);
+  const dq = aq - bq;
+  const dr = ar - br;
+  const ds = (aq + ar) - (bq + br);
+  return (Math.abs(dq) + Math.abs(dr) + Math.abs(ds)) / 2;
+};
+
+const isAdjacentToLand = (location: HexCoord | undefined, land: HexCoord[]): boolean => {
+  if (!location || !Array.isArray(land) || !land.length) return false;
+  return land.some((tile) => axialDistance(location, tile) === 1);
+};
+
+const hasAnyCardsRemaining = (deckState?: DeckState): boolean => {
+  if (!deckState) return true;
+  const hasAbility = Array.isArray(deckState.abilityHand) && deckState.abilityHand.length > 0;
+  const hasMovement = getMovementHandIds(deckState).length > 0;
+  return hasAbility || hasMovement;
+};
+
+const buildLedgeGrabDrawInteractionId = (beatIndex: number, actorId: string): string =>
+  `draw:ledge-grab:${Math.max(0, Math.round(beatIndex))}:${actorId}:${actorId}`;
+
+const getDrawSelectionRequirement = (deckState: DeckState, drawCount: number) => {
+  const requested = Number.isFinite(drawCount) ? Math.max(0, Math.floor(drawCount)) : 0;
+  const actualDraw = Math.min(requested, deckState.abilityDeck.length);
+  const abilityAfter = deckState.abilityHand.length + actualDraw;
+  const maxAbilityHandSize = getMaxAbilityHandSize(deckState);
+  const targetMovementSize = abilityAfter > maxAbilityHandSize ? maxAbilityHandSize : abilityAfter;
+  const movementHandSize = getMovementHandIds(deckState).length;
+  const requiredRestore = Math.max(0, targetMovementSize - movementHandSize);
+  const requiresSelection = requiredRestore > 0 && targetMovementSize <= DRAW_SELECTION_MAX_MOVEMENT;
+  return { requested, requiredRestore, requiresSelection };
 };
 
 const ETHEREAL_PLATFORM_TOKEN_TYPE = 'ethereal-platform';
@@ -494,9 +533,38 @@ export const resolveLandRefreshes = (
     const onPlatform = platformTokenIndex >= 0;
     const terrain = entry?.terrain;
     const onLand = onPlatform || (terrain === 'land' ? true : terrain === 'abyss' ? false : isCoordOnLand(location, land));
-    if (!onLand) return;
+    const ledgeGrab = !onLand && isAdjacentToLand(location, land) && !hasAnyCardsRemaining(deckState);
+    if (!onLand && !ledgeGrab) return;
     const maxHandSize = getMaxAbilityHandSize(deckState);
-    const drawCount = Math.max(0, maxHandSize - deckState.abilityHand.length);
+    const drawCount = ledgeGrab ? 1 : Math.max(0, maxHandSize - deckState.abilityHand.length);
+    if (ledgeGrab) {
+      const requirement = getDrawSelectionRequirement(deckState, drawCount);
+      if (requirement.requiresSelection) {
+        const interactionId = buildLedgeGrabDrawInteractionId(firstEIndex, userId);
+        const existing =
+          interactions.find((interaction) => interaction?.id === interactionId && interaction?.type === 'draw') ?? null;
+        if (existing) {
+          existing.status = 'pending';
+          existing.drawCount = requirement.requested;
+          existing.drawMovementCount = requirement.requiredRestore;
+          existing.resolution = { ...(existing.resolution ?? {}), applied: false, ledgeGrab: true };
+        } else {
+          interactions.push({
+            id: interactionId,
+            type: 'draw',
+            beatIndex: firstEIndex,
+            actorUserId: userId,
+            targetUserId: userId,
+            status: 'pending',
+            drawCount: requirement.requested,
+            drawMovementCount: requirement.requiredRestore,
+            resolution: { applied: false, ledgeGrab: true },
+          });
+        }
+        deckState.lastRefreshIndex = firstEIndex;
+        return;
+      }
+    }
     const drawResult = drawAbilityCards(deckState, drawCount, { mode: 'auto' });
     if (!drawResult.ok) {
       return;

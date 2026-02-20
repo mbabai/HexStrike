@@ -3643,6 +3643,10 @@ img[src$='Death.png'] {
   pointer-events: none;
 }
 
+.timeline-tooltip.has-card-preview {
+  max-width: min(760px, 88vw);
+}
+
 .timeline-tooltip[hidden] {
   display: none;
 }
@@ -3690,6 +3694,21 @@ img[src$='Death.png'] {
 
 .timeline-tooltip-passive-text {
   display: block;
+}
+
+.timeline-tooltip-card-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.timeline-tooltip-card-preview[hidden] {
+  display: none;
+}
+
+.timeline-tooltip-card-preview .action-card {
+  pointer-events: none;
 }
 
 .app-toast {

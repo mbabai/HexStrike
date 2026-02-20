@@ -68,7 +68,7 @@ const SPECIAL_SYMBOLS = [
   {
     icon: 'E',
     title: 'Open Beat',
-    description: 'Open beat. Primary insertion point and refresh trigger when on land.',
+    description: 'Open beat. Primary insertion point and refresh trigger when on land; ledge grab can draw 1 over adjacent abyss.',
   },
   {
     icon: 'W',

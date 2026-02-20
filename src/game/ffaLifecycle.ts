@@ -1,4 +1,4 @@
-import { BeatEntry, DeckState, FfaState, HexCoord, MatchOutcome, PublicCharacter } from '../types';
+import { BeatEntry, CustomInteraction, DeckState, FfaState, HexCoord, MatchOutcome, PublicCharacter } from '../types';
 import {
   getCharacterFirstEIndex,
   getCharacterLocationAtIndex,
@@ -30,6 +30,7 @@ interface FfaLifecycleParams {
   characters: PublicCharacter[];
   land: HexCoord[];
   deckStates: Map<string, DeckState>;
+  interactions?: CustomInteraction[];
   ffa?: FfaState;
 }
 
@@ -147,13 +148,28 @@ const ensureBeatIndex = (beats: BeatEntry[][], index: number) => {
   }
 };
 
-const hasPlayableCards = (deckState?: DeckState): boolean => {
+const hasAnyCardsRemaining = (deckState?: DeckState): boolean => {
   if (!deckState) return true;
   const hasAbility = Array.isArray(deckState.abilityHand) && deckState.abilityHand.length > 0;
   const hasMovement = Array.isArray(deckState.movement)
     && deckState.movement.some((cardId) => !deckState.exhaustedMovementIds.has(cardId));
-  return hasAbility && hasMovement;
+  return hasAbility || hasMovement;
 };
+
+const hasPendingDrawInteraction = (
+  interactions: CustomInteraction[] | undefined,
+  actorId: string,
+  beatIndex: number,
+): boolean =>
+  Boolean(
+    interactions?.some((interaction) => {
+      if (!interaction || interaction.type !== 'draw') return false;
+      if (interaction.status !== 'pending') return false;
+      if (interaction.actorUserId !== actorId) return false;
+      if (!Number.isFinite(interaction.beatIndex)) return false;
+      return Math.round(interaction.beatIndex) === beatIndex;
+    }),
+  );
 
 const resetDeckStateForRespawn = (deckState: DeckState | undefined): number | undefined => {
   if (!deckState) return undefined;
@@ -462,12 +478,14 @@ const collectNoCardDeaths = ({
   characters,
   land,
   deckStates,
+  interactions,
   ffa,
 }: {
   beats: BeatEntry[][];
   characters: PublicCharacter[];
   land: HexCoord[];
   deckStates: Map<string, DeckState>;
+  interactions?: CustomInteraction[];
   ffa: FfaState;
 }): DeathEvent[] => {
   const activeCharacters = characters.filter((character) => !isFfaPlayerForfeited(ffa, character.userId));
@@ -483,7 +501,8 @@ const collectNoCardDeaths = ({
       if (action !== DEFAULT_ACTION) return null;
       const location = getCharacterLocationAtIndex(beats, character, earliestIndex);
       if (!location || isCoordOnLand(location, land)) return null;
-      if (hasPlayableCards(deckStates.get(character.userId))) return null;
+      if (hasPendingDrawInteraction(interactions, character.userId, earliestIndex)) return null;
+      if (hasAnyCardsRemaining(deckStates.get(character.userId))) return null;
       return {
         userId: character.userId,
         beatIndex: earliestIndex,
@@ -773,6 +792,7 @@ export const applyFfaLifecycle = ({
   characters,
   land,
   deckStates,
+  interactions,
   ffa,
 }: FfaLifecycleParams): FfaLifecycleResult => {
   const nextFfa = ensureFfaState(ffa, characters);
@@ -803,6 +823,7 @@ export const applyFfaLifecycle = ({
     characters,
     land,
     deckStates,
+    interactions,
     ffa: nextFfa as FfaState,
   });
   const events = dedupeDeathEvents([...zoneDeaths, ...noCardDeaths]);

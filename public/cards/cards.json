@@ -663,7 +663,7 @@
       ],
       "rotations": "0-2",
       "damage": 4,
-      "kbf": 0,
+      "kbf": 1,
       "activeText": "{i}: Target discards 3.",
       "passiveText": "While this move is active, opponent effects cannot make you discard cards."
     },

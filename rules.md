@@ -3,7 +3,7 @@
 ## Objective
 Win by forcing the opponent to lose. A player loses if either:
 - They are more than 4 hexes from the nearest land hex at any beat (distance loss).
-- They are on abyss at the earliest open beat and have no playable cards.
+- They are on abyss at the earliest open beat, have no playable cards, and cannot ledge grab.
 
 ## Components
 - Hex board with a fixed 13-hex land island (rows of 5, 4, and 4) surrounded by abyss.
@@ -96,9 +96,10 @@ Win by forcing the opponent to lose. A player loses if either:
 - When you reach the earliest open beat on land, you refresh:
   - clear movement exhaustion,
   - draw ability cards up to a hand size of 4.
+- Ledge grab: if you are on abyss at the earliest open beat, adjacent to a land hex, and have no playable cards, draw 1 ability card instead (using the normal draw + movement sync rules).
 - Refresh does not occur while a throw is pending or while simultaneous action submissions are still waiting to resolve.
 
 ## End of the game
 - Distance loss: if a character is ever more than 4 hexes from the nearest land hex, they lose. A Death marker is placed on the next beat.
-- No-cards abyss loss: if you are on an abyss hex at the earliest open beat and have no playable cards (no ability cards in hand and all movement cards exhausted), you lose.
+- No-cards abyss loss: if you are on an abyss hex at the earliest open beat and have no playable cards (no ability cards in hand and all movement cards exhausted), you lose unless ledge grab applies.
 - The remaining player wins.

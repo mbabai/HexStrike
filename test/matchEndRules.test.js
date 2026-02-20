@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { applyDeathToBeats, applyMatchOutcomeToBeats, evaluateMatchOutcome } = require('../dist/game/matchEndRules.js');
+const { resolveLandRefreshes } = require('../dist/game/cardRules.js');
 const { buildDefaultLandHexes } = require('../dist/game/hexGrid.js');
 
 const buildDeckState = ({
@@ -11,6 +12,8 @@ const buildDeckState = ({
   movement,
   abilityHand,
   abilityDeck: [],
+  baseMaxHandSize: 4,
+  focusedAbilityCardIds: new Set(),
   exhaustedMovementIds: new Set(exhaustedMovementIds),
   lastRefreshIndex: null,
   activeCardId: null,
@@ -44,7 +47,7 @@ test('distance loss triggers when a character is more than 4 hexes from land', (
   deckStates.set('far', buildDeckState());
   deckStates.set('near', buildDeckState());
 
-  const outcome = evaluateMatchOutcome(beats, characters, deckStates, land);
+  const outcome = evaluateMatchOutcome(beats, characters, deckStates, [], land);
 
   assert.ok(outcome, 'match outcome should exist');
   assert.equal(outcome.loserUserId, 'far');
@@ -89,7 +92,7 @@ test('no-cards abyss loss only triggers when the player is at the earliest E', (
   );
   deckStates.set('other', buildDeckState());
 
-  const outcome = evaluateMatchOutcome(beats, characters, deckStates, land);
+  const outcome = evaluateMatchOutcome(beats, characters, deckStates, [], land);
 
   assert.equal(outcome, null);
 });
@@ -117,11 +120,73 @@ test('no-cards abyss loss triggers at the earliest E on abyss', () => {
   );
   deckStates.set('other', buildDeckState());
 
-  const outcome = evaluateMatchOutcome(beats, characters, deckStates, land);
+  const outcome = evaluateMatchOutcome(beats, characters, deckStates, [], land);
 
   assert.ok(outcome, 'match outcome should exist');
   assert.equal(outcome.loserUserId, 'stalled');
   assert.equal(outcome.reason, 'no-cards-abyss');
+});
+
+test('no-cards abyss loss does not trigger when a movement card remains', () => {
+  const land = buildDefaultLandHexes();
+  const characters = [
+    { userId: 'stalled', username: 'stalled', position: { q: 3, r: 0 }, facing: 0, characterId: 'murelious' },
+    { userId: 'other', username: 'other', position: { q: 0, r: 0 }, facing: 0, characterId: 'murelious' },
+  ];
+  const beats = [
+    [
+      buildEntry('stalled', 'E', characters[0].position),
+      buildEntry('other', 'E', characters[1].position),
+    ],
+  ];
+  const deckStates = new Map();
+  deckStates.set(
+    'stalled',
+    buildDeckState({
+      movement: ['m1'],
+      abilityHand: [],
+      exhaustedMovementIds: [],
+    }),
+  );
+  deckStates.set('other', buildDeckState());
+
+  const outcome = evaluateMatchOutcome(beats, characters, deckStates, [], land);
+
+  assert.equal(outcome, null);
+});
+
+test('ledge grab draw resolves before no-cards abyss loss when adjacent to land', () => {
+  const land = buildDefaultLandHexes();
+  const characters = [
+    { userId: 'stalled', username: 'stalled', position: { q: 3, r: 0 }, facing: 0, characterId: 'murelious' },
+    { userId: 'other', username: 'other', position: { q: 0, r: 0 }, facing: 0, characterId: 'murelious' },
+  ];
+  const beats = [
+    [
+      buildEntry('stalled', 'E', characters[0].position),
+      buildEntry('other', 'E', characters[1].position),
+    ],
+  ];
+  const deckStates = new Map();
+  deckStates.set(
+    'stalled',
+    buildDeckState({
+      movement: ['m1'],
+      abilityHand: [],
+      exhaustedMovementIds: ['m1'],
+    }),
+  );
+  deckStates.get('stalled').abilityDeck = ['a2'];
+  deckStates.set('other', buildDeckState());
+  const interactions = [];
+
+  resolveLandRefreshes(deckStates, beats, characters, land, interactions, undefined, []);
+  const outcome = evaluateMatchOutcome(beats, characters, deckStates, interactions, land);
+
+  assert.deepEqual(deckStates.get('stalled').abilityHand, []);
+  assert.equal(interactions[0]?.type, 'draw');
+  assert.equal(interactions[0]?.status, 'pending');
+  assert.equal(outcome, null);
 });
 
 test('applyDeathToBeats inserts death and clears later entries for the loser', () => {
