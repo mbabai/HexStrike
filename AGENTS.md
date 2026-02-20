@@ -11,7 +11,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - UI: static assets in `public/` with ES module scripts (`public/menu.js`, `public/queue.js`, `public/storage.js`) and styling in `public/theme.css`.
 - UI: lobby deck library + deck builder stores player-created decks in cookies (base decks still come from `public/cards/cards.json`) via `public/decks.js` + `public/deckStore.js`; selected deck is saved in cookies and gates matchmaking.
 - UI: deck edit uses the same builder overlay as create; edit state is prefilled and saves back to the existing deck id.
-- UI: `/cards` catalog page renders the full card set from `public/cards/cards.json` via `public/cards.js` + `public/cards.css`.
+- UI: `/cards` is a standalone deck-builder page (same builder UI as lobby) via `public/cards.js` + `public/cards.css`; it auto-opens Create a Deck and the builder close `X` returns to the lobby.
 - Character powers are data-driven in `public/characters/characters.json`; server helpers live in `src/game/characterPowers.ts` and client loaders in `public/shared/characterCatalog.js`.
 - UI: deck-character selection shows character power text and in-game character-token hover tooltips show power text.
 - UI action HUD uses movement/ability cards from `public/cards/cards.json`, random/selected deck hand selection in `public/game/cards.js`, and drag/drop wiring in `public/game/actionHud.js`.
@@ -102,6 +102,8 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Bracketed multi-token actions (ex: `[a-La-Ra]`, `[b-Lb-Rb]`) must normalize the whole action before splitting by `-`; otherwise trailing tokens parse as `Ra]`/`Rb]` and silently drop right-side attacks/blocks. Keep `splitActionTokens`/`parseActionTokens` in `src/game/cardText/actionListTransforms.ts`, `src/game/execute.ts`, and `public/game/timelinePlayback.js` mirrored with `public/game/cardText/actionListTransforms.js`.
 - Multi-token attacks can apply multiple hits to the same target in one beat when later tokens still connect after the first hit/knockback; do not dedupe per-target hit resolution within the beat.
 - Card additions/edits must update simulation coverage in `test/cardTimelineSimulations.test.js` (or equivalent) so every card has active + passive timeline assertions through `validateActionSubmission` -> `applyActionSetToBeats` -> `executeBeats`.
+- If you swap card names/art labels between IDs (for example `trip` and `sweeping-strike`), keep each ID's timeline/effect data unchanged unless explicitly requested; UI art is keyed by card `name`, but rules/text behavior is keyed by card `id`.
+- Priority rebalance passes should leave all card priorities unique; when breaking ties, preserve overall order and apply tie-breaks in this order: movement cards lower priority first, guard cards higher priority last, then smaller attack coverage later, then alphabetical.
 - If card text introduces new action tokens (ex: `2c`, `B2m`, `B3j`), the HUD needs `/public/images/{token}.png`; generate via `scripts/hex_diagrams_creator.py` (or the `action-diagram-creator` skill, which outputs to `public/images`).
 - Ability cards are never exhausted; on use they leave the hand immediately and are placed under the ability deck (client and server).
 - Movement hand size is derived from ability count (<=4 matches ability count, >4 caps at 4); use `syncMovementHand`/`getMovementHandIds` in `src/game/handRules.ts` instead of hand-counting on the client.
@@ -125,6 +127,8 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Action card layout uses fixed pixel positions via CSS variables in `public/theme.css`; scale with `--action-card-scale` (cards page sets `1.5` in `public/cards.css`) instead of resizing individual elements to keep proportions locked.
 - Deck selection cards use `--action-card-scale` and `--deck-selection-hover-lift` in `public/theme.css`; keep the hover lift padding in sync so elevated cards are not clipped.
 - Action icon column placement is controlled by `--action-card-actions-top` in `public/theme.css`; adjust that single value to keep the top icon aligned without colliding with the border.
+- Deck-builder sort keys must stay aligned between `public/index.html`, `public/cards.html`, and `public/decks.js` (`name`, `priority`, `rotations`, `wait-beats`, `wind-up-beats`, `recovery-beats`, `beats`, `damage`, `kbf`).
+- Standalone `/cards` reuses `initDecks`; close-button navigation is injected via `initDecks({ onBuilderCloseButton })` in `public/cards.js` instead of hardcoding route logic in `public/decks.js`.
 - Keep beat arrays ordered by character roster when mutating to prevent UI rows from swapping entries.
 - Do not synthesize missing beat entries just to fill the timeline; missing entries count as `E` and prevent trailing-E spam.
 - Earliest-`E` lookups used for action submission/HUD gating must ignore calculated history (`calculated: true`) and start at the first unresolved beat (`resolvedIndex + 1`), or cards can be consumed into past beats (not inserted) after parry/damage rewrites.

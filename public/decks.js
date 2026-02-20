@@ -1,7 +1,12 @@
 import { loadCardCatalog } from './shared/cardCatalog.js';
 import { loadCharacterCatalog } from './shared/characterCatalog.js';
 import {
+  getCardFramesToFirstAction,
+  getCardPriorityValue,
+  getCardRecoveryFrames,
+  getCardRotationOptionCount,
   getCardTotalBeats,
+  getCardWaitBeats,
   isAbilityAttackCard,
   isAbilityDefenseCard,
   isAbilitySpecialCard,
@@ -90,18 +95,38 @@ const getNumericValue = (value) => {
   return Number.isFinite(parsed) ? parsed : -1;
 };
 
-const sortCards = (cards, sortKey) => {
+const normalizeSortDirection = (value) => (`${value ?? ''}`.trim().toLowerCase() === 'desc' ? 'desc' : 'asc');
+
+const formatSortDirectionLabel = (direction) =>
+  normalizeSortDirection(direction) === 'desc' ? 'descending' : 'ascending';
+
+const sortCards = (cards, sortKey, sortDirection) => {
   const list = [...cards];
-  if (sortKey === 'beats') {
-    return list.sort((a, b) => getCardTotalBeats(b) - getCardTotalBeats(a));
-  }
-  if (sortKey === 'damage') {
-    return list.sort((a, b) => getNumericValue(b.damage) - getNumericValue(a.damage));
-  }
-  if (sortKey === 'kbf') {
-    return list.sort((a, b) => getNumericValue(b.kbf) - getNumericValue(a.kbf));
-  }
-  return list.sort((a, b) => a.name.localeCompare(b.name));
+  const direction = normalizeSortDirection(sortDirection) === 'desc' ? -1 : 1;
+  const getSortValue = (card) => {
+    if (sortKey === 'beats') return getCardTotalBeats(card);
+    if (sortKey === 'damage') return getNumericValue(card.damage);
+    if (sortKey === 'kbf') return getNumericValue(card.kbf);
+    if (sortKey === 'priority') return getCardPriorityValue(card);
+    if (sortKey === 'rotations') return getCardRotationOptionCount(card);
+    if (sortKey === 'wait-beats') return getCardWaitBeats(card);
+    if (sortKey === 'wind-up-beats') return getCardFramesToFirstAction(card);
+    if (sortKey === 'recovery-beats') return getCardRecoveryFrames(card);
+    return card.name;
+  };
+  return list.sort((a, b) => {
+    const left = getSortValue(a);
+    const right = getSortValue(b);
+    if (sortKey === 'name') {
+      const nameDelta = `${left}`.localeCompare(`${right}`) || a.name.localeCompare(b.name);
+      return nameDelta * direction;
+    }
+    const delta = Number(left) - Number(right);
+    if (Number.isFinite(delta) && delta !== 0) {
+      return delta * direction;
+    }
+    return a.name.localeCompare(b.name);
+  });
 };
 
 const cardMatchesDeckTypeFilter = (card, filter) => {
@@ -139,7 +164,8 @@ const hasUniqueMovementConflict = (movementIds, nextCardId) => {
   return selected.some((cardId) => isUniqueMovementCard(cardId));
 };
 
-export const initDecks = async () => {
+export const initDecks = async (options = {}) => {
+  const { onBuilderCloseButton = null } = options;
   const deckGrid = document.getElementById('deckGrid');
   const createDeckButton = document.getElementById('createDeck');
   const selectedDeckCard = document.getElementById('selectedDeckCard');
@@ -163,6 +189,7 @@ export const initDecks = async () => {
   const characterClear = document.getElementById('deckCharacterClear');
   const deckTypeFilter = document.getElementById('deckTypeFilter');
   const deckSort = document.getElementById('deckSort');
+  const deckSortDirectionToggle = document.getElementById('deckSortDirectionToggle');
   const libraryRoot = document.getElementById('deckLibrary');
   const selectionStack = document.getElementById('deckSelectionStack');
   const deckSave = document.getElementById('deckSave');
@@ -198,6 +225,7 @@ export const initDecks = async () => {
     !characterClear ||
     !deckTypeFilter ||
     !deckSort ||
+    !deckSortDirectionToggle ||
     !libraryRoot ||
     !selectionStack ||
     !deckSave ||
@@ -243,6 +271,7 @@ export const initDecks = async () => {
     ability: [],
     typeFilter: deckTypeFilter.value,
     sort: deckSort.value,
+    sortDirection: normalizeSortDirection(deckSortDirectionToggle.dataset.sortDirection),
     draggingAbilityId: null,
     suppressClick: false,
     editingDeckId: null,
@@ -523,11 +552,24 @@ export const initDecks = async () => {
     characterOverlay.hidden = true;
   };
 
+  const renderSortDirectionToggle = () => {
+    const direction = normalizeSortDirection(builderState.sortDirection);
+    builderState.sortDirection = direction;
+    deckSortDirectionToggle.dataset.sortDirection = direction;
+    deckSortDirectionToggle.textContent = formatSortDirectionLabel(direction);
+    deckSortDirectionToggle.setAttribute(
+      'aria-label',
+      `Sort order: ${direction === 'desc' ? 'descending' : 'ascending'}`,
+    );
+  };
+
   const setBuilderFilters = () => {
     deckTypeFilter.value = 'all';
     deckSort.value = 'name';
     builderState.typeFilter = deckTypeFilter.value;
     builderState.sort = deckSort.value;
+    builderState.sortDirection = 'asc';
+    renderSortDirectionToggle();
   };
 
   const resetBuilder = () => {
@@ -609,7 +651,7 @@ export const initDecks = async () => {
     const allCards = [...catalog.movement, ...catalog.ability];
     const selected = new Set([...builderState.movement, ...builderState.ability]);
     const filtered = allCards.filter((card) => cardMatchesDeckTypeFilter(card, builderState.typeFilter));
-    const sorted = sortCards(filtered, builderState.sort);
+    const sorted = sortCards(filtered, builderState.sort, builderState.sortDirection);
 
     libraryRoot.innerHTML = '';
     sorted.forEach((card) => {
@@ -872,7 +914,12 @@ export const initDecks = async () => {
   });
 
   createDeckButton.addEventListener('click', () => openBuilder());
-  builderClose.addEventListener('click', closeBuilder);
+  builderClose.addEventListener('click', () => {
+    closeBuilder();
+    if (typeof onBuilderCloseButton === 'function') {
+      onBuilderCloseButton();
+    }
+  });
   builderOverlay.addEventListener('click', (event) => {
     if (event.target === builderOverlay) {
       closeBuilder();
@@ -904,6 +951,12 @@ export const initDecks = async () => {
     renderLibrary();
   });
 
+  deckSortDirectionToggle.addEventListener('click', () => {
+    builderState.sortDirection = builderState.sortDirection === 'asc' ? 'desc' : 'asc';
+    renderSortDirectionToggle();
+    renderLibrary();
+  });
+
   deckNameInput.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter') return;
     if (!isBuilderSaveable()) return;
@@ -916,6 +969,7 @@ export const initDecks = async () => {
     saveDeck();
   });
 
+  renderSortDirectionToggle();
   refreshDeckViews();
   window.addEventListener('keydown', (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's' && !builderOverlay.hidden) {

@@ -409,7 +409,7 @@ export const initGame = () => {
     }
     if (comboCopy) {
       comboCopy.textContent = isGuard
-        ? "Choose Yes to continue Guard and force a discard of 1 on Guard's E frame."
+        ? "Choose Yes to continue Guard and force a discard of 1 on Guard's E beat."
         : isRewind
           ? 'Choose Yes to end Rewind focus and return to your anchored hex.'
           : isDrawOffer

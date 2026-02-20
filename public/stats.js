@@ -4,6 +4,7 @@ import {
   getCardDamageValue,
   getCardFramesToFirstAction,
   getCardKbfValue,
+  getCardRecoveryFrames,
   getCardTotalBeats,
   getCardWaitBeats,
   isAbilityAttackCard,
@@ -216,9 +217,14 @@ const renderStats = async () => {
         values: cards.map((card) => getCardWaitBeats(card)),
       },
       {
-        title: 'FTFA',
-        subtitle: 'Frames to first action: leading {W} beats before first non-{W}.',
+        title: 'Wind up Beats',
+        subtitle: 'Leading {W} beats before the first non-{W}.',
         values: cards.map((card) => getCardFramesToFirstAction(card)),
+      },
+      {
+        title: 'Recovery Beats',
+        subtitle: 'Trailing {W} beats at the end of each card timeline.',
+        values: cards.map((card) => getCardRecoveryFrames(card)),
       },
     ];
 

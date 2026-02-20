@@ -1,9 +1,39 @@
 const SPECIAL_MARKERS = new Set(['X1', 'X2', 'F']);
+const ROTATION_LABELS = ['0', 'R1', 'R2', '3', 'L2', 'L1'];
 
 const toFiniteNumber = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   const parsed = Number.parseFloat(`${value ?? ''}`.trim());
   return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const getRotationMagnitude = (label) => {
+  const value = `${label ?? ''}`.trim().toUpperCase();
+  if (value === '0') return 0;
+  if (value === '3') return 3;
+  if (value.startsWith('L') || value.startsWith('R')) {
+    const amount = Number(value.slice(1));
+    return Number.isFinite(amount) ? amount : null;
+  }
+  return null;
+};
+
+const buildAllowedRotationSet = (restriction) => {
+  const trimmed = `${restriction ?? ''}`.trim();
+  if (!trimmed || trimmed === '*') return null;
+  const [minRaw, maxRaw] = trimmed.split('-');
+  const min = Number(minRaw);
+  const max = Number(maxRaw);
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+  const allowed = new Set();
+  ROTATION_LABELS.forEach((label) => {
+    const magnitude = getRotationMagnitude(label);
+    if (magnitude === null) return;
+    if (magnitude >= min && magnitude <= max) {
+      allowed.add(label);
+    }
+  });
+  return allowed;
 };
 
 const normalizeActionLabel = (action) => {
@@ -55,6 +85,16 @@ export const getCardFramesToFirstAction = (card) => {
   return waits;
 };
 
+export const getCardRecoveryFrames = (card) => {
+  const beats = getActionBeats(card);
+  let waits = 0;
+  for (let index = beats.length - 1; index >= 0; index -= 1) {
+    if (normalizeActionLabel(beats[index]).toUpperCase() !== 'W') break;
+    waits += 1;
+  }
+  return waits;
+};
+
 export const cardHasAttackOrCharge = (card) =>
   getCardActionTokens(card).some((token) => {
     const lowered = token.toLowerCase();
@@ -89,3 +129,10 @@ export const isAbilitySpecialCard = (card) =>
 export const getCardDamageValue = (card) => toFiniteNumber(card?.damage);
 
 export const getCardKbfValue = (card) => toFiniteNumber(card?.kbf);
+
+export const getCardPriorityValue = (card) => toFiniteNumber(card?.priority);
+
+export const getCardRotationOptionCount = (card) => {
+  const allowed = buildAllowedRotationSet(card?.rotations);
+  return allowed ? allowed.size : ROTATION_LABELS.length;
+};

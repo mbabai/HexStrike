@@ -22,7 +22,7 @@
           </div>
           <div class="hero-actions">
             <a class="btn btn-ghost btn-small" href="/">Back to Lobby</a>
-            <a class="btn btn-ghost btn-small" href="/public/cards.html">Card Catalog</a>
+            <a class="btn btn-ghost btn-small" href="/cards">Deck Builder</a>
           </div>
         </div>
       </header>
@@ -34,7 +34,7 @@
           <li><a href="#setup">Setup</a></li>
           <li><a href="#cards">Reading a Card</a></li>
           <li><a href="#hand-economy">Cards in Hand and Card Economy</a></li>
-          <li><a href="#phases">Frame Phases</a></li>
+          <li><a href="#phases">Beat Phases</a></li>
           <li><a href="#timeline">Timeline and Submission</a></li>
           <li><a href="#movement-combat">Symbol Resolution and Combat</a></li>
           <li><a href="#knockback">Knockback and Damage Resolution</a></li>
@@ -186,7 +186,7 @@
       </section>
 
       <section id="phases" class="panel">
-        <h2>5) Frame Phases</h2>
+        <h2>5) Beat Phases</h2>
         <div class="text-panel">
           <p>
             HexStrike can be taught as a repeating five-phase loop: Refresh, Play, Execute, Shift, Repeat. Internally, this
@@ -194,7 +194,7 @@
             beat.
           </p>
         </div>
-        <h3>Teaching Version: How a Frame Feels</h3>
+        <h3>Teaching Version: How a Beat Feels</h3>
         <div class="phase-grid">
           <article class="phase-card">
             <h4>Refresh</h4>
@@ -522,7 +522,7 @@
             <dd>The active and passive cards plus rotation that you submit for your next open beat.</dd>
           </div>
           <div class="glossary-item">
-            <dt>Beat (Frame)</dt>
+            <dt>Beat</dt>
             <dd>One timeline index containing one entry per player.</dd>
           </div>
           <div class="glossary-item">
@@ -592,7 +592,7 @@
         <h2>13) Quick Reference</h2>
         <div class="quick-ref-grid">
           <div class="text-panel">
-            <h3>Frame Order</h3>
+            <h3>Beat Order</h3>
             <ol>
               <li>Refresh (if allowed on your current open beat)</li>
               <li>Play (select movement, ability, and legal rotation)</li>

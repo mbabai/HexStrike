@@ -2339,6 +2339,21 @@ img[src$='Death.png'] {
   color: var(--color-subtle);
 }
 
+.deck-sort-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.deck-sort-controls .menu-select {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.deck-sort-direction {
+  min-width: 122px;
+}
+
 .deck-library {
   --action-card-scale: var(--deck-library-card-scale);
   display: grid;

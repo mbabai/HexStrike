@@ -47,7 +47,7 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
   - `matchOutcome`: populated when the match ends.
 - Deck state is stored separately in `gameDeckStates` and merged into player views.
 
-### Card catalog and deck state
+### Card data and deck state
 - Card data lives in `public/cards/cards.json` and is loaded by `src/game/cardCatalog.ts`.
 - Character powers live in `public/characters/characters.json`; server reads them through `src/game/characterPowers.ts`, client reads them through `public/shared/characterCatalog.js`.
 - Deck definitions require 4 movement cards and 12 ability cards; duplicates are rejected.
@@ -89,7 +89,7 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
 ## Client architecture (public/)
 ### Pages
 - `public/index.html`: lobby + game shell.
-- `public/cards.html`: card catalog view.
+- `public/cards.html`: dedicated deck-builder view.
 - `public/admin.html`: presence/queue monitor.
 
 ### Lobby modules
@@ -98,7 +98,7 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
 - `public/queue.js` handles quickplay and bot-queue join/leave plus queueing UI state.
 - `public/decks.js` + `public/deckStore.js` manage deck creation and persistence in localStorage.
 - `public/storage.js` stores user id and selected deck id in cookies.
-- `public/cards.js` renders the card catalog page.
+- `public/cards.js` initializes the standalone deck-builder page.
 
 ### Game view modules
 - `public/game.js` orchestrates the game canvas, action HUD, timeline playback, and HTTP submissions.

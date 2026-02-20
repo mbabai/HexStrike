@@ -98,7 +98,7 @@
       "id": "leap",
       "name": "Leap",
       "type": "movement",
-      "priority": 66,
+      "priority": 67,
       "actions": [
         "W",
         "3j",
@@ -186,7 +186,7 @@
       "id": "balestra-lunge",
       "name": "Balestra Lunge",
       "type": "ability",
-      "priority": 69,
+      "priority": 49,
       "actions": [
         "m",
         "a",
@@ -218,7 +218,7 @@
       "id": "burning-strike",
       "name": "Burning Strike",
       "type": "ability",
-      "priority": 88,
+      "priority": 89,
       "actions": [
         "W",
         "[a]",
@@ -236,9 +236,8 @@
       "id": "chase",
       "name": "Chase",
       "type": "ability",
-      "priority": 78,
+      "priority": 58,
       "actions": [
-        "W",
         "m",
         "c",
         "a",
@@ -255,7 +254,7 @@
       "id": "counter-attack",
       "name": "Counter Attack",
       "type": "ability",
-      "priority": 68,
+      "priority": 71,
       "actions": [
         "Bm",
         "a",
@@ -272,7 +271,7 @@
       "id": "cross-slash",
       "name": "Cross Slash",
       "type": "ability",
-      "priority": 70,
+      "priority": 72,
       "actions": [
         "W",
         "a-La-Ra",
@@ -298,7 +297,7 @@
         "E"
       ],
       "rotations": "0-2",
-      "damage": 2,
+      "damage": 3,
       "kbf": 2
     },
     {
@@ -352,7 +351,7 @@
       "id": "fumikomi",
       "name": "Fumikomi",
       "type": "ability",
-      "priority": 68,
+      "priority": 48,
       "actions": [
         "m",
         "a-La-Ra",
@@ -373,7 +372,6 @@
         "W",
         "W",
         "a-2a-3a",
-        "W",
         "W",
         "W",
         "W",
@@ -398,8 +396,8 @@
       "rotations": "*",
       "damage": 0,
       "kbf": 0,
-      "activeText": "{i}: On this frame you may choose to \"continue\" your block. If you do, then on Guard's {E} frame, instead return to this frame and discard 1.",
-      "passiveText": "All {W} frames become {Bb} instead."
+      "activeText": "{i}: On this beat you may choose to \"continue\" your block. If you do, then on Guard's {E} beat, instead return to this beat and discard 1.",
+      "passiveText": "All {W} beats become {Bb} instead."
     },
     {
       "id": "hammer",
@@ -429,7 +427,6 @@
         "W",
         "X1",
         "W",
-        "W",
         "E"
       ],
       "rotations": "*",
@@ -442,9 +439,8 @@
       "id": "healing-harmony",
       "name": "Healing Harmony",
       "type": "ability",
-      "priority": 15,
+      "priority": 16,
       "actions": [
-        "W",
         "W",
         "W",
         "X1",
@@ -470,7 +466,7 @@
         "E"
       ],
       "rotations": "*",
-      "damage": 2,
+      "damage": 3,
       "kbf": "T",
       "passiveText": "While this move card is active, you cannot be thrown."
     },
@@ -480,7 +476,6 @@
       "type": "ability",
       "priority": 18,
       "actions": [
-        "W",
         "W",
         "W",
         "X1",
@@ -497,7 +492,7 @@
       "id": "jab",
       "name": "Jab",
       "type": "ability",
-      "priority": 65,
+      "priority": 66,
       "actions": [
         "[a]",
         "Co",
@@ -513,11 +508,10 @@
       "id": "long-thrust",
       "name": "Long Thrust",
       "type": "ability",
-      "priority": 67,
+      "priority": 70,
       "actions": [
         "W",
         "a-2a",
-        "W",
         "W",
         "W",
         "E"
@@ -542,7 +536,7 @@
       "rotations": "*",
       "damage": 0,
       "kbf": 0,
-      "activeText": "{i}: If Parry successfully blocks a melee attack, on the following frame do 2x damage and +1 KBF back onto the attacker, and {E}."
+      "activeText": "{i}: If Parry successfully blocks a melee attack, on the following beat do 2x damage and +1 KBF back onto the attacker, and {E}."
     },
     {
       "id": "push-kick",
@@ -550,8 +544,7 @@
       "type": "ability",
       "priority": 76,
       "actions": [
-        "a",
-        "Bm",
+        "a-Bm",
         "W",
         "W",
         "E"
@@ -646,13 +639,13 @@
       "damage": 0,
       "kbf": 0,
       "activeText": "{i}: Rotate after this attack. This attack is unblockable. All targets hit by the attack are interrupted, and stunned for 5 - your rotation. \n{X1}: Swap this card with the movement card.",
-      "passiveText": "All movement frames invert their direction."
+      "passiveText": "All movement beats invert their direction."
     },
     {
       "id": "spike",
       "name": "Spike",
       "type": "ability",
-      "priority": 66,
+      "priority": 69,
       "actions": [
         "W",
         "W",
@@ -686,7 +679,7 @@
       "id": "stab",
       "name": "Stab",
       "type": "ability",
-      "priority": 62,
+      "priority": 63,
       "actions": [
         "W",
         "[a]",
@@ -701,7 +694,7 @@
     },
     {
       "id": "sweeping-strike",
-      "name": "Sweeping Strike",
+      "name": "Trip",
       "type": "ability",
       "priority": 60,
       "actions": [
@@ -722,21 +715,21 @@
       "type": "ability",
       "priority": 45,
       "actions": [
-        "W",
         "m",
         "[a]",
+        "W",
         "W",
         "W",
         "E"
       ],
       "rotations": "0-1",
-      "damage": 1,
+      "damage": 2,
       "kbf": "T",
       "passiveText": "While this move card is active, you cannot be thrown."
     },
     {
       "id": "trip",
-      "name": "Trip",
+      "name": "Sweeping Strike",
       "type": "ability",
       "priority": 65,
       "actions": [
@@ -759,7 +752,6 @@
       "priority": 3,
       "actions": [
         "W",
-        "W",
         "c",
         "c",
         "c",
@@ -776,7 +768,7 @@
       "id": "whirlwind",
       "name": "Whirlwind",
       "type": "ability",
-      "priority": 66,
+      "priority": 68,
       "actions": [
         "W",
         "c-La-Ra-BLa-BRa-Ba",

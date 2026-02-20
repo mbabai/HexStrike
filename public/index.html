@@ -144,12 +144,28 @@
               </label>
               <label>
                 <span class="deck-filter-label">Sort</span>
-                <select id="deckSort" class="menu-select">
-                  <option value="name">Alphabetical</option>
-                  <option value="beats">Number of Beats</option>
-                  <option value="damage">Damage</option>
-                  <option value="kbf">KBF</option>
-                </select>
+                <div class="deck-sort-controls">
+                  <select id="deckSort" class="menu-select">
+                    <option value="name">Alphabetical</option>
+                    <option value="priority">Priority</option>
+                    <option value="rotations">Rotations</option>
+                    <option value="wait-beats">Wait Beats</option>
+                    <option value="wind-up-beats">Wind up Beats</option>
+                    <option value="recovery-beats">Recovery Beats</option>
+                    <option value="beats">Number of Beats</option>
+                    <option value="damage">Damage</option>
+                    <option value="kbf">KBF</option>
+                  </select>
+                  <button
+                    id="deckSortDirectionToggle"
+                    class="btn btn-ghost btn-small deck-sort-direction"
+                    type="button"
+                    data-sort-direction="asc"
+                    aria-label="Sort order: ascending"
+                  >
+                    ascending
+                  </button>
+                </div>
               </label>
             </div>
             <div class="deck-library-scroll">

@@ -4,6 +4,19 @@
   --action-card-text-scale: 2.5;
 }
 
+.cards-decks-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.cards-decks-header {
+  align-items: center;
+}
+
+.cards-decks-panel .deck-grid {
+  min-height: calc(var(--deck-card-height) + 10px);
+}
+
 .cards-table {
   display: grid;
   gap: 18px;
