@@ -200,6 +200,11 @@ export const initDecks = async (options = {}) => {
   const playerNameCancel = document.getElementById('playerNameCancel');
   const playerNameSave = document.getElementById('playerNameSave');
   const playerNameInput = document.getElementById('playerNameInput');
+  const deckDeleteOverlay = document.getElementById('deckDeleteOverlay');
+  const deckDeleteClose = document.getElementById('deckDeleteClose');
+  const deckDeleteCancel = document.getElementById('deckDeleteCancel');
+  const deckDeleteConfirm = document.getElementById('deckDeleteConfirm');
+  const deckDeleteCopy = document.getElementById('deckDeleteCopy');
 
   if (
     !deckGrid ||
@@ -235,7 +240,12 @@ export const initDecks = async (options = {}) => {
     !playerNameClose ||
     !playerNameCancel ||
     !playerNameSave ||
-    !playerNameInput
+    !playerNameInput ||
+    !deckDeleteOverlay ||
+    !deckDeleteClose ||
+    !deckDeleteCancel ||
+    !deckDeleteConfirm ||
+    !deckDeleteCopy
   ) {
     return;
   }
@@ -281,6 +291,7 @@ export const initDecks = async (options = {}) => {
   let builderTextFitRaf = null;
   let builderSubtitleResetTimeout = null;
   let playerName = getStoredUsername() || 'anonymous';
+  let pendingDeleteDeckId = null;
   const builderSubtitleDefaultText =
     `${deckBuilderSubtitle.textContent ?? ''}`.trim() ||
     'Pick a character, 4 movement cards, and 12 ordered ability cards.';
@@ -361,6 +372,35 @@ export const initDecks = async (options = {}) => {
 
   const closePlayerNameOverlay = () => {
     playerNameOverlay.hidden = true;
+  };
+
+  const openDeckDeleteOverlay = (deck) => {
+    pendingDeleteDeckId = deck?.id || null;
+    deckDeleteCopy.textContent = `Are you sure you wish to delete ${deck?.name || 'this'} deck?`;
+    deckDeleteOverlay.hidden = false;
+  };
+
+  const closeDeckDeleteOverlay = () => {
+    pendingDeleteDeckId = null;
+    deckDeleteOverlay.hidden = true;
+  };
+
+  const confirmDeckDelete = () => {
+    if (!pendingDeleteDeckId) {
+      closeDeckDeleteOverlay();
+      return;
+    }
+    const deckToDelete = decks.find((entry) => entry.id === pendingDeleteDeckId);
+    closeDeckDeleteOverlay();
+    if (!deckToDelete) return;
+    decks = decks.filter((entry) => entry.id !== deckToDelete.id);
+    decks = saveUserDecks(userId, decks);
+    if (selectedDeckId === deckToDelete.id) {
+      selectedDeckId = null;
+      clearSelectedDeckId();
+    }
+    refreshDeckViews();
+    dispatchDecksUpdated();
   };
 
   const savePlayerName = () => {
@@ -505,14 +545,7 @@ export const initDecks = async (options = {}) => {
 
       deleteButton.addEventListener('click', (event) => {
         event.stopPropagation();
-        decks = decks.filter((entry) => entry.id !== deck.id);
-        decks = saveUserDecks(userId, decks);
-        if (selectedDeckId === deck.id) {
-          selectedDeckId = null;
-          clearSelectedDeckId();
-        }
-        refreshDeckViews();
-        dispatchDecksUpdated();
+        openDeckDeleteOverlay(deck);
       });
 
       previewButton.addEventListener('click', () => setSelectedDeck(deck.id));
@@ -906,6 +939,15 @@ export const initDecks = async (options = {}) => {
     }
   });
 
+  deckDeleteClose.addEventListener('click', closeDeckDeleteOverlay);
+  deckDeleteCancel.addEventListener('click', closeDeckDeleteOverlay);
+  deckDeleteConfirm.addEventListener('click', confirmDeckDelete);
+  deckDeleteOverlay.addEventListener('click', (event) => {
+    if (event.target === deckDeleteOverlay) {
+      closeDeckDeleteOverlay();
+    }
+  });
+
   previewClose.addEventListener('click', closePreview);
   previewOverlay.addEventListener('click', (event) => {
     if (event.target === previewOverlay) {
@@ -979,6 +1021,10 @@ export const initDecks = async (options = {}) => {
       return;
     }
     if (event.key !== 'Escape') return;
+    if (!deckDeleteOverlay.hidden) {
+      closeDeckDeleteOverlay();
+      return;
+    }
     if (!playerNameOverlay.hidden) {
       closePlayerNameOverlay();
       return;
