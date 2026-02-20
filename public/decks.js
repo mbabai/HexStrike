@@ -1,5 +1,11 @@
 import { loadCardCatalog } from './shared/cardCatalog.js';
 import { loadCharacterCatalog } from './shared/characterCatalog.js';
+import {
+  getCardTotalBeats,
+  isAbilityAttackCard,
+  isAbilityDefenseCard,
+  isAbilitySpecialCard,
+} from './shared/cardAnalytics.js';
 import { buildCardElement, fitAllCardText } from './shared/cardRenderer.js';
 import { loadUserDecks, saveUserDecks, createDeckId } from './deckStore.js';
 import {
@@ -78,13 +84,6 @@ const buildCardMap = (catalog) => {
   return map;
 };
 
-const getBeatCount = (card) => {
-  const actions = Array.isArray(card?.actions) ? card.actions.map((action) => `${action}`.trim()).filter(Boolean) : [];
-  if (!actions.length) return 0;
-  const last = actions[actions.length - 1];
-  return last.toUpperCase() === 'E' ? actions.length - 1 : actions.length;
-};
-
 const getNumericValue = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   const parsed = Number.parseFloat(`${value}`);
@@ -94,7 +93,7 @@ const getNumericValue = (value) => {
 const sortCards = (cards, sortKey) => {
   const list = [...cards];
   if (sortKey === 'beats') {
-    return list.sort((a, b) => getBeatCount(b) - getBeatCount(a));
+    return list.sort((a, b) => getCardTotalBeats(b) - getCardTotalBeats(a));
   }
   if (sortKey === 'damage') {
     return list.sort((a, b) => getNumericValue(b.damage) - getNumericValue(a.damage));
@@ -103,6 +102,16 @@ const sortCards = (cards, sortKey) => {
     return list.sort((a, b) => getNumericValue(b.kbf) - getNumericValue(a.kbf));
   }
   return list.sort((a, b) => a.name.localeCompare(b.name));
+};
+
+const cardMatchesDeckTypeFilter = (card, filter) => {
+  if (filter === 'all') return true;
+  if (filter === 'movement') return card.type === 'movement';
+  if (filter === 'ability') return card.type === 'ability';
+  if (filter === 'ability-attack') return isAbilityAttackCard(card);
+  if (filter === 'ability-defense') return isAbilityDefenseCard(card);
+  if (filter === 'ability-special') return isAbilitySpecialCard(card);
+  return true;
 };
 
 const isUniqueMovementCard = (cardId) => UNIQUE_MOVEMENT_CARD_IDS.has(`${cardId ?? ''}`.trim());
@@ -599,10 +608,7 @@ export const initDecks = async () => {
   const renderLibrary = () => {
     const allCards = [...catalog.movement, ...catalog.ability];
     const selected = new Set([...builderState.movement, ...builderState.ability]);
-    const filtered = allCards.filter((card) => {
-      if (builderState.typeFilter === 'all') return true;
-      return card.type === builderState.typeFilter;
-    });
+    const filtered = allCards.filter((card) => cardMatchesDeckTypeFilter(card, builderState.typeFilter));
     const sorted = sortCards(filtered, builderState.sort);
 
     libraryRoot.innerHTML = '';

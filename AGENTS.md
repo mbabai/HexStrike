@@ -81,6 +81,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Keep pure logic (rules/engine) free of I/O; isolate side effects in adapters.
 - Small, focused modules; avoid monolithic files.
 - Prefer functional, deterministic code paths for the engine; inject randomness sources.
+- In browser UI copy/tooltips/docs that reference action symbols, prefer rendering token icons (`/public/images/{token}.png`, for example `E.png`, `W.png`) instead of plain text letters whenever an icon exists.
 - When providing terminal commands to the user, always format each command as a single-line command (no line-continuation characters like `\`).
 
 ## Repository conventions

@@ -3004,6 +3004,8 @@ export function buildServer(port: number) {
           ? '/public/admin.html'
           : decodedPath === '/cards' || decodedPath === '/cards/'
             ? '/public/cards.html'
+            : decodedPath === '/stats' || decodedPath === '/stats/'
+              ? '/public/stats.html'
             : decodedPath.startsWith('/public/')
               ? decodedPath
               : `/public${decodedPath}`;
@@ -4655,6 +4657,8 @@ export function buildServer(port: number) {
         pathname === '/admin/' ||
         pathname === '/cards' ||
         pathname === '/cards/' ||
+        pathname === '/stats' ||
+        pathname === '/stats/' ||
         pathname === '/favicon.ico' ||
         pathname === '/favicon.png' ||
         pathname.startsWith('/public')
