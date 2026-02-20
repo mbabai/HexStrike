@@ -190,7 +190,8 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Pending throw interactions must surface the throw modal even if the beat is already resolved; don't filter throws by resolved index in the UI selector.
 - Skipped combos keep the `Co` symbol on the timeline and are marked with `comboSkipped` for UI greying; do not replace with `W`.
 - Server-side deck state is tracked per game (in memory); refreshes resolve only when the earliest `E` is on land (gated by `lastRefreshIndex`), clearing movement exhaustion and drawing up to max hand size.
-- Focused cards reduce max hand size (`MAX_HAND_SIZE - focusedAbilityCardIds.size`, floored at 0) and movement hand size must be synced using that reduced cap.
+- Focused cards reduce max hand size (`MAX_HAND_SIZE - focusedAbilityCardIds.size`, floored at 0) for `{E}` refresh calculations and UI max-hand display.
+- Non-refresh hand sync (draw/discard card text, hand triggers, and movement exhaustion thresholds on card use) must use the base max hand size, not the focus-reduced cap.
 - Rewind focus blocks land refresh entirely until focus ends (return/knockback/stun), even if the earliest `E` is on land.
 - Land refresh checks should use the last known beat location at/ before the earliest `E`; avoid `public.characters` positions or you will refresh on abyss.
 - Land refresh should be keyed only by `lastRefreshIndex` + earliest `E` beat; skip refresh entirely while `pendingActions.beatIndex` matches the earliest `E`.

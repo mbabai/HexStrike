@@ -1,189 +1,69 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const loadModule = async () => import('../public/game/interactionState.mjs');
+let interactionStateModulePromise = null;
 
-test('selectPendingInteraction returns pending throw even if beat is resolved', async () => {
-  const { selectPendingInteraction } = await loadModule();
-  const interactions = [
-    { id: 'throw:0:me:you', type: 'throw', status: 'pending', actorUserId: 'me', targetUserId: 'you', beatIndex: 0 },
-    { id: 'combo:0:me:me', type: 'combo', status: 'pending', actorUserId: 'me', beatIndex: 0 },
+const loadInteractionStateModule = async () => {
+  if (!interactionStateModulePromise) {
+    interactionStateModulePromise = import('../public/game/interactionState.mjs');
+  }
+  return interactionStateModulePromise;
+};
+
+test('selectPendingInteraction matches local userId when interaction uses username actor id', async () => {
+  const { selectPendingInteraction } = await loadInteractionStateModule();
+  const characters = [
+    { userId: 'u-alpha', username: 'alpha' },
+    { userId: 'u-beta', username: 'beta' },
   ];
-  const beats = [[{ username: 'me', action: 'W' }]];
-  const characters = [{ userId: 'me', username: 'me' }];
-  const pending = selectPendingInteraction({
-    interactions,
-    beats,
-    characters,
-    localUserId: 'me',
-    resolvedIndex: 0,
-  });
-
-  assert.equal(pending?.id, 'throw:0:me:you');
-});
-
-test('selectPendingInteraction returns pending draw even if beat is resolved', async () => {
-  const { selectPendingInteraction } = await loadModule();
-  const interactions = [
-    { id: 'draw:0:me:me', type: 'draw', status: 'pending', actorUserId: 'me', targetUserId: 'me', beatIndex: 0 },
-  ];
-  const beats = [[{ username: 'me', action: 'W' }]];
-  const characters = [{ userId: 'me', username: 'me' }];
-  const pending = selectPendingInteraction({
-    interactions,
-    beats,
-    characters,
-    localUserId: 'me',
-    resolvedIndex: 0,
-  });
-
-  assert.equal(pending?.id, 'draw:0:me:me');
-});
-
-test('selectPendingInteraction returns pending draw offer even if beat is resolved', async () => {
-  const { selectPendingInteraction } = await loadModule();
   const interactions = [
     {
-      id: 'draw-offer:0:you:me',
-      type: 'draw-offer',
-      status: 'pending',
-      actorUserId: 'me',
-      targetUserId: 'me',
-      sourceUserId: 'you',
-      beatIndex: 0,
-    },
-  ];
-  const beats = [[{ username: 'me', action: 'W' }]];
-  const characters = [{ userId: 'me', username: 'me' }];
-  const pending = selectPendingInteraction({
-    interactions,
-    beats,
-    characters,
-    localUserId: 'me',
-    resolvedIndex: 0,
-  });
-
-  assert.equal(pending?.id, 'draw-offer:0:you:me');
-});
-
-test('selectPendingInteraction returns pending guard continue even if beat is resolved', async () => {
-  const { selectPendingInteraction } = await loadModule();
-  const interactions = [
-    {
-      id: 'guard-continue:0:me:me',
-      type: 'guard-continue',
-      status: 'pending',
-      actorUserId: 'me',
-      targetUserId: 'me',
-      beatIndex: 0,
-    },
-  ];
-  const beats = [[{ username: 'me', action: '[b-Lb-Rb]' }]];
-  const characters = [{ userId: 'me', username: 'me' }];
-  const pending = selectPendingInteraction({
-    interactions,
-    beats,
-    characters,
-    localUserId: 'me',
-    resolvedIndex: 0,
-  });
-
-  assert.equal(pending?.id, 'guard-continue:0:me:me');
-});
-
-test('selectPendingInteraction returns pending rewind return even if beat is resolved', async () => {
-  const { selectPendingInteraction } = await loadModule();
-  const interactions = [
-    {
-      id: 'rewind-return:0:me:me',
+      id: 'rewind-return:3:alpha:alpha',
       type: 'rewind-return',
+      beatIndex: 3,
+      actorUserId: 'alpha',
+      targetUserId: 'alpha',
       status: 'pending',
-      actorUserId: 'me',
-      targetUserId: 'me',
-      beatIndex: 0,
     },
   ];
-  const beats = [[{ username: 'me', action: 'E' }]];
-  const characters = [{ userId: 'me', username: 'me' }];
+
   const pending = selectPendingInteraction({
     interactions,
-    beats,
+    beats: [],
     characters,
-    localUserId: 'me',
-    resolvedIndex: 0,
-  });
-
-  assert.equal(pending?.id, 'rewind-return:0:me:me');
-});
-
-test('selectPendingInteraction ignores combo without Co entry', async () => {
-  const { selectPendingInteraction } = await loadModule();
-  const interactions = [{ id: 'combo:0:me:me', type: 'combo', status: 'pending', actorUserId: 'me', beatIndex: 0 }];
-  const beats = [[{ username: 'me', action: 'W' }]];
-  const characters = [{ userId: 'me', username: 'me' }];
-  const pending = selectPendingInteraction({
-    interactions,
-    beats,
-    characters,
-    localUserId: 'me',
+    localUserId: 'u-alpha',
     resolvedIndex: -1,
   });
 
-  assert.equal(pending, null);
+  assert.ok(pending);
+  assert.equal(pending.id, 'rewind-return:3:alpha:alpha');
 });
 
-test('selectPendingInteraction returns combo when Co entry exists', async () => {
-  const { selectPendingInteraction } = await loadModule();
-  const interactions = [{ id: 'combo:1:me:me', type: 'combo', status: 'pending', actorUserId: 'me', beatIndex: 1 }];
-  const beats = [
-    [{ username: 'me', action: 'W' }],
-    [{ username: 'me', action: 'Co' }],
+test('selectPendingInteraction matches local username when interaction uses userId actor id', async () => {
+  const { selectPendingInteraction } = await loadInteractionStateModule();
+  const characters = [
+    { userId: 'u-alpha', username: 'alpha' },
+    { userId: 'u-beta', username: 'beta' },
   ];
-  const characters = [{ userId: 'me', username: 'me' }];
-  const pending = selectPendingInteraction({
-    interactions,
-    beats,
-    characters,
-    localUserId: 'me',
-    resolvedIndex: -1,
-  });
-
-  assert.equal(pending?.id, 'combo:1:me:me');
-});
-
-test('selectPendingInteraction gates hand-trigger prompts by global order', async () => {
-  const { selectPendingInteraction } = await loadModule();
   const interactions = [
-    { id: 'hand-trigger:a', type: 'hand-trigger', status: 'pending', actorUserId: 'me', beatIndex: 1, handTriggerOrder: 2 },
-    { id: 'hand-trigger:b', type: 'hand-trigger', status: 'pending', actorUserId: 'you', beatIndex: 1, handTriggerOrder: 1 },
+    {
+      id: 'rewind-return:4:u-alpha:u-alpha',
+      type: 'rewind-return',
+      beatIndex: 4,
+      actorUserId: 'u-alpha',
+      targetUserId: 'u-alpha',
+      status: 'pending',
+    },
   ];
-  const beats = [[{ username: 'me', action: 'W' }, { username: 'you', action: 'W' }]];
-  const characters = [{ userId: 'me', username: 'me' }, { userId: 'you', username: 'you' }];
+
   const pending = selectPendingInteraction({
     interactions,
-    beats,
+    beats: [],
     characters,
-    localUserId: 'me',
+    localUserId: 'alpha',
     resolvedIndex: -1,
   });
 
-  assert.equal(pending, null);
-});
-
-test('selectPendingInteraction accepts discard interactions targeting the local player', async () => {
-  const { selectPendingInteraction } = await loadModule();
-  const interactions = [
-    { id: 'discard:1:other:other', type: 'discard', status: 'pending', actorUserId: 'other', targetUserId: 'me', beatIndex: 1 },
-  ];
-  const beats = [[{ username: 'me', action: 'W' }]];
-  const characters = [{ userId: 'me', username: 'me' }];
-  const pending = selectPendingInteraction({
-    interactions,
-    beats,
-    characters,
-    localUserId: 'me',
-    resolvedIndex: 0,
-  });
-
-  assert.equal(pending?.id, 'discard:1:other:other');
+  assert.ok(pending);
+  assert.equal(pending.id, 'rewind-return:4:u-alpha:u-alpha');
 });

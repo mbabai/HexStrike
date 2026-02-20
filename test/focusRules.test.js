@@ -5,6 +5,7 @@ const {
   clearFocusedAbilityCard,
   createDeckState,
   discardAbilityCards,
+  drawAbilityCards,
   getMaxAbilityHandSize,
   getMovementHandIds,
   resolveLandRefreshes,
@@ -69,6 +70,26 @@ test('focused cards reduce max hand size and movement hand size by one per focus
   assert.equal(deckState.focusedAbilityCardIds.has('rewind'), false);
   assert.equal(getMaxAbilityHandSize(deckState), 4);
   assert.equal(deckState.abilityDeck.at(-1), 'rewind');
+});
+
+test('focus max-hand reduction does not cap movement restore for non-refresh draw effects', () => {
+  const deckState = createDeckState({
+    movement: ['move-a', 'move-b', 'move-c', 'move-d'],
+    ability: ['rewind', 'ability-a', 'ability-b', 'ability-c', 'ability-d', 'ability-e', 'ability-f', 'ability-g'],
+  });
+  const focusResult = setFocusedAbilityCard(deckState, 'rewind');
+  assert.equal(focusResult.ok, true);
+
+  const discardResult = discardAbilityCards(deckState, ['ability-a']);
+  assert.equal(discardResult.ok, true);
+  assert.equal(getMaxAbilityHandSize(deckState), 3);
+  assert.equal(deckState.abilityHand.length, 2);
+  assert.equal(getMovementHandIds(deckState).length, 2);
+
+  const drawResult = drawAbilityCards(deckState, 3, { mode: 'auto' });
+  assert.equal(drawResult.ok, true);
+  assert.equal(deckState.abilityHand.length, 5);
+  assert.equal(getMovementHandIds(deckState).length, 4);
 });
 
 test('resolveLandRefreshes skips draw refresh when Rewind focus is active', () => {

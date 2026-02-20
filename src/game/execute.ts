@@ -756,6 +756,25 @@ export const executeBeatsWithInteractions = (
     rosterOrder.set(character.userId, index);
     rosterOrder.set(character.username, index);
   });
+  const resolveUserId = (value: unknown): string => {
+    const raw = `${value ?? ''}`.trim();
+    if (!raw) return '';
+    return userLookup.get(raw) ?? raw;
+  };
+  fireTokenOwnerByKey.clear();
+  focusTokenByOwner.clear();
+  boardTokens.forEach((token) => {
+    const ownerId = resolveUserId(token?.ownerUserId);
+    if (ownerId) {
+      token.ownerUserId = ownerId;
+    }
+    if (token?.type === FIRE_HEX_TOKEN_TYPE && ownerId) {
+      fireTokenOwnerByKey.set(coordKey(token.position), ownerId);
+    }
+    if (token?.type === FOCUS_ANCHOR_TOKEN_TYPE && ownerId) {
+      focusTokenByOwner.set(ownerId, token.id);
+    }
+  });
   const normalizedBeats = beats.map((beat) => beat.map((entry) => ({ ...entry })));
   normalizedBeats.forEach((beat) => {
     beat.forEach((entry) => {
@@ -800,8 +819,21 @@ export const executeBeatsWithInteractions = (
     ...interaction,
     resolution: interaction.resolution ? { ...interaction.resolution } : undefined,
   }));
+  updatedInteractions.forEach((interaction) => {
+    const actorId = resolveUserId(interaction.actorUserId);
+    const targetId = resolveUserId(interaction.targetUserId);
+    const sourceId = resolveUserId(interaction.sourceUserId);
+    if (actorId) {
+      interaction.actorUserId = actorId;
+    }
+    if (targetId) {
+      interaction.targetUserId = targetId;
+    }
+    if (sourceId) {
+      interaction.sourceUserId = sourceId;
+    }
+  });
   const interactionById = new Map<string, CustomInteraction>();
-  const activeRewindFocusByUser = new Map<string, CustomInteraction>();
   const handTriggerKeys = new Set<string>();
   const pendingIndices: number[] = [];
   const getRewindFocusCardId = (interaction: CustomInteraction | undefined): string => {
@@ -810,24 +842,59 @@ export const executeBeatsWithInteractions = (
     return cardId || REWIND_CARD_ID;
   };
   const normalizeInteractionHex = (value: unknown): { q: number; r: number } | null => normalizeHexCoord(value);
-  const rebuildActiveRewindFocusByUser = () => {
-    activeRewindFocusByUser.clear();
+  const getRewindFocusStartBeatIndex = (interaction: CustomInteraction): number => {
+    const startBeat = Number(interaction.resolution?.focusStartBeatIndex);
+    if (Number.isFinite(startBeat)) {
+      return Math.max(0, Math.round(startBeat));
+    }
+    const beatIndex = Number(interaction.beatIndex);
+    if (Number.isFinite(beatIndex)) {
+      return Math.max(0, Math.round(beatIndex));
+    }
+    return 0;
+  };
+  const getRewindFocusEndBeatIndex = (interaction: CustomInteraction): number | null => {
+    const endBeat = Number(interaction.resolution?.endedBeatIndex);
+    if (!Number.isFinite(endBeat)) return null;
+    return Math.max(0, Math.round(endBeat));
+  };
+  const isRewindFocusActiveAtIndex = (interaction: CustomInteraction, beatIndex: number): boolean => {
+    if (interaction.type !== REWIND_FOCUS_INTERACTION_TYPE) return false;
+    if (interaction.status !== 'resolved') return false;
+    if (interaction.resolution?.active === false) return false;
+    const safeBeatIndex = Math.max(0, Math.round(beatIndex));
+    const startBeatIndex = getRewindFocusStartBeatIndex(interaction);
+    if (safeBeatIndex < startBeatIndex) return false;
+    const endBeatIndex = getRewindFocusEndBeatIndex(interaction);
+    if (endBeatIndex != null && safeBeatIndex >= endBeatIndex) return false;
+    return true;
+  };
+  const getActiveRewindFocusAtIndex = (actorId: string, beatIndex: number): CustomInteraction | null => {
+    const resolvedActorId = resolveUserId(actorId);
+    if (!resolvedActorId) return null;
+    const safeBeatIndex = Math.max(0, Math.round(beatIndex));
+    let selected: CustomInteraction | null = null;
+    let selectedStart = -1;
     updatedInteractions.forEach((interaction) => {
       if (interaction.type !== REWIND_FOCUS_INTERACTION_TYPE) return;
-      if (interaction.status !== 'resolved') return;
-      const actorId = `${interaction.actorUserId ?? ''}`.trim();
-      if (!actorId) return;
-      const active = interaction.resolution?.active;
-      if (active === false) return;
-      activeRewindFocusByUser.set(actorId, interaction);
+      const interactionActorId = resolveUserId(interaction.actorUserId);
+      if (!interactionActorId || interactionActorId !== resolvedActorId) return;
+      if (!isRewindFocusActiveAtIndex(interaction, safeBeatIndex)) return;
+      const startBeatIndex = getRewindFocusStartBeatIndex(interaction);
+      if (!selected || startBeatIndex > selectedStart) {
+        selected = interaction;
+        selectedStart = startBeatIndex;
+      }
     });
+    return selected;
   };
   const rebuildFocusTokenByOwner = () => {
     focusTokenByOwner.clear();
     boardTokens.forEach((token) => {
       if (token?.type !== FOCUS_ANCHOR_TOKEN_TYPE) return;
-      const ownerId = `${token.ownerUserId ?? ''}`.trim();
+      const ownerId = resolveUserId(token.ownerUserId);
       if (!ownerId) return;
+      token.ownerUserId = ownerId;
       focusTokenByOwner.set(ownerId, token.id);
     });
   };
@@ -844,24 +911,23 @@ export const executeBeatsWithInteractions = (
       }
     }
   });
-  rebuildActiveRewindFocusByUser();
   const markRewindFocusInactive = (
     actorId: string,
     endedBeatIndex: number,
     reason: 'returned' | 'knockback' | 'stun',
   ): void => {
-    const focus = activeRewindFocusByUser.get(actorId);
+    const safeEndedBeatIndex = Math.max(0, Math.round(endedBeatIndex));
+    const focus = getActiveRewindFocusAtIndex(actorId, safeEndedBeatIndex);
     if (!focus) return;
     focus.resolution = {
       ...(focus.resolution ?? {}),
       active: false,
-      endedBeatIndex,
+      endedBeatIndex: safeEndedBeatIndex,
       endReason: reason,
     };
-    activeRewindFocusByUser.delete(actorId);
   };
-  const getActiveFocusCardId = (actorId: string): string | null => {
-    const focus = activeRewindFocusByUser.get(actorId);
+  const getActiveFocusCardId = (actorId: string, beatIndex: number): string | null => {
+    const focus = getActiveRewindFocusAtIndex(actorId, beatIndex);
     if (!focus) return null;
     return getRewindFocusCardId(focus);
   };
@@ -995,7 +1061,7 @@ export const executeBeatsWithInteractions = (
   };
 
   const removeFocusAnchorToken = (ownerUserId: string) => {
-    const ownerId = `${ownerUserId ?? ''}`.trim();
+    const ownerId = resolveUserId(ownerUserId);
     if (!ownerId) return;
     const tokenId = focusTokenByOwner.get(ownerId);
     focusTokenByOwner.delete(ownerId);
@@ -1012,7 +1078,7 @@ export const executeBeatsWithInteractions = (
     ownerUserId: string,
     cardId: string = REWIND_CARD_ID,
   ) => {
-    const ownerId = `${ownerUserId ?? ''}`.trim();
+    const ownerId = resolveUserId(ownerUserId);
     if (!coord || !ownerId) return;
     removeFocusAnchorToken(ownerId);
     const token: BoardToken = {
@@ -1027,15 +1093,25 @@ export const executeBeatsWithInteractions = (
     focusTokenByOwner.set(ownerId, token.id);
   };
 
+  const focusAnchorsAtCurrentIndex = new Map<string, { anchor: { q: number; r: number }; cardId: string }>();
+  const focusTokenBeatIndex = Math.max(0, resolvedIndex + 1);
+  characters.forEach((character) => {
+    const focus = getActiveRewindFocusAtIndex(character.userId, focusTokenBeatIndex);
+    if (!focus) return;
+    const anchor = normalizeInteractionHex(focus.resolution?.anchorHex);
+    if (!anchor) return;
+    focusAnchorsAtCurrentIndex.set(character.userId, {
+      anchor,
+      cardId: getRewindFocusCardId(focus),
+    });
+  });
   Array.from(focusTokenByOwner.keys()).forEach((ownerId) => {
-    if (!activeRewindFocusByUser.has(ownerId)) {
+    if (!focusAnchorsAtCurrentIndex.has(ownerId)) {
       removeFocusAnchorToken(ownerId);
     }
   });
-  activeRewindFocusByUser.forEach((interaction, actorId) => {
-    const anchor = normalizeInteractionHex(interaction.resolution?.anchorHex);
-    if (!anchor) return;
-    addFocusAnchorToken(anchor, actorId, getRewindFocusCardId(interaction));
+  focusAnchorsAtCurrentIndex.forEach(({ anchor, cardId }, ownerId) => {
+    addFocusAnchorToken(anchor, ownerId, cardId);
   });
 
   const getRosterIndex = (entry: BeatEntry) => {
@@ -1044,7 +1120,7 @@ export const executeBeatsWithInteractions = (
     return rosterOrder.get(resolved) ?? rosterOrder.get(key) ?? Number.MAX_SAFE_INTEGER;
   };
 
-  const applyStateToBeat = (beat: BeatEntry[], calculated: boolean) => {
+  const applyStateToBeat = (beat: BeatEntry[], calculated: boolean, beatIndex: number) => {
     beat.forEach((entry) => {
       const key = resolveEntryKey(entry);
       const resolved = userLookup.get(key) ?? key;
@@ -1087,7 +1163,7 @@ export const executeBeatsWithInteractions = (
         entry.terrain = resolveTerrain(entry.location);
       }
       entry.calculated = calculated;
-      const focusCardId = resolved ? getActiveFocusCardId(resolved) : null;
+      const focusCardId = resolved ? getActiveFocusCardId(resolved, beatIndex) : null;
       if (focusCardId) {
         entry.focusCardId = focusCardId;
       } else if ('focusCardId' in entry) {
@@ -1801,14 +1877,13 @@ export const executeBeatsWithInteractions = (
     if (!actorId || !Number.isFinite(beatIndex)) return false;
     const cardId = `${entry?.cardId ?? ''}`.trim();
     if (cardId !== REWIND_CARD_ID) return false;
-    const existingActive = activeRewindFocusByUser.get(actorId);
+    const safeBeatIndex = Math.max(0, Math.round(beatIndex));
+    const existingActive = getActiveRewindFocusAtIndex(actorId, safeBeatIndex);
     if (existingActive) return true;
-    const interactionId = buildInteractionId(REWIND_FOCUS_INTERACTION_TYPE, Math.max(0, Math.round(beatIndex)), actorId, actorId);
+    const interactionId = buildInteractionId(REWIND_FOCUS_INTERACTION_TYPE, safeBeatIndex, actorId, actorId);
     const existing = interactionById.get(interactionId);
     if (existing && existing.type === REWIND_FOCUS_INTERACTION_TYPE && existing.status === 'resolved') {
-      const active = existing.resolution?.active;
-      if (active !== false) {
-        activeRewindFocusByUser.set(actorId, existing);
+      if (isRewindFocusActiveAtIndex(existing, safeBeatIndex)) {
         const anchor = normalizeInteractionHex(existing.resolution?.anchorHex);
         if (anchor) {
           addFocusAnchorToken(anchor, actorId, getRewindFocusCardId(existing));
@@ -1845,13 +1920,12 @@ export const executeBeatsWithInteractions = (
         active: true,
         cardId: REWIND_CARD_ID,
         anchorHex,
-        focusStartBeatIndex: Math.max(0, Math.round(beatIndex)),
+        focusStartBeatIndex: safeBeatIndex,
         returnActions,
       },
     };
     updatedInteractions.push(created);
     interactionById.set(interactionId, created);
-    activeRewindFocusByUser.set(actorId, created);
     addFocusAnchorToken(anchorHex, actorId, REWIND_CARD_ID);
     return true;
   };
@@ -1884,9 +1958,9 @@ export const executeBeatsWithInteractions = (
   };
 
   const ensurePendingRewindReturn = (actorId: string, beatIndex: number): boolean => {
-    const focus = activeRewindFocusByUser.get(actorId);
-    if (!focus) return false;
     const safeBeatIndex = Math.max(0, Math.round(beatIndex));
+    const focus = getActiveRewindFocusAtIndex(actorId, safeBeatIndex);
+    if (!focus) return false;
     const interactionId = buildInteractionId(REWIND_RETURN_INTERACTION_TYPE, safeBeatIndex, actorId, actorId);
     const existing = interactionById.get(interactionId);
     if (existing) {
@@ -1898,7 +1972,7 @@ export const executeBeatsWithInteractions = (
       }
       const activeFocusId = `${focus.id ?? ''}`.trim();
       const existingFocusId = `${existing.resolution?.focusInteractionId ?? ''}`.trim();
-      const belongsToActiveFocus = existingFocusId ? existingFocusId === activeFocusId : true;
+      const belongsToActiveFocus = existingFocusId ? existingFocusId === activeFocusId : false;
       if (belongsToActiveFocus || isHistoryIndex(safeBeatIndex)) {
         return false;
       }
@@ -2173,7 +2247,7 @@ export const executeBeatsWithInteractions = (
     syncRuntimeStateFromCalculatedTimeline(index - 1);
     if (haltIndex != null && index > haltIndex) {
       for (let j = index; j < normalizedBeats.length; j += 1) {
-        applyStateToBeat(normalizedBeats[j], false);
+        applyStateToBeat(normalizedBeats[j], false, j);
       }
       break;
     }
@@ -2251,7 +2325,7 @@ export const executeBeatsWithInteractions = (
       if (!actorId) return;
       const actorState = state.get(actorId);
       if (!actorState) return;
-      const focus = activeRewindFocusByUser.get(actorId);
+      const focus = getActiveRewindFocusAtIndex(actorId, index);
       const anchor =
         normalizeInteractionHex(interaction.resolution?.anchorHex) ??
         normalizeInteractionHex(focus?.resolution?.anchorHex) ??
@@ -2476,7 +2550,7 @@ export const executeBeatsWithInteractions = (
 
     if (comboPause) {
       for (let j = index; j < normalizedBeats.length; j += 1) {
-        applyStateToBeat(normalizedBeats[j], false);
+        applyStateToBeat(normalizedBeats[j], false, j);
       }
       break;
     }
@@ -2506,7 +2580,7 @@ export const executeBeatsWithInteractions = (
         pendingInteractions: pendingIndices,
       });
       for (let j = index; j < normalizedBeats.length; j += 1) {
-        applyStateToBeat(normalizedBeats[j], false);
+        applyStateToBeat(normalizedBeats[j], false, j);
       }
     };
     const initialReadiness = getBeatReadiness();
@@ -2518,7 +2592,7 @@ export const executeBeatsWithInteractions = (
         if (actionLabel === FOCUS_ACTION) {
           ensureRewindFocusAtBeat(item.userId, index, entry);
         }
-        if ((item.action === 'missing' || actionLabel === DEFAULT_ACTION) && activeRewindFocusByUser.has(item.userId)) {
+        if ((item.action === 'missing' || actionLabel === DEFAULT_ACTION) && getActiveRewindFocusAtIndex(item.userId, index)) {
           ensurePendingRewindReturn(item.userId, index);
         }
       });
@@ -2685,7 +2759,6 @@ export const executeBeatsWithInteractions = (
       });
       handTriggerKeys.clear();
       snapshot.handTriggerKeys.forEach((key) => handTriggerKeys.add(key));
-      rebuildActiveRewindFocusByUser();
       rebuildFocusTokenByOwner();
       haltIndex = snapshot.haltIndex;
       parryCountersByBeat.clear();
@@ -2839,7 +2912,7 @@ export const executeBeatsWithInteractions = (
           if (actionLabel === FOCUS_ACTION) {
             ensureRewindFocusAtBeat(item.userId, index, entry);
           }
-          if ((item.action === 'missing' || actionLabel === DEFAULT_ACTION) && activeRewindFocusByUser.has(item.userId)) {
+          if ((item.action === 'missing' || actionLabel === DEFAULT_ACTION) && getActiveRewindFocusAtIndex(item.userId, index)) {
             ensurePendingRewindReturn(item.userId, index);
           }
         });
@@ -4284,11 +4357,11 @@ export const executeBeatsWithInteractions = (
       break;
     }
 
-    applyStateToBeat(beat, true);
+    applyStateToBeat(beat, true, index);
     lastCalculated = index;
     if (haltIndex != null && index >= haltIndex) {
       for (let j = index + 1; j < normalizedBeats.length; j += 1) {
-        applyStateToBeat(normalizedBeats[j], false);
+        applyStateToBeat(normalizedBeats[j], false, j);
       }
       break;
     }
@@ -4297,8 +4370,9 @@ export const executeBeatsWithInteractions = (
   if (haltIndex == null) {
     characters.forEach((character) => {
       const actorId = character.userId;
-      if (!actorId || !activeRewindFocusByUser.has(actorId)) return;
+      if (!actorId) return;
       const firstOpenIndex = findCharacterFirstEIndexAfter(character, -1);
+      if (!getActiveRewindFocusAtIndex(actorId, firstOpenIndex)) return;
       if (firstOpenIndex < normalizedBeats.length) return;
       ensurePendingRewindReturn(actorId, firstOpenIndex);
     });

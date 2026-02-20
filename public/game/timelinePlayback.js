@@ -1469,6 +1469,11 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
       characterById.set(character.username, character);
     }
   });
+  const resolveUserId = (value) => {
+    const raw = `${value ?? ''}`.trim();
+    if (!raw) return '';
+    return userLookup.get(raw) ?? raw;
+  };
 
   const state = new Map();
   characters.forEach((character) => {
@@ -1598,7 +1603,7 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
   };
 
   const addFocusAnchorToken = (coord, ownerId, cardId) => {
-    const ownerKey = `${ownerId ?? ''}`.trim();
+    const ownerKey = resolveUserId(ownerId);
     if (!coord || !ownerKey) return;
     removeFocusAnchorToken(ownerKey);
     const token = {
@@ -1645,7 +1650,7 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
   };
 
   const removeFocusAnchorToken = (ownerId) => {
-    const ownerKey = `${ownerId ?? ''}`.trim();
+    const ownerKey = resolveUserId(ownerId);
     if (!ownerKey) return;
     const tokenId = focusTokenByOwner.get(ownerKey);
     if (!tokenId) return;
@@ -1722,25 +1727,70 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
       };
     });
 
+  const parseBeatIndex = (value) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.max(0, Math.round(parsed));
+  };
+
+  const findFocusTokenByOwner = (ownerId) => {
+    const ownerKey = resolveUserId(ownerId);
+    if (!ownerKey) return null;
+    const tokenId = focusTokenByOwner.get(ownerKey);
+    if (!tokenId) return null;
+    return tokens.find((token) => token?.id === tokenId) ?? null;
+  };
+
+  const shouldFocusBeActiveAtIndex = (interaction, index) => {
+    const startBeat = parseBeatIndex(interaction?.beatIndex);
+    if (startBeat == null || index < startBeat) return false;
+    const endedBeat = parseBeatIndex(interaction?.resolution?.endedBeatIndex);
+    if (endedBeat != null && index >= endedBeat) return false;
+    if (endedBeat == null && interaction?.resolution?.active === false) return false;
+    return true;
+  };
+
   const applyFocusTokenUpdates = (index) => {
-    interactions.forEach((interaction) => {
+    const desiredByOwner = new Map();
+    interactions.forEach((interaction, order) => {
       if (!interaction || interaction.type !== REWIND_FOCUS_INTERACTION_TYPE) return;
       if (interaction.status !== 'resolved') return;
-      const ownerId = interaction.actorUserId;
+      if (!shouldFocusBeActiveAtIndex(interaction, index)) return;
+      const ownerId = resolveUserId(interaction.actorUserId);
       if (!ownerId) return;
-      const startBeat = Number.isFinite(interaction.beatIndex) ? Math.max(0, Math.round(interaction.beatIndex)) : null;
-      if (startBeat != null && startBeat === index) {
-        const anchor = normalizeHexCoord(interaction.resolution?.anchorHex);
-        if (anchor) {
-          addFocusAnchorToken(anchor, ownerId, interaction.cardId ?? interaction.resolution?.cardId);
-        }
-      }
-      const endedBeat = Number.isFinite(interaction?.resolution?.endedBeatIndex)
-        ? Math.max(0, Math.round(interaction.resolution.endedBeatIndex))
-        : null;
-      if (endedBeat != null && endedBeat === index) {
+      const anchor = normalizeHexCoord(interaction.resolution?.anchorHex);
+      if (!anchor) return;
+      const startBeat = parseBeatIndex(interaction.beatIndex);
+      if (startBeat == null) return;
+      const existing = desiredByOwner.get(ownerId);
+      if (existing && existing.startBeat > startBeat) return;
+      if (existing && existing.startBeat === startBeat && existing.order > order) return;
+      desiredByOwner.set(ownerId, {
+        anchor,
+        cardId: interaction.cardId ?? interaction.resolution?.cardId,
+        startBeat,
+        order,
+      });
+    });
+
+    Array.from(focusTokenByOwner.keys()).forEach((ownerId) => {
+      if (!desiredByOwner.has(ownerId)) {
         removeFocusAnchorToken(ownerId);
       }
+    });
+
+    desiredByOwner.forEach((desired, ownerId) => {
+      const existingToken = findFocusTokenByOwner(ownerId);
+      const desiredCardId = `${desired.cardId || 'rewind'}`;
+      if (
+        existingToken &&
+        existingToken.position &&
+        sameCoord(existingToken.position, desired.anchor) &&
+        `${existingToken.cardId || 'rewind'}` === desiredCardId
+      ) {
+        return;
+      }
+      addFocusAnchorToken(desired.anchor, ownerId, desired.cardId);
     });
   };
 

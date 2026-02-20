@@ -18,6 +18,8 @@ import { getCharacterFirstEIndex, getCharacterLocationAtIndex, getTimelineEarlie
 import {
   MAX_HAND_SIZE,
   drawAbilityCards,
+  getBaseAbilityHandSize,
+  getDrawRestoreRequirement,
   getMaxAbilityHandSize,
   getMovementHandIds,
   isMovementHandSyncFailure,
@@ -37,6 +39,8 @@ export {
   MAX_HAND_SIZE,
   drawAbilityCards,
   discardAbilityCards,
+  getBaseAbilityHandSize,
+  getDrawRestoreRequirement,
   isAbilityDiscardFailure,
   getDiscardRequirements,
   getFocusedCardCount,
@@ -148,13 +152,9 @@ const buildLedgeGrabDrawInteractionId = (beatIndex: number, actorId: string): st
   `draw:ledge-grab:${Math.max(0, Math.round(beatIndex))}:${actorId}:${actorId}`;
 
 const getDrawSelectionRequirement = (deckState: DeckState, drawCount: number) => {
-  const requested = Number.isFinite(drawCount) ? Math.max(0, Math.floor(drawCount)) : 0;
-  const actualDraw = Math.min(requested, deckState.abilityDeck.length);
-  const abilityAfter = deckState.abilityHand.length + actualDraw;
-  const maxAbilityHandSize = getMaxAbilityHandSize(deckState);
-  const targetMovementSize = abilityAfter > maxAbilityHandSize ? maxAbilityHandSize : abilityAfter;
-  const movementHandSize = getMovementHandIds(deckState).length;
-  const requiredRestore = Math.max(0, targetMovementSize - movementHandSize);
+  const { requested, requiredRestore, targetMovementSize } = getDrawRestoreRequirement(deckState, drawCount, {
+    maxAbilityHandSize: getMaxAbilityHandSize(deckState),
+  });
   const requiresSelection = requiredRestore > 0 && targetMovementSize <= DRAW_SELECTION_MAX_MOVEMENT;
   return { requested, requiredRestore, requiresSelection };
 };
@@ -431,8 +431,8 @@ export const applyCardUse = (deckState: DeckState, cardUse: CardUse): { ok: true
   deckState.activeCardId = cardUse.activeCardId ?? deckState.activeCardId ?? null;
   deckState.passiveCardId = cardUse.passiveCardId ?? deckState.passiveCardId ?? null;
   const abilityCountBeforeUse = deckState.abilityHand.length;
-  const maxHandSize = getMaxAbilityHandSize(deckState);
-  if (abilityCountBeforeUse >= maxHandSize + 1) {
+  const baseMaxHandSize = getBaseAbilityHandSize(deckState);
+  if (abilityCountBeforeUse >= baseMaxHandSize + 1) {
     deckState.exhaustedMovementIds.delete(cardUse.movementCardId);
   } else {
     deckState.exhaustedMovementIds.add(cardUse.movementCardId);

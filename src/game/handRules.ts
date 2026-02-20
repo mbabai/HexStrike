@@ -32,6 +32,13 @@ export type AbilityDiscardResult =
   | { ok: true; discarded: string[]; movement: Extract<MovementHandSyncResult, { ok: true }> }
   | { ok: false; error: CardValidationError };
 
+export interface DrawRestoreRequirement {
+  requested: number;
+  actualDraw: number;
+  targetMovementSize: number;
+  requiredRestore: number;
+}
+
 const normalizeCardId = (value: unknown): string | null => {
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -62,7 +69,7 @@ export const getFocusedCardCount = (deckState: DeckState | null | undefined): nu
   return Math.max(0, Math.floor(size as number));
 };
 
-const getBaseAbilityHandSize = (deckState: DeckState | null | undefined): number => {
+export const getBaseAbilityHandSize = (deckState: DeckState | null | undefined): number => {
   const configured = deckState?.baseMaxHandSize;
   if (!Number.isFinite(configured)) return MAX_HAND_SIZE;
   return Math.max(0, Math.floor(configured as number));
@@ -85,6 +92,25 @@ export const getTargetMovementHandSize = (
 export const getMovementHandIds = (deckState: DeckState): string[] =>
   deckState.movement.filter((id) => !deckState.exhaustedMovementIds.has(id));
 
+export const getDrawRestoreRequirement = (
+  deckState: DeckState,
+  drawCount: number,
+  options: { maxAbilityHandSize?: number } = {},
+): DrawRestoreRequirement => {
+  const requested = Number.isFinite(drawCount) ? Math.max(0, Math.floor(drawCount)) : 0;
+  const abilityDeckCount = Array.isArray(deckState?.abilityDeck) ? deckState.abilityDeck.length : 0;
+  const actualDraw = Math.min(requested, abilityDeckCount);
+  const abilityHandCount = Array.isArray(deckState?.abilityHand) ? deckState.abilityHand.length : 0;
+  const maxAbilityHandSize = Number.isFinite(options.maxAbilityHandSize)
+    ? Math.max(0, Math.floor(options.maxAbilityHandSize as number))
+    : getBaseAbilityHandSize(deckState);
+  const abilityAfter = abilityHandCount + actualDraw;
+  const targetMovementSize = getTargetMovementHandSize(abilityAfter, maxAbilityHandSize);
+  const movementHandSize = getMovementHandIds(deckState).length;
+  const requiredRestore = Math.max(0, targetMovementSize - movementHandSize);
+  return { requested, actualDraw, targetMovementSize, requiredRestore };
+};
+
 export const getDiscardRequirements = (
   deckState: DeckState,
   discardCount: number,
@@ -92,7 +118,7 @@ export const getDiscardRequirements = (
   const abilityCount = Array.isArray(deckState?.abilityHand) ? deckState.abilityHand.length : 0;
   const abilityDiscardCount = Math.min(Math.max(0, Math.floor(discardCount || 0)), abilityCount);
   const abilityAfter = abilityCount - abilityDiscardCount;
-  const targetMovementSize = getTargetMovementHandSize(abilityAfter, getMaxAbilityHandSize(deckState));
+  const targetMovementSize = getTargetMovementHandSize(abilityAfter, getBaseAbilityHandSize(deckState));
   const movementCount = getMovementHandIds(deckState).length;
   const movementDiscardCount = Math.max(0, movementCount - targetMovementSize);
   return { abilityDiscardCount, movementDiscardCount };
@@ -106,7 +132,7 @@ export const syncMovementHand = (
   const movementIds = Array.isArray(deckState.movement) ? deckState.movement : [];
   const movementSet = new Set(movementIds);
   const exhausted = deckState.exhaustedMovementIds;
-  const targetSize = getTargetMovementHandSize(deckState.abilityHand.length, getMaxAbilityHandSize(deckState));
+  const targetSize = getTargetMovementHandSize(deckState.abilityHand.length, getBaseAbilityHandSize(deckState));
   const inHand = getMovementHandIds(deckState);
   let currentSize = inHand.length;
   const restored: string[] = [];

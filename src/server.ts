@@ -49,7 +49,7 @@ import {
   resolveLandRefreshes,
   validateActionSubmission,
 } from './game/cardRules';
-import { getMaxAbilityHandSize, getTargetMovementHandSize } from './game/handRules';
+import { getBaseAbilityHandSize, getDrawRestoreRequirement, getMaxAbilityHandSize, getTargetMovementHandSize } from './game/handRules';
 import { HAND_TRIGGER_BY_ID, HAND_TRIGGER_DEFINITIONS } from './game/handTriggers';
 import { getCharacterMaxHandSize } from './game/characterPowers';
 import {
@@ -603,7 +603,7 @@ const buildDeckStatesSnapshotForLog = (deckStates?: Map<string, DeckState>) => {
       movement: [...deckState.movement],
       exhaustedMovementIds: Array.from(deckState.exhaustedMovementIds),
       movementHand: getMovementHandIds(deckState),
-      targetMovementHandSize: getTargetMovementHandSize(deckState.abilityHand.length, getMaxAbilityHandSize(deckState)),
+      targetMovementHandSize: getTargetMovementHandSize(deckState.abilityHand.length, getBaseAbilityHandSize(deckState)),
       abilityHand: [...deckState.abilityHand],
       abilityDeck: [...deckState.abilityDeck],
       focusedAbilityCardIds: Array.from(deckState.focusedAbilityCardIds),
@@ -721,12 +721,9 @@ const AXIAL_DIRECTIONS = [
 ];
 
 const getDrawSelectionRequirement = (deckState: DeckState, drawCount: number) => {
-  const requested = Number.isFinite(drawCount) ? Math.max(0, Math.floor(drawCount)) : 0;
-  const actualDraw = Math.min(requested, deckState.abilityDeck.length);
-  const abilityAfter = deckState.abilityHand.length + actualDraw;
-  const targetMovementSize = getTargetMovementHandSize(abilityAfter, getMaxAbilityHandSize(deckState));
-  const movementHandSize = getMovementHandIds(deckState).length;
-  const requiredRestore = Math.max(0, targetMovementSize - movementHandSize);
+  const { requested, actualDraw, targetMovementSize, requiredRestore } = getDrawRestoreRequirement(deckState, drawCount, {
+    maxAbilityHandSize: getBaseAbilityHandSize(deckState),
+  });
   const requiresSelection = requiredRestore > 0 && targetMovementSize <= DRAW_SELECTION_MAX_MOVEMENT;
   return { requested, actualDraw, targetMovementSize, requiredRestore, requiresSelection };
 };

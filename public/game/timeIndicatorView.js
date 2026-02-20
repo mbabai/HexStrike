@@ -294,20 +294,12 @@ const getMiniCardStackItemGeometry = (layout, rowCenterY, index) => {
 
 const getInteractionDiscardCount = (interaction) => {
   if (!interaction || typeof interaction !== 'object') return 0;
-  if (interaction.type === 'discard') {
-    const abilityCount = toBadgeCount(interaction.discardAbilityCount);
-    const movementCount = toBadgeCount(interaction.discardMovementCount);
-    if (abilityCount !== null || movementCount !== null) {
-      return (abilityCount ?? 0) + (movementCount ?? 0);
-    }
-    return toBadgeCount(interaction.discardCount) ?? 0;
+  if (interaction.type !== 'discard') return 0;
+  const abilityCount = toBadgeCount(interaction.discardAbilityCount);
+  const movementCount = toBadgeCount(interaction.discardMovementCount);
+  if (abilityCount !== null || movementCount !== null) {
+    return (abilityCount ?? 0) + (movementCount ?? 0);
   }
-  if (interaction.type !== 'hand-trigger') return 0;
-  if (interaction.status !== 'resolved' || interaction.resolution?.use !== true) return 0;
-  const resolvedCount =
-    getResolvedListCount(interaction.resolution?.abilityCardIds) +
-    getResolvedListCount(interaction.resolution?.movementCardIds);
-  if (resolvedCount > 0) return resolvedCount;
   return toBadgeCount(interaction.discardCount) ?? 0;
 };
 
@@ -317,7 +309,7 @@ const buildDiscardLookup = (interactions, characters) => {
   const actorKeyMap = buildActorKeyMap(characters);
   interactions.forEach((interaction) => {
     if (!interaction) return;
-    if (interaction.type !== 'discard' && interaction.type !== 'hand-trigger') return;
+    if (interaction.type !== 'discard') return;
     const discardCount = getInteractionDiscardCount(interaction);
     if (!discardCount) return;
     const beatIndex = getInteractionBeatIndex(interaction);

@@ -25,6 +25,7 @@ Win by forcing the opponent to lose. A player loses if either:
   - If you have 5+ ability cards, your movement hand is capped at 4.
 - When you use a movement card while holding 5+ ability cards, it immediately returns to your hand.
 - "Draw X" means draw X ability cards, then (if you now have 4 or fewer ability cards) choose used movement cards to restore so the movement hand matches. If you already have 4+ ability cards/movement cards, skip the movement restore.
+- Rewind focus changes the `{E}` refresh hand cap while active, but it does not reduce card-effect draw/discard hand syncing.
 - "Discard X" means choose X ability cards to discard. If that puts you at 3 or fewer ability cards, discard the same number of movement cards so the hands match.
 
 ## Timeline and beats

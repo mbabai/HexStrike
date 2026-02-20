@@ -47,10 +47,29 @@ const isPendingInteractionVisible = (interaction, resolvedIndex, alwaysAllowType
 };
 
 
-const isInteractionForUser = (interaction, localUserId) => {
-  if (!interaction || !localUserId) return false;
-  if (interaction.actorUserId === localUserId) return true;
-  if (interaction.type === 'discard' && interaction.targetUserId === localUserId) return true;
+const buildLocalUserKeys = (localUserId, characters) => {
+  const keys = new Set();
+  const seed = `${localUserId ?? ''}`.trim();
+  if (!seed) return keys;
+  keys.add(seed);
+  (characters ?? []).forEach((character) => {
+    if (!character) return;
+    const userId = `${character.userId ?? ''}`.trim();
+    const username = `${character.username ?? ''}`.trim();
+    if (userId && (userId === seed || username === seed)) {
+      keys.add(userId);
+      if (username) keys.add(username);
+    }
+  });
+  return keys;
+};
+
+const isInteractionForUser = (interaction, localUserKeys) => {
+  if (!interaction || !(localUserKeys instanceof Set) || !localUserKeys.size) return false;
+  const actorId = `${interaction.actorUserId ?? ''}`.trim();
+  if (actorId && localUserKeys.has(actorId)) return true;
+  const targetId = `${interaction.targetUserId ?? ''}`.trim();
+  if (interaction.type === 'discard' && targetId && localUserKeys.has(targetId)) return true;
   return false;
 };
 
@@ -71,11 +90,12 @@ export const selectPendingInteraction = ({
     'draw-offer',
   ],
 }) => {
+  const localUserKeys = buildLocalUserKeys(localUserId, characters);
   const allowTypes = new Set(alwaysAllowTypes);
   const activeHandTriggerId = getActiveHandTriggerId(interactions);
   const pending = (interactions ?? []).filter(
     (interaction) =>
-      isInteractionForUser(interaction, localUserId) &&
+      isInteractionForUser(interaction, localUserKeys) &&
       isPendingInteractionVisible(interaction, resolvedIndex, allowTypes),
   );
   const gated = pending.filter((interaction) => {
