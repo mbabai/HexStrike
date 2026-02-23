@@ -956,7 +956,8 @@ body.menu-body.is-in-game .menu-backdrop {
   width: 100%;
 }
 
-#savedReplaysOpen {
+#savedReplaysOpen,
+#liveGamesOpen {
   width: 100%;
 }
 

@@ -50,7 +50,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 
 ## Realtime and client interactions (current)
 - SSE message envelope: `{ type, payload, recipient }`.
-- Message types currently emitted: `connected`, `queueChanged`, `match:created`, `game:update`, `match:ended`, `bot:error`.
+- Message types currently emitted: `connected`, `queueChanged`, `match:created`, `game:update`, `spectator:update`, `match:ended`, `bot:error`.
 - REST endpoints live under `/api/v1/lobby`, `/api/v1/match`, `/api/v1/history`, and `/api/v1/game/interaction` (plus `/api/v1/match/:id/exit` for per-player leave).
 - `game:update` payloads may include `pendingActions` in public state when concurrent players are submitting action sets.
 - `game:update` payloads may include `customInteractions` (pending/resolved) that pause the timeline until resolved.
@@ -152,6 +152,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Rotations resolve in a pre-action phase; apply them even if the actor's action is skipped/disabled, and keep `src/game/execute.ts` + `public/game/timelinePlayback.js` in sync.
 - When multiple players share the earliest `E`, the server batches action sets in `pendingActions` and reveals them simultaneously once all required players submit; timeline rings blink red for players still needed.
 - Pending action previews on the timeline are client-side only: build the local player's preview from the submitted active card action list, render it as a faded pulsing overlay only on that player's `E` slots while waiting, and clear it once `pendingActions` no longer includes a local submission.
+- Live spectator mode is replay-style rendering fed by realtime `spectator:update` events; spectator clients should call `/api/v1/history/live-games/watch` before opening and `/api/v1/history/live-games/unwatch` on close so stale subscriptions do not accumulate server-side.
 - Direction indexing for blocks/attacks must ignore reverse vectors (only forward, positive steps); otherwise block walls flip away from facing.
 - Keep `getDirectionIndex` logic in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized so visuals match server resolution.
 - Stab active rear bonus applies when the attacker is on any rear arc (`B`, `LB`, or `RB` of target), not only exact `B`; keep `isBehindTarget` in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized.

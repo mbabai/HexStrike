@@ -34,7 +34,7 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
 - Lobby endpoints under `/api/v1/lobby` for queue join/leave/clear and admin presence.
 - Match endpoints under `/api/v1/match` for custom matches, match end, and player exit.
 - Game endpoints under `/api/v1/game` for action sets, interaction resolution, and snapshots.
-- History endpoints under `/api/v1/history` for recent matches and games.
+- History endpoints under `/api/v1/history` for recent matches, persisted replays, and live spectator discovery/subscriptions (`live-games`, `live-games/watch`, `live-games/unwatch`).
 
 ### Game state model
 - `GameDoc` carries `state.public` (shared) and `state.secret` (currently empty).
@@ -82,7 +82,7 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
 - WebSocket endpoint: `GET /ws?userId=...&username=...`
 - Envelope: `{ type, payload, recipient }`
 - Typical events:
-  - `connected`, `queueChanged`, `match:created`, `game:update`, `match:ended`, `bot:error`
+  - `connected`, `queueChanged`, `match:created`, `game:update`, `spectator:update`, `match:ended`, `bot:error`
   - `input:request` for action sets or throw resolution
   - `input:ack`, `interaction:ack`, `error` (WebSocket responses)
 

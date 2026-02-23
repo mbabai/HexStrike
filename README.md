@@ -104,6 +104,10 @@ This prints JSON diagnostics (`mode`, `dbName`, `collectionName`, URI source/rou
 - `POST /api/v1/game/draw-offer` - `{ userId, gameId }` (30-second server cooldown per offerer)
 - `GET /api/v1/history/matches`
 - `GET /api/v1/history/status` - reports active history persistence mode (`mongo` vs `memory`) and selected URI source (`ok=false` with `error` when unavailable)
+- `GET /api/v1/history/live-games` - list currently in-progress games that can be spectated
+- `GET /api/v1/history/live-games/:id` - load a spectatable live game snapshot
+- `POST /api/v1/history/live-games/watch` - `{ userId, gameId }` -> subscribe the user to realtime `spectator:update` events for that live game
+- `POST /api/v1/history/live-games/unwatch` - `{ userId }` -> clear that user's live-game spectator subscription
 - `GET /api/v1/history/games` - list persisted game history entries
 - `GET /api/v1/history/games/:id` - load a specific replayable game history entry
 - `POST /api/v1/history/games/share` - `{ userId, gameId }` -> returns share link

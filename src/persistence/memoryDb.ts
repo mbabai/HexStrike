@@ -57,6 +57,10 @@ export class MemoryDb {
     return this.matches.find((match) => match.id === id);
   }
 
+  async findMatchByGameId(gameId: string): Promise<MatchDoc | undefined> {
+    return [...this.matches].reverse().find((match) => match.gameId === gameId);
+  }
+
   async findActiveMatchByUser(userId: string): Promise<MatchDoc | undefined> {
     return [...this.matches]
       .reverse()

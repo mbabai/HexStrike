@@ -77,6 +77,7 @@
           </select>
         </label>
         <button id="savedReplaysOpen" class="btn btn-ghost" type="button">Games History</button>
+        <button id="liveGamesOpen" class="btn btn-ghost" type="button">Live Games</button>
       </section>
     </div>
 
@@ -276,6 +277,16 @@
           </div>
         </div>
         <div id="savedReplaysList" class="saved-replays-list" aria-live="polite"></div>
+      </div>
+    </div>
+
+    <div id="liveGamesOverlay" class="modal-overlay saved-replays-overlay" hidden aria-hidden="true">
+      <div class="saved-replays-modal panel" role="dialog" aria-modal="true" aria-labelledby="liveGamesTitle">
+        <div class="saved-replays-header">
+          <h2 id="liveGamesTitle">Live Games</h2>
+          <button id="liveGamesClose" class="btn btn-ghost btn-small" type="button">Close</button>
+        </div>
+        <div id="liveGamesList" class="saved-replays-list" aria-live="polite"></div>
       </div>
     </div>
 

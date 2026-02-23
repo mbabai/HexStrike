@@ -1,5 +1,6 @@
 import { loadCharacterCatalog } from './shared/characterCatalog.js';
 import { buildReplayShareUrl, copyTextToClipboard, parseReplayLinkParams } from './replayShare.mjs';
+import { getOrCreateUserId } from './storage.js';
 import { showToast } from './toast.js';
 
 const RESULT_ICON_BY_KEY = {
@@ -193,16 +194,69 @@ const fetchReplayDetail = async (replayId) => {
   return payload;
 };
 
+const fetchLiveGameList = async () => {
+  const response = await fetch('/api/v1/history/live-games', { method: 'GET' });
+  const payload = await response.json().catch(() => []);
+  if (!response.ok) {
+    const message = payload?.error ? `${payload.error}` : 'Failed to load live games.';
+    throw new Error(message);
+  }
+  return Array.isArray(payload) ? payload : [];
+};
+
+const fetchLiveGameDetail = async (gameId) => {
+  const response = await fetch(`/api/v1/history/live-games/${encodeURIComponent(gameId)}`, { method: 'GET' });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = payload?.error ? `${payload.error}` : 'Live game not found.';
+    throw new Error(message);
+  }
+  return payload;
+};
+
+const watchLiveGame = async (gameId, userId) => {
+  const response = await fetch('/api/v1/history/live-games/watch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ gameId, userId }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = payload?.error ? `${payload.error}` : 'Failed to watch live game.';
+    throw new Error(message);
+  }
+  return payload;
+};
+
+const unwatchLiveGame = async (userId) => {
+  const response = await fetch('/api/v1/history/live-games/unwatch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = payload?.error ? `${payload.error}` : 'Failed to stop spectating.';
+    throw new Error(message);
+  }
+  return payload;
+};
+
 export const initReplays = async () => {
   const openButton = document.getElementById('savedReplaysOpen');
   const overlay = document.getElementById('savedReplaysOverlay');
   const closeButton = document.getElementById('savedReplaysClose');
   const listRoot = document.getElementById('savedReplaysList');
+  const liveOpenButton = document.getElementById('liveGamesOpen');
+  const liveOverlay = document.getElementById('liveGamesOverlay');
+  const liveCloseButton = document.getElementById('liveGamesClose');
+  const liveListRoot = document.getElementById('liveGamesList');
   const filterInput = document.getElementById('savedReplaysPlayerFilter');
   const playerCountFilterSelect = document.getElementById('savedReplaysPlayerCountFilter');
   const sortDirectionToggle = document.getElementById('savedReplaysSortDirectionToggle');
   const sortButtons = overlay ? Array.from(overlay.querySelectorAll('.saved-replays-sort-btn')) : [];
   if (!openButton || !overlay || !closeButton || !listRoot) return;
+  const localUserId = getOrCreateUserId();
 
   let characterById = new Map();
   try {
@@ -218,6 +272,9 @@ export const initReplays = async () => {
   let playerCountFilter = 'all';
   let sortKey = SORT_KEY_DATE;
   let sortDirection = SORT_DIRECTION_DESC;
+  let liveGameList = [];
+  let loadingLiveList = false;
+  let watchedLiveGameId = null;
   if (playerCountFilterSelect) {
     playerCountFilter = normalizePlayerCountFilter(playerCountFilterSelect.value);
     playerCountFilterSelect.value = playerCountFilter;
@@ -226,6 +283,21 @@ export const initReplays = async () => {
   const openReplay = (replay) => {
     if (!replay?.state?.public) return;
     window.dispatchEvent(new CustomEvent('hexstrike:replay-open', { detail: { replay } }));
+  };
+
+  const openLiveSpectator = (game) => {
+    if (!game?.state?.public) return;
+    window.dispatchEvent(new CustomEvent('hexstrike:spectator-open', { detail: { game } }));
+  };
+
+  const stopWatchingLiveGame = async () => {
+    if (!watchedLiveGameId) return;
+    watchedLiveGameId = null;
+    try {
+      await unwatchLiveGame(localUserId);
+    } catch (err) {
+      console.warn('Failed to stop spectating live game', err);
+    }
   };
 
   const shareReplay = async (replay) => {
@@ -314,6 +386,39 @@ export const initReplays = async () => {
     return badge;
   };
 
+  const buildListRowShell = (playersData) => {
+    const row = document.createElement('article');
+    row.className = 'saved-replay-row panel';
+
+    const header = document.createElement('div');
+    header.className = 'saved-replay-header';
+
+    const players = document.createElement('div');
+    players.className = 'saved-replay-players';
+    const normalizedPlayers = Array.isArray(playersData) ? playersData : [];
+    normalizedPlayers.forEach((player) => {
+      players.appendChild(buildPlayerBadge(player));
+    });
+
+    const metrics = document.createElement('div');
+    metrics.className = 'saved-replay-metrics';
+
+    header.appendChild(players);
+    header.appendChild(metrics);
+
+    const actions = document.createElement('div');
+    actions.className = 'saved-replay-actions';
+
+    row.appendChild(header);
+    row.appendChild(actions);
+    return { row, metrics, actions };
+  };
+
+  const closeReplaysOverlays = () => {
+    setOverlayVisible(overlay, false);
+    setOverlayVisible(liveOverlay, false);
+  };
+
   const renderReplayList = () => {
     listRoot.innerHTML = '';
     if (!replayList.length) {
@@ -334,30 +439,11 @@ export const initReplays = async () => {
       return;
     }
     visibleReplays.forEach((replay) => {
-      const row = document.createElement('article');
-      row.className = 'saved-replay-row panel';
-
-      const header = document.createElement('div');
-      header.className = 'saved-replay-header';
-
-      const players = document.createElement('div');
-      players.className = 'saved-replay-players';
       const replayPlayers = Array.isArray(replay.players) ? replay.players : [];
-      replayPlayers.forEach((player) => {
-        players.appendChild(buildPlayerBadge(player));
-      });
-
-      const metrics = document.createElement('div');
-      metrics.className = 'saved-replay-metrics';
+      const { row, metrics, actions } = buildListRowShell(replayPlayers);
       metrics.appendChild(createMetric('Date', formatReplayTimestamp(replay?.createdAt)));
       metrics.appendChild(createMetric('Beats', `${getReplayBeatsToEnd(replay)}`));
       metrics.appendChild(createMetric('Termination', getReplayLossMethod(replay)));
-
-      header.appendChild(players);
-      header.appendChild(metrics);
-
-      const actions = document.createElement('div');
-      actions.className = 'saved-replay-actions';
 
       const viewButton = document.createElement('button');
       viewButton.type = 'button';
@@ -366,9 +452,10 @@ export const initReplays = async () => {
       viewButton.addEventListener('click', async () => {
         viewButton.disabled = true;
         try {
+          await stopWatchingLiveGame();
           const detail = await fetchReplayDetail(replay.id);
           setReplayUrl(detail.id);
-          setOverlayVisible(overlay, false);
+          closeReplaysOverlays();
           openReplay(detail);
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to open replay.';
@@ -397,9 +484,60 @@ export const initReplays = async () => {
 
       actions.appendChild(viewButton);
       actions.appendChild(shareButton);
-      row.appendChild(header);
-      row.appendChild(actions);
       listRoot.appendChild(row);
+    });
+  };
+
+  const getLiveGameBeats = (liveGame) => {
+    const beatsValue = Number(liveGame?.beats);
+    if (Number.isFinite(beatsValue)) return Math.max(0, Math.round(beatsValue));
+    const beats = liveGame?.state?.public?.beats;
+    if (Array.isArray(beats)) return beats.length;
+    return 0;
+  };
+
+  const renderLiveGameList = () => {
+    if (!liveListRoot) return;
+    liveListRoot.innerHTML = '';
+    if (!liveGameList.length) {
+      setBusyText(liveListRoot, 'No live games right now.');
+      return;
+    }
+    const sortedLiveGames = [...liveGameList].sort(
+      (a, b) =>
+        getReplayTimestamp(b?.updatedAt ?? b?.createdAt) -
+        getReplayTimestamp(a?.updatedAt ?? a?.createdAt),
+    );
+    sortedLiveGames.forEach((liveGame) => {
+      const gamePlayers = Array.isArray(liveGame?.players) ? liveGame.players : [];
+      const { row, metrics, actions } = buildListRowShell(gamePlayers);
+      metrics.appendChild(createMetric('Started', formatReplayTimestamp(liveGame?.createdAt)));
+      metrics.appendChild(createMetric('Beats', `${getLiveGameBeats(liveGame)}`));
+      metrics.appendChild(createMetric('Status', 'In Progress'));
+
+      const spectateButton = document.createElement('button');
+      spectateButton.type = 'button';
+      spectateButton.className = 'btn btn-primary btn-small';
+      spectateButton.textContent = 'Spectate Live';
+      spectateButton.addEventListener('click', async () => {
+        spectateButton.disabled = true;
+        try {
+          const watchPayload = await watchLiveGame(liveGame.id, localUserId);
+          const detail = watchPayload?.state?.public ? watchPayload : await fetchLiveGameDetail(liveGame.id);
+          watchedLiveGameId = `${detail?.sourceGameId ?? detail?.id ?? liveGame.id}`.trim() || null;
+          setReplayUrl(null);
+          closeReplaysOverlays();
+          openLiveSpectator(detail);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Failed to spectate live game.';
+          window.alert(message);
+        } finally {
+          spectateButton.disabled = false;
+        }
+      });
+
+      actions.appendChild(spectateButton);
+      liveListRoot.appendChild(row);
     });
   };
 
@@ -415,6 +553,21 @@ export const initReplays = async () => {
       setBusyText(listRoot, message);
     } finally {
       loadingList = false;
+    }
+  };
+
+  const refreshLiveGameList = async () => {
+    if (!liveListRoot || loadingLiveList) return;
+    loadingLiveList = true;
+    setBusyText(liveListRoot, 'Loading live games...');
+    try {
+      liveGameList = await fetchLiveGameList();
+      renderLiveGameList();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load live games.';
+      setBusyText(liveListRoot, message);
+    } finally {
+      loadingLiveList = false;
     }
   };
 
@@ -455,9 +608,28 @@ export const initReplays = async () => {
   setSortButtonState();
 
   openButton.addEventListener('click', () => {
+    closeReplaysOverlays();
     setOverlayVisible(overlay, true);
     void refreshReplayList();
   });
+
+  if (liveOpenButton && liveOverlay && liveCloseButton && liveListRoot) {
+    liveOpenButton.addEventListener('click', () => {
+      closeReplaysOverlays();
+      setOverlayVisible(liveOverlay, true);
+      void refreshLiveGameList();
+    });
+
+    liveCloseButton.addEventListener('click', () => {
+      setOverlayVisible(liveOverlay, false);
+    });
+
+    liveOverlay.addEventListener('click', (event) => {
+      if (event.target === liveOverlay) {
+        setOverlayVisible(liveOverlay, false);
+      }
+    });
+  }
 
   closeButton.addEventListener('click', () => {
     setOverlayVisible(overlay, false);
@@ -471,12 +643,24 @@ export const initReplays = async () => {
 
   window.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
-    if (overlay.hidden) return;
-    setOverlayVisible(overlay, false);
+    if (!overlay.hidden) {
+      setOverlayVisible(overlay, false);
+    }
+    if (liveOverlay && !liveOverlay.hidden) {
+      setOverlayVisible(liveOverlay, false);
+    }
   });
 
   window.addEventListener('hexstrike:game-history-updated', () => {
     void refreshReplayList();
+  });
+
+  window.addEventListener('hexstrike:replay-open', () => {
+    void stopWatchingLiveGame();
+  });
+
+  window.addEventListener('hexstrike:spectator-closed', () => {
+    void stopWatchingLiveGame();
   });
 
   window.addEventListener('hexstrike:replay-closed', () => {
@@ -486,6 +670,7 @@ export const initReplays = async () => {
   const { replayId } = parseReplayLinkParams();
   if (replayId) {
     try {
+      await stopWatchingLiveGame();
       const replay = await fetchReplayDetail(replayId);
       openReplay(replay);
     } catch (err) {

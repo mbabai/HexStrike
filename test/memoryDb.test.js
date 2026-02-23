@@ -33,6 +33,7 @@ test('memory db upserts users and stores matches/games', async () => {
     outcome: undefined,
     state: {},
   });
+  await db.updateMatch(match.id, { gameId: game.id, state: 'in-progress' });
 
   const matches = await db.listMatches();
   assert.equal(matches[0].id, match.id);
@@ -45,6 +46,9 @@ test('memory db upserts users and stores matches/games', async () => {
 
   const storedGame = await db.findGame(game.id);
   assert.equal(storedGame.id, game.id);
+
+  const byGameId = await db.findMatchByGameId(game.id);
+  assert.equal(byGameId?.id, match.id);
 });
 
 test('memory db upserts by id without merging on username collisions', async () => {

@@ -1017,6 +1017,8 @@ export function buildServer(port: number) {
   const db = new MemoryDb();
   const historyStore = new GameHistoryStore(db);
   const sseClients = new Map<string, any>();
+  const liveSpectatorsByGame = new Map<string, Set<string>>();
+  const liveSpectatorGameByUser = new Map<string, string>();
   const wsClients = new Map<string, WsClient>();
   const pendingActionSets = new Map<string, PendingActionBatch>();
   const drawOfferCooldownByGame = new Map<string, Map<string, number>>();
@@ -1312,6 +1314,40 @@ export function buildServer(port: number) {
     const gameCooldowns = drawOfferCooldownByGame.get(gameId) ?? new Map<string, number>();
     gameCooldowns.set(userId, nowMs + DRAW_OFFER_COOLDOWN_MS);
     drawOfferCooldownByGame.set(gameId, gameCooldowns);
+  };
+
+  const clearLiveSpectatorForUser = (userId: string) => {
+    const gameId = liveSpectatorGameByUser.get(userId);
+    if (!gameId) return;
+    liveSpectatorGameByUser.delete(userId);
+    const watchers = liveSpectatorsByGame.get(gameId);
+    if (!watchers) return;
+    watchers.delete(userId);
+    if (!watchers.size) {
+      liveSpectatorsByGame.delete(gameId);
+    }
+  };
+
+  const setLiveSpectatorForUser = (userId: string, gameId: string) => {
+    if (!userId || !gameId) return;
+    const existingGameId = liveSpectatorGameByUser.get(userId);
+    if (existingGameId === gameId) return;
+    clearLiveSpectatorForUser(userId);
+    const watchers = liveSpectatorsByGame.get(gameId) ?? new Set<string>();
+    watchers.add(userId);
+    liveSpectatorsByGame.set(gameId, watchers);
+    liveSpectatorGameByUser.set(userId, gameId);
+  };
+
+  const clearLiveSpectatorsForGame = (gameId: string) => {
+    const watchers = liveSpectatorsByGame.get(gameId);
+    if (!watchers?.size) return;
+    watchers.forEach((userId) => {
+      if (liveSpectatorGameByUser.get(userId) === gameId) {
+        liveSpectatorGameByUser.delete(userId);
+      }
+    });
+    liveSpectatorsByGame.delete(gameId);
   };
 
   const sendSseEvent = (packet: Record<string, unknown>, targetId?: string) => {
@@ -1671,6 +1707,70 @@ export function buildServer(port: number) {
     };
   };
 
+  const buildLiveGamePlayers = (match: MatchDoc, game: GameDoc): ReplayPlayerDoc[] => {
+    const characterNameByUserId = new Map<string, string>();
+    const characters = ensureBaselineCharacters(game.state.public);
+    characters.forEach((character) => {
+      if (character?.userId && character?.characterName) {
+        characterNameByUserId.set(character.userId, character.characterName);
+      }
+    });
+    return match.players.map((player) => ({
+      userId: player.userId,
+      username: player.username,
+      characterId: player.characterId,
+      characterName: characterNameByUserId.get(player.userId),
+    }));
+  };
+
+  const buildLiveGameSummary = (game: GameDoc, match: MatchDoc) => {
+    const beats = Array.isArray(game.state?.public?.beats) ? game.state.public.beats : [];
+    return {
+      id: game.id,
+      sourceGameId: game.id,
+      sourceMatchId: game.matchId ?? null,
+      matchId: match.id,
+      players: buildLiveGamePlayers(match, game),
+      playerCount: Array.isArray(match.players) ? match.players.length : 0,
+      beats: beats.length,
+      createdAt: game.createdAt,
+      updatedAt: game.updatedAt,
+    };
+  };
+
+  const buildLiveGameDetail = (game: GameDoc, match: MatchDoc) => ({
+    ...buildLiveGameSummary(game, match),
+    live: true,
+    state: {
+      public: cloneReplayPublicState(game.state.public),
+    },
+  });
+
+  const getLiveGameById = async (gameId: string): Promise<{ game: GameDoc; match: MatchDoc } | null> => {
+    if (!gameId) return null;
+    const match = await db.findMatchByGameId(gameId);
+    if (!match || !match.gameId || match.state === 'complete') return null;
+    const game = await db.findGame(match.gameId);
+    if (!game) return null;
+    if (game.state?.public?.matchOutcome) return null;
+    return { game, match };
+  };
+
+  const listLiveGameSummaries = async (limit = 200) => {
+    const requestedLimit = Math.max(1, Math.min(500, Math.round(Number(limit) || 200)));
+    const matches = await db.listMatches(Math.max(200, requestedLimit * 3));
+    const summaries = await Promise.all(
+      matches.map(async (match) => {
+        if (!match?.gameId || match.state === 'complete') return null;
+        const game = await db.findGame(match.gameId);
+        if (!game) return null;
+        if (game.state?.public?.matchOutcome) return null;
+        return buildLiveGameSummary(game, match);
+      }),
+    );
+    return summaries.filter(Boolean).slice(0, requestedLimit);
+  };
+
   const createOrGetReplayForGame = async (game: GameDoc, match: MatchDoc) => {
     if (isTutorialGame(game)) {
       throw new Error('Tutorial games are not saved to history.');
@@ -1793,6 +1893,34 @@ export function buildServer(port: number) {
         shareUrl: summary.shareUrl,
       },
     };
+  };
+
+  const watchLiveGame = async (body: Record<string, unknown>): Promise<ReplayResponse> => {
+    const requestedUserId = `${body.userId ?? body.userID ?? ''}`.trim();
+    const gameId = `${body.gameId ?? body.gameID ?? ''}`.trim();
+    if (!requestedUserId || !gameId) {
+      return { ok: false, status: 400, error: 'Invalid live game watch payload' };
+    }
+    const user = await upsertUserFromRequest(requestedUserId);
+    const liveGame = await getLiveGameById(gameId);
+    if (!liveGame) {
+      return { ok: false, status: 404, error: 'Live game not found' };
+    }
+    setLiveSpectatorForUser(user.id, gameId);
+    return {
+      ok: true,
+      status: 200,
+      payload: buildLiveGameDetail(liveGame.game, liveGame.match),
+    };
+  };
+
+  const unwatchLiveGame = async (body: Record<string, unknown>): Promise<ReplayResponse> => {
+    const requestedUserId = `${body.userId ?? body.userID ?? ''}`.trim();
+    if (!requestedUserId) {
+      return { ok: false, status: 400, error: 'Invalid live game unwatch payload' };
+    }
+    clearLiveSpectatorForUser(requestedUserId);
+    return { ok: true, status: 200, payload: { ok: true } };
   };
 
   const buildDeckStatesForMatch = async (match: MatchDoc, game: GameDoc) => {
@@ -2656,6 +2784,16 @@ export function buildServer(port: number) {
       const view = buildGameViewForPlayer(game, player.userId, deckStates);
       sendRealtimeEvent({ type: 'game:update', payload: view }, player.userId);
     });
+    const spectatorUserIds = Array.from(liveSpectatorsByGame.get(game.id) ?? []);
+    if (spectatorUserIds.length) {
+      const liveDetail = buildLiveGameDetail(game, match);
+      spectatorUserIds.forEach((userId) => {
+        if (!userId) return;
+        const isPlayer = match.players.some((player) => player.userId === userId);
+        if (isPlayer) return;
+        sendRealtimeEvent({ type: 'spectator:update', payload: liveDetail }, userId);
+      });
+    }
     sendInputRequests(match, game);
   };
 
@@ -2954,6 +3092,7 @@ export function buildServer(port: number) {
     match.players.forEach((player) => lobby.removeFromQueue(player.userId));
     sendRealtimeEvent({ type: 'match:ended', payload: match });
     if (match.gameId) {
+      clearLiveSpectatorsForGame(match.gameId);
       gameDeckStates.delete(match.gameId);
       drawOfferCooldownByGame.delete(match.gameId);
       matchExitUsers.delete(match.gameId);
@@ -2986,6 +3125,7 @@ export function buildServer(port: number) {
       if (sseClients.get(user.id) === res) {
         sseClients.delete(user.id);
       }
+      clearLiveSpectatorForUser(user.id);
       matchDisconnects.forEach((set) => set.delete(user.id));
     });
   };
@@ -4442,6 +4582,8 @@ export function buildServer(port: number) {
         lobby.clearQueues();
         queuedDecks.clear();
         drawOfferCooldownByGame.clear();
+        liveSpectatorsByGame.clear();
+        liveSpectatorGameByUser.clear();
         botUsersByGame.clear();
         botRunsInProgress.clear();
         botRunsQueued.clear();
@@ -4615,6 +4757,53 @@ export function buildServer(port: number) {
           error: ok ? null : diagnostics.lastInitializationError ?? 'Mongo history store is unavailable.',
           ...diagnostics,
         });
+      }
+      if (req.method === 'GET' && pathname === '/api/v1/history/live-games') {
+        const liveGames = await listLiveGameSummaries(200);
+        return respondJson(res, 200, liveGames);
+      }
+      if (req.method === 'GET' && pathname.startsWith('/api/v1/history/live-games/')) {
+        const gameSegment = pathname.split('/')[5] ?? '';
+        let gameId = '';
+        try {
+          gameId = decodeURIComponent(gameSegment);
+        } catch {
+          return respondJson(res, 400, { error: 'Invalid live game id' });
+        }
+        if (!gameId) {
+          return respondJson(res, 400, { error: 'Live game id is required' });
+        }
+        const liveGame = await getLiveGameById(gameId);
+        if (!liveGame) {
+          return respondJson(res, 404, { error: 'Live game not found' });
+        }
+        return respondJson(res, 200, buildLiveGameDetail(liveGame.game, liveGame.match));
+      }
+      if (req.method === 'POST' && pathname === '/api/v1/history/live-games/watch') {
+        let body;
+        try {
+          body = await parseBody(req);
+        } catch (err) {
+          return respondJson(res, 400, { error: 'Invalid live game watch payload' });
+        }
+        const result = await watchLiveGame(body);
+        if (!result.ok) {
+          return respondJson(res, result.status, { error: result.error });
+        }
+        return respondJson(res, result.status, result.payload);
+      }
+      if (req.method === 'POST' && pathname === '/api/v1/history/live-games/unwatch') {
+        let body;
+        try {
+          body = await parseBody(req);
+        } catch (err) {
+          return respondJson(res, 400, { error: 'Invalid live game unwatch payload' });
+        }
+        const result = await unwatchLiveGame(body);
+        if (!result.ok) {
+          return respondJson(res, result.status, { error: result.error });
+        }
+        return respondJson(res, result.status, result.payload);
       }
       if (req.method === 'POST' && pathname === '/api/v1/history/games/share') {
         let body;

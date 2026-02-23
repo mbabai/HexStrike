@@ -50,6 +50,7 @@ const TIMELINE_SPEED_MAX = 3;
 const MAX_HAND_SIZE = 4;
 const VIEW_MODE_LIVE = 'live';
 const VIEW_MODE_REPLAY = 'replay';
+const VIEW_MODE_SPECTATOR = 'spectator';
 const THREE_PLAYER_DEFAULT_SCALE = 0.55;
 const AXIAL_DIRECTIONS = [
   { q: 1, r: 0 },
@@ -303,10 +304,12 @@ export const initGame = () => {
   let nextAutoAdvanceAt = null;
   let viewMode = null;
   let activeReplay = null;
+  let activeSpectatorGameId = null;
   let leaveReplayView = () => {};
   const pendingActionPreview = createPendingActionPreview();
 
-  const isReplayMode = () => viewMode === VIEW_MODE_REPLAY;
+  const isSpectatorMode = () => viewMode === VIEW_MODE_SPECTATOR;
+  const isReplayMode = () => viewMode === VIEW_MODE_REPLAY || isSpectatorMode();
   const isTutorialMatch = () => !isReplayMode() && Boolean(gameState?.state?.public?.tutorial?.enabled);
 
   const buildReplaySnapshotFromState = (stateLike) => {
@@ -1383,18 +1386,26 @@ export const initGame = () => {
 
   const setGameMenuLabels = () => {
     const tutorialMatch = isTutorialMatch();
+    const spectatorMatch = isSpectatorMode();
     if (gameMenuRulebook) {
       gameMenuRulebook.hidden = false;
       gameMenuRulebook.style.display = '';
       gameMenuRulebook.setAttribute('aria-hidden', 'false');
     }
     if (gameMenuForfeit) {
-      gameMenuForfeit.textContent = isReplayMode() ? 'Leave Replay' : tutorialMatch ? 'Leave Tutorial' : 'Forfeit';
+      gameMenuForfeit.textContent = spectatorMatch
+        ? 'Leave Spectator'
+        : isReplayMode()
+          ? 'Leave Replay'
+          : tutorialMatch
+            ? 'Leave Tutorial'
+            : 'Forfeit';
     }
     if (gameMenuOfferDraw) {
-      gameMenuOfferDraw.hidden = tutorialMatch;
-      gameMenuOfferDraw.style.display = tutorialMatch ? 'none' : '';
-      gameMenuOfferDraw.setAttribute('aria-hidden', tutorialMatch.toString());
+      const hideAction = tutorialMatch || spectatorMatch;
+      gameMenuOfferDraw.hidden = hideAction;
+      gameMenuOfferDraw.style.display = hideAction ? 'none' : '';
+      gameMenuOfferDraw.setAttribute('aria-hidden', hideAction.toString());
       gameMenuOfferDraw.textContent = isReplayMode() ? 'Share' : 'Offer Draw';
     }
   };
@@ -1493,11 +1504,12 @@ export const initGame = () => {
 
   const requestLeaveReplayConfirmation = () => {
     if (!isReplayMode()) return;
+    const spectatorMode = isSpectatorMode();
     gameMenuUi?.setMenuOpen(false);
     gameMenuUi?.showModal({
-      eyebrow: 'Replay',
-      title: 'Leave Replay?',
-      copy: 'Return to the main menu?',
+      eyebrow: spectatorMode ? 'Spectator' : 'Replay',
+      title: spectatorMode ? 'Leave Spectator?' : 'Leave Replay?',
+      copy: spectatorMode ? 'Stop spectating and return to the main menu?' : 'Return to the main menu?',
       confirmText: 'Yes',
       cancelText: 'No',
       onConfirm: () => {
@@ -1511,6 +1523,7 @@ export const initGame = () => {
   };
 
   const shareReplayFromMenu = async () => {
+    if (isSpectatorMode()) return;
     if (!isReplayMode()) return;
     gameMenuUi?.setMenuOpen(false);
     try {
@@ -1678,9 +1691,9 @@ export const initGame = () => {
     document.body.classList.add('is-in-game');
     gameMenuUi?.closeAll();
     setGameMenuLabels();
-    timeIndicatorViewModel.isPlaying = mode !== VIEW_MODE_REPLAY;
+    timeIndicatorViewModel.isPlaying = mode === VIEW_MODE_LIVE;
     resetAutoAdvanceClock();
-    if (actionHud) actionHud.setHidden(mode === VIEW_MODE_REPLAY);
+    if (actionHud) actionHud.setHidden(mode !== VIEW_MODE_LIVE);
     if (mode === VIEW_MODE_LIVE) {
       viewState.scale = GAME_CONFIG.defaultScale;
     }
@@ -1694,6 +1707,7 @@ export const initGame = () => {
 
   const hideGame = ({ emitReplayClosed = true } = {}) => {
     const wasReplay = isReplayMode();
+    const spectatorGameId = activeSpectatorGameId;
     gameArea.hidden = true;
     document.body.classList.remove('is-in-game');
     if (menuShell) menuShell.hidden = false;
@@ -1704,6 +1718,7 @@ export const initGame = () => {
     gameState = null;
     viewMode = null;
     activeReplay = null;
+    activeSpectatorGameId = null;
     tutorialGuide?.reset?.();
     tutorialGuide?.sync?.({ gameState: null, isReplayMode: false });
     setGameMenuLabels();
@@ -1734,6 +1749,9 @@ export const initGame = () => {
       interactionOverlay.setAttribute('aria-hidden', 'true');
     }
     gameOverView.hide();
+    if (spectatorGameId) {
+      window.dispatchEvent(new CustomEvent('hexstrike:spectator-closed', { detail: { gameId: spectatorGameId } }));
+    }
     if (wasReplay && emitReplayClosed) {
       window.dispatchEvent(new CustomEvent('hexstrike:replay-closed'));
     }
@@ -1759,16 +1777,19 @@ export const initGame = () => {
 
   const showLiveGame = () => {
     activeReplay = null;
+    activeSpectatorGameId = null;
     didInitTimelinePosition = false;
     showGame(VIEW_MODE_LIVE);
   };
 
-  const showReplay = (replay) => {
+  const showReplay = (replay, options = {}) => {
     const replayState = toReplayGameState(replay);
     if (!replayState) return;
+    const spectatorGameId = `${options?.spectatorGameId ?? ''}`.trim() || null;
+    activeSpectatorGameId = spectatorGameId;
     activeReplay = buildReplaySnapshotFromState(replay);
     didInitTimelinePosition = false;
-    showGame(VIEW_MODE_REPLAY);
+    showGame(spectatorGameId ? VIEW_MODE_SPECTATOR : VIEW_MODE_REPLAY);
     setGameState(replayState);
   };
 
@@ -1894,6 +1915,22 @@ export const initGame = () => {
     const replay = event?.detail?.replay;
     if (!replay) return;
     showReplay(replay);
+  });
+  window.addEventListener('hexstrike:spectator-open', (event) => {
+    const game = event?.detail?.game;
+    if (!game) return;
+    const spectatorGameId = `${game?.sourceGameId ?? game?.id ?? ''}`.trim() || null;
+    showReplay(game, { spectatorGameId });
+  });
+  window.addEventListener('hexstrike:spectator-game', (event) => {
+    const nextSpectatorState = event?.detail;
+    if (!nextSpectatorState || !isSpectatorMode()) return;
+    const incomingGameId = `${nextSpectatorState?.sourceGameId ?? nextSpectatorState?.id ?? ''}`.trim();
+    if (!incomingGameId || incomingGameId !== activeSpectatorGameId) return;
+    const replayState = toReplayGameState(nextSpectatorState);
+    if (!replayState) return;
+    activeReplay = buildReplaySnapshotFromState(nextSpectatorState);
+    setGameState(replayState);
   });
   window.addEventListener('hexstrike:game', (event) => {
     const nextGameState = event.detail;
