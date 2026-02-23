@@ -122,6 +122,17 @@ export const bindControls = (canvas, viewState, pointerState, config = GAME_CONF
     if (event) releaseCapture(event.pointerId);
   };
 
+  const onLostPointerCapture = (event) => {
+    if (pointerState.id === event.pointerId) {
+      viewState.dragging = false;
+      canvas.classList.remove('is-dragging');
+      pointerState.id = null;
+    }
+    if (timeIndicatorViewModel?.isHolding) {
+      timeIndicatorViewModel.release(event.pointerId);
+    }
+  };
+
   const onWheel = (event) => {
     if (!isEventWithinRoot(event, controlRoot)) return;
     event.preventDefault();
@@ -143,6 +154,11 @@ export const bindControls = (canvas, viewState, pointerState, config = GAME_CONF
   controlRoot.addEventListener('pointercancel', endDrag);
   controlRoot.addEventListener('pointerup', endIndicatorHold);
   controlRoot.addEventListener('pointercancel', endIndicatorHold);
+  controlRoot.addEventListener('lostpointercapture', onLostPointerCapture);
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+  window.addEventListener('pointerup', endIndicatorHold);
+  window.addEventListener('pointercancel', endIndicatorHold);
   controlRoot.addEventListener('wheel', onWheel, { passive: false, capture: true });
 
   return () => {
@@ -152,6 +168,11 @@ export const bindControls = (canvas, viewState, pointerState, config = GAME_CONF
     controlRoot.removeEventListener('pointercancel', endDrag);
     controlRoot.removeEventListener('pointerup', endIndicatorHold);
     controlRoot.removeEventListener('pointercancel', endIndicatorHold);
+    controlRoot.removeEventListener('lostpointercapture', onLostPointerCapture);
+    window.removeEventListener('pointerup', endDrag);
+    window.removeEventListener('pointercancel', endDrag);
+    window.removeEventListener('pointerup', endIndicatorHold);
+    window.removeEventListener('pointercancel', endIndicatorHold);
     controlRoot.removeEventListener('wheel', onWheel, { capture: true });
   };
 };

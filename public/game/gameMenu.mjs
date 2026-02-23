@@ -92,10 +92,21 @@ export const createGameMenu = ({
     if (modalCancelButton) modalCancelButton.disabled = !isEnabled;
   };
 
+  const toggleMenu = () => {
+    if (gameArea?.hidden) return;
+    setMenuOpen(!menuOpen);
+  };
+
   if (toggleButton) {
-    toggleButton.addEventListener('click', () => {
-      if (gameArea?.hidden) return;
-      setMenuOpen(!menuOpen);
+    // Pointer events are more reliable than click during active board dragging on desktop.
+    toggleButton.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      toggleMenu();
+    });
+    toggleButton.addEventListener('click', (event) => {
+      // Keep keyboard activation functional while avoiding double-toggle after pointerdown.
+      if (event.detail !== 0) return;
+      toggleMenu();
     });
   }
 

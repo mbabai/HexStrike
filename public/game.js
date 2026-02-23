@@ -1674,7 +1674,8 @@ export const initGame = () => {
   const showGame = (mode = VIEW_MODE_LIVE) => {
     viewMode = mode;
     gameArea.hidden = false;
-    if (menuShell) menuShell.hidden = true;
+    if (menuShell) menuShell.hidden = false;
+    document.body.classList.add('is-in-game');
     gameMenuUi?.closeAll();
     setGameMenuLabels();
     timeIndicatorViewModel.isPlaying = mode !== VIEW_MODE_REPLAY;
@@ -1694,6 +1695,7 @@ export const initGame = () => {
   const hideGame = ({ emitReplayClosed = true } = {}) => {
     const wasReplay = isReplayMode();
     gameArea.hidden = true;
+    document.body.classList.remove('is-in-game');
     if (menuShell) menuShell.hidden = false;
     gameMenuUi?.closeAll();
     timeIndicatorViewModel.isPlaying = false;
