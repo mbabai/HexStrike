@@ -1,4 +1,5 @@
 import { loadCardCatalog } from './shared/cardCatalog.js';
+import { initDeviceProfile } from './shared/deviceProfile.js';
 import {
   cardHasThrowText,
   getCardDamageValue,
@@ -11,6 +12,8 @@ import {
   isAbilityDefenseCard,
   isAbilitySpecialCard,
 } from './shared/cardAnalytics.js';
+
+initDeviceProfile();
 
 const buildDistributionEntries = (values) => {
   const counts = new Map();

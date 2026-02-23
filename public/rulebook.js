@@ -2,6 +2,9 @@ import { loadCardCatalog } from './shared/cardCatalog.js';
 import { loadCharacterCatalog } from './shared/characterCatalog.js';
 import { buildCardElement, fitAllCardText } from './shared/cardRenderer.js';
 import { buildRotationWheel } from './game/rotationWheel.js';
+import { initDeviceProfile } from './shared/deviceProfile.js';
+
+initDeviceProfile();
 
 const ACTION_TYPE_SYMBOLS = [
   {

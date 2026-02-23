@@ -80,8 +80,7 @@ export const createActionHud = ({
 
   const debugOverlay = (() => {
     if (typeof document === 'undefined' || typeof window === 'undefined') return null;
-    const isDevHost = ['localhost', '127.0.0.1'].includes(window.location?.hostname ?? '');
-    if (!DEBUG_HOVER && !isDevHost) return null;
+    if (!DEBUG_HOVER) return null;
     const SVG_NS = 'http://www.w3.org/2000/svg';
     const overlay = document.createElementNS(SVG_NS, 'svg');
     overlay.setAttribute('class', 'action-hover-debug');
@@ -93,7 +92,7 @@ export const createActionHud = ({
     overlay.style.height = '100%';
     overlay.style.pointerEvents = 'none';
     overlay.style.zIndex = '50';
-    overlay.style.display = DEBUG_HOVER ? 'block' : 'none';
+    overlay.style.display = 'block';
     document.body.appendChild(overlay);
 
     const quadForElement = (element) => {
@@ -234,39 +233,8 @@ export const createActionHud = ({
       if (!enabled) clear();
     };
 
-    return { render, clear, setEnabled, isDevHost };
+    return { render, clear, setEnabled };
   })();
-
-  if (debugOverlay?.isDevHost) {
-    const toggle = document.createElement('button');
-    toggle.type = 'button';
-    toggle.textContent = 'Debug';
-    toggle.style.position = 'fixed';
-    toggle.style.left = '0';
-    toggle.style.top = '0';
-    toggle.style.padding = '6px 10px';
-    toggle.style.fontSize = '12px';
-    toggle.style.fontWeight = '600';
-    toggle.style.letterSpacing = '0.08em';
-    toggle.style.textTransform = 'uppercase';
-    toggle.style.border = '1px solid rgba(255,255,255,0.25)';
-    toggle.style.borderTop = 'none';
-    toggle.style.borderLeft = 'none';
-    toggle.style.borderRadius = '0 0 6px 0';
-    toggle.style.background = 'rgba(10, 18, 22, 0.85)';
-    toggle.style.color = '#f5f0e6';
-    toggle.style.zIndex = '60';
-    toggle.style.cursor = 'pointer';
-    let enabled = false;
-    debugOverlay.setEnabled(enabled);
-    toggle.addEventListener('click', () => {
-      enabled = !enabled;
-      toggle.textContent = enabled ? 'Debug On' : 'Debug Off';
-      debugOverlay.setEnabled(enabled);
-    });
-    toggle.textContent = 'Debug Off';
-    document.body.appendChild(toggle);
-  }
 
   const wheel = buildRotationWheel(rotationWheel, (rotation) => {
     if (state.locked) return;

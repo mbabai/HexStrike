@@ -1,4 +1,7 @@
 import { initDecks } from './decks.js';
+import { initDeviceProfile } from './shared/deviceProfile.js';
+
+initDeviceProfile();
 
 const openBuilder = () => {
   const createDeckButton = document.getElementById('createDeck');

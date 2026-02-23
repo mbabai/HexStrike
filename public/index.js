@@ -4,6 +4,9 @@ import { initGame } from './game.js';
 import { initPresence } from './presence.js';
 import { initDecks } from './decks.js';
 import { initReplays } from './replays.js';
+import { initDeviceProfile } from './shared/deviceProfile.js';
+
+initDeviceProfile();
 
 const buildHistoryDebugMessage = (payload = {}, fallbackError = '') => {
   const errorText = `${payload?.error ?? payload?.lastInitializationError ?? fallbackError ?? ''}`.trim();

@@ -192,6 +192,10 @@ export const initDecks = async (options = {}) => {
   const deckSortDirectionToggle = document.getElementById('deckSortDirectionToggle');
   const libraryRoot = document.getElementById('deckLibrary');
   const selectionStack = document.getElementById('deckSelectionStack');
+  const deckBuilderPanel = builderOverlay?.querySelector('.deck-builder');
+  const deckBuilderLayout = builderOverlay?.querySelector('.deck-builder-layout');
+  const deckLibraryPane = builderOverlay?.querySelector('.deck-builder-library-pane');
+  const deckSelectionPane = builderOverlay?.querySelector('.deck-builder-selection-pane');
   const deckSave = document.getElementById('deckSave');
   const playerNameButton = document.getElementById('playerNameButton');
   const playerNameValue = document.getElementById('playerNameValue');
@@ -233,6 +237,10 @@ export const initDecks = async (options = {}) => {
     !deckSortDirectionToggle ||
     !libraryRoot ||
     !selectionStack ||
+    !deckBuilderPanel ||
+    !deckBuilderLayout ||
+    !deckLibraryPane ||
+    !deckSelectionPane ||
     !deckSave ||
     !playerNameButton ||
     !playerNameValue ||
@@ -292,9 +300,82 @@ export const initDecks = async (options = {}) => {
   let builderSubtitleResetTimeout = null;
   let playerName = getStoredUsername() || 'anonymous';
   let pendingDeleteDeckId = null;
+  let mobileDeckPanelOpen = false;
+  const mobileSwipeState = { tracking: false, startX: 0, startY: 0 };
+  const MOBILE_PANEL_SWIPE_THRESHOLD = 56;
   const builderSubtitleDefaultText =
     `${deckBuilderSubtitle.textContent ?? ''}`.trim() ||
     'Pick a character, 4 movement cards, and 12 ordered ability cards.';
+
+  const isMobileLayout = () => document.documentElement.classList.contains('is-mobile');
+
+  const mobileDeckTabButton = document.createElement('button');
+  mobileDeckTabButton.type = 'button';
+  mobileDeckTabButton.className = 'deck-swipe-tab deck-swipe-tab-open';
+  mobileDeckTabButton.textContent = 'Deck';
+  mobileDeckTabButton.setAttribute('aria-label', 'Open deck panel');
+
+  const mobileCatalogTabButton = document.createElement('button');
+  mobileCatalogTabButton.type = 'button';
+  mobileCatalogTabButton.className = 'deck-swipe-tab deck-swipe-tab-close';
+  mobileCatalogTabButton.textContent = 'Catalog';
+  mobileCatalogTabButton.setAttribute('aria-label', 'Return to catalog');
+
+  deckLibraryPane.appendChild(mobileDeckTabButton);
+  deckSelectionPane.appendChild(mobileCatalogTabButton);
+
+  const applyMobileDeckPanelState = (nextOpen) => {
+    mobileDeckPanelOpen = Boolean(nextOpen);
+    deckBuilderPanel.classList.toggle('is-mobile-deck-panel-open', mobileDeckPanelOpen);
+    mobileDeckTabButton.setAttribute('aria-hidden', mobileDeckPanelOpen.toString());
+    mobileDeckTabButton.tabIndex = mobileDeckPanelOpen ? -1 : 0;
+    mobileCatalogTabButton.setAttribute('aria-hidden', (!mobileDeckPanelOpen).toString());
+    mobileCatalogTabButton.tabIndex = mobileDeckPanelOpen ? 0 : -1;
+  };
+
+  const resetMobileDeckPanel = () => {
+    applyMobileDeckPanelState(false);
+  };
+
+  const handleBuilderSwipeStart = (event) => {
+    if (builderOverlay.hidden || !isMobileLayout()) return;
+    const [touch] = event.touches || [];
+    if (!touch) return;
+    mobileSwipeState.tracking = true;
+    mobileSwipeState.startX = touch.clientX;
+    mobileSwipeState.startY = touch.clientY;
+  };
+
+  const handleBuilderSwipeEnd = (event) => {
+    if (!mobileSwipeState.tracking) return;
+    mobileSwipeState.tracking = false;
+    if (builderOverlay.hidden || !isMobileLayout()) return;
+    const [touch] = event.changedTouches || [];
+    if (!touch) return;
+    const deltaX = touch.clientX - mobileSwipeState.startX;
+    const deltaY = touch.clientY - mobileSwipeState.startY;
+    if (Math.abs(deltaX) < MOBILE_PANEL_SWIPE_THRESHOLD) return;
+    if (Math.abs(deltaX) <= Math.abs(deltaY) * 1.2) return;
+    if (deltaX < 0 && !mobileDeckPanelOpen) {
+      applyMobileDeckPanelState(true);
+      return;
+    }
+    if (deltaX > 0 && mobileDeckPanelOpen) {
+      applyMobileDeckPanelState(false);
+    }
+  };
+
+  const handleBuilderSwipeCancel = () => {
+    mobileSwipeState.tracking = false;
+  };
+
+  mobileDeckTabButton.addEventListener('click', () => {
+    applyMobileDeckPanelState(true);
+  });
+
+  mobileCatalogTabButton.addEventListener('click', () => {
+    applyMobileDeckPanelState(false);
+  });
 
   const fitBuilderCardText = () => {
     if (builderOverlay.hidden) return;
@@ -851,6 +932,7 @@ export const initDecks = async (options = {}) => {
   const openBuilder = (deck = null) => {
     resetBuilder();
     resetBuilderSubtitle();
+    resetMobileDeckPanel();
     if (deck) {
       loadBuilderFromDeck(deck);
       deckBuilderTitle.textContent = 'Edit Deck';
@@ -869,6 +951,7 @@ export const initDecks = async (options = {}) => {
   const closeBuilder = () => {
     closeCharacterOverlay();
     resetBuilderSubtitle();
+    resetMobileDeckPanel();
     builderOverlay.hidden = true;
   };
 
@@ -1011,6 +1094,13 @@ export const initDecks = async (options = {}) => {
     saveDeck();
   });
 
+  deckBuilderLayout.addEventListener('touchstart', handleBuilderSwipeStart, { passive: true });
+  deckBuilderLayout.addEventListener('touchend', handleBuilderSwipeEnd, { passive: true });
+  deckBuilderLayout.addEventListener('touchcancel', handleBuilderSwipeCancel, { passive: true });
+  deckSelectionPane.addEventListener('touchstart', handleBuilderSwipeStart, { passive: true });
+  deckSelectionPane.addEventListener('touchend', handleBuilderSwipeEnd, { passive: true });
+  deckSelectionPane.addEventListener('touchcancel', handleBuilderSwipeCancel, { passive: true });
+
   renderSortDirectionToggle();
   refreshDeckViews();
   window.addEventListener('keydown', (event) => {
@@ -1040,6 +1130,11 @@ export const initDecks = async (options = {}) => {
   window.addEventListener('resize', () => {
     if (builderOverlay.hidden) return;
     scheduleBuilderCardTextFit();
+  });
+  window.addEventListener('hexstrike:device-profile', () => {
+    if (!isMobileLayout()) {
+      resetMobileDeckPanel();
+    }
   });
 
 };

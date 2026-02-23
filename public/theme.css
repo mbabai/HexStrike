@@ -74,6 +74,7 @@
   --shadow-soft: 0 6px 20px rgba(0, 0, 0, 0.35);
   --shadow-strong: 0 8px 20px rgba(0, 0, 0, 0.35);
   --shadow-cta: 0 12px 30px rgba(0, 0, 0, 0.45), 0 0 20px rgba(213, 163, 74, 0.4);
+  --mobile-tap-target: 44px;
   --action-card-base-width: 240px;
   --action-card-base-height: 336px;
   --action-card-actions-left-base: 6;
@@ -150,6 +151,7 @@ body {
   padding: 28px;
   -webkit-user-select: none;
   user-select: none;
+  -webkit-text-size-adjust: 100%;
 }
 
 input,
@@ -755,6 +757,22 @@ small {
   position: relative;
 }
 
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 18;
+  border: none;
+  background: rgba(5, 12, 10, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+.menu-backdrop.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .menu-sidebar,
 .menu-match {
   background: linear-gradient(160deg, var(--color-panel-strong), var(--color-panel));
@@ -806,8 +824,26 @@ small {
 .menu-toggle {
   position: absolute;
   top: 28px;
-  left: 28px;
-  z-index: 3;
+  left: 10px;
+  z-index: 21;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.menu-toggle span {
+  transition: transform 140ms ease, opacity 120ms ease;
+  transform-origin: center;
+}
+
+.menu-toggle.is-open span:nth-child(1) {
+  transform: translateY(6px) rotate(45deg);
+}
+
+.menu-toggle.is-open span:nth-child(2) {
+  opacity: 0;
+}
+
+.menu-toggle.is-open span:nth-child(3) {
+  transform: translateY(-6px) rotate(-45deg);
 }
 
 .brand-stack {
@@ -1167,6 +1203,10 @@ small {
   backdrop-filter: blur(4px);
   z-index: 5;
   padding: 24px;
+}
+
+body.menu-body .deck-builder-overlay {
+  padding-left: 76px;
 }
 
 .modal-overlay[hidden] {
@@ -2043,8 +2083,8 @@ img[src$='Death.png'] {
   --deck-builder-card-scale: 0.5;
   --deck-library-card-scale: var(--deck-builder-card-scale);
   --action-card-scale: var(--deck-builder-card-scale);
-  --deck-stack-peek: calc(var(--action-card-height) * 0.1);
-  --deck-stack-hit-height: var(--deck-stack-peek);
+  --deck-stack-peek: var(--action-card-height);
+  --deck-stack-hit-height: var(--action-card-height);
 }
 
 .deck-builder-header {
@@ -2373,7 +2413,7 @@ img[src$='Death.png'] {
   align-content: start;
   justify-items: center;
   padding: 4px;
-  min-width: max-content;
+  min-width: 0;
 }
 
 .deck-library .action-card {
@@ -2382,8 +2422,8 @@ img[src$='Death.png'] {
 }
 
 .deck-library .action-card.is-selected {
-  opacity: 0.4;
-  filter: grayscale(1);
+  opacity: 0.56;
+  filter: grayscale(1) brightness(0.72);
   pointer-events: none;
 }
 
@@ -2422,7 +2462,7 @@ img[src$='Death.png'] {
 .deck-stack-item:hover,
 .deck-stack-item:focus-within {
   z-index: 260;
-  transform: translateX(-6px);
+  transform: none;
 }
 
 .deck-stack-item.is-dragging {
@@ -2456,6 +2496,10 @@ img[src$='Death.png'] {
 .deck-stack-item.is-drop-target .deck-stack-card::after {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 1px rgba(213, 163, 74, 0.45), 0 0 12px rgba(213, 163, 74, 0.55);
+}
+
+.deck-swipe-tab {
+  display: none;
 }
 
 .deck-stack-empty {
@@ -2561,7 +2605,7 @@ img[src$='Death.png'] {
 
   .menu-toggle {
     top: 18px;
-    left: 18px;
+    left: 10px;
   }
 
   .menu-match {
@@ -2578,13 +2622,13 @@ img[src$='Death.png'] {
 
 @media (max-width: 1200px) {
   .deck-builder {
-    --deck-library-card-scale: 0.46;
+    --deck-library-card-scale: 0.5;
   }
 }
 
 @media (max-width: 980px) {
   .deck-builder {
-    --deck-library-card-scale: 0.42;
+    --deck-library-card-scale: 0.5;
   }
 
   .deck-builder-toolbar {
@@ -2647,7 +2691,8 @@ img[src$='Death.png'] {
 .game-menu {
   position: absolute;
   top: 14px;
-  left: 14px;
+  right: 14px;
+  left: auto;
   z-index: 10;
   pointer-events: auto;
 }
@@ -2748,7 +2793,8 @@ img[src$='Death.png'] {
 .game-menu-panel {
   position: absolute;
   top: 48px;
-  left: 0;
+  right: 0;
+  left: auto;
   min-width: 170px;
   display: grid;
   gap: 8px;
@@ -3782,6 +3828,390 @@ img[src$='Death.png'] {
 .app-toast.is-fading {
   opacity: 0;
   transform: translateY(-6px);
+}
+
+html.is-mobile {
+  --mobile-safe-top: env(safe-area-inset-top, 0px);
+  --mobile-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html.is-mobile,
+html.is-mobile body {
+  min-height: 100dvh;
+}
+
+html.is-mobile body {
+  padding: clamp(12px, 3.4vw, 16px);
+}
+
+html.is-mobile body.menu-body {
+  padding: 0;
+}
+
+html.is-mobile input,
+html.is-mobile select,
+html.is-mobile textarea {
+  font-size: 16px;
+}
+
+html.is-mobile .btn,
+html.is-mobile .menu-link,
+html.is-mobile .menu-select,
+html.is-mobile .icon-btn,
+html.is-mobile .player-name-button,
+html.is-mobile .deck-action,
+html.is-mobile .deck-save-icon,
+html.is-mobile .deck-character-summary,
+html.is-mobile .deck-character-clear,
+html.is-mobile .game-menu-action {
+  min-height: var(--mobile-tap-target);
+  touch-action: manipulation;
+}
+
+html.is-mobile .btn {
+  padding: 12px 16px;
+}
+
+html.is-mobile .btn-small {
+  min-height: var(--mobile-tap-target);
+  padding: 10px 14px;
+}
+
+html.is-mobile .icon-btn,
+html.is-mobile .game-menu-toggle {
+  width: 48px;
+  height: 48px;
+}
+
+html.is-mobile .hero-actions {
+  width: 100%;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+html.is-mobile .hero-actions > .btn,
+html.is-mobile .hero-actions > .status-pill {
+  width: 100%;
+}
+
+html.is-mobile .menu-shell {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: 1fr;
+  justify-items: stretch;
+  align-content: start;
+  gap: 12px;
+  padding: calc(var(--mobile-safe-top) + 12px) 12px calc(var(--mobile-safe-bottom) + 12px);
+}
+
+html.is-mobile .menu-sidebar {
+  left: 12px;
+  top: calc(var(--mobile-safe-top) + 12px);
+  bottom: calc(var(--mobile-safe-bottom) + 12px);
+  width: min(86vw, 320px);
+  min-height: 0;
+  overflow-y: auto;
+  z-index: 20;
+}
+
+html.is-mobile .menu-toggle {
+  position: fixed;
+  top: calc(var(--mobile-safe-top) + 4px);
+  left: 4px;
+  z-index: 24;
+}
+
+html.is-mobile .menu-shell:not(.menu-collapsed) .menu-toggle {
+  left: calc(4px + min(86vw, 320px) - 56px);
+}
+
+html.is-mobile .menu-decks,
+html.is-mobile .menu-match {
+  width: 100%;
+  max-width: none;
+}
+
+html.is-mobile .menu-match {
+  justify-self: stretch;
+}
+
+html.is-mobile .menu-decks-header {
+  flex-wrap: wrap;
+}
+
+html.is-mobile #createDeck,
+html.is-mobile .cards-decks-header #createDeck,
+html.is-mobile .player-name-button {
+  width: 100%;
+}
+
+html.is-mobile .player-name-button {
+  justify-content: space-between;
+}
+
+html.is-mobile .deck-action {
+  width: var(--mobile-tap-target);
+  height: var(--mobile-tap-target);
+}
+
+html.is-mobile .deck-action svg {
+  width: 18px;
+  height: 18px;
+}
+
+html.is-mobile .modal-overlay {
+  padding: calc(var(--mobile-safe-top) + 10px) 10px calc(var(--mobile-safe-bottom) + 10px);
+}
+
+html.is-mobile .deck-preview,
+html.is-mobile .deck-character-modal,
+html.is-mobile .saved-replays-modal {
+  width: min(96vw, 1200px);
+  max-height: calc(100dvh - var(--mobile-safe-top) - var(--mobile-safe-bottom) - 20px);
+}
+
+html.is-mobile .deck-builder {
+  width: min(100%, 100vw);
+  height: calc(100dvh - var(--mobile-safe-top) - var(--mobile-safe-bottom) - 20px);
+  max-height: calc(100dvh - var(--mobile-safe-top) - var(--mobile-safe-bottom) - 20px);
+  --deck-library-card-scale: 0.5;
+}
+
+html.is-mobile .deck-builder-toolbar {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  padding-right: 52px;
+}
+
+html.is-mobile body.menu-body .deck-builder-toolbar {
+  padding-top: 42px;
+}
+
+html.is-mobile .deck-builder-title-block,
+html.is-mobile .deck-name-field {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  margin-right: 0;
+}
+
+html.is-mobile .deck-builder-layout {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+  overflow: hidden;
+}
+
+html.is-mobile .deck-builder-library-pane {
+  position: relative;
+}
+
+html.is-mobile .deck-builder-selection-pane {
+  --action-card-scale: var(--deck-library-card-scale);
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding-left: 8px;
+  border-left: 1px solid var(--color-divider);
+  background: linear-gradient(160deg, rgba(7, 21, 24, 0.97), rgba(8, 18, 30, 0.96));
+  box-shadow: -12px 0 26px rgba(2, 8, 12, 0.6);
+  transform: translateX(calc(100% + 8px));
+  transition: transform 220ms ease;
+  pointer-events: none;
+  overflow: visible;
+}
+
+html.is-mobile .deck-builder.is-mobile-deck-panel-open .deck-builder-selection-pane {
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+html.is-mobile .deck-stack-scroll {
+  max-height: none;
+  padding: 0 0 6px;
+}
+
+html.is-mobile .deck-library-scroll {
+  max-height: none;
+  padding: 8px 4px 8px 2px;
+}
+
+html.is-mobile .deck-library {
+  grid-template-columns: 1fr;
+  padding: 0;
+}
+
+html.is-mobile .deck-swipe-tab {
+  position: absolute;
+  top: 50%;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 70px;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--color-panel-border);
+  background: linear-gradient(160deg, rgba(9, 24, 28, 0.96), rgba(12, 24, 36, 0.94));
+  color: var(--color-accent-strong);
+  box-shadow: var(--shadow-soft);
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+html.is-mobile .deck-swipe-tab-open {
+  right: -8px;
+  border-right: none;
+  border-radius: 10px 0 0 10px;
+  transform: translateY(-50%) translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 160ms ease, transform 220ms ease;
+}
+
+html.is-mobile .deck-builder.is-mobile-deck-panel-open .deck-swipe-tab-open {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) translateX(10px);
+}
+
+html.is-mobile .deck-swipe-tab-close {
+  left: -8px;
+  border-left: none;
+  border-radius: 0 10px 10px 0;
+  transform: translateY(-50%) translateX(-10px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 220ms ease;
+}
+
+html.is-mobile .deck-builder.is-mobile-deck-panel-open .deck-swipe-tab-close {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%) translateX(0);
+}
+
+html.is-mobile .deck-builder-selection-header {
+  padding-right: 8px;
+}
+
+html.is-mobile .deck-filter-row {
+  grid-template-columns: 1fr;
+}
+
+html.is-mobile .deck-sort-controls {
+  flex-wrap: wrap;
+}
+
+html.is-mobile .deck-sort-direction {
+  min-width: 0;
+  width: 100%;
+}
+
+html.is-mobile #deckBuilderClose {
+  top: 8px;
+  right: 8px;
+  width: var(--mobile-tap-target);
+  height: var(--mobile-tap-target);
+  min-width: var(--mobile-tap-target);
+}
+
+html.is-mobile .game-area {
+  inset: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 8px;
+  padding-top: calc(var(--mobile-safe-top) + 8px);
+  padding-bottom: calc(var(--mobile-safe-bottom) + 8px);
+}
+
+html.is-mobile .game-frame {
+  border-radius: 10px;
+}
+
+html.is-mobile .game-menu {
+  top: calc(var(--mobile-safe-top) + 6px);
+  right: 8px;
+  left: auto;
+}
+
+html.is-mobile .game-menu-panel {
+  top: 54px;
+  min-width: 190px;
+}
+
+html.is-mobile .timeline-speed-control {
+  top: calc(var(--mobile-safe-top) + 4px);
+  padding: 8px 12px;
+  gap: 10px;
+}
+
+html.is-mobile .timeline-speed-icon {
+  width: 20px;
+  height: 20px;
+}
+
+html.is-mobile .timeline-speed-slider {
+  width: clamp(140px, 42vw, 220px);
+  height: 18px;
+}
+
+html.is-mobile .timeline-speed-slider::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+}
+
+html.is-mobile .timeline-speed-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+}
+
+html.is-mobile .action-hud {
+  --action-hand-width-base: min(90vw, 420px);
+  --action-hand-fan-gap-factor: 0.24;
+  --action-hand-card-scale: 0.74;
+  --action-panel-width: min(210px, 45vw);
+  --action-center-right: 10px;
+  --action-center-bottom: calc(var(--action-hand-height) * 0.4);
+  --action-hand-modal-gap: 12px;
+}
+
+html.is-mobile .rotation-wheel {
+  width: clamp(138px, 30vw, 170px);
+}
+
+html.is-mobile .combo-modal,
+html.is-mobile .hand-trigger-modal {
+  width: min(420px, 96vw);
+  padding: 20px 18px;
+}
+
+html.is-mobile .discard-modal {
+  top: calc(var(--mobile-safe-top) + 10px);
+  width: min(420px, 96vw);
+}
+
+html.is-mobile .throw-arrow {
+  min-width: 34px;
+  min-height: 52px;
+}
+
+html.is-mobile .game-over-overlay {
+  bottom: calc(var(--mobile-safe-bottom) + 16px);
+}
+
+html.is-mobile .app-toast {
+  top: calc(var(--mobile-safe-top) + 10px);
+  right: 10px;
 }
 
 @media (max-width: 640px) {

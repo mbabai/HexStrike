@@ -33,6 +33,8 @@ This document defines the single source of truth for HexStrike's browser UI styl
 ## Interaction patterns
 - Inputs should use the shared focus ring from `public/theme.css`; keep outline and shadow consistent.
 - Hover/active states must be derived from the existing button transitions (translateY, glow, and border highlight).
+- Device-profile classes come from `public/shared/deviceProfile.js`; mobile/touch-specific styles should be scoped with `html.is-mobile` and `html.is-touch` to keep desktop behavior unchanged.
+- Mobile tap targets should be at least `var(--mobile-tap-target)` (44px) for primary controls (buttons, icon buttons, menu links, selects, and modal actions).
 
 ## Assets and motifs
 - Favor ornamental framing through borders, gradients, and glows rather than heavy image assets. When adding imagery, keep it color-corrected to the palette.

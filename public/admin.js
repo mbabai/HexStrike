@@ -1,3 +1,5 @@
+import { initDeviceProfile } from './shared/deviceProfile.js';
+
 const REFRESH_INTERVAL_MS = 2000;
 
 const connectedCount = document.getElementById('connectedCount');
@@ -99,5 +101,6 @@ const refresh = async () => {
   }
 };
 
+initDeviceProfile();
 refresh();
 window.setInterval(refresh, REFRESH_INTERVAL_MS);
