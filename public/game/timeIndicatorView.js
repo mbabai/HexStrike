@@ -18,8 +18,12 @@ const VISIBLE_BEAT_RADIUS = 6;
 const TIMELINE_OFFSETS = Array.from({ length: VISIBLE_BEAT_RADIUS * 2 + 1 }, (_, index) => index - VISIBLE_BEAT_RADIUS);
 const actionArt = new Map();
 const characterArt = new Map();
+const cardArt = new Map();
 const priorityIcon = new Image();
   priorityIcon.src = '/public/images/priority.png';
+const playedCardBackImage = new Image();
+  playedCardBackImage.src = '/public/images/CardBack.png';
+const playedCardRevealByActor = new Map();
 const PENDING_BLINK_MS = 700;
 const PREVIEW_PULSE_MS = 1400;
 const PREVIEW_ALPHA = 0.5;
@@ -43,6 +47,13 @@ const JUMP_ARROW_WIDTH_FACTOR = 0.74;
 const JUMP_ARROW_OVERLAP_FACTOR = 0.4;
 const THREE_PLAYER_TIMELINE_SCALE = 0.9;
 const FOUR_PLAYER_TIMELINE_SCALE = 0.75;
+const PLAYED_CARD_HEIGHT_FACTOR = 0.9;
+const PLAYED_CARD_ASPECT = 0.72;
+const PLAYED_CARD_GAP_FACTOR = 0.14;
+const PLAYED_CARD_PORTRAIT_GAP_FACTOR = 0.2;
+const PLAYED_CARD_HOVER_SCALE = 1;
+const PLAYED_CARD_FACE_DOWN_MS = 180;
+const PLAYED_CARD_FLIP_MS = 260;
 let timeIndicatorPlayerCount = 2;
 
 export const setTimeIndicatorPlayerCount = (playerCount) => {
@@ -77,6 +88,16 @@ const getCharacterArt = (characterId) => {
   const image = new Image();
   image.src = src;
   characterArt.set(characterId, image);
+  return image;
+};
+
+const getCardArt = (cardName) => {
+  const key = `${cardName ?? ''}`.trim();
+  if (!key) return null;
+  if (cardArt.has(key)) return cardArt.get(key);
+  const image = new Image();
+  image.src = `/public/images/cardart/${encodeURIComponent(key)}.jpg`;
+  cardArt.set(key, image);
   return image;
 };
 
@@ -394,6 +415,159 @@ const buildDrawLookup = (interactions, characters) => {
   return lookup;
 };
 
+const readCardId = (value) => `${value ?? ''}`.trim();
+
+const getBeatLookupEntry = (beatLookup, beatIndex, lookupKey) => {
+  if (!Array.isArray(beatLookup) || !lookupKey) return null;
+  if (!Number.isFinite(beatIndex) || beatIndex < 0 || beatIndex >= beatLookup.length) return null;
+  return beatLookup[beatIndex]?.get(lookupKey) ?? null;
+};
+
+const findPlayedCardSetStartIndex = (beatLookup, lookupKey, beatIndex, activeCardId, passiveCardId) => {
+  let earliest = beatIndex;
+  for (let index = beatIndex; index >= 0; index -= 1) {
+    const entry = getBeatLookupEntry(beatLookup, index, lookupKey);
+    if (!entry) continue;
+    const action = `${entry.action ?? ''}`.trim();
+    if (index !== beatIndex && action === DEFAULT_ACTION) break;
+    const entryActive = readCardId(entry.cardId);
+    const entryPassive = readCardId(entry.passiveCardId);
+    if ((entryActive && entryActive !== activeCardId) || (entryPassive && entryPassive !== passiveCardId)) {
+      break;
+    }
+    earliest = index;
+    const rotationSource = `${entry.rotationSource ?? ''}`.trim();
+    const rotation = `${entry.rotation ?? ''}`.trim();
+    if (rotationSource === 'selected' || (!rotationSource && rotation)) {
+      return index;
+    }
+  }
+  return earliest;
+};
+
+const resolvePlayedCardPairForBeat = (beatLookup, lookupKey, beatIndex) => {
+  const currentEntry = getBeatLookupEntry(beatLookup, beatIndex, lookupKey);
+  if (!currentEntry) return null;
+  const currentAction = `${currentEntry.action ?? ''}`.trim();
+  if (!currentAction || currentAction === ACTION_ICON_FALLBACK) return null;
+
+  let activeCardId = readCardId(currentEntry.cardId);
+  let passiveCardId = readCardId(currentEntry.passiveCardId);
+  if ((!activeCardId || !passiveCardId) && currentAction !== DEFAULT_ACTION) {
+    for (let index = beatIndex - 1; index >= 0; index -= 1) {
+      const previousEntry = getBeatLookupEntry(beatLookup, index, lookupKey);
+      if (!previousEntry) continue;
+      const previousAction = `${previousEntry.action ?? ''}`.trim();
+      if (previousAction === DEFAULT_ACTION) break;
+      if (!activeCardId) activeCardId = readCardId(previousEntry.cardId);
+      if (!passiveCardId) passiveCardId = readCardId(previousEntry.passiveCardId);
+      if (activeCardId && passiveCardId) break;
+    }
+  }
+
+  if (!activeCardId || !passiveCardId) return null;
+  const startIndex = findPlayedCardSetStartIndex(beatLookup, lookupKey, beatIndex, activeCardId, passiveCardId);
+  return {
+    activeCardId,
+    passiveCardId,
+    startIndex,
+    pairKey: `${activeCardId}:${passiveCardId}:${startIndex}`,
+  };
+};
+
+const buildPlayedCardPairLayout = ({ rowCenterY, rowHeight, portraitX, portraitRadius }) => {
+  if (!Number.isFinite(rowCenterY) || !Number.isFinite(rowHeight) || !Number.isFinite(portraitX) || !Number.isFinite(portraitRadius)) {
+    return null;
+  }
+  const cardHeight = Math.max(16, rowHeight * PLAYED_CARD_HEIGHT_FACTOR);
+  const cardWidth = cardHeight * PLAYED_CARD_ASPECT;
+  const cardGap = Math.max(2, cardHeight * PLAYED_CARD_GAP_FACTOR);
+  const portraitGap = Math.max(3, cardHeight * PLAYED_CARD_PORTRAIT_GAP_FACTOR);
+  const pairWidth = cardWidth * 2 + cardGap;
+  const rightEdge = portraitX - portraitRadius - portraitGap;
+  const leftEdge = Math.max(2, rightEdge - pairWidth);
+  const y = rowCenterY - cardHeight / 2;
+  const activeBounds = { x: leftEdge, y, width: cardWidth, height: cardHeight };
+  const passiveBounds = { x: leftEdge + cardWidth + cardGap, y, width: cardWidth, height: cardHeight };
+  return { cardWidth, cardHeight, activeBounds, passiveBounds };
+};
+
+const getScaledRect = (rect, scale = 1) => {
+  if (!rect || !Number.isFinite(scale) || scale <= 0) return rect;
+  const width = rect.width * scale;
+  const height = rect.height * scale;
+  return {
+    x: rect.x + (rect.width - width) / 2,
+    y: rect.y + (rect.height - height) / 2,
+    width,
+    height,
+  };
+};
+
+const getPlayedCardHoverSlot = (pairLayout, pointer) => {
+  if (!pairLayout || !pointer || !Number.isFinite(pointer.x) || !Number.isFinite(pointer.y)) return null;
+  const activeHoverBounds = getScaledRect(pairLayout.activeBounds, PLAYED_CARD_HOVER_SCALE);
+  const passiveHoverBounds = getScaledRect(pairLayout.passiveBounds, PLAYED_CARD_HOVER_SCALE);
+  const activeHit = isPointInRect(pointer.x, pointer.y, activeHoverBounds);
+  const passiveHit = isPointInRect(pointer.x, pointer.y, passiveHoverBounds);
+  if (activeHit && passiveHit) {
+    const activeCenter = {
+      x: pairLayout.activeBounds.x + pairLayout.activeBounds.width / 2,
+      y: pairLayout.activeBounds.y + pairLayout.activeBounds.height / 2,
+    };
+    const passiveCenter = {
+      x: pairLayout.passiveBounds.x + pairLayout.passiveBounds.width / 2,
+      y: pairLayout.passiveBounds.y + pairLayout.passiveBounds.height / 2,
+    };
+    const activeDistance = Math.hypot(pointer.x - activeCenter.x, pointer.y - activeCenter.y);
+    const passiveDistance = Math.hypot(pointer.x - passiveCenter.x, pointer.y - passiveCenter.y);
+    return activeDistance <= passiveDistance ? 'active' : 'passive';
+  }
+  if (activeHit) return 'active';
+  if (passiveHit) return 'passive';
+  return null;
+};
+
+const prunePlayedCardRevealState = (activeActorKeys) => {
+  const keep = activeActorKeys instanceof Set ? activeActorKeys : new Set();
+  playedCardRevealByActor.forEach((_, key) => {
+    if (!keep.has(key)) {
+      playedCardRevealByActor.delete(key);
+    }
+  });
+};
+
+const clearPlayedCardRevealState = (actorKey) => {
+  if (!actorKey) return;
+  playedCardRevealByActor.delete(actorKey);
+};
+
+const getPlayedCardRevealState = (actorKey, pairKey, now) => {
+  if (!actorKey || !pairKey) return null;
+  const currentTime = Number.isFinite(now) ? now : performance.now();
+  const existing = playedCardRevealByActor.get(actorKey);
+  if (!existing || existing.pairKey !== pairKey) {
+    const created = { pairKey, startTime: currentTime };
+    playedCardRevealByActor.set(actorKey, created);
+    return { phase: 'back', flipScaleX: 1 };
+  }
+  const elapsed = Math.max(0, currentTime - existing.startTime);
+  if (elapsed < PLAYED_CARD_FACE_DOWN_MS) {
+    return { phase: 'back', flipScaleX: 1 };
+  }
+  const flipElapsed = elapsed - PLAYED_CARD_FACE_DOWN_MS;
+  if (flipElapsed < PLAYED_CARD_FLIP_MS) {
+    const t = flipElapsed / PLAYED_CARD_FLIP_MS;
+    if (t < 0.5) {
+      const localT = t / 0.5;
+      return { phase: 'back', flipScaleX: Math.max(0.06, 1 - localT) };
+    }
+    const localT = (t - 0.5) / 0.5;
+    return { phase: 'front', flipScaleX: Math.max(0.06, localT) };
+  }
+  return { phase: 'front', flipScaleX: 1 };
+};
+
 export const getTimeIndicatorLayout = (viewport) => {
   const padding = viewport.width < 520 ? 8 : 12;
   const speedControlHeight = viewport.width < 520 ? 26 : 30;
@@ -554,6 +728,37 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
     const rowCenterY = row.numberArea.y + row.numberArea.height / 2;
     const iconSize = Math.min(row.numberArea.height * 0.82, spacing * 0.8);
     const lookupKey = character.username ?? character.userId;
+    const portraitRadius = layout.portraitSize / 2;
+    const portraitX = layout.x - portraitRadius + layout.portraitOverlap;
+    const playedPair = resolvePlayedCardPairForBeat(beatLookup, lookupKey, value);
+    const playedPairLayout =
+      playedPair && lookupKey
+        ? buildPlayedCardPairLayout({
+            rowCenterY,
+            rowHeight: row.numberArea.height,
+            portraitX,
+            portraitRadius,
+          })
+        : null;
+    const playedSlot =
+      playedPairLayout && playedPair ? getPlayedCardHoverSlot(playedPairLayout, { x, y }) : null;
+    if (playedPair && playedPairLayout && playedSlot) {
+      const bounds = playedSlot === 'passive' ? playedPairLayout.passiveBounds : playedPairLayout.activeBounds;
+      return {
+        kind: 'played-card',
+        beatIndex: value,
+        character,
+        cardRole: playedSlot,
+        cardId: playedSlot === 'passive' ? playedPair.passiveCardId : playedPair.activeCardId,
+        activeCardId: playedPair.activeCardId,
+        passiveCardId: playedPair.passiveCardId,
+        center: {
+          x: bounds.x + bounds.width / 2,
+          y: bounds.y + bounds.height / 2,
+        },
+        size: Math.max(bounds.width, bounds.height),
+      };
+    }
     for (let offsetIndex = 0; offsetIndex < offsets.length; offsetIndex += 1) {
       const offset = offsets[offsetIndex];
       const beatIndex = value + offset;
@@ -696,7 +901,17 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
   return null;
 };
 
-export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, localUserId, pendingPreview) => {
+export const drawTimeIndicator = (
+  ctx,
+  viewport,
+  theme,
+  viewModel,
+  gameState,
+  localUserId,
+  pendingPreview,
+  cardLookup = null,
+  timelinePointer = null,
+) => {
   const publicState = gameState?.state?.public ?? null;
   const characters = gameState?.state?.public?.characters ?? [];
   setTimeIndicatorPlayerCount(characters.length || 2);
@@ -706,6 +921,7 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
   ctx.setTransform(viewport.dpr, 0, 0, viewport.dpr, 0, 0);
 
   const value = viewModel?.value ?? 0;
+  const renderNow = performance.now();
   const isPlaying = Boolean(viewModel?.isPlaying);
   const leftDisabled = viewModel?.canStep ? !viewModel.canStep(-1) : value === 0;
   const rightDisabled = viewModel?.canStep ? !viewModel.canStep(1) : false;
@@ -794,7 +1010,17 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
     drawDoubleArrow(ctx, topRow.rightJumpArrow, 'right', arrowColor, rightDisabled ? 0.35 : 0.95);
   }
 
-  if (!characters.length) return;
+  if (!characters.length) {
+    playedCardRevealByActor.clear();
+    return;
+  }
+  prunePlayedCardRevealState(
+    new Set(
+      characters
+        .map((character) => character?.username ?? character?.userId)
+        .filter((key) => typeof key === 'string' && key.trim()),
+    ),
+  );
   const beatLookup = beats.map((beat) => {
     const map = new Map();
     if (!Array.isArray(beat)) return map;
@@ -821,6 +1047,21 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
     const rowSpacing = spacing;
     const iconSize = Math.min(row.numberArea.height * 0.82, rowSpacing * 0.8);
     const lookupKey = character.username ?? character.userId;
+    const portraitRadius = layout.portraitSize / 2;
+    const portraitX = layout.x - portraitRadius + layout.portraitOverlap;
+    const portraitY = row.y + layout.actionHeight / 2;
+    const playedPair = resolvePlayedCardPairForBeat(beatLookup, lookupKey, value);
+    const playedPairLayout =
+      playedPair && lookupKey
+        ? buildPlayedCardPairLayout({
+            rowCenterY,
+            rowHeight: row.numberArea.height,
+            portraitX,
+            portraitRadius,
+          })
+        : null;
+    const hoveredPlayedSlot =
+      playedPairLayout && timelinePointer ? getPlayedCardHoverSlot(playedPairLayout, timelinePointer) : null;
 
     offsets.forEach((offset) => {
       const beatIndex = value + offset;
@@ -960,9 +1201,21 @@ export const drawTimeIndicator = (ctx, viewport, theme, viewModel, gameState, lo
       }
     });
 
-    const portraitRadius = layout.portraitSize / 2;
-    const portraitX = layout.x - portraitRadius + layout.portraitOverlap;
-    const portraitY = row.y + layout.actionHeight / 2;
+    if (playedPair && playedPairLayout && lookupKey) {
+      drawPlayedCardPair(
+        ctx,
+        playedPairLayout,
+        playedPair,
+        lookupKey,
+        cardLookup,
+        theme,
+        renderNow,
+        hoveredPlayedSlot,
+      );
+    } else {
+      clearPlayedCardRevealState(lookupKey);
+    }
+
     const portraitImage = getCharacterArt(character.characterId);
     const isLocalPlayer = localUserId && character.userId === localUserId;
     const isWaiting =
@@ -1267,6 +1520,130 @@ const drawMovementPickupCards = (
       alpha,
     );
   });
+};
+
+const drawPlayedCardBack = (ctx, x, y, width, height, theme) => {
+  const radius = Math.max(2, height * 0.08);
+  ctx.save();
+  drawRoundedRect(ctx, x, y, width, height, radius);
+  ctx.clip();
+  if (playedCardBackImage.complete && playedCardBackImage.naturalWidth > 0) {
+    ctx.drawImage(playedCardBackImage, x, y, width, height);
+  } else {
+    ctx.fillStyle = theme.panelStrong || '#1a1a1a';
+    ctx.fillRect(x, y, width, height);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
+    drawRoundedRect(ctx, x + width * 0.08, y + height * 0.12, width * 0.84, height * 0.22, radius * 0.8);
+    ctx.fill();
+  }
+  ctx.restore();
+  ctx.save();
+  ctx.strokeStyle = theme.panelStrong || theme.textDark || '#000000';
+  ctx.lineWidth = Math.max(1, height * 0.06);
+  drawRoundedRect(ctx, x, y, width, height, radius);
+  ctx.stroke();
+  ctx.restore();
+};
+
+const drawImageCover = (ctx, image, x, y, width, height) => {
+  if (!image || !image.complete || image.naturalWidth === 0 || image.naturalHeight === 0) return false;
+  const imageAspect = image.naturalWidth / image.naturalHeight;
+  const boxAspect = width / height;
+  let srcX = 0;
+  let srcY = 0;
+  let srcWidth = image.naturalWidth;
+  let srcHeight = image.naturalHeight;
+  if (imageAspect > boxAspect) {
+    srcWidth = image.naturalHeight * boxAspect;
+    srcX = (image.naturalWidth - srcWidth) / 2;
+  } else {
+    srcHeight = image.naturalWidth / boxAspect;
+    srcY = (image.naturalHeight - srcHeight) / 2;
+  }
+  ctx.drawImage(image, srcX, srcY, srcWidth, srcHeight, x, y, width, height);
+  return true;
+};
+
+const drawPlayedCardArt = (ctx, x, y, width, height, card, cardId, theme, isHovered = false) => {
+  const radius = Math.max(2, height * 0.08);
+  const fallbackFill = theme.panelStrong || '#1a1a1a';
+  const borderColor = isHovered
+    ? theme.accentStrong || theme.accent || '#d5a34a'
+    : theme.panelStrong || theme.textDark || '#000000';
+  const cardName = `${card?.name ?? cardId ?? ''}`.trim();
+  const artImage = getCardArt(cardName);
+
+  ctx.save();
+  ctx.fillStyle = fallbackFill;
+  drawRoundedRect(ctx, x, y, width, height, radius);
+  ctx.fill();
+  ctx.clip();
+  const drewArt = drawImageCover(ctx, artImage, x, y, width, height);
+  if (!drewArt) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+    drawRoundedRect(ctx, x + width * 0.08, y + height * 0.08, width * 0.84, height * 0.18, radius * 0.7);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = Math.max(1, height * (isHovered ? 0.085 : 0.06));
+  drawRoundedRect(ctx, x, y, width, height, radius);
+  ctx.stroke();
+  ctx.restore();
+};
+
+const drawPlayedCardPair = (
+  ctx,
+  pairLayout,
+  playedPair,
+  actorKey,
+  cardLookup,
+  theme,
+  now,
+  hoveredSlot = null,
+) => {
+  if (!pairLayout || !playedPair || !actorKey) {
+    clearPlayedCardRevealState(actorKey);
+    return;
+  }
+
+  const reveal = getPlayedCardRevealState(actorKey, playedPair.pairKey, now);
+  const activeCard = cardLookup?.get?.(playedPair.activeCardId) ?? null;
+  const passiveCard = cardLookup?.get?.(playedPair.passiveCardId) ?? null;
+
+  const drawSlot = (bounds, card, cardId, isHovered = false) => {
+    const centerX = bounds.x + bounds.width / 2;
+    const centerY = bounds.y + bounds.height / 2;
+    const flipScale = reveal?.flipScaleX ?? 1;
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.scale(flipScale, 1);
+    const drawX = -bounds.width / 2;
+    const drawY = -bounds.height / 2;
+    const cardWidth = bounds.width;
+    const cardHeight = bounds.height;
+    if (reveal?.phase === 'front') {
+      drawPlayedCardArt(ctx, drawX, drawY, cardWidth, cardHeight, card, cardId, theme, isHovered);
+    } else {
+      drawPlayedCardBack(ctx, drawX, drawY, cardWidth, cardHeight, theme);
+    }
+    ctx.restore();
+  };
+
+  if (hoveredSlot === 'active') {
+    drawSlot(pairLayout.passiveBounds, passiveCard, playedPair.passiveCardId);
+    drawSlot(pairLayout.activeBounds, activeCard, playedPair.activeCardId, true);
+    return;
+  }
+  if (hoveredSlot === 'passive') {
+    drawSlot(pairLayout.activeBounds, activeCard, playedPair.activeCardId);
+    drawSlot(pairLayout.passiveBounds, passiveCard, playedPair.passiveCardId, true);
+    return;
+  }
+  drawSlot(pairLayout.activeBounds, activeCard, playedPair.activeCardId);
+  drawSlot(pairLayout.passiveBounds, passiveCard, playedPair.passiveCardId);
 };
 
 const drawRotationBadge = (ctx, x, y, size, rotation, theme) => {

@@ -300,6 +300,7 @@ export const initGame = () => {
   let handTriggerPrompt = null;
   let tutorialGuide = null;
   let havenHoverKey = null;
+  let timelinePointer = null;
   let gameMenuUi = null;
   let nextAutoAdvanceAt = null;
   let viewMode = null;
@@ -1728,6 +1729,7 @@ export const initGame = () => {
     pendingInteractionId = null;
     pendingInteractionType = null;
     clearHavenHover();
+    timelinePointer = null;
     interactionSubmitInFlight = false;
     gameOverInFlight = false;
     shareLinkInFlight = false;
@@ -1859,10 +1861,13 @@ export const initGame = () => {
   bindControls(canvas, viewState, pointerState, undefined, timeIndicatorViewModel, gameArea);
 
   canvas.addEventListener('pointermove', (event) => {
+    const rect = canvas.getBoundingClientRect();
+    timelinePointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
     tooltip.update(event);
     updateHavenHoverFromPointer(event);
   });
   canvas.addEventListener('pointerleave', () => {
+    timelinePointer = null;
     tooltip.hide();
     clearHavenHover();
   });
@@ -2007,6 +2012,8 @@ export const initGame = () => {
       localUserId,
       pendingPreview,
       interactionHighlightState,
+      cardLookup,
+      timelinePointer,
     );
     requestAnimationFrame(renderFrame);
   };

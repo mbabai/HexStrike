@@ -758,7 +758,17 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     }
   };
 
-  const draw = (viewState, gameState, timeIndicatorViewModel, scene, localUserId, pendingPreview, interactionOverlayState = null) => {
+  const draw = (
+    viewState,
+    gameState,
+    timeIndicatorViewModel,
+    scene,
+    localUserId,
+    pendingPreview,
+    interactionOverlayState = null,
+    cardLookup = null,
+    timelinePointer = null,
+  ) => {
     if (!viewport.width || !viewport.height) return;
     const size = getHexSize(viewport.width, config.hexSizeFactor);
     const bounds = getWorldBounds(viewport, viewState);
@@ -798,7 +808,17 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     });
 
     if (!land.length) {
-      drawTimeIndicator(ctx, viewport, theme, timeIndicatorViewModel, gameState, localUserId, pendingPreview);
+      drawTimeIndicator(
+        ctx,
+        viewport,
+        theme,
+        timeIndicatorViewModel,
+        gameState,
+        localUserId,
+        pendingPreview,
+        cardLookup,
+        timelinePointer,
+      );
       return;
     }
 
@@ -934,7 +954,17 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
       });
     }
 
-    drawTimeIndicator(ctx, viewport, theme, timeIndicatorViewModel, gameState, localUserId, pendingPreview);
+    drawTimeIndicator(
+      ctx,
+      viewport,
+      theme,
+      timeIndicatorViewModel,
+      gameState,
+      localUserId,
+      pendingPreview,
+      cardLookup,
+      timelinePointer,
+    );
   };
 
   return { resize, draw, viewport };

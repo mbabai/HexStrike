@@ -141,6 +141,24 @@ const buildCardMetadata = (catalog) => {
   return { list, byId };
 };
 
+const parseCssNumber = (value) => {
+  const parsed = Number.parseFloat(`${value ?? ''}`.trim());
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const getHandCardPreviewScale = () => {
+  const hud = document.getElementById('actionHud');
+  if (!hud) return 0.67;
+  const styles = getComputedStyle(hud);
+  const direct = parseCssNumber(styles.getPropertyValue('--action-card-scale'));
+  if (direct && direct > 0) return direct;
+  const base = parseCssNumber(styles.getPropertyValue('--action-card-scale-base'));
+  if (base && base > 0) return base;
+  const gameScale = parseCssNumber(styles.getPropertyValue('--action-card-game-scale'));
+  if (gameScale && gameScale > 0) return gameScale;
+  return 0.67;
+};
+
 const findActionSetStartIndex = (beats, character, beatIndex) => {
   if (!Array.isArray(beats) || !character) return null;
   for (let i = beatIndex; i >= 0; i -= 1) {
@@ -468,7 +486,8 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     return false;
   };
 
-  const renderCardPreview = (cards) => {
+  const renderCardPreview = (cards, options = {}) => {
+    const previewScale = Number.isFinite(options?.scale) && options.scale > 0 ? options.scale : 0.42;
     const list = Array.isArray(cards) ? cards.filter(Boolean) : [];
     cardPreview.textContent = '';
     if (!list.length) {
@@ -478,7 +497,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     }
     list.forEach((card) => {
       const preview = buildCardElement(card, { asButton: false, className: 'timeline-tooltip-card' });
-      preview.style.setProperty('--action-card-scale', '0.42');
+      preview.style.setProperty('--action-card-scale', `${previewScale}`);
       cardPreview.appendChild(preview);
     });
     fitAllCardText(cardPreview);
@@ -578,6 +597,40 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
         const hasCharacterPower = renderCharacterPowerSection(characterPowerDetails);
         const hasFocus = renderFocusSection('Focus', focusLine);
         divider.hidden = !(hasCharacterPower || hasFocus);
+        lastTooltipKey = key;
+      }
+      tooltip.hidden = false;
+      positionTooltip(target.center.x, target.center.y);
+      return;
+    }
+    if (target.kind === 'played-card') {
+      const cardId = target.cardId ? `${target.cardId}`.trim() : '';
+      const card = cardId ? cardMetadata.byId.get(cardId) : null;
+      if (!card) {
+        hide();
+        return;
+      }
+      const roleLabel = target.cardRole === 'passive' ? 'Passive' : 'Active';
+      const titleText = `${roleLabel}: ${card.name ?? cardId}`.trim();
+      const attackStatsLine = buildAttackStatsLine(card);
+      const previewScale = getHandCardPreviewScale();
+      const key = [
+        'played-card',
+        cardId,
+        target.cardRole ?? '',
+        target.beatIndex,
+        attackStatsLine,
+        previewScale.toFixed(3),
+      ].join(':');
+      if (key !== lastTooltipKey) {
+        title.textContent = titleText;
+        title.hidden = !titleText;
+        renderAttackStats(attackStatsLine);
+        renderStatus('');
+        instruction.hidden = true;
+        instruction.textContent = '';
+        clearSupplementalSections({ hideDivider: true });
+        renderCardPreview([card], { scale: previewScale });
         lastTooltipKey = key;
       }
       tooltip.hidden = false;
