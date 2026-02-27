@@ -1002,23 +1002,7 @@ test('executeBeats spawns a bow shot arrow on X1', () => {
   assert.equal(tokens[0].facing, 180);
 });
 
-test('executeBeats passive bow-shot spawns an arrow on exact m movement', () => {
-  const characters = [
-    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
-  ];
-
-  const beats = [[buildEntry('alpha', 'm', 20, characters[0].position, characters[0].facing, 'R1')]];
-  beats[0][0].cardId = 'step';
-  beats[0][0].passiveCardId = 'bow-shot';
-  beats[0][0].rotationSource = 'selected';
-
-  const result = executeBeats(beats, characters);
-  const arrows = (result.boardTokens || []).filter((token) => token.type === 'arrow');
-
-  assert.equal(arrows.length, 1);
-});
-
-test('executeBeats passive bow-shot ignores non-exact movement tokens', () => {
+test('executeBeats passive bow-shot spawns an arrow on the original hex for successful move tokens', () => {
   const runBeat = (action) => {
     const characters = [
       { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
@@ -1033,10 +1017,27 @@ test('executeBeats passive bow-shot ignores non-exact movement tokens', () => {
     return (result.boardTokens || []).filter((token) => token.type === 'arrow');
   };
 
-  ['2m', 'Bm'].forEach((action) => {
+  ['m', '2m', 'Bm'].forEach((action) => {
     const arrows = runBeat(action);
-    assert.equal(arrows.length, 0, `Expected no passive bow-shot arrows for ${action}`);
+    assert.equal(arrows.length, 1, `Expected one passive bow-shot arrow for ${action}`);
+    assert.deepEqual(arrows[0].position, { q: 0, r: 0 });
   });
+});
+
+test('executeBeats passive bow-shot ignores non-movement tokens', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+  ];
+
+  const beats = [[buildEntry('alpha', '2j', 20, characters[0].position, characters[0].facing, 'R1')]];
+  beats[0][0].cardId = 'step';
+  beats[0][0].passiveCardId = 'bow-shot';
+  beats[0][0].rotationSource = 'selected';
+
+  const result = executeBeats(beats, characters);
+  const arrows = (result.boardTokens || []).filter((token) => token.type === 'arrow');
+
+  assert.equal(arrows.length, 0);
 });
 
 test('executeBeats moves bow shot arrows and applies damage on hit', () => {
@@ -1067,11 +1068,11 @@ test('executeBeats moves bow shot arrows and applies damage on hit', () => {
   assert.equal((result.boardTokens || []).length, 0);
 });
 
-test('executeBeats resolves existing arrows before movement actions', () => {
+test('executeBeats resolves existing arrows before lower-priority movement actions', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
   ];
-  const beats = [[buildEntry('alpha', 'm', 20, characters[0].position, characters[0].facing)]];
+  const beats = [[buildEntry('alpha', 'm', 90, characters[0].position, characters[0].facing)]];
   const boardTokens = [
     { id: 'arrow:0', type: 'arrow', position: { q: 1, r: 0 }, facing: 0, ownerUserId: 'beta' },
   ];
@@ -1178,7 +1179,7 @@ test('executeBeats lets parry block existing arrows without scheduling a parry c
   ];
   const beats = [
     [
-      buildEntry('alpha', '[b]', 20, characters[0].position, characters[0].facing),
+      buildEntry('alpha', '[b]', 120, characters[0].position, characters[0].facing),
       buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
     ],
     [

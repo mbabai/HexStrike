@@ -212,7 +212,7 @@
       "damage": 0,
       "kbf": 0,
       "activeText": "{X1}: Place one arrow in front of you facing the direction you are.",
-      "passiveText": "If you rotated by 1 or 2, place an arrow facing your original direction on every {m} on the original side you were facing, after the {m} is completed."
+      "passiveText": "If you rotated by 1 or 2, place an arrow facing your original direction after each successful move, on the original hex you were on."
     },
     {
       "id": "burning-strike",
@@ -844,7 +844,7 @@
       "movement": [
         "step",
         "dash",
-        "backflip",
+        "advance",
         "leap"
       ],
       "ability": [

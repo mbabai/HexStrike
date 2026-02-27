@@ -7,6 +7,9 @@
 ## Symbol matching rule
 - Card-text placeholders like `{a}`, `{m}`, and `{W}` should match exact action symbols by default.
 - Use type-wide matching only when text explicitly names a general category (for example "attacks", "movement", or "jumps").
+- Movement indications are split into two forms:
+  - Symbol form (for example `{m}`, `{2j}`, `{c}`) targets that exact token/effect anchor.
+  - Word form (`move`/`movement`) is category-wide and includes all movement-style relocation tokens (movement, jump, and charge variants).
 
 ## Rotation injections
 - `rotationSource` marks where a rotation comes from:
@@ -27,7 +30,8 @@
 - Fleche passive: remove the final `{W}` from the active ability action list when an exact `{a}` token appears before it (for example `a` or `2a-a`, but not `2a` alone).
 - Ninja Roll passive: only `{a}` (or `[a]`) becomes `{a-La-Ra}`; other attack tokens are unchanged. Halve damage/KBF (rounded down) on the affected step.
 - Grappling Hook passive: when an exact `{a}` lands, flip the target to the opposite side of the attacker and knock them further in that direction (execution + playback).
-- `{m}` symbol passives: Burning Strike fire, Bow Shot arrow spawns, and Gigantic Staff abyss conversion only trigger on exact `m`.
+- `{m}` symbol passives: Burning Strike fire and Gigantic Staff abyss conversion only trigger on exact `m`.
+- Bow Shot passive arrow spawns trigger on any successful movement token (`m` type, including `m`/`2m`/`Bm`) and spawn on the mover's pre-move hex.
 - In code: Fleche/Ninja Roll are in `applyPassiveMovementCardText` (`src/game/cardText/passiveMovement.ts` and `public/game/cardText/passiveMovement.js`); Grappling Hook passive is handled in `src/game/execute.ts` + `public/game/timelinePlayback.js`.
 
 ## Combat modifiers

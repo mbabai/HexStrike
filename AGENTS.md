@@ -158,7 +158,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Stab active rear bonus applies when the attacker is on any rear arc (`B`, `LB`, or `RB` of target), not only exact `B`; keep `isBehindTarget` in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized.
 - Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.
 - Arrow/projectile hits must respect block walls; client token playback derives block lookups from block effects to stop arrows on blocks.
-- Existing arrows resolve/move before beat action tokens; keep this phase order synchronized between `src/game/execute.ts` and `public/game/timelinePlayback.js` so movement-through-arrow and jump-landing outcomes match.
+- Existing arrows resolve/move after entries with `priority > 95` and before entries with `priority <= 95`; keep this phase split synchronized between `src/game/execute.ts` and `public/game/timelinePlayback.js` so block/movement-through-arrow outcomes match.
 - Movement/charge should check arrow collisions step-by-step on traversed hexes, while jumps only check the landing hex; keep both server and client token playback behavior in sync.
 - Board tokens live in `public.boardTokens`; `executeBeatsWithInteractions` rebuilds fire/arrow tokens from beats, moves only pre-existing arrows each beat, and applies fire damage after arrow resolution.
 - Server re-execution must seed token playback from timeline state (empty replay seed today), not from the latest `public.boardTokens`, or historical beats will be contaminated by future fire/arrow tokens.
@@ -190,7 +190,8 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - The combo modal is filtered to the actor's beat entry by userId/username; keep interaction actor resolution aligned with roster identifiers.
 - Cards can opt out of throw keyword detection by id (e.g., `grappling-hook`).
 - Grappling Hook uses `cardStartTerrain` plus adjacency to gate its conditional throw (throw only if the action set started on land and the hit target is directly adjacent on the `{c}` beat), and its `{i}` bracketed charge stops at the first land tile or target in front.
-- `{m}` symbol effects (Burning Strike passive fire, Bow Shot passive arrows, Gigantic Staff abyss conversion) only trigger on exact `m` tokens; do not trigger from `2m`/`Bm`.
+- `{m}` symbol effects: Burning Strike passive fire and Gigantic Staff abyss conversion only trigger on exact `m` tokens; do not trigger from `2m`/`Bm`.
+- Bow Shot passive arrows trigger on any successful movement token (`m` type, including `m`/`2m`/`Bm`) and spawn on the mover's pre-move hex.
 - Grappling Hook passive flips landed exact `{a}` hits to the opposite side of the attacker before knockback; keep the inversion logic in sync between `src/game/execute.ts` and `public/game/timelinePlayback.js`.
 - Pending throw interactions must surface the throw modal even if the beat is already resolved; don't filter throws by resolved index in the UI selector.
 - Skipped combos keep the `Co` symbol on the timeline and are marked with `comboSkipped` for UI greying; do not replace with `W`.

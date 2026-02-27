@@ -49,6 +49,7 @@ const FOCUS_ANCHOR_TOKEN_TYPE = 'focus-anchor';
 const ARROW_DAMAGE = 4;
 const ARROW_KBF = 1;
 const ARROW_LAND_DISTANCE_LIMIT = 5;
+const ARROW_PRIORITY = 95;
 const HAVEN_PLATFORM_INTERACTION_TYPE = 'haven-platform';
 const GUARD_CONTINUE_INTERACTION_TYPE = 'guard-continue';
 const REWIND_FOCUS_INTERACTION_TYPE = 'rewind-focus';
@@ -101,6 +102,22 @@ const AXIAL_DIRECTIONS = [
   { q: -1, r: 1 },
   { q: 0, r: 1 },
 ];
+
+const getEntryPriority = (entry: { priority?: number }) =>
+  Number.isFinite(entry.priority) ? Number(entry.priority) : 0;
+
+const partitionEntriesByArrowPriority = <T extends { priority?: number }>(entries: T[]) => {
+  const highPriorityEntries: T[] = [];
+  const lowPriorityEntries: T[] = [];
+  entries.forEach((entry) => {
+    if (getEntryPriority(entry) > ARROW_PRIORITY) {
+      highPriorityEntries.push(entry);
+      return;
+    }
+    lowPriorityEntries.push(entry);
+  });
+  return { highPriorityEntries, lowPriorityEntries };
+};
 
 const normalizeDegrees = (value: number) => {
   const normalized = ((value % 360) + 360) % 360;
@@ -3413,46 +3430,20 @@ export const executeBeatsWithInteractions = (
           knockedSteps,
           counter.defenderId || undefined,
         );
-          if (
-            counter.defenderId &&
-            counter.defenderId !== counter.attackerId &&
-            hasHammerPassive
-          ) {
-            const defenderState = state.get(counter.defenderId);
-            const reflected = applyCharacterDamage(counter.defenderId, 2);
-            if (defenderState && reflected > 0) {
-              recordHitConsequence(counter.defenderId, index, defenderState, reflected, 0, counter.attackerId);
+        if (
+          counter.defenderId &&
+          counter.defenderId !== counter.attackerId &&
+          hasHammerPassive
+        ) {
+          const defenderState = state.get(counter.defenderId);
+          const reflected = applyCharacterDamage(counter.defenderId, 2);
+          if (defenderState && reflected > 0) {
+            recordHitConsequence(counter.defenderId, index, defenderState, reflected, 0, counter.attackerId);
           }
         }
         disabledActors.add(counter.attackerId);
       });
       parryCountersByBeat.delete(index);
-    }
-    if (existingArrowIds.size) {
-      const nextTokens: BoardToken[] = [];
-      boardTokens.forEach((token) => {
-        if (token.type !== ARROW_TOKEN_TYPE) {
-          nextTokens.push(token);
-          return;
-        }
-        if (!existingArrowIds.has(token.id)) {
-          nextTokens.push(token);
-          return;
-        }
-        const forward = applyFacingToVector(LOCAL_DIRECTIONS.F, token.facing);
-        const nextPosition = { q: token.position.q + forward.q, r: token.position.r + forward.r };
-        const targetId = occupancy.get(coordKey(nextPosition));
-        if (targetId) {
-          resolveArrowHit(targetId, token.ownerUserId ?? '', forward, { preserveAction: false, requestRerun: false });
-          return;
-        }
-        const distance = getDistanceToLand(nextPosition, landTiles);
-        if (distance >= ARROW_LAND_DISTANCE_LIMIT) {
-          return;
-        }
-        nextTokens.push({ ...token, position: { q: nextPosition.q, r: nextPosition.r } });
-      });
-      boardTokens.splice(0, boardTokens.length, ...nextTokens);
     }
     const ordered = beat
       .slice()
@@ -3477,7 +3468,38 @@ export const executeBeatsWithInteractions = (
       burningStrikeBeatData.set(actorId, current);
     };
 
-    ordered.forEach((entry) => {
+    const resolveExistingArrows = () => {
+      if (!existingArrowIds.size) return;
+      const nextTokens: BoardToken[] = [];
+      boardTokens.forEach((token) => {
+        if (token.type !== ARROW_TOKEN_TYPE) {
+          nextTokens.push(token);
+          return;
+        }
+        if (!existingArrowIds.has(token.id)) {
+          nextTokens.push(token);
+          return;
+        }
+        const forward = applyFacingToVector(LOCAL_DIRECTIONS.F, token.facing);
+        const nextPosition = { q: token.position.q + forward.q, r: token.position.r + forward.r };
+        const targetId = occupancy.get(coordKey(nextPosition));
+        if (targetId) {
+          resolveArrowHit(targetId, token.ownerUserId ?? '', forward, {
+            preserveAction: false,
+            requestRerun: false,
+          });
+          return;
+        }
+        const distance = getDistanceToLand(nextPosition, landTiles);
+        if (distance >= ARROW_LAND_DISTANCE_LIMIT) {
+          return;
+        }
+        nextTokens.push({ ...token, position: { q: nextPosition.q, r: nextPosition.r } });
+      });
+      boardTokens.splice(0, boardTokens.length, ...nextTokens);
+    };
+
+    const processOrderedEntry = (entry: BeatEntry) => {
       const actorId = userLookup.get(resolveEntryKey(entry));
       if (!actorId) return;
       if (disabledActors.has(actorId)) return;
@@ -4155,6 +4177,7 @@ export const executeBeatsWithInteractions = (
         }
 
         if (token.type === 'm' || token.type === 'c') {
+          const moveStartPosition = { q: actorState.position.q, r: actorState.position.r };
           let finalPosition = origin;
           let blockedBy: string | null = null;
           for (const stepPosition of positions) {
@@ -4190,12 +4213,12 @@ export const executeBeatsWithInteractions = (
             actorState.position = { q: finalPosition.q, r: finalPosition.r };
             occupancy.set(coordKey(actorState.position), actorId);
           }
-          if (!interruptedByArrow && isExactActionSymbolToken(token, 'm') && !sameCoord(finalPosition, origin)) {
-            if (entry.passiveCardId === BURNING_STRIKE_CARD_ID) {
-              queueDelayedPassiveFireHex(index + 1, origin, actorId);
+          if (!interruptedByArrow && token.type === 'm' && !sameCoord(finalPosition, moveStartPosition)) {
+            if (entry.passiveCardId === BURNING_STRIKE_CARD_ID && isExactActionSymbolToken(token, 'm')) {
+              queueDelayedPassiveFireHex(index + 1, moveStartPosition, actorId);
             }
             if (entry.passiveCardId === BOW_SHOT_CARD_ID && (rotationMagnitude === 1 || rotationMagnitude === 2)) {
-              spawnArrowToken(finalPosition, actionSetFacing, actorId);
+              spawnArrowToken(moveStartPosition, actionSetFacing, actorId);
             }
           }
         }
@@ -4217,7 +4240,13 @@ export const executeBeatsWithInteractions = (
       }
 
       executedActors.add(actorId);
-    });
+    };
+
+    const { highPriorityEntries, lowPriorityEntries } = partitionEntriesByArrowPriority(ordered);
+
+    highPriorityEntries.forEach(processOrderedEntry);
+    resolveExistingArrows();
+    lowPriorityEntries.forEach(processOrderedEntry);
 
     updatedInteractions.forEach((interaction) => {
       if (interaction.type !== 'hand-trigger') return;
