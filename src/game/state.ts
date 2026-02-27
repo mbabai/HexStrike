@@ -1,7 +1,7 @@
 import { getCharacterName } from './characters';
 import { buildLandHexesForPlayerCount, getTerrain } from './hexGrid';
 import { createInitialFfaState } from './ffaState';
-import { CharacterId, GameStateDoc } from '../types';
+import { CharacterId, GameStateDoc, RulesetName } from '../types';
 
 const STARTING_CHARACTERS_2P = [
   { position: { q: 2, r: 0 }, facing: 0 },
@@ -32,7 +32,9 @@ const DEFAULT_ACTION = 'E';
 
 export const createInitialGameState = async (
   players: Array<{ userId: string; username: string; characterId: CharacterId }> = [],
+  options: { ruleset?: RulesetName } = {},
 ): Promise<GameStateDoc> => {
+  const ruleset = options.ruleset ?? 'regular';
   const startingCharacters = getStartingCharacters(players.length);
   const roster = players.slice(0, startingCharacters.length);
   const characters = roster.map((player, index) => ({
@@ -67,6 +69,7 @@ export const createInitialGameState = async (
 
   return {
     public: {
+      ruleset,
       land,
       beats,
       timeline: beats,

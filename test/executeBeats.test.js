@@ -135,6 +135,43 @@ test('executeBeats preserves future respawn location when halting on an earlier 
   assert.equal(betaBeat2.respawn, true);
 });
 
+test('executeBeats treats alternate Adr actions as wait-like non-open beats and applies adrenaline deltas', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, adrenaline: 0, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 3, r: 0 }, facing: 180, adrenaline: 0, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'Adr+2', 90, characters[0].position, characters[0].facing, '0', 0, 0),
+      buildEntry('beta', 'W', 10, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', '1m', 80, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 10, characters[1].position, characters[1].facing),
+    ],
+  ];
+  beats[0][0].cardId = 'advance';
+  beats[0][0].passiveCardId = 'absorb';
+  beats[0][0].rotationSource = 'selected';
+
+  const result = executeBeats(beats, characters, undefined, [], { ruleset: 'alternate' });
+  const alphaBeat0 = (result.beats[0] || []).find((entry) => entry.username === 'alpha');
+  const alphaBeat1 = (result.beats[1] || []).find((entry) => entry.username === 'alpha');
+  const alphaCharacter = result.characters.find((entry) => entry.userId === 'alpha');
+
+  assert.ok(alphaBeat0);
+  assert.ok(alphaBeat1);
+  assert.ok(alphaCharacter);
+  assert.equal(alphaBeat0.action, 'Adr+2');
+  assert.equal(alphaBeat0.cardStartTerrain, 'land');
+  assert.equal(alphaBeat0.adrenaline, 2);
+  assert.equal(alphaBeat1.action, '1m');
+  assert.equal(alphaBeat1.calculated, true);
+  assert.deepEqual(alphaBeat1.location, { q: 1, r: 0 });
+  assert.equal(alphaCharacter.adrenaline, 2);
+});
+
 test('executeBeats skips combo choice on missed attacks and keeps Co symbol', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
@@ -880,6 +917,93 @@ test('executeBeats preserves action when hit after acting and records consequenc
   assert.equal(alphaBeat1.action, 'DamageIcon');
 });
 
+test('executeBeats reapplies knockback interruption and clears stale post-stun actions', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', '1a', 5, characters[0].position, characters[0].facing, '', 2, 1),
+      buildEntry('beta', 'W', 20, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'DamageIcon', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'DamageIcon', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'm', 10, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'm', 10, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  const result = executeBeats(beats, characters);
+  const betaBeat3 = (result.beats[3] || []).find((entry) => entry.username === 'beta');
+  const betaBeat4 = (result.beats[4] || []).find((entry) => entry.username === 'beta');
+
+  assert.ok(betaBeat3);
+  assert.equal(betaBeat3.action, 'E');
+  assert.equal(betaBeat4, undefined);
+});
+
+test('executeBeats keeps knockback interruption when timeline guard has a later protected start', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'a', 20, characters[0].position, characters[0].facing, '', 2, 1),
+      buildEntry('beta', 'W', 10, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'm', 10, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'm', 10, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 10, characters[1].position, characters[1].facing, '0', 0, 0),
+    ],
+  ];
+  beats[0].forEach((entry) => {
+    entry.calculated = true;
+  });
+  beats[4][1].rotationSource = 'selected';
+  beats[4][1].cardId = 'advance';
+  beats[4][1].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters);
+  const betaBeat2 = (result.beats[2] || []).find((entry) => entry.username === 'beta');
+  const betaBeat3 = (result.beats[3] || []).find((entry) => entry.username === 'beta');
+  const betaBeat4 = (result.beats[4] || []).find((entry) => entry.username === 'beta');
+
+  assert.ok(betaBeat2);
+  assert.equal(betaBeat2.action, 'DamageIcon');
+  assert.ok(betaBeat3);
+  assert.equal(betaBeat3.action, 'E');
+  assert.ok(betaBeat4);
+  assert.equal(betaBeat4.action, 'W');
+  assert.equal(betaBeat4.rotationSource, 'selected');
+});
+
 test('executeBeats applies each hit in a multi-token attack in the same beat', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
@@ -1084,6 +1208,33 @@ test('executeBeats resolves existing arrows before movement actions', () => {
   assert.equal(alphaEntry.action, 'DamageIcon');
   assert.equal(alphaEntry.damage, 4);
   assert.equal((result.boardTokens || []).length, 0);
+});
+
+test('executeBeats alternate bow-shot spawn interrupts same-beat charge on hit', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [[
+    buildEntry('alpha', 'X1', 90, characters[0].position, characters[0].facing),
+    buildEntry('beta', 'c', 10, characters[1].position, characters[1].facing, '', 1, 1),
+  ]];
+  beats[0][0].cardId = 'bow-shot';
+  beats[0][0].passiveCardId = 'step';
+  beats[0][0].subBeat = { value: 1 };
+  beats[0][1].cardId = 'fleche';
+  beats[0][1].passiveCardId = 'step';
+  beats[0][1].subBeat = { value: 9 };
+
+  const result = executeBeats(beats, characters, undefined, [], { ruleset: 'alternate' });
+  const beat0 = result.beats[0] || [];
+  const betaEntry = beat0.find((entry) => entry.username === 'beta');
+
+  assert.ok(betaEntry);
+  assert.equal(betaEntry.action, 'DamageIcon');
+  assert.deepEqual(betaEntry.location, { q: 2, r: 0 });
+  assert.equal(betaEntry.damage, 4);
 });
 
 test('executeBeats applies arrow hits when long movement passes through an arrow hex', () => {
@@ -1945,6 +2096,50 @@ test('executeBeats leaves the reflex dodge X1->E beat unresolved after rerun', (
   assert.equal(result.lastCalculated, 0);
 });
 
+test('executeBeats alternate reflex dodge skips the next W beat after a successful avoid', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 0, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'a', 80, characters[0].position, characters[0].facing, '', 2, 1),
+      buildEntry('beta', 'b-Lb-Rb', 80, characters[1].position, characters[1].facing, '0', 0, 0),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  beats[0][1].cardId = 'reflex-dodge';
+  beats[0][1].passiveCardId = 'step';
+  beats[0][1].rotationSource = 'selected';
+  beats[1][1].cardId = 'reflex-dodge';
+  beats[1][1].passiveCardId = 'step';
+  beats[2][1].cardId = 'reflex-dodge';
+  beats[2][1].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters, undefined, [], { ruleset: 'alternate' });
+  const betaBeat0 = (result.beats[0] || []).find((entry) => entry.username === 'beta');
+  const betaBeat1 = (result.beats[1] || []).find((entry) => entry.username === 'beta');
+  const betaBeat2 = (result.beats[2] || []).find((entry) => entry.username === 'beta');
+  const betaCharacter = result.characters.find((entry) => entry.userId === 'beta');
+
+  assert.ok(betaBeat0);
+  assert.ok(betaBeat1);
+  assert.equal(betaBeat0.action, 'b-Lb-Rb');
+  assert.equal(betaBeat1.action, 'E');
+  assert.equal(betaBeat2, undefined);
+  assert.ok(betaCharacter);
+  assert.equal(betaCharacter.damage ?? 0, 0);
+});
+
 test('executeBeats applies smoke-bomb stun as grey hit frames without knockback movement', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
@@ -2294,6 +2489,70 @@ test('executeBeats resolves parry counters even when a defender is at E', () => 
   assert.equal(attackerEntry.action, 'DamageIcon');
   assert.equal(hitConsequences.length, 1);
   assert.deepEqual(hitConsequences[0], { type: 'hit', damageDelta: 4, knockbackDistance: 1, sourceUserId: 'def' });
+});
+
+test('executeBeats alternate parry b-range still schedules the counter hit', () => {
+  const characters = [
+    { userId: 'def', username: 'def', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Def' },
+    { userId: 'atk', username: 'atk', position: { q: 1, r: 0 }, facing: 0, characterId: 'murelious', characterName: 'Atk' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('def', 'b', 20, characters[0].position, characters[0].facing, '', 0, 0),
+      buildEntry('atk', 'a', 20, characters[1].position, characters[1].facing, '', 2, 1),
+    ],
+    [
+      buildEntry('def', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('atk', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  beats[0][0].cardId = 'parry';
+  beats[0][0].passiveCardId = 'step';
+  beats[0][0].subBeat = { start: 7, end: 9 };
+
+  const result = executeBeats(beats, characters, undefined, [], { ruleset: 'alternate' });
+  const beat1 = result.beats[1] || [];
+  const attackerEntry = beat1.find((entry) => entry.username === 'atk');
+  const hitConsequences = (attackerEntry?.consequences ?? []).filter((effect) => effect?.type === 'hit');
+
+  assert.ok(attackerEntry);
+  assert.equal(attackerEntry.action, 'DamageIcon');
+  assert.equal(hitConsequences.length, 1);
+  assert.deepEqual(hitConsequences[0], { type: 'hit', damageDelta: 4, knockbackDistance: 1, sourceUserId: 'def' });
+});
+
+test('executeBeats alternate parry counters blocked melee hits even when blocked damage is 0', () => {
+  const characters = [
+    { userId: 'def', username: 'def', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Def' },
+    { userId: 'atk', username: 'atk', position: { q: 1, r: 0 }, facing: 0, characterId: 'murelious', characterName: 'Atk' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('def', 'b', 20, characters[0].position, characters[0].facing, '', 0, 0),
+      buildEntry('atk', 'a', 20, characters[1].position, characters[1].facing, '', 0, 1),
+    ],
+    [
+      buildEntry('def', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('atk', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  beats[0][0].cardId = 'parry';
+  beats[0][0].passiveCardId = 'step';
+  beats[0][0].subBeat = { start: 7, end: 9 };
+
+  const result = executeBeats(beats, characters, undefined, [], { ruleset: 'alternate' });
+  const beat1 = result.beats[1] || [];
+  const attackerEntry = beat1.find((entry) => entry.username === 'atk');
+  const hitConsequences = (attackerEntry?.consequences ?? []).filter((effect) => effect?.type === 'hit');
+
+  assert.ok(attackerEntry);
+  assert.equal(attackerEntry.action, 'DamageIcon');
+  assert.equal(hitConsequences.length, 1);
+  assert.deepEqual(hitConsequences[0], { type: 'hit', damageDelta: 0, knockbackDistance: 1, sourceUserId: 'def' });
 });
 
 test('parry stun does not trap future submissions on calculated history E beats', () => {

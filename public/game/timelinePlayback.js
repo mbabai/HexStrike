@@ -15,6 +15,7 @@ const WAIT_ACTION = 'W';
 const COMBO_ACTION = 'CO';
 const DAMAGE_ICON_ACTION = 'DamageIcon';
 const END_MARKER_ACTIONS = new Set(['DEATH', 'VICTORY', 'HANDSHAKE']);
+const ADRENALINE_ACTION_REGEX = /^ADR\s*([+-])\s*(\d+)$/i;
 const KNOCKBACK_DIVISOR = 10;
 export const ACTION_DURATION_MS = 1200;
 const MIN_TRAIL_VISIBLE_MS = 90;
@@ -46,10 +47,25 @@ const SMOKE_BOMB_CARD_ID = 'smoke-bomb';
 const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
 const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
 const GRAPPLING_HOOK_CARD_ID = 'grappling-hook';
+const RULESET_REGULAR = 'regular';
+const RULESET_ALTERNATE = 'alternate';
 
 const toSafeCount = (value) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0;
+};
+
+const normalizeRuleset = (value) =>
+  `${value ?? ''}`.trim().toLowerCase() === RULESET_ALTERNATE ? RULESET_ALTERNATE : RULESET_REGULAR;
+
+const clampSubBeat = (value) => Math.max(1, Math.min(9, Math.round(value)));
+
+const getSubBeatStart = (entry) => {
+  const subBeat = entry?.subBeat;
+  if (!subBeat || typeof subBeat !== 'object') return null;
+  if (Number.isFinite(subBeat.value)) return clampSubBeat(Number(subBeat.value));
+  if (Number.isFinite(subBeat.start)) return clampSubBeat(Number(subBeat.start));
+  return null;
 };
 
 const getCharacterEffects = (character, characterPowersById) => {
@@ -385,19 +401,20 @@ const parsePath = (path) => {
 };
 
 const isWaitAction = (action) => {
-  const trimmed = `${action ?? ''}`.trim().toUpperCase();
+  const trimmed = `${action ?? ''}`.trim();
   if (!trimmed) return true;
-  if (
-    trimmed === WAIT_ACTION ||
-    trimmed === DAMAGE_ICON_ACTION.toUpperCase() ||
-    trimmed === COMBO_ACTION ||
-    END_MARKER_ACTIONS.has(trimmed)
-  ) {
+  const normalized =
+    trimmed.startsWith('[') && trimmed.endsWith(']') ? trimmed.slice(1, -1).trim() : trimmed;
+  const upper = normalized.toUpperCase();
+  if (upper === WAIT_ACTION || ADRENALINE_ACTION_REGEX.test(normalized)) {
     return true;
   }
-  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-    const label = trimmed.slice(1, -1).trim();
-    return label === COMBO_ACTION;
+  if (
+    upper === DAMAGE_ICON_ACTION.toUpperCase() ||
+    upper === COMBO_ACTION ||
+    END_MARKER_ACTIONS.has(upper)
+  ) {
+    return true;
   }
   return false;
 };
@@ -436,6 +453,57 @@ const parseActionTokens = (action) => {
     })
     .filter((token) => token.type);
 };
+
+const getActionClassRank = (action) => {
+  const tokens = parseActionTokens(action);
+  if (!tokens.length) return 0;
+  if (tokens.some((token) => token.type === 'b')) return 3;
+  if (tokens.some((token) => token.type === 'a' || token.type === 'c')) return 2;
+  if (tokens.some((token) => token.type === 'm' || token.type === 'j' || token.type === 'c')) return 1;
+  return 0;
+};
+
+const compareResolutionOrder = (a, b, rosterOrder, ruleset) => {
+  if (ruleset === RULESET_ALTERNATE) {
+    const subBeatA = getSubBeatStart(a);
+    const subBeatB = getSubBeatStart(b);
+    if (subBeatA != null || subBeatB != null) {
+      const scoreA = subBeatA == null ? Number.MAX_SAFE_INTEGER : subBeatA;
+      const scoreB = subBeatB == null ? Number.MAX_SAFE_INTEGER : subBeatB;
+      if (scoreA !== scoreB) return scoreA - scoreB;
+    }
+  }
+  const priorityDelta = (b.priority ?? 0) - (a.priority ?? 0);
+  if (priorityDelta) return priorityDelta;
+  if (ruleset === RULESET_ALTERNATE) {
+    const classRankA = getActionClassRank(a.action ?? DEFAULT_ACTION);
+    const classRankB = getActionClassRank(b.action ?? DEFAULT_ACTION);
+    if (classRankA !== classRankB) {
+      return classRankB - classRankA;
+    }
+    if (classRankA === 2 && classRankB === 2) {
+      const kbfA = Number.isFinite(a?.attackKbf) ? Number(a.attackKbf) : 0;
+      const kbfB = Number.isFinite(b?.attackKbf) ? Number(b.attackKbf) : 0;
+      if (kbfA !== kbfB) return kbfB - kbfA;
+      const damageA = Number.isFinite(a?.attackDamage) ? Number(a.attackDamage) : 0;
+      const damageB = Number.isFinite(b?.attackDamage) ? Number(b.attackDamage) : 0;
+      if (damageA !== damageB) return damageB - damageA;
+      const submittedA = Number.isFinite(a?.submittedAdrenaline)
+        ? Math.max(0, Math.floor(Number(a.submittedAdrenaline)))
+        : 0;
+      const submittedB = Number.isFinite(b?.submittedAdrenaline)
+        ? Math.max(0, Math.floor(Number(b.submittedAdrenaline)))
+        : 0;
+      if (submittedA !== submittedB) return submittedB - submittedA;
+    }
+  }
+  const orderA = rosterOrder.get(resolveEntryKey(a)) ?? Number.MAX_SAFE_INTEGER;
+  const orderB = rosterOrder.get(resolveEntryKey(b)) ?? Number.MAX_SAFE_INTEGER;
+  return orderA - orderB;
+};
+
+const sortEntriesByResolutionOrder = (entries, rosterOrder, ruleset) =>
+  (entries ?? []).slice().sort((a, b) => compareResolutionOrder(a, b, rosterOrder, ruleset));
 
 const isClassicAttackSweep = (attackTokens) =>
   attackTokens.length === 3 &&
@@ -525,7 +593,7 @@ const applyGiganticStaffAction = (action) => {
 
 const applyRotationPhase = (entries, state, userLookup) => {
   entries.forEach((entry) => {
-    const actorId = userLookup.get(entry.username);
+    const actorId = userLookup.get(resolveEntryKey(entry));
     if (!actorId) return;
     const actorState = state.get(actorId);
     if (!actorState) return;
@@ -549,6 +617,16 @@ const buildPath = (origin, steps, facing) => {
     }
   });
   return { positions, destination: current, lastStep };
+};
+
+const getFirstOccupiedPathStep = (positions, occupancy, actorId) => {
+  for (const position of positions) {
+    const occupantId = occupancy.get(coordKey(position));
+    if (occupantId && occupantId !== actorId) {
+      return { position: { q: position.q, r: position.r }, occupantId };
+    }
+  }
+  return null;
 };
 
 const buildGrapplingHookPath = (origin, steps, facing, land, occupancy, actorId) => {
@@ -671,6 +749,12 @@ const toAbilityHandCount = (value) => {
   return Math.max(0, Math.floor(parsed));
 };
 
+const toAdrenalineCount = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.min(10, Math.floor(parsed)));
+};
+
 const getAbilityHandCountFromEntry = (entry) => toAbilityHandCount(entry?.abilityHandCount);
 
 const buildBeatAbilityHandCountLookup = (beat, characters) => {
@@ -714,6 +798,8 @@ const buildCalculatedBaseState = (beats, beatIndex, characters) => {
     const entry = lookupIndex >= 0 ? getLastEntryForCharacter(beats, character, lookupIndex) : null;
     const entryAbilityHandCount = getAbilityHandCountFromEntry(entry);
     const characterAbilityHandCount = toAbilityHandCount(character?.abilityHandCount);
+    const entryAdrenaline = toAdrenalineCount(entry?.adrenaline);
+    const characterAdrenaline = toAdrenalineCount(character?.adrenaline);
     return {
       ...character,
       position: entry?.location ?? { q: character.position.q, r: character.position.r },
@@ -725,6 +811,7 @@ const buildCalculatedBaseState = (beats, beatIndex, characters) => {
             ? character.damage
             : 0,
       abilityHandCount: entryAbilityHandCount ?? characterAbilityHandCount ?? 0,
+      adrenaline: entryAdrenaline ?? characterAdrenaline ?? 0,
     };
   });
 };
@@ -767,6 +854,7 @@ const buildBaseStateWithInteractionOverrides = (beats, beatIndex, characters, in
       facing: Number.isFinite(entry?.facing) ? entry.facing : character.facing,
       damage: typeof entry?.damage === 'number' ? entry.damage : character.damage,
       abilityHandCount: getAbilityHandCountFromEntry(entry) ?? toAbilityHandCount(character?.abilityHandCount) ?? 0,
+      adrenaline: toAdrenalineCount(entry?.adrenaline) ?? toAdrenalineCount(character?.adrenaline) ?? 0,
     };
   });
 };
@@ -788,6 +876,7 @@ const buildActionSteps = (
   land,
   characterPowersById = new Map(),
 ) => {
+  const ruleset = normalizeRuleset(publicState?.ruleset);
   const rosterOrder = new Map();
   characters.forEach((character, index) => {
     rosterOrder.set(character.userId, index);
@@ -824,6 +913,7 @@ const buildActionSteps = (
       position: { q: character.position.q, r: character.position.r },
       damage: character.damage ?? 0,
       facing: normalizeDegrees(character.facing ?? 0),
+      adrenaline: toAdrenalineCount(character.adrenaline) ?? 0,
     });
     occupancy.set(coordKey(character.position), character.userId);
   });
@@ -841,12 +931,14 @@ const buildActionSteps = (
     const nextDamage = Number.isFinite(entry?.damage) ? Math.max(0, Math.floor(entry.damage)) : current.damage ?? 0;
     const nextFacing = Number.isFinite(entry?.facing) ? normalizeDegrees(entry.facing) : current.facing;
     const nextAbilityHandCount = toAbilityHandCount(entry?.abilityHandCount);
+    const nextAdrenaline = toAdrenalineCount(entry?.adrenaline);
     state.set(actorId, {
       ...current,
       position: nextPosition,
       damage: nextDamage,
       facing: nextFacing,
       abilityHandCount: nextAbilityHandCount == null ? current.abilityHandCount : nextAbilityHandCount,
+      adrenaline: nextAdrenaline == null ? current.adrenaline : nextAdrenaline,
     });
     const oldKey = coordKey(current.position);
     if (occupancy.get(oldKey) === actorId) {
@@ -873,16 +965,9 @@ const buildActionSteps = (
   const blockMap = new Map();
   const disabledActors = new Set();
 
-  const ordered = (beat ?? [])
-    .slice()
-    .sort((a, b) => {
-      const priorityDelta = (b.priority ?? 0) - (a.priority ?? 0);
-      if (priorityDelta) return priorityDelta;
-      const orderA = rosterOrder.get(a.username) ?? Number.MAX_SAFE_INTEGER;
-      const orderB = rosterOrder.get(b.username) ?? Number.MAX_SAFE_INTEGER;
-      return orderA - orderB;
-    })
-    .filter((entry) => entry && !isOpenBeatAction(entry.action));
+  const ordered = sortEntriesByResolutionOrder(beat ?? [], rosterOrder, ruleset).filter(
+    (entry) => entry && !isOpenBeatAction(entry.action),
+  );
 
   const steps = [];
   const persistentEffects = [];
@@ -999,7 +1084,7 @@ const buildActionSteps = (
   }
 
   ordered.forEach((entry) => {
-    const actorId = userLookup.get(entry.username);
+    const actorId = userLookup.get(resolveEntryKey(entry));
     if (!actorId) return;
     if (disabledActors.has(actorId)) return;
     const actorState = state.get(actorId);
@@ -1053,9 +1138,11 @@ const buildActionSteps = (
       const { positions, destination, lastStep } = isGrapplingHookCharge
         ? buildGrapplingHookPath(origin, token.steps, actorState.facing, landTiles, occupancy, actorId)
         : buildPath(origin, token.steps, actorState.facing);
-      const targetKey = coordKey(destination);
-      const targetId = occupancy.get(targetKey);
-      const delta = { q: origin.q - destination.q, r: origin.r - destination.r };
+      const chargeContact = token.type === 'c' ? getFirstOccupiedPathStep(positions, occupancy, actorId) : null;
+      const impactCoord = chargeContact ? chargeContact.position : destination;
+      const targetKey = coordKey(impactCoord);
+      const targetId = chargeContact?.occupantId ?? occupancy.get(targetKey);
+      const delta = { q: origin.q - impactCoord.q, r: origin.r - impactCoord.r };
       const directionIndex =
         getDirectionIndex(delta) ?? (lastStep ? getDirectionIndex({ q: -lastStep.q, r: -lastStep.r }) : null);
 
@@ -1084,8 +1171,8 @@ const buildActionSteps = (
         effects.push({ type: 'jump', coord: destination });
       }
       if (token.type === 'c') {
-        effects.push({ type: 'charge', coord: destination });
-        attackTargets.push({ q: destination.q, r: destination.r });
+        effects.push({ type: 'charge', coord: impactCoord });
+        attackTargets.push({ q: impactCoord.q, r: impactCoord.r });
       }
       if (token.type === 'a' || token.type === 'c') {
         const launchHex = positions.length > 1 ? positions[positions.length - 2] : origin;
@@ -1093,7 +1180,7 @@ const buildActionSteps = (
           tokenType: token.type,
           rawLabel: token.raw,
           source: { q: launchHex.q, r: launchHex.r },
-          target: { q: destination.q, r: destination.r },
+          target: { q: impactCoord.q, r: impactCoord.r },
         });
       }
 
@@ -1114,7 +1201,7 @@ const buildActionSteps = (
         const blocked = (isBlocked && !isThrow && !isUnblockable) || throwBlocked;
         const targetInvulnerable = Boolean(targetId) && isTargetInvulnerableAtBeat(targetId);
         if (targetId && blocked && directionIndex != null) {
-          blockHits.push({ coord: { q: destination.q, r: destination.r }, directionIndex });
+          blockHits.push({ coord: { q: impactCoord.q, r: impactCoord.r }, directionIndex });
         }
         if (targetId && !blocked && !targetInvulnerable) {
           if (targetState) {
@@ -1201,7 +1288,7 @@ const buildActionSteps = (
             damageChanges.push({ targetId, delta: adjustedDamage });
             const usesGrapplingHookPassive =
               hasGrapplingHookPassive && isExactGrapplingHookPassiveAttack(token, tokens.length);
-            const attackDirection = getKnockbackDirection(origin, destination, lastStep);
+            const attackDirection = getKnockbackDirection(origin, impactCoord, lastStep);
             const knockbackPath = [{ q: targetState.position.q, r: targetState.position.r }];
             const { knockbackDirection, flipPosition } = applyGrapplingHookPassiveFlip(
               usesGrapplingHookPassive,
@@ -1317,6 +1404,8 @@ const buildActionSteps = (
         : Number.isFinite(actorState.damage)
           ? actorState.damage
           : 0;
+    const finalActorAdrenaline =
+      toAdrenalineCount(entry?.adrenaline) ?? toAdrenalineCount(actorState.adrenaline) ?? 0;
     steps.push({
       actorId,
       facingAfter: actorState.facing,
@@ -1325,6 +1414,7 @@ const buildActionSteps = (
       movePath,
       finalActorPosition,
       finalActorDamage,
+      finalActorAdrenaline,
       damageChanges,
       positionChanges,
       attackOrigin: attackTargets.length ? { q: origin.q, r: origin.r } : null,
@@ -1354,6 +1444,9 @@ const applyStep = (characters, step) => {
     }
     if (typeof step.finalActorDamage === 'number') {
       next.damage = step.finalActorDamage;
+    }
+    if (typeof step.finalActorAdrenaline === 'number') {
+      next.adrenaline = step.finalActorAdrenaline;
     }
     return next;
   });
@@ -1436,6 +1529,7 @@ const createTokenRenderState = (baseTokens) => {
 
 const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map()) => {
   const publicState = gameState?.state?.public ?? null;
+  const ruleset = normalizeRuleset(publicState?.ruleset);
   const beats = gameState?.state?.public?.beats ?? [];
   const characters = gameState?.state?.public?.characters ?? [];
   const interactions = gameState?.state?.public?.customInteractions ?? [];
@@ -1481,6 +1575,7 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
       position: { q: character.position.q, r: character.position.r },
       facing: normalizeDegrees(character.facing ?? 0),
       damage: typeof character.damage === 'number' ? character.damage : 0,
+      adrenaline: toAdrenalineCount(character.adrenaline) ?? 0,
     });
   });
 
@@ -1698,6 +1793,11 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
           ? normalizeDegrees(entry.facing)
           : current?.facing ?? normalizeDegrees(character.facing ?? 0),
         damage: typeof entry.damage === 'number' ? entry.damage : current?.damage ?? 0,
+        adrenaline:
+          toAdrenalineCount(entry?.adrenaline) ??
+          toAdrenalineCount(current?.adrenaline) ??
+          toAdrenalineCount(character?.adrenaline) ??
+          0,
         abilityHandCount:
           getAbilityHandCountFromEntry(entry) ??
           toAbilityHandCount(current?.abilityHandCount) ??
@@ -1720,6 +1820,10 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
           : typeof character.damage === 'number'
             ? character.damage
             : 0,
+        adrenaline:
+          toAdrenalineCount(stored?.adrenaline) ??
+          toAdrenalineCount(character?.adrenaline) ??
+          0,
         abilityHandCount:
           toAbilityHandCount(stored?.abilityHandCount) ??
           toAbilityHandCount(character?.abilityHandCount) ??
@@ -1841,6 +1945,7 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
         position: { q: character.position.q, r: character.position.r },
         facing: normalizeDegrees(character.facing ?? 0),
         damage: typeof character.damage === 'number' ? character.damage : 0,
+        adrenaline: toAdrenalineCount(character.adrenaline) ?? 0,
       });
     });
     const applyEndStateDamage = (userId, rawDamage) => {
@@ -1857,6 +1962,7 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
         position: { q: targetState.position.q, r: targetState.position.r },
         facing: targetState.facing,
         damage: targetState.damage,
+        adrenaline: toAdrenalineCount(targetState.adrenaline) ?? 0,
       });
       return adjusted;
     };
@@ -1921,16 +2027,9 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
 
     const existingArrowIds = new Set(tokens.filter((token) => token.type === ARROW_TOKEN_TYPE).map((token) => token.id));
 
-    const ordered = beat
-      .slice()
-      .sort((a, b) => {
-        const priorityDelta = (b.priority ?? 0) - (a.priority ?? 0);
-        if (priorityDelta) return priorityDelta;
-        const orderA = rosterOrder.get(resolveEntryKey(a)) ?? Number.MAX_SAFE_INTEGER;
-        const orderB = rosterOrder.get(resolveEntryKey(b)) ?? Number.MAX_SAFE_INTEGER;
-        return orderA - orderB;
-      })
-      .filter((entry) => !isOpenBeatAction(entry.action));
+    const ordered = sortEntriesByResolutionOrder(beat ?? [], rosterOrder, ruleset).filter(
+      (entry) => !isOpenBeatAction(entry.action),
+    );
 
     const applyArrowHit = ({ token, nextPosition, targetId, forward, isCurrentBeat: applyNow }) => {
       const targetState = endStateById.get(targetId);
@@ -2046,6 +2145,7 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
         position: { q: finalPosition.q, r: finalPosition.r },
         facing: targetState.facing,
         damage: updatedDamage,
+        adrenaline: toAdrenalineCount(targetState.adrenaline) ?? 0,
       });
       const arrowDamageChanges = [{ targetId, delta: adjustedDamage }];
       if (

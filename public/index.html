@@ -6,6 +6,7 @@
     <title>HexStrike Lobby</title>
     <link rel="icon" href="/favicon.png" type="image/png" />
     <link rel="stylesheet" href="/public/theme.css" />
+    <link rel="stylesheet" href="/public/shared/altCardLayout.css" />
   </head>
   <body class="menu-body">
     <div id="menuShell" class="menu-shell menu-collapsed">
@@ -62,7 +63,16 @@
           <div id="selectedDeckCard" class="selected-deck-card"></div>
         </div>
         <div class="match-cta">
-          <button id="findGame" class="btn btn-cta" type="button" disabled>Find Game</button>
+          <div class="match-cta-row">
+            <button id="findGame" class="btn btn-cta" type="button" disabled>Find Game</button>
+            <label class="ruleset-field" for="rulesetSelect">
+              <span class="queue-label">Rules</span>
+              <select id="rulesetSelect" class="menu-select">
+                <option value="regular" selected>Regular</option>
+                <option value="alternate">Alternate</option>
+              </select>
+            </label>
+          </div>
         </div>
         <label class="queue-field">
           <span class="queue-label">Queue</span>
@@ -350,14 +360,30 @@
         <div class="action-center">
           <button id="actionSubmit" class="btn btn-primary action-submit" type="button" hidden>Submit</button>
           <div class="action-slot-row">
-            <div class="action-slot">
-              <div id="activeSlot" class="action-slot-drop" data-slot="active" aria-label="Active card slot">
-                <span class="action-slot-label">Active</span>
+            <div class="action-slot-column">
+              <div class="action-slot">
+                <div id="activeSlot" class="action-slot-drop" data-slot="active" aria-label="Active card slot">
+                  <span class="action-slot-label">Active</span>
+                </div>
+              </div>
+              <div class="action-slot">
+                <div id="passiveSlot" class="action-slot-drop" data-slot="passive" aria-label="Passive card slot">
+                  <span class="action-slot-label">Passive</span>
+                </div>
               </div>
             </div>
-            <div class="action-slot">
-              <div id="passiveSlot" class="action-slot-drop" data-slot="passive" aria-label="Passive card slot">
-                <span class="action-slot-label">Passive</span>
+            <div id="adrenalineControl" class="action-adrenaline" hidden aria-hidden="true">
+              <div class="action-adrenaline-scale" data-adrenaline-scale tabindex="-1" role="slider" aria-label="Submitted adrenaline" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0">
+                <div class="action-adrenaline-track"></div>
+                <div class="action-adrenaline-fill"></div>
+                <div class="action-adrenaline-cap"></div>
+                <button type="button" class="action-adrenaline-thumb" data-adrenaline-thumb tabindex="-1" aria-label="Submitted adrenaline value">
+                  <span class="action-adrenaline-thumb-value" data-adrenaline-value>0</span>
+                </button>
+              </div>
+              <div class="action-adrenaline-labels" aria-hidden="true">
+                <span>10</span>
+                <span>0</span>
               </div>
             </div>
           </div>

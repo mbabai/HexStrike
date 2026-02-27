@@ -36,17 +36,19 @@ export const getCharacterFirstEIndex = (beats, character) => {
     const entry = getBeatEntryForCharacter(beats[i], character);
     if (!entry || isOpenBeatAction(entry.action)) return i;
   }
-  return Math.max(0, Math.min(startIndex, beats.length - 1));
+  // No explicit open beat remains in the unresolved span; next open beat is after the tail.
+  return beats.length;
 };
 
 export const getTimelineEarliestEIndex = (beats, characters) => {
   if (!Array.isArray(beats) || !beats.length || !Array.isArray(characters) || !characters.length) return 0;
-  let earliest = beats.length - 1;
+  let earliest = Number.POSITIVE_INFINITY;
   characters.forEach((character) => {
     const firstE = getCharacterFirstEIndex(beats, character);
     if (firstE < earliest) earliest = firstE;
   });
-  return Math.max(0, earliest);
+  if (!Number.isFinite(earliest)) return 0;
+  return Math.max(0, Math.floor(earliest));
 };
 
 export const getTimelineResolvedIndex = (beats) => {

@@ -4,6 +4,9 @@ const PRIORITY_ICON_URL = '/public/images/priority.png';
 const DAMAGE_ICON_URL = '/public/images/DamageIcon.png';
 const KNOCKBACK_ICON_URL = '/public/images/KnockBackIcon.png';
 const EMPHASIS_ICON_URL = '/public/images/i.png';
+const ADRENALINE_ICON_URL = '/public/images/Adrenaline.png';
+const DRAW_ICON_URL = '/public/images/DrawIcon.png';
+const DISCARD_ICON_URL = '/public/images/DiscardIcon.png';
 const CARD_ART_BASE_URL = '/public/images/cardart';
 const UNIQUE_MOVEMENT_CARD_IDS = new Set(['grappling-hook', 'fleche', 'leap']);
 const MANDATORY_MOVEMENT_CARD_IDS = new Set(['step']);
@@ -118,9 +121,128 @@ const normalizeInlineStyleTag = (value) => {
   return normalized;
 };
 
+const injectCardTextIconTokens = (text) => {
+  if (!text) return '';
+  let next = `${text}`;
+  next = next.replace(/\bdraw\s+(\d+)\s+cards?\b/gi, '{Draw:$1}');
+  next = next.replace(/\bdraw\s+(\d+)\b/gi, '{Draw:$1}');
+  next = next.replace(/\bdiscards?\s+(\d+)\s+cards?\b/gi, '{Discard:$1}');
+  next = next.replace(/\bdiscards?\s+(\d+)\b/gi, '{Discard:$1}');
+  return next;
+};
+
 const appendInlineIconToken = (parent, part) => {
   const token = part.slice(1, -1).trim();
   if (!token) return;
+  const adrenalineMatch = /^(?:adrenaline|adr)(?::(.+))?$/i.exec(token);
+  if (adrenalineMatch) {
+    const label = `${adrenalineMatch[1] ?? ''}`.trim() || '';
+    const badge = document.createElement('span');
+    badge.className = 'card-inline-adrenaline';
+    badge.style.backgroundImage = `url('${ADRENALINE_ICON_URL}')`;
+    badge.setAttribute('role', 'img');
+    badge.setAttribute('aria-label', label ? `Adrenaline ${label}` : 'Adrenaline');
+    if (label) {
+      const value = document.createElement('span');
+      value.className = 'card-inline-adrenaline-value';
+      value.textContent = label;
+      badge.appendChild(value);
+    }
+    parent.appendChild(badge);
+    return;
+  }
+  const subBeatMatch = /^subbeats?:(.+)$/i.exec(token);
+  if (subBeatMatch) {
+    const label = `${subBeatMatch[1] ?? ''}`.trim();
+    const badge = document.createElement('span');
+    badge.className = 'card-inline-subbeat';
+    badge.style.backgroundImage = `url('${PRIORITY_ICON_URL}')`;
+    badge.setAttribute('role', 'img');
+    badge.setAttribute('aria-label', label ? `SubBeat ${label}` : 'SubBeat');
+    if (label) {
+      const value = document.createElement('span');
+      value.className = 'card-inline-subbeat-value';
+      value.textContent = label;
+      badge.appendChild(value);
+    }
+    parent.appendChild(badge);
+    return;
+  }
+  const drawMatch = /^draw:(.+)$/i.exec(token);
+  if (drawMatch) {
+    const label = `${drawMatch[1] ?? ''}`.trim();
+    const badge = document.createElement('span');
+    badge.className = 'card-inline-draw';
+    badge.style.backgroundImage = `url('${DRAW_ICON_URL}')`;
+    badge.setAttribute('role', 'img');
+    badge.setAttribute('aria-label', label ? `Draw ${label}` : 'Draw');
+    if (label) {
+      const value = document.createElement('span');
+      value.className = 'card-inline-draw-value';
+      value.textContent = label;
+      badge.appendChild(value);
+    }
+    parent.appendChild(badge);
+    return;
+  }
+  const discardMatch = /^discard:(.+)$/i.exec(token);
+  if (discardMatch) {
+    const label = `${discardMatch[1] ?? ''}`.trim();
+    const badge = document.createElement('span');
+    badge.className = 'card-inline-discard';
+    badge.style.backgroundImage = `url('${DISCARD_ICON_URL}')`;
+    badge.setAttribute('role', 'img');
+    badge.setAttribute('aria-label', label ? `Discard ${label}` : 'Discard');
+    if (label) {
+      const value = document.createElement('span');
+      value.className = 'card-inline-discard-value';
+      value.textContent = label;
+      badge.appendChild(value);
+    }
+    parent.appendChild(badge);
+    return;
+  }
+  const damageMatch = /^damage:(.+)$/i.exec(token);
+  if (damageMatch) {
+    const label = `${damageMatch[1] ?? ''}`.trim();
+    const badge = document.createElement('span');
+    badge.className = 'card-inline-stat card-inline-stat-damage';
+    badge.style.backgroundImage = `url('${DAMAGE_ICON_URL}')`;
+    badge.setAttribute('role', 'img');
+    badge.setAttribute('aria-label', label ? `Damage ${label}` : 'Damage');
+    if (label) {
+      const value = document.createElement('span');
+      value.className = 'card-inline-stat-value';
+      value.textContent = label;
+      badge.appendChild(value);
+    }
+    parent.appendChild(badge);
+    return;
+  }
+  const kbfMatch = /^kbf:(.+)$/i.exec(token);
+  if (kbfMatch) {
+    const label = `${kbfMatch[1] ?? ''}`.trim();
+    const badge = document.createElement('span');
+    badge.className = 'card-inline-stat card-inline-stat-kbf';
+    const isThrowKbf = label.toUpperCase() === 'T';
+    if (isThrowKbf) {
+      badge.classList.add('is-throw');
+    }
+    badge.style.backgroundImage = `url('${KNOCKBACK_ICON_URL}')`;
+    badge.setAttribute('role', 'img');
+    badge.setAttribute('aria-label', label ? `KBF ${label}` : 'KBF');
+    if (label) {
+      const value = document.createElement('span');
+      value.className = 'card-inline-stat-value';
+      if (isThrowKbf) {
+        value.classList.add('is-throw');
+      }
+      value.textContent = label.toUpperCase();
+      badge.appendChild(value);
+    }
+    parent.appendChild(badge);
+    return;
+  }
   const normalizedToken = token.toLowerCase();
   if (normalizedToken === 'red damage capsule') {
     const capsule = document.createElement('span');
@@ -131,15 +253,16 @@ const appendInlineIconToken = (parent, part) => {
     return;
   }
   if (normalizedToken === 'throw kbf icon') {
-    const throwKbf = document.createElement('span');
-    throwKbf.className = 'card-inline-throw-kbf';
-    throwKbf.setAttribute('role', 'img');
-    throwKbf.setAttribute('aria-label', token);
-    const throwText = document.createElement('span');
-    throwText.className = 'card-inline-throw-kbf-value';
-    throwText.textContent = 'T';
-    throwKbf.appendChild(throwText);
-    parent.appendChild(throwKbf);
+    const badge = document.createElement('span');
+    badge.className = 'card-inline-stat card-inline-stat-kbf is-throw';
+    badge.style.backgroundImage = `url('${KNOCKBACK_ICON_URL}')`;
+    badge.setAttribute('role', 'img');
+    badge.setAttribute('aria-label', token);
+    const value = document.createElement('span');
+    value.className = 'card-inline-stat-value is-throw';
+    value.textContent = 'T';
+    badge.appendChild(value);
+    parent.appendChild(badge);
     return;
   }
   const image = document.createElement('img');
@@ -153,7 +276,8 @@ const appendInlineIconToken = (parent, part) => {
 export const appendInlineText = (container, text) => {
   container.textContent = '';
   if (!text) return;
-  const lines = `${text}`.split(/\r?\n/);
+  const normalizedText = injectCardTextIconTokens(text);
+  const lines = `${normalizedText}`.split(/\r?\n/);
   lines.forEach((line, lineIndex) => {
     if (lineIndex > 0) {
       container.appendChild(document.createElement('br'));

@@ -1,22 +1,6 @@
 import { ActionListItem, CardDefinition } from '../../types';
-import { isBracketedAction, patchActionEntry, updateActionEntries } from './actionListTransforms';
-
-const getBracketedActionIndices = (actions: string[]): number[] => {
-  const indices: number[] = [];
-  actions.forEach((action, index) => {
-    if (isBracketedAction(action)) {
-      indices.push(index);
-    }
-  });
-  return indices;
-};
-
-const getSymbolActionIndices = (actions: string[], symbol: string): number[] => {
-  if (symbol === 'i') {
-    return getBracketedActionIndices(actions);
-  }
-  return [];
-};
+import { patchActionEntry, updateActionEntries } from './actionListTransforms';
+import { getActiveEffectTargetIndices } from './activeEffectTargets';
 
 const applyRotationAfterIndex = (
   actionList: ActionListItem[],
@@ -57,14 +41,14 @@ const applyCounterAttackActiveText = (
 ): ActionListItem[] => actionList;
 
 const applyAerialStrikeActiveText = (actionList: ActionListItem[], card: CardDefinition): ActionListItem[] => {
-  const indices = getSymbolActionIndices(Array.isArray(card.actions) ? card.actions : [], 'i');
+  const indices = getActiveEffectTargetIndices(actionList, card, 'i', { fallbackToTextEntries: true });
   const targetIndex = indices.length ? indices[0] + 1 : null;
   if (targetIndex == null) return actionList;
   return applyRotationAfterIndex(actionList, targetIndex, '3', { clearStartRotation: false });
 };
 
 const applyWhirlwindActiveText = (actionList: ActionListItem[], card: CardDefinition): ActionListItem[] => {
-  const indices = getSymbolActionIndices(Array.isArray(card.actions) ? card.actions : [], 'i');
+  const indices = getActiveEffectTargetIndices(actionList, card, 'i', { fallbackToTextEntries: true });
   if (!indices.length) return actionList;
   return updateActionEntries(actionList, indices, (entry) => {
     if (!entry) return entry;
@@ -73,7 +57,7 @@ const applyWhirlwindActiveText = (actionList: ActionListItem[], card: CardDefini
 };
 
 const applySmokeBombActiveText = (actionList: ActionListItem[], card: CardDefinition): ActionListItem[] => {
-  const indices = getSymbolActionIndices(Array.isArray(card.actions) ? card.actions : [], 'i');
+  const indices = getActiveEffectTargetIndices(actionList, card, 'i', { fallbackToTextEntries: true });
   const targetIndex = indices.length ? indices[0] + 1 : null;
   if (targetIndex == null) return actionList;
   return shiftSelectedRotationToIndex(actionList, targetIndex);

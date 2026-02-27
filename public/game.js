@@ -19,7 +19,7 @@ import {
   getTimelineResolvedIndex,
   getTimelineStopIndex,
 } from './game/beatTimeline.js';
-import { loadCardCatalog } from './shared/cardCatalog.js';
+import { loadCardCatalog, loadAlternateCardCatalog } from './shared/cardCatalog.js';
 import { loadCharacterCatalog } from './shared/characterCatalog.js';
 import { createDiscardPrompt } from './game/discardPrompt.mjs';
 import { createDrawPrompt } from './game/drawPrompt.mjs';
@@ -51,6 +51,8 @@ const MAX_HAND_SIZE = 4;
 const VIEW_MODE_LIVE = 'live';
 const VIEW_MODE_REPLAY = 'replay';
 const VIEW_MODE_SPECTATOR = 'spectator';
+const RULESET_REGULAR = 'regular';
+const RULESET_ALTERNATE = 'alternate';
 const THREE_PLAYER_DEFAULT_SCALE = 0.55;
 const AXIAL_DIRECTIONS = [
   { q: 1, r: 0 },
@@ -62,6 +64,11 @@ const AXIAL_DIRECTIONS = [
 ];
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const normalizeRulesetName = (value) => {
+  const normalized = `${value ?? ''}`.trim().toLowerCase();
+  return normalized === RULESET_ALTERNATE ? RULESET_ALTERNATE : RULESET_REGULAR;
+};
 
 const getDefaultScaleForPlayerCount = (playerCount) => {
   const count = Number(playerCount);
@@ -282,7 +289,10 @@ export const initGame = () => {
   let gameState = null;
   let lastFrame = null;
   let cardCatalog = null;
+  let activeRuleset = RULESET_REGULAR;
   let cardLookup = new Map();
+  const cardCatalogByRuleset = new Map();
+  let catalogLoadToken = 0;
   let lastHudKey = null;
   let lastTurnActive = false;
   let actionSubmitInFlight = false;
@@ -308,10 +318,34 @@ export const initGame = () => {
   let activeSpectatorGameId = null;
   let leaveReplayView = () => {};
   const pendingActionPreview = createPendingActionPreview();
+  pendingActionPreview.setRuleset(activeRuleset);
 
   const isSpectatorMode = () => viewMode === VIEW_MODE_SPECTATOR;
   const isReplayMode = () => viewMode === VIEW_MODE_REPLAY || isSpectatorMode();
   const isTutorialMatch = () => !isReplayMode() && Boolean(gameState?.state?.public?.tutorial?.enabled);
+  const getCurrentRuleset = () => normalizeRulesetName(gameState?.state?.public?.ruleset ?? activeRuleset);
+
+  const ensureCardCatalogForRuleset = async (ruleset) => {
+    const normalizedRuleset = normalizeRulesetName(ruleset);
+    const requestToken = ++catalogLoadToken;
+    let catalog = cardCatalogByRuleset.get(normalizedRuleset);
+    if (!catalog) {
+      const loader = normalizedRuleset === RULESET_ALTERNATE ? loadAlternateCardCatalog : loadCardCatalog;
+      catalog = await loader();
+      cardCatalogByRuleset.set(normalizedRuleset, catalog);
+    }
+    if (requestToken !== catalogLoadToken) return;
+    activeRuleset = normalizedRuleset;
+    cardCatalog = catalog;
+    cardLookup = buildCardLookup(catalog);
+    pendingActionPreview.setRuleset(activeRuleset);
+    if (actionHud?.setRuleset) {
+      actionHud.setRuleset(activeRuleset);
+    }
+    tooltip.setCardCatalog(catalog);
+    refreshActionHud();
+    refreshInteractionOverlay();
+  };
 
   const buildReplaySnapshotFromState = (stateLike) => {
     const normalized = normalizeReplayPayload(stateLike);
@@ -743,6 +777,13 @@ export const initGame = () => {
       actionHud.setHidden(true);
       return;
     }
+    const publicState = gameState?.state?.public ?? null;
+    const ruleset = normalizeRulesetName(publicState?.ruleset ?? activeRuleset);
+    pendingActionPreview.setRuleset(ruleset);
+    actionHud.setRuleset?.(ruleset);
+    if (ruleset !== activeRuleset) {
+      void ensureCardCatalogForRuleset(ruleset);
+    }
     if (!gameState || !cardCatalog) {
       if (lastHudKey !== null) {
         actionHud.setCards([], []);
@@ -752,6 +793,11 @@ export const initGame = () => {
         console.log(`${LOG_PREFIX} hud`, { visible: false, locked: true, reason: 'missing-state' });
         lastHudStateKey = null;
       }
+      actionHud.setVisible(false);
+      actionHud.setLocked(true);
+      return;
+    }
+    if (ruleset !== activeRuleset) {
       actionHud.setVisible(false);
       actionHud.setLocked(true);
       return;
@@ -778,7 +824,7 @@ export const initGame = () => {
     const exhaustedIds = Array.isArray(playerCards.discardPile) ? playerCards.discardPile : [];
     const movementCards = movementDeckIds.map((id) => cardLookup.get(id)).filter(Boolean);
     const abilityCards = abilityIds.map((id) => cardLookup.get(id)).filter(Boolean);
-    const nextKey = `${movementDeckIds.join(',')}|${abilityIds.join(',')}`;
+    const nextKey = `${ruleset}|${movementDeckIds.join(',')}|${abilityIds.join(',')}`;
     if (nextKey !== lastHudKey) {
       actionHud.setCards(movementCards, abilityCards, { exhaustedCardIds: exhaustedIds });
       lastHudKey = nextKey;
@@ -786,7 +832,6 @@ export const initGame = () => {
       actionHud.setExhaustedCards(exhaustedIds);
     }
 
-    const publicState = gameState?.state?.public;
     const beats = publicState?.beats ?? [];
     const characters = publicState?.characters ?? [];
     const earliestIndex =
@@ -799,38 +844,52 @@ export const initGame = () => {
     const hasPendingInteraction = interactions.some((interaction) => interaction?.status === 'pending');
     const pendingActions = publicState?.pendingActions;
     let locked = actionSubmitInFlight || hasPendingInteraction;
+    let waitingOnPendingBatch = false;
     if (pendingActions && Array.isArray(pendingActions.requiredUserIds)) {
       const isRequired = pendingActions.requiredUserIds.includes(localUserId);
       const submitted = Array.isArray(pendingActions.submittedUserIds)
         ? pendingActions.submittedUserIds.includes(localUserId)
         : false;
+      waitingOnPendingBatch = !isRequired || submitted;
       if (isRequired && submitted) {
         locked = true;
       }
+      if (!isRequired) {
+        locked = true;
       }
-      const isTurn = isLocalAtBat && isAtEarliest && !hasPendingInteraction;
-      const localCharacter = characters.find((candidate) => candidate.userId === localUserId);
-      const resolvedIndex = beats.length ? getTimelineResolvedIndex(beats) : -1;
-      const localEntry =
-        localCharacter && resolvedIndex >= 0
-          ? getLastEntryForCharacter(beats, localCharacter, resolvedIndex)
-          : null;
-      const localDamage = Number.isFinite(localEntry?.damage)
-        ? Math.round(localEntry.damage)
-        : localCharacter?.damage ?? 0;
-      actionHud.setPlayerDamage?.(localDamage);
-      const localFirstE = localCharacter ? getCharacterFirstEIndex(beats, localCharacter) : null;
-      const comboInteraction =
-        localFirstE !== null
-        ? interactions.find(
-            (interaction) =>
-              interaction?.status === 'resolved' &&
-              interaction?.type === 'combo' &&
-              interaction?.actorUserId === localUserId &&
-              interaction?.beatIndex === localFirstE &&
-              Boolean(interaction?.resolution?.continue),
-          )
+    }
+    const isTurn = isLocalAtBat && isAtEarliest && !hasPendingInteraction && !waitingOnPendingBatch;
+    const localCharacter = characters.find((candidate) => candidate.userId === localUserId);
+    const resolvedIndex = beats.length ? getTimelineResolvedIndex(beats) : -1;
+    const localEntry =
+      localCharacter && resolvedIndex >= 0
+        ? getLastEntryForCharacter(beats, localCharacter, resolvedIndex)
         : null;
+    const localDamage = Number.isFinite(localEntry?.damage)
+      ? Math.round(localEntry.damage)
+      : localCharacter?.damage ?? 0;
+    const localAdrenaline =
+      Number.isFinite(localEntry?.adrenaline)
+        ? Math.max(0, Math.min(10, Math.floor(localEntry.adrenaline)))
+        : Number.isFinite(localCharacter?.adrenaline)
+          ? Math.max(0, Math.min(10, Math.floor(localCharacter.adrenaline)))
+          : Number.isFinite(playerCards?.adrenaline)
+            ? Math.max(0, Math.min(10, Math.floor(playerCards.adrenaline)))
+            : 0;
+    actionHud.setPlayerDamage?.(localDamage);
+    actionHud.setAdrenaline?.(localAdrenaline);
+    const localFirstE = localCharacter ? getCharacterFirstEIndex(beats, localCharacter) : null;
+    const comboInteraction =
+      localFirstE !== null
+      ? interactions.find(
+          (interaction) =>
+            interaction?.status === 'resolved' &&
+            interaction?.type === 'combo' &&
+            interaction?.actorUserId === localUserId &&
+            interaction?.beatIndex === localFirstE &&
+            Boolean(interaction?.resolution?.continue),
+        )
+      : null;
     const comboRequired = Boolean(comboInteraction && isTurn);
     const comboEligibleIds = new Set();
     if (comboRequired) {
@@ -874,14 +933,19 @@ export const initGame = () => {
     lastTurnActive = isTurn;
   };
 
-  const handleActionSubmit = async ({ activeCardId, passiveCardId, rotation, activeCard }) => {
+  const handleActionSubmit = async ({ activeCardId, passiveCardId, rotation, submittedAdrenaline = 0, activeCard }) => {
     if (isReplayMode()) return;
     if (!gameState?.id || actionSubmitInFlight) return;
     if (getMatchOutcome(gameState?.state?.public)) return;
+    const safeSubmittedAdrenaline = Number.isFinite(submittedAdrenaline)
+      ? Math.max(0, Math.floor(submittedAdrenaline))
+      : 0;
     actionSubmitInFlight = true;
     if (actionHud) actionHud.setLocked(true);
     const previewCard = activeCard ?? cardLookup.get(activeCardId);
-    pendingActionPreview.setFromCard(previewCard, cardLookup.get(passiveCardId), rotation);
+    pendingActionPreview.setFromCard(previewCard, cardLookup.get(passiveCardId), rotation, {
+      submittedAdrenaline: safeSubmittedAdrenaline,
+    });
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
     console.log(`${LOG_PREFIX} action:set submit`, {
@@ -890,6 +954,7 @@ export const initGame = () => {
       activeCardId,
       passiveCardId,
       rotation,
+      submittedAdrenaline: safeSubmittedAdrenaline,
       earliestIndex: getTimelineEarliestEIndex(beats, characters),
       timelineIndex: timeIndicatorViewModel.value,
     });
@@ -903,6 +968,7 @@ export const initGame = () => {
           activeCardId,
           passiveCardId,
           rotation,
+          submittedAdrenaline: safeSubmittedAdrenaline,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -916,7 +982,12 @@ export const initGame = () => {
         throw new Error(message);
       }
       console.log(`${LOG_PREFIX} action:set ack`, { status: response.status, gameId: gameState.id });
-      tutorialGuide?.notifyActionSubmitted?.({ activeCardId, passiveCardId, rotation });
+      tutorialGuide?.notifyActionSubmitted?.({
+        activeCardId,
+        passiveCardId,
+        rotation,
+        submittedAdrenaline: safeSubmittedAdrenaline,
+      });
       if (actionHud) actionHud.clearSelection();
     } catch (err) {
       console.error('Failed to submit action set', err);
@@ -1797,6 +1868,12 @@ export const initGame = () => {
 
   const setGameState = (nextState) => {
     gameState = nextState;
+    const nextRuleset = normalizeRulesetName(nextState?.state?.public?.ruleset ?? activeRuleset);
+    pendingActionPreview.setRuleset(nextRuleset);
+    actionHud?.setRuleset?.(nextRuleset);
+    if (nextRuleset !== activeRuleset || !cardCatalog) {
+      void ensureCardCatalogForRuleset(nextRuleset);
+    }
     setTimeIndicatorPlayerCount(gameState?.state?.public?.characters?.length ?? 2);
     setGameMenuLabels();
     tooltip.setGameState(nextState);
@@ -1835,14 +1912,7 @@ export const initGame = () => {
     refreshGameOver();
   };
 
-  loadCardCatalog()
-    .then((catalog) => {
-      cardCatalog = catalog;
-      cardLookup = buildCardLookup(catalog);
-      tooltip.setCardCatalog(catalog);
-      refreshActionHud();
-      refreshInteractionOverlay();
-    })
+  ensureCardCatalogForRuleset(activeRuleset)
     .catch((err) => {
       console.warn('Failed to load card catalog for timeline tooltips', err);
     });

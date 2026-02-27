@@ -4,14 +4,28 @@ const { createDeckState, validateActionSubmission } = require('../dist/game/card
 const { loadCardCatalog } = require('../dist/game/cardCatalog.js');
 
 let catalog;
+let alternateCatalog;
 
 before(async () => {
-  catalog = await loadCardCatalog();
+  catalog = await loadCardCatalog('regular');
+  alternateCatalog = await loadCardCatalog('alternate');
 });
 
 const buildActionList = (activeCardId, passiveCardId, rotation = 'R1') => {
   const deckState = createDeckState({ movement: [passiveCardId], ability: [activeCardId] });
   const result = validateActionSubmission({ activeCardId, passiveCardId, rotation }, deckState, catalog);
+  assert.equal(result.ok, true, result.ok ? '' : result.error?.message);
+  return result.actionList;
+};
+
+const buildAlternateActionList = (activeCardId, passiveCardId, rotation = 'R1') => {
+  const deckState = createDeckState({ movement: [passiveCardId], ability: [activeCardId] });
+  const result = validateActionSubmission(
+    { activeCardId, passiveCardId, rotation },
+    deckState,
+    alternateCatalog,
+    { ruleset: 'alternate' },
+  );
   assert.equal(result.ok, true, result.ok ? '' : result.error?.message);
   return result.actionList;
 };
@@ -59,4 +73,30 @@ test('smoke-bomb active swaps into the passive action list at X1 with selected r
   assert.equal(actionList[2].rotationSource, 'selected');
   assert.equal(actionList[2].cardId, 'step');
   assert.equal(actionList[2].passiveCardId, 'smoke-bomb');
+});
+
+test('aerial-strike active forces a 3 rotation after the jump (alternate beat text)', () => {
+  const actionList = buildAlternateActionList('aerial-strike', 'step', 'R2');
+  assert.deepEqual(
+    actionList.map((entry) => entry.action),
+    ['2j', 'a', 'W', 'Adr+1'],
+  );
+  assert.equal(actionList[0].rotation, 'R2');
+  assert.equal(actionList[0].rotationSource, 'selected');
+  assert.equal(actionList[1].rotation, '3');
+  assert.equal(actionList[1].rotationSource, 'forced');
+});
+
+test('smoke-bomb active shifts selected rotation to the swapped X1 start (alternate beat text)', () => {
+  const actionList = buildAlternateActionList('smoke-bomb', 'step', 'R2');
+  assert.deepEqual(
+    actionList.map((entry) => entry.action),
+    ['[a-La-Ra]', 'W', 'Bm'],
+  );
+  assert.equal(actionList[0].rotation, '');
+  assert.equal(actionList[0].rotationSource, undefined);
+  assert.equal(actionList[1].rotation, 'R2');
+  assert.equal(actionList[1].rotationSource, 'selected');
+  assert.equal(actionList[1].cardId, 'step');
+  assert.equal(actionList[1].passiveCardId, 'smoke-bomb');
 });

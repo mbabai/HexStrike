@@ -1,21 +1,5 @@
-import { isBracketedAction, patchActionEntry, updateActionEntries } from './actionListTransforms.js';
-
-const getBracketedActionIndices = (actions) => {
-  const indices = [];
-  (actions ?? []).forEach((action, index) => {
-    if (isBracketedAction(action)) {
-      indices.push(index);
-    }
-  });
-  return indices;
-};
-
-const getSymbolActionIndices = (actions, symbol) => {
-  if (symbol === 'i') {
-    return getBracketedActionIndices(actions);
-  }
-  return [];
-};
+import { patchActionEntry, updateActionEntries } from './actionListTransforms.js';
+import { getActiveEffectTargetIndices } from './activeEffectTargets.js';
 
 const applyRotationAfterIndex = (actionList, index, rotation, options = {}) => {
   if (!rotation || !Number.isFinite(index) || index < 0 || index >= actionList.length) return actionList;
@@ -49,14 +33,14 @@ const shiftSelectedRotationToIndex = (actionList, index) => {
 const applyCounterAttackActiveText = (actionList) => actionList;
 
 const applyAerialStrikeActiveText = (actionList, card) => {
-  const indices = getSymbolActionIndices(card?.actions ?? [], 'i');
+  const indices = getActiveEffectTargetIndices(actionList, card, 'i', { fallbackToTextEntries: true });
   const targetIndex = indices.length ? indices[0] + 1 : null;
   if (targetIndex == null) return actionList;
   return applyRotationAfterIndex(actionList, targetIndex, '3', { clearStartRotation: false });
 };
 
 const applyWhirlwindActiveText = (actionList, card) => {
-  const indices = getSymbolActionIndices(card?.actions ?? [], 'i');
+  const indices = getActiveEffectTargetIndices(actionList, card, 'i', { fallbackToTextEntries: true });
   if (!indices.length) return actionList;
   return updateActionEntries(actionList, indices, (entry) => {
     if (!entry) return entry;
@@ -65,7 +49,7 @@ const applyWhirlwindActiveText = (actionList, card) => {
 };
 
 const applySmokeBombActiveText = (actionList, card) => {
-  const indices = getSymbolActionIndices(card?.actions ?? [], 'i');
+  const indices = getActiveEffectTargetIndices(actionList, card, 'i', { fallbackToTextEntries: true });
   const targetIndex = indices.length ? indices[0] + 1 : null;
   if (targetIndex == null) return actionList;
   return shiftSelectedRotationToIndex(actionList, targetIndex);

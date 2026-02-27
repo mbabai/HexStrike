@@ -10,8 +10,11 @@ const ACTION_ICON_FALLBACK = 'empty';
 const EMPHASIS_ICON_KEY = 'i';
 const COMBO_ICON_KEY = 'Co';
 const FOCUS_ICON_KEY = 'F';
+const ADRENALINE_ICON_KEY = 'Adrenaline';
+const ADRENALINE_ACTION_REGEX = /^(?:adr|adrenaline)\s*([+-])\s*(\d+)$/i;
 const KNOCKBACK_ICON_KEY = 'KnockBackIcon';
 const DISCARD_ICON_KEY = 'DiscardIcon';
+const DRAW_ICON_KEY = 'DrawIcon';
 const REWIND_RETURN_INTERACTION_TYPE = 'rewind-return';
 const END_MARKER_ACTIONS = new Set(['Death', 'Victory', 'Handshake']);
 const VISIBLE_BEAT_RADIUS = 6;
@@ -91,6 +94,11 @@ const getCharacterArt = (characterId) => {
   return image;
 };
 
+const isOpenActionLabel = (action) => {
+  const normalized = `${action ?? ''}`.trim().toUpperCase();
+  return normalized === DEFAULT_ACTION || normalized === FOCUS_ICON_KEY;
+};
+
 const getCardArt = (cardName) => {
   const key = `${cardName ?? ''}`.trim();
   if (!key) return null;
@@ -101,14 +109,36 @@ const getCardArt = (cardName) => {
   return image;
 };
 
+const buildParsedActionToken = (label, emphasized) => {
+  const safeLabel = `${label ?? ''}`.trim() || ACTION_ICON_FALLBACK;
+  const adrenalineMatch = ADRENALINE_ACTION_REGEX.exec(safeLabel);
+  if (adrenalineMatch) {
+    const sign = adrenalineMatch[1] === '-' ? '-' : '+';
+    const rawAmount = Number(adrenalineMatch[2]);
+    const amount = Number.isFinite(rawAmount) ? Math.max(0, Math.floor(rawAmount)) : 0;
+    return {
+      label: ADRENALINE_ICON_KEY,
+      emphasized,
+      adrenalineActionText: `${sign}${amount}`,
+      rawLabel: safeLabel,
+    };
+  }
+  return {
+    label: safeLabel,
+    emphasized,
+    adrenalineActionText: '',
+    rawLabel: safeLabel,
+  };
+};
+
 const parseActionToken = (raw) => {
   const trimmed = `${raw ?? ''}`.trim();
-  if (!trimmed) return { label: ACTION_ICON_FALLBACK, emphasized: false };
+  if (!trimmed) return buildParsedActionToken(ACTION_ICON_FALLBACK, false);
   if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
     const label = trimmed.slice(1, -1).trim();
-    return { label: label || ACTION_ICON_FALLBACK, emphasized: true };
+    return buildParsedActionToken(label, true);
   }
-  return { label: trimmed, emphasized: false };
+  return buildParsedActionToken(trimmed, false);
 };
 
 const getHitSummary = (entry) => {
@@ -147,6 +177,20 @@ const getPendingPreviewEntry = (preview, character, beatIndex) => {
   const offset = beatIndex - startIndex;
   if (offset < 0 || offset >= actionList.length) return null;
   return actionList[offset] ?? null;
+};
+
+const toSubBeatBadgeLabel = (subBeat) => {
+  if (!subBeat || typeof subBeat !== 'object') return '';
+  if (Number.isFinite(subBeat.start) && Number.isFinite(subBeat.end)) {
+    const start = Math.max(1, Math.min(9, Math.round(subBeat.start)));
+    const end = Math.max(1, Math.min(9, Math.round(subBeat.end)));
+    return `${Math.min(start, end)}-${Math.max(start, end)}`;
+  }
+  if (Number.isFinite(subBeat.value)) {
+    const value = Math.max(1, Math.min(9, Math.round(subBeat.value)));
+    return `${value}`;
+  }
+  return '';
 };
 
 const matchesOutcomeCharacter = (character, outcomeUserId) => {
@@ -766,7 +810,9 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
       const baseEntry = beatLookup[beatIndex]?.get(lookupKey);
       const baseAction = `${baseEntry?.action ?? ''}`.trim();
       const outcomeAction = getOutcomeMarkerAction(matchOutcome, character, beatIndex);
-      const implicitOpenBeat = !baseEntry && beatIndex === highlightIndex;
+      const previousEntry = beatIndex > 0 ? beatLookup[beatIndex - 1]?.get(lookupKey) : null;
+      const previousIsOpen = isOpenActionLabel(previousEntry?.action);
+      const implicitOpenBeat = !baseEntry && beatIndex === highlightIndex && !previousIsOpen;
       const action =
         outcomeAction && (!baseEntry || baseAction === DEFAULT_ACTION)
           ? outcomeAction
@@ -913,6 +959,7 @@ export const drawTimeIndicator = (
   timelinePointer = null,
 ) => {
   const publicState = gameState?.state?.public ?? null;
+  const isAlternateRuleset = `${publicState?.ruleset ?? ''}`.trim().toLowerCase() === 'alternate';
   const characters = gameState?.state?.public?.characters ?? [];
   setTimeIndicatorPlayerCount(characters.length || 2);
   const layout = getTimeIndicatorLayout(viewport);
@@ -1073,7 +1120,9 @@ export const drawTimeIndicator = (
       const usePreview =
         !outcomeMarkerAction && previewEntry && (!baseEntry || baseAction === DEFAULT_ACTION);
       const entry = usePreview ? previewEntry : baseEntry;
-      const implicitOpenBeat = !entry && beatIndex === highlightIndex;
+      const previousEntry = beatIndex > 0 ? beatLookup[beatIndex - 1]?.get(lookupKey) : null;
+      const previousIsOpen = isOpenActionLabel(previousEntry?.action);
+      const implicitOpenBeat = !entry && beatIndex === highlightIndex && !previousIsOpen;
       const action =
         outcomeMarkerAction && (!baseEntry || baseAction === DEFAULT_ACTION)
           ? outcomeMarkerAction
@@ -1154,6 +1203,9 @@ export const drawTimeIndicator = (
       } else {
         ctx.drawImage(image, imageX, imageY, drawSize, drawSize);
       }
+      if (token.adrenalineActionText) {
+        drawActionAdrenalineText(ctx, imageX, imageY, drawSize, token.adrenalineActionText, theme);
+      }
       if (entry?.focusCardId) {
         drawFocusBadge(ctx, imageX, imageY, drawSize);
       }
@@ -1181,6 +1233,15 @@ export const drawTimeIndicator = (
       if (drawCount > 0) {
         drawDrawBadge(ctx, imageX, imageY, drawSize, drawCount, theme, discardCount > 0 ? 1 : 0);
       }
+      if (!usePreview) {
+        const submittedAdrenaline = Number.isFinite(entry?.submittedAdrenaline)
+          ? Math.max(0, Math.floor(entry.submittedAdrenaline))
+          : 0;
+        const cardFlowRows = (discardCount > 0 ? 1 : 0) + (drawCount > 0 ? 1 : 0);
+        if (submittedAdrenaline > 0) {
+          drawSubmittedAdrenalineBadge(ctx, imageX, imageY, drawSize, submittedAdrenaline, theme, cardFlowRows);
+        }
+      }
       const actionLabel = token.label;
       if (
         actionLabel &&
@@ -1189,8 +1250,15 @@ export const drawTimeIndicator = (
         actionLabel !== ACTION_ICON_FALLBACK &&
         actionLabel !== 'DamageIcon'
       ) {
-        const priorityValue = Number.isFinite(entry?.priority) ? entry.priority : 0;
-        drawPriorityBadge(ctx, imageX, imageY, drawSize, priorityValue, theme);
+        if (isAlternateRuleset) {
+          const subBeatLabel = toSubBeatBadgeLabel(entry?.subBeat);
+          if (subBeatLabel) {
+            drawPriorityBadge(ctx, imageX, imageY, drawSize, subBeatLabel, theme);
+          }
+        } else {
+          const priorityValue = Number.isFinite(entry?.priority) ? entry.priority : 0;
+          drawPriorityBadge(ctx, imageX, imageY, drawSize, `${priorityValue}`, theme);
+        }
       }
       const rotation = entry?.rotation;
       if (rotation !== undefined && rotation !== null && rotation !== '') {
@@ -1673,13 +1741,16 @@ const drawRotationBadge = (ctx, x, y, size, rotation, theme) => {
   ctx.restore();
 };
 
-const drawPriorityBadge = (ctx, x, y, size, priority, theme) => {
+const drawPriorityBadge = (ctx, x, y, size, label, theme) => {
+  const safeLabel = `${label ?? ''}`.trim();
+  if (!safeLabel) return;
   const radius = Math.max(6, size * 0.22);
   const padding = Math.max(2, size * 0.05);
   const badgeOffset = Math.max(4, size * 0.25);
   const centerX = x + size - radius - padding;
   const centerY = y + size - radius - padding + badgeOffset;
-  const fontSize = Math.max(9, radius * 1.05);
+  const fontScale = safeLabel.length <= 1 ? 1.05 : safeLabel.length <= 3 ? 0.82 : 0.68;
+  const fontSize = Math.max(7, radius * fontScale);
 
   if (priorityIcon.complete && priorityIcon.naturalWidth > 0) {
     ctx.drawImage(priorityIcon, centerX - radius, centerY - radius, radius * 2, radius * 2);
@@ -1690,7 +1761,7 @@ const drawPriorityBadge = (ctx, x, y, size, priority, theme) => {
   ctx.font = `600 ${fontSize}px ${theme.fontBody}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(`${priority}`, centerX, centerY + radius * 0.05);
+  ctx.fillText(safeLabel, centerX, centerY + radius * 0.05);
   ctx.restore();
 };
 
@@ -1830,7 +1901,7 @@ const drawDiscardBadge = (ctx, x, y, size, discardCount, theme) => {
 const drawDrawBadge = (ctx, x, y, size, drawCount, theme, row = 0) => {
   const safeCount = Number.isFinite(drawCount) ? Math.max(0, Math.round(drawCount)) : 0;
   if (!safeCount) return;
-  const icon = getActionArt(DISCARD_ICON_KEY);
+  const icon = getActionArt(DRAW_ICON_KEY);
   if (!icon || !icon.complete || icon.naturalWidth === 0) return;
   const rect = getCardFlowBadgeRect(x, y, size, row);
   ctx.drawImage(icon, rect.x, rect.y, rect.size, rect.size);
@@ -1841,6 +1912,37 @@ const drawDrawBadge = (ctx, x, y, size, drawCount, theme, row = 0) => {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(`+${safeCount}`, rect.x + rect.size / 2, rect.y + rect.size / 2 + rect.size * 0.05);
+  ctx.restore();
+};
+
+const drawSubmittedAdrenalineBadge = (ctx, x, y, size, submittedAdrenaline, theme, row = 0) => {
+  const safeCount = Number.isFinite(submittedAdrenaline)
+    ? Math.max(0, Math.min(10, Math.floor(submittedAdrenaline)))
+    : 0;
+  if (!safeCount) return;
+  const icon = getActionArt(ADRENALINE_ICON_KEY);
+  if (!icon || !icon.complete || icon.naturalWidth === 0) return;
+  const rect = getCardFlowBadgeRect(x, y, size, row);
+  ctx.drawImage(icon, rect.x, rect.y, rect.size, rect.size);
+
+  ctx.save();
+  ctx.fillStyle = '#101010';
+  ctx.font = `800 ${Math.max(9, rect.size * 0.43)}px ${theme.fontBody}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`${safeCount}`, rect.x + rect.size / 2, rect.y + rect.size * 0.67);
+  ctx.restore();
+};
+
+const drawActionAdrenalineText = (ctx, imageX, imageY, drawSize, actionText, theme) => {
+  const safeText = `${actionText ?? ''}`.trim();
+  if (!safeText) return;
+  ctx.save();
+  ctx.fillStyle = '#101010';
+  ctx.font = `900 ${Math.max(9, drawSize * 0.42)}px ${theme.fontBody}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(safeText, imageX + drawSize * 0.5, imageY + drawSize * 0.7);
   ctx.restore();
 };
 

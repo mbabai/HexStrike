@@ -77,6 +77,7 @@ import {
   ReplayDoc,
   ReplayPlayerDoc,
   ReplayResult,
+  RulesetName,
 } from './types';
 import type { AbilityDiscardResult } from './game/cardRules';
 
@@ -197,9 +198,64 @@ const attachAbilityHandCountsToCharacters = (
     const deckState = deckStates?.get(character.userId);
     if (!deckState) return { ...character };
     const abilityHandCount = toAbilityHandCount(deckState.abilityHand.length);
-    if (!Number.isFinite(abilityHandCount)) return { ...character };
-    return { ...character, abilityHandCount };
+    const parsedAdrenaline = Number(deckState.adrenaline);
+    const adrenaline = Number.isFinite(parsedAdrenaline)
+      ? Math.max(0, Math.min(10, Math.floor(parsedAdrenaline)))
+      : undefined;
+    if (!Number.isFinite(abilityHandCount) && !Number.isFinite(adrenaline)) return { ...character };
+    const next: PublicCharacter = { ...character };
+    if (Number.isFinite(abilityHandCount)) {
+      next.abilityHandCount = abilityHandCount;
+    }
+    if (Number.isFinite(adrenaline)) {
+      next.adrenaline = adrenaline;
+    }
+    return next;
   });
+
+const toAdrenalineCount = (value: unknown): number | undefined => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return undefined;
+  return Math.max(0, Math.min(10, Math.floor(parsed)));
+};
+
+const getCharacterAdrenalineAtOrBefore = (
+  beats: BeatEntry[][],
+  character: PublicCharacter,
+  uptoIndex: number,
+): number | undefined => {
+  if (!Array.isArray(beats) || !beats.length) return undefined;
+  const safeIndex = Math.min(Math.max(0, Math.round(uptoIndex)), beats.length - 1);
+  for (let index = safeIndex; index >= 0; index -= 1) {
+    const entry = findCharacterBeatEntry(beats[index], character);
+    const adrenaline = toAdrenalineCount(entry?.adrenaline);
+    if (Number.isFinite(adrenaline)) return adrenaline;
+  }
+  return undefined;
+};
+
+const syncDeckStateAdrenalineFromTimeline = (
+  deckStates: Map<string, DeckState> | undefined,
+  beats: BeatEntry[][],
+  characters: PublicCharacter[],
+) => {
+  if (!deckStates?.size) return;
+  if (!Array.isArray(characters) || !characters.length) return;
+  const resolvedIndex = getTimelineResolvedIndex(beats);
+  const fallbackIndex = Array.isArray(beats) && beats.length ? beats.length - 1 : 0;
+  const lookupIndex = resolvedIndex >= 0 ? resolvedIndex : fallbackIndex;
+  characters.forEach((character) => {
+    const deckState = deckStates.get(character.userId);
+    if (!deckState) return;
+    const timelineAdrenaline = getCharacterAdrenalineAtOrBefore(beats, character, lookupIndex);
+    if (Number.isFinite(timelineAdrenaline)) {
+      deckState.adrenaline = timelineAdrenaline;
+      return;
+    }
+    const baseAdrenaline = toAdrenalineCount(character.adrenaline);
+    deckState.adrenaline = Number.isFinite(baseAdrenaline) ? baseAdrenaline : 0;
+  });
+};
 
 const getActionEligibleCharacters = (
   publicState: GameStateDoc['public'],
@@ -240,6 +296,7 @@ const WHIRLWIND_MIN_DAMAGE = 12;
 const DRAW_OFFER_COOLDOWN_MS = 30_000;
 const PROD_FAVICON_PATH = '/public/images/X1.png';
 const DEV_FAVICON_PATH = '/public/images/X2.png';
+const DEFAULT_RULESET: RulesetName = 'regular';
 const MAX_USERNAME_LENGTH = 24;
 const TUTORIAL_QUEUE_NAME: QueueName = 'tutorialQueue';
 const TUTORIAL_BOT_USERNAME = 'Strylan';
@@ -895,6 +952,7 @@ const executeWithForcedRewindReturns = ({
   deckStates,
   ffa,
   initialTokens = [],
+  ruleset = DEFAULT_RULESET,
 }: {
   beats: BeatEntry[][];
   characters: PublicCharacter[];
@@ -906,6 +964,7 @@ const executeWithForcedRewindReturns = ({
   deckStates: Map<string, DeckState>;
   ffa?: FfaState;
   initialTokens?: BoardToken[];
+  ruleset?: RulesetName;
 }) => {
   // Replay execution must seed tokens from timeline/interactions, not the current
   // public board token snapshot, or old fire/arrow states get projected into beat 0.
@@ -921,6 +980,7 @@ const executeWithForcedRewindReturns = ({
     guardContinueAvailability,
     {
       isUserInvulnerableAtBeat: (userId, beatIndex) => isFfaPlayerInvulnerableAtBeat(ffa, userId, beatIndex),
+      ruleset,
     },
   );
   syncFocusedCardsFromInteractions(deckStates, executed.interactions);
@@ -936,6 +996,7 @@ const executeWithForcedRewindReturns = ({
       guardContinueAvailability,
       {
         isUserInvulnerableAtBeat: (userId, beatIndex) => isFfaPlayerInvulnerableAtBeat(ffa, userId, beatIndex),
+        ruleset,
       },
     );
     syncFocusedCardsFromInteractions(deckStates, executed.interactions);
@@ -1026,6 +1087,7 @@ export function buildServer(port: number) {
   const matchDisconnects = new Map<string, Set<string>>();
   const matchExitUsers = new Map<string, Set<string>>();
   const queuedDecks = new Map<string, DeckDefinition>();
+  const queuedRulesets = new Map<string, RulesetName>();
   const tutorialSessionsByGame = new Map<string, TutorialSession>();
   const gameDeckStates = new Map<string, Map<string, DeckState>>();
   const botUsersByGame = new Map<string, Set<string>>();
@@ -1055,6 +1117,11 @@ export function buildServer(port: number) {
     const candidate = value.trim().toLowerCase();
     if (!candidate) return undefined;
     return CHARACTER_IDS.includes(candidate as CharacterId) ? (candidate as CharacterId) : undefined;
+  };
+
+  const normalizeRuleset = (value: unknown): RulesetName => {
+    const normalized = `${value ?? ''}`.trim().toLowerCase();
+    return normalized === 'alternate' ? 'alternate' : DEFAULT_RULESET;
   };
 
   const isTutorialQueue = (queue: QueueName): boolean => queue === TUTORIAL_QUEUE_NAME;
@@ -1924,7 +1991,12 @@ export function buildServer(port: number) {
   };
 
   const buildDeckStatesForMatch = async (match: MatchDoc, game: GameDoc) => {
-    const catalog = await loadCardCatalog();
+    const ruleset = match.ruleset ?? game.ruleset ?? game.state?.public?.ruleset ?? DEFAULT_RULESET;
+    const catalog = await loadCardCatalog(ruleset);
+    game.ruleset = ruleset;
+    if (game.state?.public) {
+      game.state.public.ruleset = ruleset;
+    }
     const deckStates = new Map<string, DeckState>();
     match.players.forEach((player) => {
       const deck = queuedDecks.get(player.userId) ?? buildDefaultDeckDefinition(catalog);
@@ -1943,7 +2015,12 @@ export function buildServer(port: number) {
     if (match) {
       return buildDeckStatesForMatch(match, game);
     }
-    const catalog = await loadCardCatalog();
+    const ruleset = game.ruleset ?? game.state?.public?.ruleset ?? DEFAULT_RULESET;
+    const catalog = await loadCardCatalog(ruleset);
+    game.ruleset = ruleset;
+    if (game.state?.public) {
+      game.state.public.ruleset = ruleset;
+    }
     const deckStates = new Map<string, DeckState>();
     const characters = game.state?.public ? ensureBaselineCharacters(game.state.public) : [];
     characters.forEach((character) => {
@@ -1960,15 +2037,19 @@ export function buildServer(port: number) {
   const buildGameViewForPlayer = (game: GameDoc, userId: string, deckStates?: Map<string, DeckState>) => {
     const tutorialSession = getTutorialSession(game.id);
     const resolvedDeckStates = deckStates ?? gameDeckStates.get(game.id);
+    const publicState = game.state.public;
+    const beats = publicState.beats ?? publicState.timeline ?? [];
+    const characters = ensureBaselineCharacters(publicState);
+    syncDeckStateAdrenalineFromTimeline(resolvedDeckStates, beats, characters);
     if (resolvedDeckStates) {
       const focusInteractions = game.state?.public?.customInteractions ?? [];
       syncFocusedCardsFromInteractions(resolvedDeckStates, focusInteractions);
     }
     const playerDeckState = resolvedDeckStates?.get(userId) ?? null;
     const playerCards = playerDeckState ? buildPlayerCardState(playerDeckState) : null;
-    const publicState = game.state.public;
-    const beats = publicState.beats ?? publicState.timeline ?? [];
-    const characters = ensureBaselineCharacters(publicState);
+    const ruleset = game.ruleset ?? publicState.ruleset ?? DEFAULT_RULESET;
+    game.ruleset = ruleset;
+    publicState.ruleset = ruleset;
     applyAbilityHandCountMarkers(beats, characters, resolvedDeckStates);
     const charactersWithAbilityCounts = attachAbilityHandCountsToCharacters(characters, resolvedDeckStates);
     const baseInteractions = Array.isArray(publicState.customInteractions) ? publicState.customInteractions : [];
@@ -2093,8 +2174,10 @@ export function buildServer(port: number) {
     });
   };
 
-  const pickBotLoadout = async (): Promise<{ deck: DeckDefinition; characterId: CharacterId; deckIndex: number }> => {
-    const catalog = await loadCardCatalog();
+  const pickBotLoadout = async (
+    ruleset: RulesetName = DEFAULT_RULESET,
+  ): Promise<{ deck: DeckDefinition; characterId: CharacterId; deckIndex: number }> => {
+    const catalog = await loadCardCatalog(ruleset);
     const baseDecks = Array.isArray(catalog.decks)
       ? catalog.decks.slice(0, BOT_BASE_DECK_CHARACTERS.length)
       : [];
@@ -2117,9 +2200,13 @@ export function buildServer(port: number) {
     };
   };
 
-  const createBotMatchForUser = async (user: { id: string; username: string }, botQueue: BotQueueName) => {
+  const createBotMatchForUser = async (
+    user: { id: string; username: string },
+    botQueue: BotQueueName,
+    ruleset: RulesetName = DEFAULT_RULESET,
+  ) => {
     const queueConfig = BOT_QUEUE_CONFIGS[botQueue] ?? BOT_DEFAULT_CONFIG;
-    const loadout = await pickBotLoadout();
+    const loadout = await pickBotLoadout(ruleset);
     const botId = `${queueConfig.idPrefix}-${randomUUID()}`;
     const bot = await db.upsertUser({
       id: botId,
@@ -2130,6 +2217,7 @@ export function buildServer(port: number) {
       botDifficulty: queueConfig.difficulty,
     });
     queuedDecks.set(bot.id, loadout.deck);
+    queuedRulesets.set(bot.id, ruleset);
     console.log(`${LOG_PREFIX} bot:match-create`, {
       humanUserId: user.id,
       botUserId: bot.id,
@@ -2151,16 +2239,23 @@ export function buildServer(port: number) {
       deck: loadout.deck,
     });
     try {
-      await createMatchWithUsers([
+      await createMatchWithUsers(
+        [
         { id: user.id, username: user.username },
         { id: bot.id, username: bot.username },
-      ]);
+        ],
+        { ruleset },
+      );
     } finally {
       queuedDecks.delete(bot.id);
+      queuedRulesets.delete(bot.id);
     }
   };
 
-  const createTutorialMatchForUser = async (user: { id: string; username: string }) => {
+  const createTutorialMatchForUser = async (
+    user: { id: string; username: string },
+    ruleset: RulesetName = DEFAULT_RULESET,
+  ) => {
     const player = await upsertUserFromRequest(user.id, user.username, TUTORIAL_PLAYER_CHARACTER_ID);
     const botId = `${TUTORIAL_BOT_ID_PREFIX}-${randomUUID()}`;
     const bot = await db.upsertUser({
@@ -2171,11 +2266,16 @@ export function buildServer(port: number) {
     });
     queuedDecks.set(player.id, cloneDeckDefinition(TUTORIAL_PLAYER_DECK));
     queuedDecks.set(bot.id, cloneDeckDefinition(TUTORIAL_BOT_DECK));
+    queuedRulesets.set(player.id, ruleset);
+    queuedRulesets.set(bot.id, ruleset);
     try {
-      const { match, game } = await createMatchWithUsers([
+      const { match, game } = await createMatchWithUsers(
+        [
         { id: player.id, username: player.username },
         { id: bot.id, username: bot.username },
-      ]);
+        ],
+        { ruleset },
+      );
       game.state.public.tutorial = { enabled: true };
       const updatedGame = (await db.updateGame(game.id, { state: game.state })) ?? game;
       tutorialSessionsByGame.set(updatedGame.id, {
@@ -2192,6 +2292,8 @@ export function buildServer(port: number) {
     } finally {
       queuedDecks.delete(player.id);
       queuedDecks.delete(bot.id);
+      queuedRulesets.delete(player.id);
+      queuedRulesets.delete(bot.id);
     }
   };
 
@@ -2478,7 +2580,8 @@ export function buildServer(port: number) {
           if (!botUserId || !botIds.has(botUserId)) return;
           const { botDifficulty, botName } = await resolveBotDecisionContext(botUserId);
           const deckStates = await ensureDeckStatesForGame(game, match);
-          const catalog = await loadCardCatalog();
+          const ruleset = game.ruleset ?? game.state?.public?.ruleset ?? match?.ruleset ?? DEFAULT_RULESET;
+          const catalog = await loadCardCatalog(ruleset);
           const interactionCandidates = buildEasyBotInteractionCandidates(
             {
               botUserId,
@@ -2582,7 +2685,8 @@ export function buildServer(port: number) {
         const { botDifficulty, botName } = await resolveBotDecisionContext(botUserId);
 
         const deckStates = await ensureDeckStatesForGame(game, match);
-        const catalog = await loadCardCatalog();
+        const ruleset = game.ruleset ?? game.state?.public?.ruleset ?? match?.ruleset ?? DEFAULT_RULESET;
+        const catalog = await loadCardCatalog(ruleset);
         const actionCandidates = buildEasyBotActionCandidates({
           botUserId,
           publicState,
@@ -2889,6 +2993,8 @@ export function buildServer(port: number) {
 
   const handleJoin = async (body: Record<string, unknown>) => {
     const requestedQueue = isQueueName(body.queue) ? body.queue : 'quickplay1v1Queue';
+    const requestedRuleset = normalizeRuleset(body.ruleset);
+    const ruleset = isTutorialQueue(requestedQueue) ? DEFAULT_RULESET : requestedRuleset;
     const forcedCharacterId = isTutorialQueue(requestedQueue)
       ? TUTORIAL_PLAYER_CHARACTER_ID
       : normalizeCharacterId(body.characterId || body.characterID);
@@ -2897,7 +3003,7 @@ export function buildServer(port: number) {
       ? await upsertUserFromRequest(user.id, user.username, TUTORIAL_PLAYER_CHARACTER_ID)
       : await ensureUserCharacter(user);
     if (!isTutorialQueue(requestedQueue) && body.deck) {
-      const catalog = await loadCardCatalog();
+      const catalog = await loadCardCatalog(ruleset);
       const parsed = parseDeckDefinition(body.deck, catalog);
       if (!parsed.deck || parsed.errors.length) {
         const detail = parsed.errors.map((error) => error.message).join(' ');
@@ -2910,6 +3016,7 @@ export function buildServer(port: number) {
     } else if (!isTutorialQueue(requestedQueue)) {
       queuedDecks.delete(assignedUser.id);
     }
+    queuedRulesets.set(assignedUser.id, ruleset);
     const queue = requestedQueue;
     lobby.addToQueue(assignedUser.id, queue);
     if (QUICKPLAY_QUEUE_GROUP.includes(queue)) {
@@ -2918,9 +3025,10 @@ export function buildServer(port: number) {
     if (isTutorialQueue(queue)) {
       console.log(`[lobby] ${assignedUser.username} (${assignedUser.id}) requested tutorial match`);
       try {
-        await createTutorialMatchForUser({ id: assignedUser.id, username: assignedUser.username });
+        await createTutorialMatchForUser({ id: assignedUser.id, username: assignedUser.username }, ruleset);
       } catch (err) {
         lobby.removeFromQueue(assignedUser.id, queue);
+        queuedRulesets.delete(assignedUser.id);
         const message = err instanceof Error ? err.message : 'Failed to create tutorial match.';
         throw new Error(message);
       }
@@ -2930,27 +3038,30 @@ export function buildServer(port: number) {
         `[lobby] ${assignedUser.username} (${assignedUser.id}) requested ${queueConfig.username} (${queueConfig.difficulty}) match`,
       );
       try {
-        await createBotMatchForUser({ id: assignedUser.id, username: assignedUser.username }, queue);
+        await createBotMatchForUser({ id: assignedUser.id, username: assignedUser.username }, queue, ruleset);
       } catch (err) {
         lobby.removeFromQueue(assignedUser.id, queue);
+        queuedRulesets.delete(assignedUser.id);
         const message = err instanceof Error ? err.message : `Failed to create ${queueConfig.username} match.`;
         throw new Error(message);
       }
     }
-    return { user: assignedUser, lobby: lobby.serialize() };
+    return { user: assignedUser, lobby: lobby.serialize(), ruleset };
   };
 
   const handleLeave = async (body: Record<string, unknown>) => {
     if (body.userId) {
       lobby.removeFromQueue(body.userId as string, body.queue as any);
       queuedDecks.delete(body.userId as string);
+      queuedRulesets.delete(body.userId as string);
     }
     return { lobby: lobby.serialize() };
   };
 
-  const createSkeletonGame = async (match: MatchDoc) =>
+  const createSkeletonGame = async (match: MatchDoc, ruleset: RulesetName = DEFAULT_RULESET) =>
     db.createGame({
       matchId: match.id,
+      ruleset,
       players: match.players.map((player, index) => ({
         userId: player.userId,
         ready: true,
@@ -2964,6 +3075,7 @@ export function buildServer(port: number) {
           username: player.username,
           characterId: player.characterId,
         })),
+        { ruleset },
       ),
     });
 
@@ -2978,7 +3090,14 @@ export function buildServer(port: number) {
     sendInputRequests(match, game);
   };
 
-  const createMatchWithUsers = async (users: Array<{ id: string; username?: string }>) => {
+  const createMatchWithUsers = async (
+    users: Array<{ id: string; username?: string }>,
+    options: { ruleset?: RulesetName } = {},
+  ) => {
+    const queuedRulesetValues = users
+      .map((user) => (user?.id ? queuedRulesets.get(user.id) : undefined))
+      .filter((ruleset): ruleset is RulesetName => Boolean(ruleset));
+    const requestedRuleset = options.ruleset ?? queuedRulesetValues[0] ?? DEFAULT_RULESET;
     const resolved = await Promise.all(users.map((user) => upsertUserFromRequest(user.id, user.username)));
     const withCharacters = await Promise.all(resolved.map((user) => ensureUserCharacter(user)));
     const matchUsernames = assignMatchUsernames(
@@ -2988,6 +3107,9 @@ export function buildServer(port: number) {
       })),
     );
     lobby.markInGame(withCharacters.map((user) => user.id));
+    withCharacters.forEach((user) => {
+      queuedRulesets.delete(user.id);
+    });
     const match = await db.createMatch({
       players: withCharacters.map((user, index) => ({
         userId: user.id,
@@ -2997,12 +3119,13 @@ export function buildServer(port: number) {
         characterId: (user.characterId ?? pickRandomCharacterId()) as CharacterId,
       })),
       gameId: '',
+      ruleset: requestedRuleset,
       winsRequired,
       state: 'in-progress',
       winnerId: undefined,
       completedAt: undefined,
     });
-    const game = await createSkeletonGame(match);
+    const game = await createSkeletonGame(match, requestedRuleset);
     const updatedMatch = await db.updateMatch(match.id, { gameId: game.id });
     const finalMatch = updatedMatch ?? match;
     await buildDeckStatesForMatch(finalMatch, game);
@@ -3016,11 +3139,16 @@ export function buildServer(port: number) {
     return { match: finalMatch, game };
   };
 
-  const createCustomMatch = async (body: Record<string, unknown>) =>
-    createMatchWithUsers([
-      { id: body.hostId as string, username: (body.hostName as string) || (body.hostId as string) },
-      { id: body.guestId as string, username: (body.guestName as string) || (body.guestId as string) },
-    ]);
+  const createCustomMatch = async (body: Record<string, unknown>) => {
+    const ruleset = normalizeRuleset(body.ruleset);
+    return createMatchWithUsers(
+      [
+        { id: body.hostId as string, username: (body.hostName as string) || (body.hostId as string) },
+        { id: body.guestId as string, username: (body.guestName as string) || (body.guestId as string) },
+      ],
+      { ruleset },
+    );
+  };
 
   let matchmakeInProgress = false;
   const matchmakeQuickplay = async () => {
@@ -3032,9 +3160,18 @@ export function buildServer(port: number) {
         const requiredPlayers = QUICKPLAY_QUEUE_SIZE[queueName] ?? 2;
         while ((snapshot[queueName] ?? []).length >= requiredPlayers) {
           const queue = snapshot[queueName] ?? [];
-          const selected = queue.slice(0, requiredPlayers).filter(Boolean);
+          let selected: string[] = [];
+          let selectedRuleset: RulesetName = DEFAULT_RULESET;
+          for (const candidateId of queue) {
+            const candidateRuleset = queuedRulesets.get(candidateId) ?? DEFAULT_RULESET;
+            const sameRulesetUsers = queue.filter((id) => (queuedRulesets.get(id) ?? DEFAULT_RULESET) === candidateRuleset);
+            if (sameRulesetUsers.length < requiredPlayers) continue;
+            selected = sameRulesetUsers.slice(0, requiredPlayers).filter(Boolean);
+            selectedRuleset = candidateRuleset;
+            break;
+          }
           if (selected.length < requiredPlayers) break;
-          await createMatchWithUsers(selected.map((id) => ({ id })));
+          await createMatchWithUsers(selected.map((id) => ({ id })), { ruleset: selectedRuleset });
           snapshot = lobby.serialize();
         }
       }
@@ -3089,7 +3226,11 @@ export function buildServer(port: number) {
         }
       }
     }
-    match.players.forEach((player) => lobby.removeFromQueue(player.userId));
+    match.players.forEach((player) => {
+      lobby.removeFromQueue(player.userId);
+      queuedDecks.delete(player.userId);
+      queuedRulesets.delete(player.userId);
+    });
     sendRealtimeEvent({ type: 'match:ended', payload: match });
     if (match.gameId) {
       clearLiveSpectatorsForGame(match.gameId);
@@ -3146,8 +3287,13 @@ export function buildServer(port: number) {
         ? '/public/index.html'
         : decodedPath === '/admin' || decodedPath === '/admin/'
           ? '/public/admin.html'
-          : decodedPath === '/cards' || decodedPath === '/cards/'
+        : decodedPath === '/cards' || decodedPath === '/cards/'
             ? '/public/cards.html'
+            : decodedPath === '/alt-deck-builder' ||
+                decodedPath === '/alt-deck-builder/' ||
+                decodedPath === '/altDeckBuilder' ||
+                decodedPath === '/altDeckBuilder/'
+              ? '/public/altDeckBuilder.html'
             : decodedPath === '/stats' || decodedPath === '/stats/'
               ? '/public/stats.html'
             : decodedPath.startsWith('/public/')
@@ -3180,12 +3326,17 @@ export function buildServer(port: number) {
     const activeCardId = (body.activeCardId as string) || (body.activeCardID as string);
     const passiveCardId = (body.passiveCardId as string) || (body.passiveCardID as string);
     const rotation = (body.rotation as string) ?? (body.rotationLabel as string);
+    const submittedAdrenalineRaw = Number(body.submittedAdrenaline ?? body.adrenaline ?? 0);
+    const submittedAdrenaline = Number.isFinite(submittedAdrenalineRaw)
+      ? Math.max(0, Math.floor(submittedAdrenalineRaw))
+      : 0;
     console.log(`${LOG_PREFIX} action:set request`, {
       userId,
       gameId,
       activeCardId,
       passiveCardId,
       rotation,
+      submittedAdrenaline,
     });
     if (!userId || !gameId) {
       return { ok: false, status: 400, error: 'Invalid action set payload' };
@@ -3207,6 +3358,7 @@ export function buildServer(port: number) {
           activeCardId: activeCardId ?? null,
           passiveCardId: passiveCardId ?? null,
           rotation: rotation ?? '',
+          submittedAdrenaline,
         },
         ...extra,
         publicState: buildPublicStateSnapshotForLog(game.state?.public),
@@ -3314,10 +3466,9 @@ export function buildServer(port: number) {
       logActionSetEvent('rejected', { reason: 'not-required' });
       return { ok: false, status: 409, error: 'Action set rejected: player is not required for current beat' };
     }
-    const comboInteraction = findComboContinuation(interactions, userId, earliestIndex);
-    const comboRequired = Boolean(comboInteraction);
     const match = await db.findMatch(game.matchId);
-    const catalog = await loadCardCatalog();
+    const ruleset = game.ruleset ?? game.state?.public?.ruleset ?? match?.ruleset ?? DEFAULT_RULESET;
+    const catalog = await loadCardCatalog(ruleset);
     const deckStates = await ensureDeckStatesForGame(game, match);
     syncFocusedCardsFromInteractions(deckStates, interactions);
     const land = game.state?.public?.land ?? [];
@@ -3330,14 +3481,37 @@ export function buildServer(port: number) {
       game.state?.public?.pendingActions,
       game.state?.public?.boardTokens ?? [],
     );
+    syncDeckStateAdrenalineFromTimeline(deckStates, beats, characters);
     const deckState = deckStates.get(userId);
     if (!deckState) {
       console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'missing-deck-state' });
       logActionSetEvent('rejected', { reason: 'missing-deck-state' }, deckStates);
       return { ok: false, status: 500, error: 'Missing deck state for player' };
     }
-    if (atBatUserIds.length <= 1) {
-      const validation = validateActionSubmission({ activeCardId, passiveCardId, rotation }, deckState, catalog);
+    // Recompute at-bat from the latest timeline after async work to avoid stale required-user sets.
+    const currentBeats = game.state?.public?.beats ?? game.state?.public?.timeline ?? beats;
+    const currentCharacters = ensureBaselineCharacters(game.state.public);
+    const currentEligibleCharacters = getActionEligibleCharacters(game.state.public, currentCharacters);
+    const { earliestIndex: currentEarliestIndex, atBatCharacters: currentAtBatCharacters } =
+      getAtBatCharactersForPublicState(game.state.public, currentBeats, currentEligibleCharacters);
+    const currentAtBatUserIds = Array.from(
+      new Set(currentAtBatCharacters.map((candidate) => candidate.userId).filter(Boolean)),
+    );
+    if (!currentAtBatUserIds.includes(userId)) {
+      console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'not-required-after-refresh' });
+      logActionSetEvent('rejected', { reason: 'not-required-after-refresh' }, deckStates);
+      return { ok: false, status: 409, error: 'Action set rejected: player is not required for current beat' };
+    }
+    interactions = game.state?.public?.customInteractions ?? interactions;
+    const comboInteraction = findComboContinuation(interactions, userId, currentEarliestIndex);
+    const comboRequired = Boolean(comboInteraction);
+    if (currentAtBatUserIds.length <= 1) {
+      const validation = validateActionSubmission(
+        { activeCardId, passiveCardId, rotation, submittedAdrenaline },
+        deckState,
+        catalog,
+        { ruleset },
+      );
       if (isActionValidationFailure(validation)) {
         console.log(`${LOG_PREFIX} action:set validation-failed`, {
           userId,
@@ -3363,7 +3537,7 @@ export function buildServer(port: number) {
         'before-execute-single',
         {
           comboRequired,
-          atBatUserIds,
+          atBatUserIds: currentAtBatUserIds,
           actionList: actionList.map((item) => ({
             action: item.action,
             rotation: item.rotation,
@@ -3409,8 +3583,15 @@ export function buildServer(port: number) {
         activeCardId: activeCardId ?? null,
         passiveCardId: passiveCardId ?? null,
         rotation: rotation ?? '',
+        submittedAdrenaline,
       };
-      const updatedBeats = applyActionSetToBeats(beats, characters, userId, actionListWithHandCount, [actionPlay]);
+      const updatedBeats = applyActionSetToBeats(
+        currentBeats,
+        currentCharacters,
+        userId,
+        actionListWithHandCount,
+        [actionPlay],
+      );
       const comboAvailability = applyTutorialComboAvailability(
         buildComboAvailability(deckStates, catalog),
         tutorialActionValidation.session,
@@ -3422,7 +3603,7 @@ export function buildServer(port: number) {
       );
       const executed = executeWithForcedRewindReturns({
         beats: updatedBeats,
-        characters,
+        characters: currentCharacters,
         interactions,
         land,
         comboAvailability,
@@ -3431,6 +3612,7 @@ export function buildServer(port: number) {
         deckStates,
         ffa: game.state.public.ffa,
         initialTokens: game.state.public.boardTokens ?? [],
+        ruleset,
       });
       game.state.public.beats = executed.beats;
       game.state.public.timeline = executed.beats;
@@ -3447,6 +3629,7 @@ export function buildServer(port: number) {
         undefined,
         game.state.public.boardTokens ?? [],
       );
+      syncDeckStateAdrenalineFromTimeline(deckStates, executed.beats, executed.characters);
       applyMatchOutcome(game, deckStates);
       maybeCompleteTutorialMatch(game);
       console.log(`${LOG_PREFIX} action:set post`, {
@@ -3471,8 +3654,25 @@ export function buildServer(port: number) {
     }
 
     let batch = pendingActionSets.get(game.id);
-    if (!batch || batch.beatIndex !== earliestIndex) {
-      batch = { beatIndex: earliestIndex, requiredUserIds: atBatUserIds, submitted: new Map() };
+    const hasSameRequiredUsers =
+      Boolean(batch) &&
+      batch.requiredUserIds.length === currentAtBatUserIds.length &&
+      batch.requiredUserIds.every((candidateId) => currentAtBatUserIds.includes(candidateId));
+    if (!batch || batch.beatIndex !== currentEarliestIndex || !hasSameRequiredUsers) {
+      const preservedSubmitted = new Map<string, { actionList: ActionListItem[]; play: unknown[] }>();
+      if (batch && batch.beatIndex === currentEarliestIndex) {
+        currentAtBatUserIds.forEach((candidateId) => {
+          const existing = batch?.submitted.get(candidateId);
+          if (existing) {
+            preservedSubmitted.set(candidateId, existing);
+          }
+        });
+      }
+      batch = {
+        beatIndex: currentEarliestIndex,
+        requiredUserIds: [...currentAtBatUserIds],
+        submitted: preservedSubmitted,
+      };
       pendingActionSets.set(game.id, batch);
     }
     if (!batch.requiredUserIds.includes(userId)) {
@@ -3483,7 +3683,12 @@ export function buildServer(port: number) {
       console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'already-submitted' });
       return { ok: false, status: 409, error: 'Action set already submitted for this beat' };
     }
-    const validation = validateActionSubmission({ activeCardId, passiveCardId, rotation }, deckState, catalog);
+    const validation = validateActionSubmission(
+      { activeCardId, passiveCardId, rotation, submittedAdrenaline },
+      deckState,
+      catalog,
+      { ruleset },
+    );
     if (isActionValidationFailure(validation)) {
       console.log(`${LOG_PREFIX} action:set validation-failed`, {
         userId,
@@ -3537,6 +3742,7 @@ export function buildServer(port: number) {
       activeCardId: activeCardId ?? null,
       passiveCardId: passiveCardId ?? null,
       rotation: rotation ?? '',
+      submittedAdrenaline,
     };
     batch.submitted.set(userId, { actionList: actionListWithHandCount, play: [actionPlay] });
     game.state.public.pendingActions = {
@@ -3565,7 +3771,7 @@ export function buildServer(port: number) {
       const view = buildGameViewForPlayer(pendingGame, userId, deckStates);
       return { ok: true, status: 200, payload: view };
     }
-    let updatedBeats = beats;
+    let updatedBeats = currentBeats;
     logActionSetEvent(
       'before-execute-batch',
       {
@@ -3578,7 +3784,13 @@ export function buildServer(port: number) {
     batch.requiredUserIds.forEach((requiredId) => {
       const submission = batch?.submitted.get(requiredId);
       if (submission) {
-        updatedBeats = applyActionSetToBeats(updatedBeats, characters, requiredId, submission.actionList, submission.play);
+        updatedBeats = applyActionSetToBeats(
+          updatedBeats,
+          currentCharacters,
+          requiredId,
+          submission.actionList,
+          submission.play,
+        );
       }
     });
     const comboAvailability = applyTutorialComboAvailability(
@@ -3592,7 +3804,7 @@ export function buildServer(port: number) {
     );
     const executed = executeWithForcedRewindReturns({
       beats: updatedBeats,
-      characters,
+      characters: currentCharacters,
       interactions,
       land,
       comboAvailability,
@@ -3601,6 +3813,7 @@ export function buildServer(port: number) {
       deckStates,
       ffa: game.state.public.ffa,
       initialTokens: game.state.public.boardTokens ?? [],
+      ruleset,
     });
     game.state.public.beats = executed.beats;
     game.state.public.timeline = executed.beats;
@@ -3617,6 +3830,7 @@ export function buildServer(port: number) {
       undefined,
       game.state.public.boardTokens ?? [],
     );
+    syncDeckStateAdrenalineFromTimeline(deckStates, executed.beats, executed.characters);
     game.state.public.pendingActions = undefined;
     pendingActionSets.delete(game.id);
     applyMatchOutcome(game, deckStates);
@@ -3930,7 +4144,8 @@ export function buildServer(port: number) {
     const match = await db.findMatch(game.matchId);
     const deckStates = await ensureDeckStatesForGame(game, match);
     syncFocusedCardsFromInteractions(deckStates, interactions);
-    const catalog = await loadCardCatalog();
+    const ruleset = game.ruleset ?? game.state?.public?.ruleset ?? match?.ruleset ?? DEFAULT_RULESET;
+    const catalog = await loadCardCatalog(ruleset);
     let comboAvailability = buildComboAvailability(deckStates, catalog);
     logInteractionEvent(
       'before-resolve',
@@ -4407,6 +4622,7 @@ export function buildServer(port: number) {
       deckStates,
       ffa: game.state.public.ffa,
       initialTokens: game.state.public.boardTokens ?? [],
+      ruleset,
     });
     game.state.public.beats = executed.beats;
     game.state.public.timeline = executed.beats;
@@ -4423,6 +4639,7 @@ export function buildServer(port: number) {
       undefined,
       game.state.public.boardTokens ?? [],
     );
+    syncDeckStateAdrenalineFromTimeline(deckStates, executed.beats, executed.characters);
     applyMatchOutcome(game, deckStates);
     maybeCompleteTutorialMatch(game);
     console.log(`${LOG_PREFIX} interaction:resolve post`, {
@@ -4581,6 +4798,7 @@ export function buildServer(port: number) {
       if (req.method === 'POST' && pathname === '/api/v1/lobby/clear') {
         lobby.clearQueues();
         queuedDecks.clear();
+        queuedRulesets.clear();
         drawOfferCooldownByGame.clear();
         liveSpectatorsByGame.clear();
         liveSpectatorGameByUser.clear();
@@ -4850,6 +5068,10 @@ export function buildServer(port: number) {
         pathname === '/admin/' ||
         pathname === '/cards' ||
         pathname === '/cards/' ||
+        pathname === '/alt-deck-builder' ||
+        pathname === '/alt-deck-builder/' ||
+        pathname === '/altDeckBuilder' ||
+        pathname === '/altDeckBuilder/' ||
         pathname === '/stats' ||
         pathname === '/stats/' ||
         pathname === '/favicon.ico' ||

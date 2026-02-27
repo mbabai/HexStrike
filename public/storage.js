@@ -5,6 +5,7 @@ const USERNAME_CUSTOM_KEY = 'hexstrikeUsernameCustom';
 const ACCOUNT_DECKS_KEY = 'hexstrikeAccountDecks';
 const TIMELINE_SPEED_KEY = 'hexstrikeTimelineSpeed';
 const QUEUE_PREFERENCE_KEY = 'hexstrikeQueuePreference';
+const RULESET_PREFERENCE_KEY = 'hexstrikeRulesetPreference';
 const USERNAME_MAX_LENGTH = 24;
 const ANONYMOUS_NAME_PATTERN = /^anonymous\d+$/i;
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
@@ -147,5 +148,22 @@ export const setQueuePreference = (queueName) => {
   const normalized = `${queueName ?? ''}`.trim();
   if (!normalized) return null;
   writeCookie(QUEUE_PREFERENCE_KEY, normalized);
+  return normalized;
+};
+
+const normalizeRulesetPreference = (value) => {
+  const normalized = `${value ?? ''}`.trim().toLowerCase();
+  return normalized === 'alternate' ? 'alternate' : 'regular';
+};
+
+export const getRulesetPreference = () => {
+  const value = readCookie(RULESET_PREFERENCE_KEY);
+  if (!value) return 'regular';
+  return normalizeRulesetPreference(value);
+};
+
+export const setRulesetPreference = (ruleset) => {
+  const normalized = normalizeRulesetPreference(ruleset);
+  writeCookie(RULESET_PREFERENCE_KEY, normalized);
   return normalized;
 };

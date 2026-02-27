@@ -65,9 +65,13 @@ const buildTargetEntry = (
   interaction: ActionListItem['interaction'],
   attackDamage: number | undefined,
   attackKbf: number | undefined,
+  submittedAdrenaline: number | undefined,
   cardId: string | undefined,
   passiveCardId: string | undefined,
   abilityHandCount: number | undefined,
+  cardBeat: number | undefined,
+  subBeat: { value?: number; start?: number; end?: number } | null | undefined,
+  textEntries: Array<{ placeholder?: string; text?: string }> | undefined,
   seed: { damage: number; location: { q: number; r: number }; facing: number },
 ): BeatEntry => {
   const entry: BeatEntry = {
@@ -92,6 +96,9 @@ const buildTargetEntry = (
   if (Number.isFinite(attackKbf)) {
     entry.attackKbf = attackKbf;
   }
+  if (Number.isFinite(submittedAdrenaline)) {
+    entry.submittedAdrenaline = Math.max(0, Math.floor(submittedAdrenaline as number));
+  }
   if (cardId) {
     entry.cardId = cardId;
   }
@@ -100,6 +107,15 @@ const buildTargetEntry = (
   }
   if (Number.isFinite(abilityHandCount)) {
     entry.abilityHandCount = Math.max(0, Math.floor(abilityHandCount as number));
+  }
+  if (Number.isFinite(cardBeat)) {
+    entry.cardBeat = Math.max(1, Math.floor(cardBeat as number));
+  }
+  if (subBeat && typeof subBeat === 'object') {
+    entry.subBeat = { ...subBeat };
+  }
+  if (Array.isArray(textEntries)) {
+    entry.textEntries = textEntries.map((item) => ({ ...item }));
   }
   return entry;
 };
@@ -171,10 +187,14 @@ export const applyActionSetToBeats = (
     interaction: item.interaction,
     attackDamage: item.damage,
     attackKbf: item.kbf,
+    submittedAdrenaline: index === 0 ? item.submittedAdrenaline : undefined,
     comboStarter: index === 0 ? item.comboStarter : undefined,
     cardId: item.cardId,
     passiveCardId: item.passiveCardId,
     abilityHandCount: index === 0 ? item.abilityHandCount : undefined,
+    cardBeat: item.cardBeat,
+    subBeat: item.subBeat,
+    textEntries: item.textEntries,
   }));
   const lastIndex = startIndex + actions.length - 1;
 
@@ -237,6 +257,26 @@ export const applyActionSetToBeats = (
       if (Number.isFinite(actionItem.attackKbf)) {
         entry.attackKbf = actionItem.attackKbf;
       }
+      if (Number.isFinite(actionItem.submittedAdrenaline)) {
+        entry.submittedAdrenaline = Math.max(0, Math.floor(actionItem.submittedAdrenaline as number));
+      } else if ('submittedAdrenaline' in entry) {
+        delete entry.submittedAdrenaline;
+      }
+      if (Number.isFinite(actionItem.cardBeat)) {
+        entry.cardBeat = Math.max(1, Math.floor(actionItem.cardBeat as number));
+      } else if ('cardBeat' in entry) {
+        delete entry.cardBeat;
+      }
+      if (actionItem.subBeat && typeof actionItem.subBeat === 'object') {
+        entry.subBeat = { ...actionItem.subBeat };
+      } else if ('subBeat' in entry) {
+        delete entry.subBeat;
+      }
+      if (Array.isArray(actionItem.textEntries)) {
+        entry.textEntries = actionItem.textEntries.map((item) => ({ ...item }));
+      } else if ('textEntries' in entry) {
+        delete entry.textEntries;
+      }
       entry.damage = seed.damage;
       entry.location = cloneLocation(seed.location);
       entry.facing = seed.facing;
@@ -252,9 +292,13 @@ export const applyActionSetToBeats = (
         actionItem.interaction,
         actionItem.attackDamage,
         actionItem.attackKbf,
+        actionItem.submittedAdrenaline,
         actionItem.cardId,
         actionItem.passiveCardId,
         actionItem.abilityHandCount,
+        actionItem.cardBeat,
+        actionItem.subBeat,
+        actionItem.textEntries,
         seed,
       );
       if (actionItem.comboStarter) {

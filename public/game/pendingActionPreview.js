@@ -1,8 +1,8 @@
 import { buildCardActionList } from './cardText/actionListBuilder.js';
 
-const buildPendingActionList = (activeCard, passiveCard, rotation) => {
+const buildPendingActionList = (activeCard, passiveCard, rotation, options = {}) => {
   const rotationLabel = `${rotation ?? ''}`.trim();
-  return buildCardActionList(activeCard, passiveCard, rotationLabel);
+  return buildCardActionList(activeCard, passiveCard, rotationLabel, options);
 };
 
 const isUserSubmitted = (pending, userId) => {
@@ -14,9 +14,20 @@ const hasPendingBatch = (pending) => Boolean(pending && Array.isArray(pending.re
 
 export const createPendingActionPreview = () => {
   let actionList = null;
+  let ruleset = 'regular';
 
-  const setFromCard = (activeCard, passiveCard, rotation) => {
-    const nextList = buildPendingActionList(activeCard, passiveCard, rotation);
+  const setRuleset = (nextRuleset) => {
+    ruleset = `${nextRuleset ?? ''}`.trim().toLowerCase() === 'alternate' ? 'alternate' : 'regular';
+  };
+
+  const setFromCard = (activeCard, passiveCard, rotation, options = {}) => {
+    const submittedAdrenaline = Number.isFinite(options.submittedAdrenaline)
+      ? Math.max(0, Math.floor(options.submittedAdrenaline))
+      : 0;
+    const nextList = buildPendingActionList(activeCard, passiveCard, rotation, {
+      ruleset,
+      submittedAdrenaline,
+    });
     actionList = nextList.length ? nextList : null;
   };
 
@@ -45,6 +56,7 @@ export const createPendingActionPreview = () => {
   };
 
   return {
+    setRuleset,
     setFromCard,
     clear,
     syncWithState,

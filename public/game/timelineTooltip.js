@@ -1,7 +1,8 @@
 import { getBeatEntryForCharacter } from './beatTimeline.js';
 import { getTimeIndicatorActionTarget, getTimeIndicatorLayout, setTimeIndicatorPlayerCount } from './timeIndicatorView.js';
 import { extractHandTriggerText } from './handTriggerText.mjs';
-import { appendInlineText, buildCardElement, fitAllCardText } from '../shared/cardRenderer.js';
+import { appendInlineText } from '../shared/cardRenderer.js';
+import { ensureCardLayoutStylesForRuleset, getCardLayoutForRuleset } from '../shared/cardLayouts.js';
 import { axialToPixel, getHexSize } from '../shared/hex.mjs';
 import { GAME_CONFIG } from './config.js';
 import { getCharacterTokenMetrics } from './characterTokens.mjs';
@@ -120,6 +121,40 @@ const parseSymbolInstructions = (text) => {
     }
   }
   return map;
+};
+
+const normalizePlaceholderSymbol = (value) =>
+  `${value ?? ''}`
+    .trim()
+    .replace(/[{}]/g, '')
+    .toUpperCase();
+
+const getEntryInstructionLine = (entry, symbol) => {
+  const textEntries = Array.isArray(entry?.textEntries) ? entry.textEntries : [];
+  if (!textEntries.length) return '';
+  const normalizedSymbol = normalizePlaceholderSymbol(symbol);
+  const normalizedEntries = textEntries
+    .map((item) => {
+      const text = `${item?.text ?? ''}`.trim();
+      if (!text) return null;
+      const placeholder = normalizePlaceholderSymbol(item?.placeholder);
+      return { text, placeholder };
+    })
+    .filter(Boolean);
+  if (!normalizedEntries.length) return '';
+  if (normalizedSymbol) {
+    const matched = normalizedEntries.find((item) => item.placeholder === normalizedSymbol);
+    if (matched) {
+      return matched.placeholder ? `{${matched.placeholder}}: ${matched.text}` : matched.text;
+    }
+  }
+  const plainTextEntries = normalizedEntries.filter((item) => !item.placeholder);
+  if (plainTextEntries.length) {
+    return plainTextEntries.map((item) => item.text).join('\n');
+  }
+  return normalizedEntries
+    .map((item) => (item.placeholder ? `{${item.placeholder}}: ${item.text}` : item.text))
+    .join('\n');
 };
 
 const buildCardMetadata = (catalog) => {
@@ -326,6 +361,10 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
   passive.className = 'timeline-tooltip-passive';
   const passiveText = document.createElement('div');
   passiveText.className = 'timeline-tooltip-passive-text';
+  const trigger = document.createElement('div');
+  trigger.className = 'timeline-tooltip-passive';
+  const triggerText = document.createElement('div');
+  triggerText.className = 'timeline-tooltip-passive-text';
   const focus = document.createElement('div');
   focus.className = 'timeline-tooltip-passive';
   const focusText = document.createElement('div');
@@ -341,6 +380,8 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     divider,
     characterPower,
     characterPowerText,
+    trigger,
+    triggerText,
     passive,
     passiveText,
     focus,
@@ -354,11 +395,19 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
   let characterMetadata = { byId: new Map() };
   let gameState = null;
   let lastTooltipKey = null;
+  let pendingPreviewLayout = null;
+  const getCurrentCardLayout = () => {
+    const ruleset = gameState?.state?.public?.ruleset;
+    const layout = getCardLayoutForRuleset(ruleset);
+    ensureCardLayoutStylesForRuleset(ruleset);
+    return layout;
+  };
 
   const hide = () => {
     tooltip.hidden = true;
     cardPreview.hidden = true;
     cardPreview.textContent = '';
+    pendingPreviewLayout = null;
     tooltip.classList.remove('has-card-preview');
     lastTooltipKey = null;
   };
@@ -397,13 +446,34 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     passiveText.hidden = true;
     passive.textContent = '';
     passiveText.textContent = '';
+    trigger.hidden = true;
+    triggerText.hidden = true;
+    trigger.textContent = '';
+    triggerText.textContent = '';
     focus.hidden = true;
     focusText.hidden = true;
     focus.textContent = '';
     focusText.textContent = '';
     cardPreview.hidden = true;
     cardPreview.textContent = '';
+    pendingPreviewLayout = null;
     tooltip.classList.remove('has-card-preview');
+  };
+
+  const showTooltipAt = (center) => {
+    tooltip.hidden = false;
+    if (!cardPreview.hidden && pendingPreviewLayout) {
+      // Fit after reveal so measurements match deck-builder rendering.
+      pendingPreviewLayout.fitCardText(cardPreview);
+    }
+    positionTooltip(center.x, center.y);
+    if (!cardPreview.hidden && pendingPreviewLayout && typeof window !== 'undefined') {
+      requestAnimationFrame(() => {
+        if (tooltip.hidden || cardPreview.hidden || !pendingPreviewLayout) return;
+        pendingPreviewLayout.fitCardText(cardPreview);
+        positionTooltip(center.x, center.y);
+      });
+    }
   };
 
   const renderAttackStats = (line) => {
@@ -489,18 +559,23 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
   const renderCardPreview = (cards, options = {}) => {
     const previewScale = Number.isFinite(options?.scale) && options.scale > 0 ? options.scale : 0.42;
     const list = Array.isArray(cards) ? cards.filter(Boolean) : [];
+    const layout = getCurrentCardLayout();
+    pendingPreviewLayout = layout;
     cardPreview.textContent = '';
     if (!list.length) {
       cardPreview.hidden = true;
+      pendingPreviewLayout = null;
       tooltip.classList.remove('has-card-preview');
       return false;
     }
     list.forEach((card) => {
-      const preview = buildCardElement(card, { asButton: false, className: 'timeline-tooltip-card' });
+      const preview = layout.buildCardElement(card, { asButton: false, className: 'timeline-tooltip-card' });
       preview.style.setProperty('--action-card-scale', `${previewScale}`);
+      if (layout.id === 'alternate') {
+        preview.style.setProperty('--action-card-text-scale', '2.25');
+      }
       cardPreview.appendChild(preview);
     });
-    fitAllCardText(cardPreview);
     cardPreview.hidden = false;
     tooltip.classList.add('has-card-preview');
     return true;
@@ -524,8 +599,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       clearSupplementalSections({ hideDivider: true });
       lastTooltipKey = key;
     }
-    tooltip.hidden = false;
-    positionTooltip(target.center.x, target.center.y);
+    showTooltipAt(target.center);
     return true;
   };
 
@@ -599,8 +673,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
         divider.hidden = !(hasCharacterPower || hasFocus);
         lastTooltipKey = key;
       }
-      tooltip.hidden = false;
-      positionTooltip(target.center.x, target.center.y);
+      showTooltipAt(target.center);
       return;
     }
     if (target.kind === 'played-card') {
@@ -633,8 +706,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
         renderCardPreview([card], { scale: previewScale });
         lastTooltipKey = key;
       }
-      tooltip.hidden = false;
-      positionTooltip(target.center.x, target.center.y);
+      showTooltipAt(target.center);
       return;
     }
     if (target.kind === 'hand-trigger') {
@@ -663,8 +735,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
         clearSupplementalSections({ hideDivider: true });
         lastTooltipKey = key;
       }
-      tooltip.hidden = false;
-      positionTooltip(target.center.x, target.center.y);
+      showTooltipAt(target.center);
       return;
     }
     if (target.kind === 'movement-pickup') {
@@ -702,8 +773,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
         renderCardPreview(movementCards);
         lastTooltipKey = key;
       }
-      tooltip.hidden = false;
-      positionTooltip(target.center.x, target.center.y);
+      showTooltipAt(target.center);
       return;
     }
     if (target.kind === 'rewind-return') {
@@ -743,8 +813,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
         divider.hidden = !(hasCharacterPower || hasFocus);
         lastTooltipKey = key;
       }
-      tooltip.hidden = false;
-      positionTooltip(target.center.x, target.center.y);
+      showTooltipAt(target.center);
       return;
     }
 
@@ -775,8 +844,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
         clearSupplementalSections({ hideDivider: true });
         lastTooltipKey = key;
       }
-      tooltip.hidden = false;
-      positionTooltip(target.center.x, target.center.y);
+      showTooltipAt(target.center);
       return;
     }
     const interruptedContext = resolveInterruptedCardIds(beats, target.character, target.beatIndex, entry);
@@ -803,8 +871,11 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     const interruptedLine = interruptedContext.interrupted ? 'Interrupted before resolution.' : '';
     const invulnerableLine = isInvulnerable ? 'Invulnerable.' : '';
     const passiveName = passiveCard?.name ?? '';
-    const instructionText = activeCard?.symbolText?.get(target.symbol) ?? '';
-    const instructionLine = instructionText ? `{${target.symbol}}: ${instructionText}` : '';
+    const entryInstructionLine = getEntryInstructionLine(entry, target.symbol);
+    const symbolInstructionText = activeCard?.symbolText?.get(target.symbol) ?? '';
+    const symbolInstructionLine = symbolInstructionText ? `{${target.symbol}}: ${symbolInstructionText}` : '';
+    const instructionLine = entryInstructionLine || symbolInstructionLine;
+    const triggerTextValue = activeCard?.triggerText ?? '';
     const passiveTextValue = passiveCard?.passiveText ?? '';
     const focusLine = getFocusLineFromCard(focusCard, { includeActiveTextFallback: true });
     const characterPowerDetails = getCharacterPowerDetails(target.character);
@@ -813,6 +884,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       !activeTitle &&
       !passiveName &&
       !instructionLine &&
+      !triggerTextValue &&
       !passiveTextValue &&
       !focusLine &&
       !characterPowerLine &&
@@ -835,6 +907,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       interruptedLine,
       invulnerableLine,
       instructionLine,
+      triggerTextValue,
       passiveTextValue,
       characterPowerLine,
       focusCardId ?? 'none',
@@ -859,7 +932,19 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
         powerText: characterPowerLine,
       });
       const hasFocus = renderFocusSection(focusCard?.name ? `Focus: ${focusCard.name}` : 'Focus', focusLine);
-      const showDivider = Boolean(hasCharacterPower || passiveName || passiveTextValue || hasFocus);
+      const hasTrigger = Boolean(`${triggerTextValue ?? ''}`.trim());
+      if (hasTrigger) {
+        trigger.textContent = 'Trigger';
+        trigger.hidden = false;
+        triggerText.hidden = false;
+        appendInlineText(triggerText, triggerTextValue);
+      } else {
+        trigger.hidden = true;
+        triggerText.hidden = true;
+        trigger.textContent = '';
+        triggerText.textContent = '';
+      }
+      const showDivider = Boolean(hasCharacterPower || hasTrigger || passiveName || passiveTextValue || hasFocus);
       divider.hidden = !showDivider;
       passive.textContent = passiveName;
       passive.hidden = !passiveName;
@@ -872,8 +957,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       }
       lastTooltipKey = key;
     }
-    tooltip.hidden = false;
-    positionTooltip(target.center.x, target.center.y);
+    showTooltipAt(target.center);
   };
 
   const setCardCatalog = (catalog) => {
@@ -887,6 +971,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
 
   const setGameState = (state) => {
     gameState = state;
+    getCurrentCardLayout();
   };
 
   return {

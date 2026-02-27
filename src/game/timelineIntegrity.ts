@@ -22,6 +22,8 @@ export type TimelineRepair = {
   replacedAction: string | null;
 };
 
+export type TimelineSkipBeatsByUser = Map<string, Set<number>>;
+
 const getEntryKey = (entry: BeatEntry | null | undefined): string => `${entry?.username ?? entry?.userId ?? entry?.userID ?? ''}`;
 
 const matchesEntryForCharacter = (entry: BeatEntry | null | undefined, character: PublicCharacter): boolean => {
@@ -109,17 +111,33 @@ const sortBeatEntries = (beat: BeatEntry[], characters: PublicCharacter[]) => {
   });
 };
 
+const shouldSkipBeatForCharacter = (
+  skippedBeatsByUser: TimelineSkipBeatsByUser | undefined,
+  character: PublicCharacter,
+  beatIndex: number,
+): boolean => {
+  if (!skippedBeatsByUser || !character || !Number.isFinite(beatIndex)) return false;
+  const safeBeatIndex = Math.max(0, Math.round(beatIndex));
+  const byUserId = skippedBeatsByUser.get(character.userId);
+  if (byUserId?.has(safeBeatIndex)) return true;
+  const byUsername = skippedBeatsByUser.get(character.username);
+  if (byUsername?.has(safeBeatIndex)) return true;
+  return false;
+};
+
 export const findTimelineBreaks = ({
   beats,
   baselineBeats,
   characters,
   interactions = [],
+  skippedBeatsByUser,
   resolvedIndex = -1,
 }: {
   beats: BeatEntry[][];
   baselineBeats?: BeatEntry[][];
   characters: PublicCharacter[];
   interactions?: CustomInteraction[];
+  skippedBeatsByUser?: TimelineSkipBeatsByUser;
   resolvedIndex?: number;
 }): TimelineBreakIssue[] => {
   if (!Array.isArray(beats) || !Array.isArray(characters) || !characters.length) return [];
@@ -130,6 +148,7 @@ export const findTimelineBreaks = ({
     const protectedStartIndex = getEarliestProtectedStartIndex(beats, character, interactions, scanStartIndex);
     if (protectedStartIndex == null) return;
     for (let i = scanStartIndex; i < protectedStartIndex; i += 1) {
+      if (shouldSkipBeatForCharacter(skippedBeatsByUser, character, i)) continue;
       if (Array.isArray(baselineBeats)) {
         const baselineEntry = findEntryForCharacter(baselineBeats[i], character);
         if (!baselineEntry || isOpenBeatAction(baselineEntry.action)) {
@@ -171,12 +190,14 @@ export const repairTimelineBreaksFromBaseline = ({
   baselineBeats,
   characters,
   interactions = [],
+  skippedBeatsByUser,
   resolvedIndex = -1,
 }: {
   beats: BeatEntry[][];
   baselineBeats: BeatEntry[][];
   characters: PublicCharacter[];
   interactions?: CustomInteraction[];
+  skippedBeatsByUser?: TimelineSkipBeatsByUser;
   resolvedIndex?: number;
 }): TimelineRepair[] => {
   if (!Array.isArray(beats) || !Array.isArray(baselineBeats) || !Array.isArray(characters) || !characters.length) {
@@ -189,6 +210,7 @@ export const repairTimelineBreaksFromBaseline = ({
     const protectedStartIndex = getEarliestProtectedStartIndex(beats, character, interactions, scanStartIndex);
     if (protectedStartIndex == null) return;
     for (let i = scanStartIndex; i < protectedStartIndex; i += 1) {
+      if (shouldSkipBeatForCharacter(skippedBeatsByUser, character, i)) continue;
       const baselineEntry = findEntryForCharacter(baselineBeats[i], character);
       if (!baselineEntry || isOpenBeatAction(baselineEntry.action)) continue;
 

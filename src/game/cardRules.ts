@@ -13,6 +13,7 @@ import {
   HexCoord,
   CustomInteraction,
   PendingActions,
+  RulesetName,
 } from '../types';
 import { getCharacterFirstEIndex, getCharacterLocationAtIndex, getTimelineEarliestEIndex } from './beatTimeline';
 import {
@@ -296,6 +297,7 @@ export const createDeckState = (
     lastRefreshIndex: null,
     activeCardId: null,
     passiveCardId: null,
+    adrenaline: 0,
   };
   syncMovementHand(deckState, { mode: 'auto' });
   return deckState;
@@ -314,7 +316,9 @@ export const validateActionSubmission = (
   submission: ActionSubmission,
   deckState: DeckState,
   catalog: CardCatalog,
+  options: { ruleset?: RulesetName } = {},
 ): ActionValidationResult => {
+  const ruleset = options.ruleset ?? 'regular';
   const activeCardId = normalizeCardId(submission.activeCardId);
   const passiveCardId = normalizeCardId(submission.passiveCardId);
 
@@ -356,7 +360,26 @@ export const validateActionSubmission = (
     return { ok: false, error: { code: 'no-action-list', message: 'Active card has no actions.' } };
   }
 
-  const actionList = buildCardActionList(activeCard, passiveCard, rotation);
+  const submittedAdrenalineRaw = Number(submission.submittedAdrenaline ?? 0);
+  const submittedAdrenaline = Number.isFinite(submittedAdrenalineRaw)
+    ? Math.max(0, Math.floor(submittedAdrenalineRaw))
+    : 0;
+  if (ruleset === 'alternate') {
+    const storedAdrenaline = Number.isFinite(deckState.adrenaline)
+      ? Math.max(0, Math.floor(deckState.adrenaline as number))
+      : 0;
+    if (submittedAdrenaline > storedAdrenaline) {
+      return {
+        ok: false,
+        error: { code: 'adrenaline-insufficient', message: 'Submitted adrenaline exceeds your current adrenaline.' },
+      };
+    }
+  }
+
+  const actionList = buildCardActionList(activeCard, passiveCard, rotation, {
+    ruleset,
+    submittedAdrenaline,
+  });
 
   const refreshOffset = getRefreshOffset(activeCard.actions);
   if (refreshOffset === null) {
@@ -461,6 +484,7 @@ export const buildPlayerCardState = (deckState: DeckState): PlayerCardState => (
   maxHandSize: getMaxAbilityHandSize(deckState),
   activeCardId: deckState.activeCardId ?? null,
   passiveCardId: deckState.passiveCardId ?? null,
+  adrenaline: Number.isFinite(deckState.adrenaline) ? Math.max(0, Math.floor(deckState.adrenaline as number)) : 0,
   discardPile: Array.from(deckState.exhaustedMovementIds),
   lastRefreshIndex: deckState.lastRefreshIndex ?? null,
 });

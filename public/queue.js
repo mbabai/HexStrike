@@ -2,8 +2,10 @@ import {
   getOrCreateUserId,
   getPreferredServerUsername,
   getQueuePreference,
+  getRulesetPreference,
   getSelectedDeckId,
   setQueuePreference,
+  setRulesetPreference,
 } from './storage.js';
 import { getSelectedDeck } from './deckStore.js';
 
@@ -24,20 +26,47 @@ const KNOWN_QUEUES = new Set([
   BOT_EASY_QUEUE,
 ]);
 const SEARCHING_LABEL = 'Searching...';
+const RULESET_REGULAR = 'regular';
+const RULESET_ALTERNATE = 'alternate';
+const KNOWN_RULESETS = new Set([RULESET_REGULAR, RULESET_ALTERNATE]);
 
 export function initQueue() {
   const findGameButton = document.getElementById('findGame');
   const queueSelect = document.getElementById('queueSelect');
+  const rulesetSelect = document.getElementById('rulesetSelect');
   let searchInterval = null;
   let searchStart = 0;
   let isSearching = false;
   let activeQueue = TUTORIAL_QUEUE;
+  let activeRuleset = RULESET_REGULAR;
 
   const isTutorialQueue = (queueName) => queueName === TUTORIAL_QUEUE;
 
   const getRequestedQueue = () => {
     const raw = `${queueSelect?.value ?? TUTORIAL_QUEUE}`.trim();
     return KNOWN_QUEUES.has(raw) ? raw : TUTORIAL_QUEUE;
+  };
+
+  const getRequestedRuleset = () => {
+    const raw = `${rulesetSelect?.value ?? RULESET_REGULAR}`.trim().toLowerCase();
+    return KNOWN_RULESETS.has(raw) ? raw : RULESET_REGULAR;
+  };
+
+  const getRulesetForQueue = (queueName) => (isTutorialQueue(queueName) ? RULESET_REGULAR : getRequestedRuleset());
+
+  const syncRulesetControl = () => {
+    if (!rulesetSelect) return;
+    const queueName = getRequestedQueue();
+    const tutorial = isTutorialQueue(queueName);
+    rulesetSelect.disabled = tutorial || isSearching;
+    if (tutorial) {
+      rulesetSelect.value = RULESET_REGULAR;
+      activeRuleset = RULESET_REGULAR;
+      return;
+    }
+    const preferred = getRequestedRuleset();
+    rulesetSelect.value = preferred;
+    activeRuleset = preferred;
   };
 
   const updateFindGameAvailability = () => {
@@ -77,9 +106,10 @@ export function initQueue() {
       findGameButton.textContent = 'Find Game';
     }
     updateFindGameAvailability();
+    syncRulesetControl();
   };
 
-  const joinQueue = async (queueName) => {
+  const joinQueue = async (queueName, ruleset) => {
     const userId = getOrCreateUserId();
     const username = getPreferredServerUsername();
     const isTutorial = isTutorialQueue(queueName);
@@ -95,6 +125,7 @@ export function initQueue() {
       userId,
       username,
       queue: queueName,
+      ruleset,
       ...(isTutorial ? {} : { characterId, deck }),
     };
     const response = await fetch('/api/v1/lobby/join', {
@@ -129,26 +160,48 @@ export function initQueue() {
     if (isSearching) {
       setSearchingState(false);
       activeQueue = getRequestedQueue();
+      activeRuleset = getRulesetForQueue(activeQueue);
     }
   });
   window.addEventListener('hexstrike:game', () => {
     if (isSearching) {
       setSearchingState(false);
       activeQueue = getRequestedQueue();
+      activeRuleset = getRulesetForQueue(activeQueue);
     }
   });
 
   if (queueSelect) {
     const storedQueue = `${getQueuePreference() ?? ''}`.trim();
     const initialQueue = KNOWN_QUEUES.has(storedQueue) ? storedQueue : TUTORIAL_QUEUE;
+    const storedRuleset = `${getRulesetPreference() ?? RULESET_REGULAR}`.trim().toLowerCase();
+    const initialRuleset = KNOWN_RULESETS.has(storedRuleset) ? storedRuleset : RULESET_REGULAR;
     queueSelect.value = initialQueue;
     activeQueue = initialQueue;
     setQueuePreference(initialQueue);
+    activeRuleset = initialQueue === TUTORIAL_QUEUE ? RULESET_REGULAR : initialRuleset;
+    if (rulesetSelect) {
+      rulesetSelect.value = activeRuleset;
+    }
     queueSelect.addEventListener('change', () => {
       const selectedQueue = getRequestedQueue();
       activeQueue = selectedQueue;
       setQueuePreference(selectedQueue);
+      activeRuleset = getRulesetForQueue(selectedQueue);
+      setRulesetPreference(activeRuleset);
       updateFindGameAvailability();
+      syncRulesetControl();
+    });
+  }
+
+  if (rulesetSelect) {
+    const storedRuleset = `${getRulesetPreference() ?? RULESET_REGULAR}`.trim().toLowerCase();
+    rulesetSelect.value = KNOWN_RULESETS.has(storedRuleset) ? storedRuleset : RULESET_REGULAR;
+    rulesetSelect.addEventListener('change', () => {
+      const nextRuleset = getRequestedRuleset();
+      activeRuleset = nextRuleset;
+      setRulesetPreference(nextRuleset);
+      syncRulesetControl();
     });
   }
 
@@ -163,6 +216,7 @@ export function initQueue() {
           console.error('Failed to leave queue', err);
         }
         activeQueue = getRequestedQueue();
+        activeRuleset = getRulesetForQueue(activeQueue);
         return;
       }
 
@@ -177,16 +231,19 @@ export function initQueue() {
       }
 
       activeQueue = requestedQueue;
+      activeRuleset = getRulesetForQueue(requestedQueue);
       setQueuePreference(activeQueue);
+      setRulesetPreference(activeRuleset);
       setSearchingState(true);
       try {
-        await joinQueue(activeQueue);
+        await joinQueue(activeQueue, activeRuleset);
       } catch (err) {
         console.error('Failed to join queue', err);
         const message = err instanceof Error ? err.message : 'Failed to join queue.';
         window.alert(message);
         setSearchingState(false);
         activeQueue = getRequestedQueue();
+        activeRuleset = getRulesetForQueue(activeQueue);
       }
     });
   }
@@ -194,4 +251,5 @@ export function initQueue() {
   window.addEventListener('hexstrike:deck-selected', updateFindGameAvailability);
   window.addEventListener('hexstrike:decks-updated', updateFindGameAvailability);
   updateFindGameAvailability();
+  syncRulesetControl();
 }

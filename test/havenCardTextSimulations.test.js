@@ -325,8 +325,8 @@ test('Ethereal platform grants refresh on abyss E and is consumed', () => {
     boardTokens,
   );
 
-  assert.equal(deckState.lastRefreshIndex, 0);
+  assert.equal(deckState.lastRefreshIndex, 1);
   assert.equal(deckState.abilityHand.length, 4);
   assert.equal(boardTokens.length, 0);
-  assert.equal(interactions[0].resolution.consumedBeatIndex, 0);
+  assert.equal(interactions[0].resolution.consumedBeatIndex, 1);
 });

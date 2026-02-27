@@ -11,7 +11,7 @@ import {
   isAbilityDefenseCard,
   isAbilitySpecialCard,
 } from './shared/cardAnalytics.js';
-import { buildCardElement, fitAllCardText } from './shared/cardRenderer.js';
+import { CARD_LAYOUT_REGULAR, ensureCardLayoutStyles } from './shared/cardLayouts.js';
 import { loadUserDecks, saveUserDecks, createDeckId } from './deckStore.js';
 import {
   getOrCreateUserId,
@@ -95,6 +95,22 @@ const getNumericValue = (value) => {
   return Number.isFinite(parsed) ? parsed : -1;
 };
 
+const getHighestBeatStatValue = (card, statKey) => {
+  const beats = Array.isArray(card?.beats) ? card.beats : [];
+  let hasBeatStat = false;
+  let maxValue = -Infinity;
+  for (const beat of beats) {
+    const raw = beat?.[statKey];
+    if (raw === null || raw === undefined || `${raw}`.trim() === '') continue;
+    const value = getNumericValue(raw);
+    if (!Number.isFinite(value)) continue;
+    hasBeatStat = true;
+    if (value > maxValue) maxValue = value;
+  }
+  if (hasBeatStat) return maxValue;
+  return getNumericValue(card?.[statKey]);
+};
+
 const normalizeSortDirection = (value) => (`${value ?? ''}`.trim().toLowerCase() === 'desc' ? 'desc' : 'asc');
 
 const formatSortDirectionLabel = (direction) =>
@@ -105,8 +121,8 @@ const sortCards = (cards, sortKey, sortDirection) => {
   const direction = normalizeSortDirection(sortDirection) === 'desc' ? -1 : 1;
   const getSortValue = (card) => {
     if (sortKey === 'beats') return getCardTotalBeats(card);
-    if (sortKey === 'damage') return getNumericValue(card.damage);
-    if (sortKey === 'kbf') return getNumericValue(card.kbf);
+    if (sortKey === 'damage') return getHighestBeatStatValue(card, 'damage');
+    if (sortKey === 'kbf') return getHighestBeatStatValue(card, 'kbf');
     if (sortKey === 'priority') return getCardPriorityValue(card);
     if (sortKey === 'rotations') return getCardRotationOptionCount(card);
     if (sortKey === 'wait-beats') return getCardWaitBeats(card);
@@ -165,7 +181,16 @@ const hasUniqueMovementConflict = (movementIds, nextCardId) => {
 };
 
 export const initDecks = async (options = {}) => {
-  const { onBuilderCloseButton = null } = options;
+  const {
+    onBuilderCloseButton = null,
+    loadCatalog = loadCardCatalog,
+    cardLayoutId = CARD_LAYOUT_REGULAR,
+    buildCardElement: buildDeckCardElementOverride = null,
+    fitCardText: fitCardTextOverride = null,
+  } = options;
+  const layout = ensureCardLayoutStyles(cardLayoutId);
+  const buildDeckCardElement = typeof buildDeckCardElementOverride === 'function' ? buildDeckCardElementOverride : layout.buildCardElement;
+  const fitCardText = typeof fitCardTextOverride === 'function' ? fitCardTextOverride : layout.fitCardText;
   const deckGrid = document.getElementById('deckGrid');
   const createDeckButton = document.getElementById('createDeck');
   const selectedDeckCard = document.getElementById('selectedDeckCard');
@@ -259,7 +284,7 @@ export const initDecks = async (options = {}) => {
   }
 
   const userId = getOrCreateUserId();
-  const catalog = await loadCardCatalog();
+  const catalog = await loadCatalog();
   let characterOptions = [...CHARACTER_OPTIONS_FALLBACK];
   try {
     const characterCatalog = await loadCharacterCatalog();
@@ -379,8 +404,8 @@ export const initDecks = async (options = {}) => {
 
   const fitBuilderCardText = () => {
     if (builderOverlay.hidden) return;
-    fitAllCardText(libraryRoot);
-    fitAllCardText(selectionStack);
+    fitCardText(libraryRoot);
+    fitCardText(selectionStack);
   };
 
   const scheduleBuilderCardTextFit = () => {
@@ -644,10 +669,10 @@ export const initDecks = async (options = {}) => {
     previewMovement.innerHTML = '';
     previewAbility.innerHTML = '';
     const cards = getDeckCards(deck);
-    cards.movement.forEach((card) => previewMovement.appendChild(buildCardElement(card)));
-    cards.ability.forEach((card) => previewAbility.appendChild(buildCardElement(card)));
+    cards.movement.forEach((card) => previewMovement.appendChild(buildDeckCardElement(card)));
+    cards.ability.forEach((card) => previewAbility.appendChild(buildDeckCardElement(card)));
     previewOverlay.hidden = false;
-    fitAllCardText(previewOverlay);
+    fitCardText(previewOverlay);
   };
 
   const closePreview = () => {
@@ -769,7 +794,7 @@ export const initDecks = async (options = {}) => {
 
     libraryRoot.innerHTML = '';
     sorted.forEach((card) => {
-      const cardElement = buildCardElement(card, { asButton: true });
+      const cardElement = buildDeckCardElement(card, { asButton: true });
       cardElement.classList.add('deck-library-card');
       const isSelected = selected.has(card.id);
       cardElement.classList.toggle('is-selected', isSelected);
@@ -843,7 +868,7 @@ export const initDecks = async (options = {}) => {
     wrapper.style.setProperty('--deck-stack-index', `${index}`);
     wrapper.style.setProperty('--deck-stack-z', `${index + 1}`);
 
-    const cardElement = buildCardElement(card);
+    const cardElement = buildDeckCardElement(card);
     cardElement.classList.add('deck-stack-card');
     cardElement.setAttribute('aria-hidden', 'true');
 

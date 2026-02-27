@@ -54,7 +54,7 @@ test('hit applies knockback, clears timeline, and inserts damage icons', () => {
   assert.equal(target2.action, 'E');
 });
 
-test('knockback re-execution preserves actions added after trailing E', () => {
+test('knockback re-execution clears stale actions added after trailing E', () => {
   const characters = [
     { userId: 'attacker', username: 'attacker', position: { q: -1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Attacker' },
     { userId: 'target', username: 'target', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Target' },
@@ -86,8 +86,7 @@ test('knockback re-execution preserves actions added after trailing E', () => {
   const target3 = beat3.find((entry) => entry.username === 'target');
 
   assert.ok(target2, 'target entry should exist at beat 2');
-  assert.equal(target2.action, 'm');
+  assert.equal(target2.action, 'E');
 
-  assert.ok(target3, 'target entry should exist at beat 3');
-  assert.equal(target3.action, 'a');
+  assert.equal(target3, undefined);
 });

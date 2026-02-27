@@ -42,6 +42,7 @@ const TOKEN_IMAGE_SOURCES = {
   'ethereal-platform': '/public/images/EtherealPlatform.png',
   'focus-anchor': '/public/images/F.png',
   'card-in-hand': '/public/images/CardInHand.png',
+  adrenaline: '/public/images/Adrenaline.png',
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -218,6 +219,42 @@ const drawAbilityHandCounter = (ctx, x, y, radius, abilityHandCount, theme, icon
   ctx.strokeText(label, iconX + iconSize / 2, iconY + iconSize / 2 + labelSize * 0.03);
   ctx.fillStyle = '#ffffff';
   ctx.fillText(label, iconX + iconSize / 2, iconY + iconSize / 2 + labelSize * 0.03);
+  ctx.restore();
+};
+
+const drawAdrenalineCounter = (ctx, x, y, radius, adrenaline, theme, icon, nameCapsuleRect) => {
+  if (!Number.isFinite(adrenaline)) return;
+  const safeCount = Math.max(0, Math.min(10, Math.floor(adrenaline)));
+  if (safeCount < 0) return;
+  const iconSize = Math.max(12, radius * 0.56);
+  const gap = Math.max(1, radius * 0.02);
+  const anchorY = nameCapsuleRect ? nameCapsuleRect.y + nameCapsuleRect.height / 2 : y + radius * 0.65;
+  const nameRight =
+    nameCapsuleRect && Number.isFinite(nameCapsuleRect.textRight)
+      ? nameCapsuleRect.textRight
+      : nameCapsuleRect?.x != null && nameCapsuleRect?.width != null
+        ? nameCapsuleRect.x + nameCapsuleRect.width
+        : x + radius * 1.2;
+  const iconX = nameRight + gap;
+  const iconY = anchorY - iconSize / 2;
+  const labelSize = Math.max(10, iconSize * 0.53);
+
+  ctx.save();
+  if (icon && icon.complete && icon.naturalWidth > 0) {
+    ctx.drawImage(icon, iconX, iconY, iconSize, iconSize);
+  } else {
+    ctx.fillStyle = theme.panelStrong || '#20303a';
+    drawRoundedRect(ctx, iconX, iconY, iconSize, iconSize, iconSize * 0.2);
+    ctx.fill();
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `800 ${labelSize}px ${theme.fontBody}`;
+  ctx.lineWidth = Math.max(1.2, iconSize * 0.11);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.82)';
+  ctx.strokeText(`${safeCount}`, iconX + iconSize / 2, iconY + iconSize * 0.67);
+  ctx.fillStyle = '#111111';
+  ctx.fillText(`${safeCount}`, iconX + iconSize / 2, iconY + iconSize * 0.67);
   ctx.restore();
 };
 
@@ -842,6 +879,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     }
 
     const publicState = gameState?.state?.public ?? null;
+    const isAlternateRuleset = `${publicState?.ruleset ?? ''}`.trim().toLowerCase() === 'alternate';
     const renderCharacters = scene?.characters ?? publicState?.characters ?? [];
     const beatsForFilter = publicState?.beats ?? [];
     const timelineBeatIndex = beatsForFilter.length ? Math.min(timeIndicatorViewModel?.value ?? 0, beatsForFilter.length - 1) : 0;
@@ -923,7 +961,14 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
             : typeof character.abilityHandCount === 'number'
               ? character.abilityHandCount
               : beatEntry?.abilityHandCount;
+        const adrenalineCount =
+          typeof character.displayAdrenaline === 'number'
+            ? character.displayAdrenaline
+            : typeof character.adrenaline === 'number'
+              ? character.adrenaline
+              : beatEntry?.adrenaline;
         const handIcon = getTokenArt('card-in-hand');
+        const adrenalineIcon = getTokenArt('adrenaline');
         drawDamageCapsule(ctx, drawX, drawY, metrics.radius, damage, theme);
         const nameCapsuleRect = drawNameCapsule(
           ctx,
@@ -951,6 +996,18 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
           handIcon,
           nameCapsuleRect,
         );
+        if (isAlternateRuleset) {
+          drawAdrenalineCounter(
+            ctx,
+            drawX,
+            drawY,
+            metrics.radius,
+            adrenalineCount,
+            theme,
+            adrenalineIcon,
+            nameCapsuleRect,
+          );
+        }
       });
     }
 

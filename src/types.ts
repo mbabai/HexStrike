@@ -9,6 +9,8 @@ export type QueueName =
   | 'botMediumQueue'
   | 'botEasyQueue';
 
+export type RulesetName = 'regular' | 'alternate';
+
 export interface LobbySnapshot {
   tutorialQueue: string[];
   quickplay1v1Queue: string[];
@@ -123,6 +125,16 @@ export interface CardDefinition {
   kbf?: number;
   activeText?: string;
   passiveText?: string;
+  triggerText?: string;
+  cardText?: string;
+  beats?: Array<{
+    beat: number;
+    action: string;
+    subBeat?: { value?: number; start?: number; end?: number } | null;
+    damage?: number | string | null;
+    kbf?: number | string | null;
+    text?: Array<{ placeholder?: string; text?: string }> | string[] | null;
+  }>;
 }
 
 export interface DeckDefinition {
@@ -147,6 +159,7 @@ export interface DeckState {
   lastRefreshIndex: number | null;
   activeCardId: string | null;
   passiveCardId: string | null;
+  adrenaline?: number;
 }
 
 export interface PlayerCardState {
@@ -158,6 +171,7 @@ export interface PlayerCardState {
   maxHandSize?: number;
   activeCardId: string | null;
   passiveCardId: string | null;
+  adrenaline?: number;
   discardPile: string[];
   lastRefreshIndex: number | null;
 }
@@ -181,12 +195,17 @@ export interface ActionListItem {
   cardId?: string;
   passiveCardId?: string;
   abilityHandCount?: number;
+  submittedAdrenaline?: number;
+  cardBeat?: number;
+  subBeat?: { value?: number; start?: number; end?: number } | null;
+  textEntries?: Array<{ placeholder?: string; text?: string }>;
 }
 
 export interface ActionSubmission {
   activeCardId: string | null;
   passiveCardId: string | null;
   rotation: string;
+  submittedAdrenaline?: number;
 }
 
 export interface CardUse {
@@ -242,12 +261,17 @@ export interface BeatEntry {
   abilityHandCount?: number;
   havenPassiveSkipApplied?: boolean;
   stunOnly?: boolean;
+  cardBeat?: number;
+  subBeat?: { value?: number; start?: number; end?: number } | null;
+  textEntries?: Array<{ placeholder?: string; text?: string }>;
   consequences?: Array<{
     type: 'hit';
     damageDelta: number;
     knockbackDistance: number;
     sourceUserId?: string;
   }>;
+  submittedAdrenaline?: number;
+  adrenaline?: number;
 }
 
 export interface PendingActions {
@@ -324,9 +348,11 @@ export interface PublicCharacter {
   facing: number;
   damage?: number;
   abilityHandCount?: number;
+  adrenaline?: number;
 }
 
 export interface GamePublicState {
+  ruleset?: RulesetName;
   land: HexCoord[];
   beats: BeatEntry[][];
   timeline?: BeatEntry[][];
@@ -368,6 +394,7 @@ export interface MatchDoc {
   id: string;
   players: MatchPlayerDoc[];
   gameId: string;
+  ruleset?: RulesetName;
   winsRequired: number;
   state: MatchState;
   winnerId?: string;
@@ -390,6 +417,7 @@ export interface GameTimers {
 export interface GameDoc {
   id: string;
   matchId: string;
+  ruleset?: RulesetName;
   players: GamePlayerDoc[];
   timers: GameTimers;
   outcome?: unknown;

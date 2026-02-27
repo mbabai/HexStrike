@@ -967,6 +967,32 @@ body.menu-body.is-in-game .menu-backdrop {
   justify-items: stretch;
 }
 
+.match-cta-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.match-cta-row #findGame {
+  width: 100%;
+}
+
+.ruleset-field {
+  display: grid;
+  gap: 6px;
+  min-width: 124px;
+}
+
+.ruleset-field .queue-label {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+}
+
+.ruleset-field .menu-select {
+  padding: 8px 10px;
+}
+
 .queue-field {
   display: grid;
   gap: 8px;
@@ -3407,6 +3433,134 @@ img[src$='Death.png'] {
   margin: 0 2px;
 }
 
+.card-inline-adrenaline {
+  position: relative;
+  display: inline-block;
+  width: 1.15em;
+  height: 1.15em;
+  margin: 0 2px;
+  vertical-align: -0.15em;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.card-inline-adrenaline-value {
+  position: absolute;
+  left: 50%;
+  top: 71%;
+  transform: translate(-50%, -50%);
+  font-size: 0.752em;
+  line-height: 1;
+  font-weight: 800;
+  color: #1b1b1b;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+  white-space: nowrap;
+}
+
+.card-inline-subbeat {
+  position: relative;
+  display: inline-block;
+  width: 1.05em;
+  height: 1.1em;
+  margin: 0 2px;
+  vertical-align: -0.17em;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.card-inline-subbeat-value {
+  position: absolute;
+  left: 50%;
+  top: 49%;
+  transform: translate(-50%, -50%);
+  font-size: 0.75em;
+  line-height: 1;
+  font-weight: 800;
+  color: #1b1b1b;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+  white-space: nowrap;
+  letter-spacing: -0.02em;
+}
+
+.card-inline-draw,
+.card-inline-discard {
+  position: relative;
+  display: inline-block;
+  width: 1.12em;
+  height: 1.12em;
+  margin: 0 2px;
+  vertical-align: -0.14em;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.card-inline-draw-value,
+.card-inline-discard-value {
+  position: absolute;
+  left: 50%;
+  top: 49%;
+  transform: translate(-50%, -50%);
+  font-size: 0.56em;
+  line-height: 1;
+  font-weight: 900;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+}
+
+.card-inline-draw-value {
+  color: #ffffff;
+}
+
+.card-inline-discard-value {
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+}
+
+.card-inline-stat {
+  position: relative;
+  display: inline-block;
+  width: 1.12em;
+  height: 1.12em;
+  margin: 0;
+  vertical-align: -0.14em;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  z-index: 1;
+}
+
+.card-inline-stat-damage {
+  filter: saturate(1.05);
+}
+
+.card-inline-stat-kbf {
+  filter: grayscale(0.08);
+}
+
+.card-inline-stat-kbf.is-throw {
+  filter: grayscale(1) brightness(0.72);
+}
+
+.card-inline-stat-value {
+  position: absolute;
+  left: 50%;
+  top: 49%;
+  transform: translate(-50%, -50%);
+  font-size: 0.56em;
+  line-height: 1;
+  font-weight: 900;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+}
+
+.card-inline-stat-value.is-throw {
+  font-size: 0.58em;
+}
+
 .card-inline-damage-capsule {
   display: inline-flex;
   align-items: center;
@@ -3425,18 +3579,26 @@ img[src$='Death.png'] {
 }
 
 .card-inline-throw-kbf {
-  --card-inline-throw-kbf-size: 1.1em;
+  --card-inline-throw-kbf-size: 1.12em;
   display: inline-grid;
   place-items: center;
   width: var(--card-inline-throw-kbf-size);
   height: var(--card-inline-throw-kbf-size);
-  margin: 0 2px;
-  vertical-align: -0.09em;
+  margin: 0;
+  vertical-align: -0.14em;
   background-image: url('/public/images/KnockBackIcon.png');
   background-size: contain;
   background-position: center;
   background-repeat: no-repeat;
   filter: grayscale(1) brightness(0.72);
+  position: relative;
+  z-index: 1;
+}
+
+.card-inline-stat + .card-inline-stat,
+.card-inline-stat + .card-inline-throw-kbf,
+.card-inline-throw-kbf + .card-inline-stat {
+  margin-left: -0.46em;
 }
 
 .card-inline-throw-kbf-value {
@@ -3502,9 +3664,16 @@ img[src$='Death.png'] {
 
 .action-slot-row {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: 1fr auto;
   gap: 12px;
   width: 100%;
+  justify-items: stretch;
+  align-items: end;
+}
+
+.action-slot-column {
+  display: grid;
+  gap: 12px;
   justify-items: center;
 }
 
@@ -3513,6 +3682,115 @@ img[src$='Death.png'] {
   display: grid;
   gap: 0;
   justify-items: center;
+}
+
+.action-adrenaline {
+  width: 56px;
+  min-height: calc(var(--action-card-height) * 1.04);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 2px;
+  pointer-events: auto;
+}
+
+.action-adrenaline[hidden] {
+  display: none;
+}
+
+.action-adrenaline-scale {
+  position: relative;
+  width: 42px;
+  height: calc(var(--action-card-height) * 1.02);
+  cursor: ns-resize;
+  outline: none;
+}
+
+.action-adrenaline-track {
+  position: absolute;
+  left: 50%;
+  top: 2px;
+  width: 22px;
+  height: calc(100% - 4px);
+  transform: translateX(-50%);
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  background: linear-gradient(180deg, rgba(230, 200, 110, 0.06), rgba(17, 25, 30, 0.3));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.action-adrenaline-fill {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 22px;
+  height: 0;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 220, 100, 0.96), rgba(225, 172, 34, 0.92));
+  box-shadow: 0 0 9px rgba(213, 163, 74, 0.36);
+  pointer-events: none;
+}
+
+.action-adrenaline-cap {
+  position: absolute;
+  left: 50%;
+  width: 34px;
+  height: 2px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: rgba(236, 189, 89, 0.95);
+  box-shadow: 0 0 8px rgba(213, 163, 74, 0.56);
+  pointer-events: none;
+}
+
+.action-adrenaline-thumb {
+  position: absolute;
+  left: 50%;
+  width: 23px;
+  height: 23px;
+  transform: translate(-50%, -50%);
+  border: none;
+  padding: 0;
+  background: url('/public/images/Adrenaline.png') center / contain no-repeat;
+  cursor: grab;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.action-adrenaline-thumb-value {
+  position: absolute;
+  left: 50%;
+  top: 66%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 800;
+  color: #101010;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+  white-space: nowrap;
+}
+
+.action-adrenaline-labels {
+  height: calc(var(--action-card-height) * 1.02);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  font-family: var(--font-body);
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.8);
+  user-select: none;
+  pointer-events: none;
+}
+
+.action-adrenaline-scale:focus-visible .action-adrenaline-track {
+  border-color: rgba(227, 181, 99, 0.95);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 0 0 2px rgba(227, 181, 99, 0.42);
 }
 
 .action-slot-drop {
@@ -4214,6 +4492,23 @@ html.is-mobile .action-hud {
   --action-hand-modal-gap: 12px;
 }
 
+html.is-mobile .action-adrenaline {
+  width: 52px;
+}
+
+html.is-mobile .action-adrenaline-scale {
+  width: 40px;
+}
+
+html.is-mobile .action-adrenaline-thumb {
+  width: 21px;
+  height: 21px;
+}
+
+html.is-mobile .action-adrenaline-thumb-value {
+  font-size: 11px;
+}
+
 html.is-mobile .rotation-wheel {
   width: clamp(138px, 30vw, 170px);
 }
@@ -4275,6 +4570,23 @@ html.is-mobile .app-toast {
     --action-center-right: 10px;
     --action-center-bottom: calc(var(--action-hand-height) * 0.38);
     --action-hand-modal-gap: 12px;
+  }
+
+  .action-adrenaline {
+    width: 50px;
+  }
+
+  .action-adrenaline-scale {
+    width: 38px;
+  }
+
+  .action-adrenaline-thumb {
+    width: 20px;
+    height: 20px;
+  }
+
+  .action-adrenaline-thumb-value {
+    font-size: 10px;
   }
 
   .action-hand-movement {

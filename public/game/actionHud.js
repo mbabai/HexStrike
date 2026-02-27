@@ -1,4 +1,9 @@
-import { buildCardElement, fitAllCardText } from '../shared/cardRenderer.js';
+import {
+  CARD_LAYOUT_ALTERNATE,
+  CARD_LAYOUT_REGULAR,
+  ensureCardLayoutStylesForRuleset,
+  getCardLayoutForRuleset,
+} from '../shared/cardLayouts.js';
 import { buildRotationWheel, ROTATION_LABELS } from './rotationWheel.js';
 
 const LOG_PREFIX = '[actionHud]';
@@ -6,6 +11,18 @@ const log = (...args) => console.log(LOG_PREFIX, ...args);
 const DEBUG_HOVER = false;
 const WHIRLWIND_CARD_ID = 'whirlwind';
 const WHIRLWIND_MIN_DAMAGE = 12;
+const RULESET_REGULAR = CARD_LAYOUT_REGULAR;
+const RULESET_ALTERNATE = CARD_LAYOUT_ALTERNATE;
+const MAX_ADRENALINE = 10;
+
+const normalizeRuleset = (value) =>
+  `${value ?? ''}`.trim().toLowerCase() === RULESET_ALTERNATE ? RULESET_ALTERNATE : RULESET_REGULAR;
+
+const clampAdrenalineCount = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.min(MAX_ADRENALINE, Math.floor(parsed)));
+};
 
 const getRotationMagnitude = (label) => {
   const value = `${label ?? ''}`.trim().toUpperCase();
@@ -56,6 +73,8 @@ export const createActionHud = ({
       setComboMode: () => {},
       clearSelection: () => {},
       setPlayerDamage: () => {},
+      setAdrenaline: () => {},
+      setRuleset: () => {},
     };
   }
 
@@ -76,6 +95,9 @@ export const createActionHud = ({
     lastLocked: null,
     hasDealtCards: false,
     playerDamage: 0,
+    ruleset: RULESET_REGULAR,
+    adrenalineStore: 0,
+    submittedAdrenaline: 0,
   };
 
   const debugOverlay = (() => {
@@ -267,6 +289,93 @@ export const createActionHud = ({
   const actionCenter = rotationWheel?.closest?.('.action-center') ?? null;
   const MIN_ACTION_CARD_SCALE = 0.3;
   const SCALE_SAFETY = 1.06;
+  const adrenalineControl = root.querySelector('#adrenalineControl, .action-adrenaline');
+  const adrenalineScale = adrenalineControl?.querySelector?.('[data-adrenaline-scale]') ?? null;
+  const adrenalineTrack = adrenalineControl?.querySelector?.('.action-adrenaline-track') ?? null;
+  const adrenalineFill = adrenalineControl?.querySelector?.('.action-adrenaline-fill') ?? null;
+  const adrenalineCap = adrenalineControl?.querySelector?.('.action-adrenaline-cap') ?? null;
+  const adrenalineThumb = adrenalineControl?.querySelector?.('[data-adrenaline-thumb]') ?? null;
+  const adrenalineValue = adrenalineControl?.querySelector?.('[data-adrenaline-value]') ?? null;
+  let adrenalinePointerId = null;
+
+  const isAlternateRuleset = () => state.ruleset === RULESET_ALTERNATE;
+  const getCurrentCardLayout = () => {
+    const layout = getCardLayoutForRuleset(state.ruleset);
+    ensureCardLayoutStylesForRuleset(state.ruleset);
+    root.dataset.cardLayout = layout.id;
+    if (layout.id === CARD_LAYOUT_ALTERNATE) {
+      // Match alt deck builder proportions exactly: one scale source for the card itself.
+      root.style.setProperty('--action-card-text-scale', '2.25');
+      if (!`${root.style.getPropertyValue('--action-hand-card-scale') ?? ''}`.trim()) {
+        root.style.setProperty('--action-hand-card-scale', '1');
+      }
+    } else {
+      root.style.removeProperty('--action-card-text-scale');
+      root.style.removeProperty('--action-hand-card-scale');
+    }
+    return layout;
+  };
+  const buildHudCardElement = (card, options = {}) => getCurrentCardLayout().buildCardElement(card, options);
+  const fitHudCardText = () => getCurrentCardLayout().fitCardText(root);
+
+  const setAdrenalineSelection = (value, options = {}) => {
+    const { allowAboveStore = false } = options;
+    const clamped = clampAdrenalineCount(value);
+    const capped = allowAboveStore ? clamped : Math.min(clamped, state.adrenalineStore);
+    state.submittedAdrenaline = capped;
+  };
+
+  const updateAdrenalineUi = () => {
+    if (!adrenalineControl || !adrenalineScale) return;
+    const store = clampAdrenalineCount(state.adrenalineStore);
+    const submitted = Math.min(clampAdrenalineCount(state.submittedAdrenaline), store);
+    state.adrenalineStore = store;
+    state.submittedAdrenaline = submitted;
+    const storeRatio = store / MAX_ADRENALINE;
+    const submittedRatio = submitted / MAX_ADRENALINE;
+    const capTop = `${(1 - storeRatio) * 100}%`;
+    if (adrenalineFill) {
+      adrenalineFill.style.height = `${storeRatio * 100}%`;
+    }
+    if (adrenalineCap) {
+      adrenalineCap.style.top = capTop;
+    }
+    if (adrenalineThumb) {
+      adrenalineThumb.style.top = `${(1 - submittedRatio) * 100}%`;
+      adrenalineThumb.setAttribute('aria-hidden', isAlternateRuleset() ? 'false' : 'true');
+    }
+    if (adrenalineValue) {
+      adrenalineValue.textContent = `${submitted}`;
+    }
+    adrenalineScale.setAttribute('aria-valuenow', `${submitted}`);
+    adrenalineScale.setAttribute('aria-valuetext', `${submitted} submitted adrenaline`);
+    adrenalineScale.setAttribute('aria-valuemax', `${MAX_ADRENALINE}`);
+    if (adrenalineTrack) {
+      adrenalineTrack.setAttribute('data-cap', `${store}`);
+    }
+  };
+
+  const updateAdrenalineVisibility = () => {
+    if (!adrenalineControl || !adrenalineScale) return;
+    const visible = state.turnActive && !state.hidden && isAlternateRuleset();
+    adrenalineControl.hidden = !visible;
+    adrenalineControl.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    adrenalineScale.tabIndex = visible && !state.locked ? 0 : -1;
+    if (adrenalineThumb) {
+      adrenalineThumb.tabIndex = visible && !state.locked ? 0 : -1;
+    }
+  };
+
+  const canInteractAdrenaline = () => state.turnActive && !state.locked && isAlternateRuleset();
+
+  const resolveAdrenalineFromClientY = (clientY) => {
+    if (!adrenalineScale) return 0;
+    const rect = adrenalineScale.getBoundingClientRect();
+    if (!rect || rect.height <= 0) return 0;
+    const ratio = Math.min(1, Math.max(0, (rect.bottom - clientY) / rect.height));
+    const rawValue = Math.round(ratio * MAX_ADRENALINE);
+    return Math.min(state.adrenalineStore, clampAdrenalineCount(rawValue));
+  };
 
   const getHandCardsInOrder = () => {
     const movementCards = Array.from(movementHand.querySelectorAll('.action-card'));
@@ -322,9 +431,45 @@ export const createActionHud = ({
       root.style.setProperty('--action-hand-width', `${targetHandWidth}px`);
     }
     const cardCount = Math.max(1, cardCountOverride ?? cards?.length ?? getHandCardsInOrder().length ?? 1);
-    const spanFactor = handCardScale + Math.max(0, cardCount - 1) * fanGapFactor;
     const targetWidth = Number.isFinite(targetHandWidth) ? targetHandWidth : baseHandWidth || rootRect.width;
-    if (!targetWidth || !spanFactor || !baseCardWidth) {
+    if (!targetWidth || !baseCardWidth) {
+      root.style.setProperty('--action-card-scale', `${Math.max(MIN_ACTION_CARD_SCALE, baseScale)}`);
+      return;
+    }
+    if (isAlternateRuleset()) {
+      // Keep alternate card geometry identical to alt deck builder; only scale the hand fan transform.
+      const fixedScale = Math.max(MIN_ACTION_CARD_SCALE, baseScale);
+      root.style.setProperty('--action-card-scale', fixedScale.toFixed(3));
+      const spanWithoutScale = Math.max(0, cardCount - 1) * fanGapFactor;
+      const widthPerHandScale = baseCardWidth * fixedScale * SCALE_SAFETY;
+      if (!widthPerHandScale) return;
+      let nextHandScale = (targetWidth / widthPerHandScale) - spanWithoutScale;
+      if (!Number.isFinite(nextHandScale)) {
+        nextHandScale = handCardScale;
+      }
+      nextHandScale = Math.max(0.35, Math.min(1, nextHandScale));
+      root.style.setProperty('--action-hand-card-scale', nextHandScale.toFixed(3));
+
+      const measuredCards = cards ?? getHandCardsInOrder();
+      if (!measuredCards.length) return;
+      const availableWidth = Math.max(0, rightEdge - rootRect.left);
+      if (!availableWidth) return;
+      for (let i = 0; i < 3; i += 1) {
+        const bounds = measureHandBounds(measuredCards);
+        if (!bounds) break;
+        if (bounds.minX >= rootRect.left && bounds.maxX <= rightEdge) break;
+        const actualWidth = bounds.maxX - bounds.minX;
+        if (!actualWidth) break;
+        const ratio = availableWidth / actualWidth;
+        const adjustedScale = Math.max(0.35, Math.min(nextHandScale, nextHandScale * ratio * 0.98));
+        if (Math.abs(adjustedScale - nextHandScale) < 0.001) break;
+        nextHandScale = adjustedScale;
+        root.style.setProperty('--action-hand-card-scale', nextHandScale.toFixed(3));
+      }
+      return;
+    }
+    const spanFactor = handCardScale + Math.max(0, cardCount - 1) * fanGapFactor;
+    if (!spanFactor) {
       root.style.setProperty('--action-card-scale', `${Math.max(MIN_ACTION_CARD_SCALE, baseScale)}`);
       return;
     }
@@ -383,7 +528,7 @@ export const createActionHud = ({
       raf = requestAnimationFrame(() => {
         raf = null;
         refreshHandLayouts();
-        fitAllCardText(root);
+        fitHudCardText();
       });
     };
   })();
@@ -647,6 +792,8 @@ export const createActionHud = ({
     if (rotationCenterLabel) {
       rotationCenterLabel.textContent = canSubmit ? 'submit' : 'rotation';
     }
+    updateAdrenalineVisibility();
+    updateAdrenalineUi();
   };
 
   const shakeCard = (card) => {
@@ -917,6 +1064,64 @@ export const createActionHud = ({
     bindHandDrop(abilityHand);
   };
 
+  const bindAdrenalineControl = () => {
+    if (!adrenalineScale) return;
+
+    const applyFromClientY = (clientY) => {
+      if (!canInteractAdrenaline()) return;
+      const next = resolveAdrenalineFromClientY(clientY);
+      setAdrenalineSelection(next);
+      updateAdrenalineUi();
+    };
+
+    adrenalineScale.addEventListener('pointerdown', (event) => {
+      if (!canInteractAdrenaline()) return;
+      event.preventDefault();
+      adrenalinePointerId = event.pointerId;
+      adrenalineScale.setPointerCapture?.(event.pointerId);
+      applyFromClientY(event.clientY);
+    });
+
+    adrenalineScale.addEventListener('pointermove', (event) => {
+      if (!canInteractAdrenaline()) return;
+      if (adrenalinePointerId !== event.pointerId) return;
+      applyFromClientY(event.clientY);
+    });
+
+    const releasePointer = (event) => {
+      if (adrenalinePointerId !== event.pointerId) return;
+      adrenalineScale.releasePointerCapture?.(event.pointerId);
+      adrenalinePointerId = null;
+    };
+    adrenalineScale.addEventListener('pointerup', releasePointer);
+    adrenalineScale.addEventListener('pointercancel', releasePointer);
+    adrenalineScale.addEventListener('lostpointercapture', () => {
+      adrenalinePointerId = null;
+    });
+
+    const handleSliderKey = (event) => {
+      if (!canInteractAdrenaline()) return;
+      let nextValue = state.submittedAdrenaline;
+      if (event.key === 'ArrowUp' || event.key === 'ArrowRight') {
+        nextValue += 1;
+      } else if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') {
+        nextValue -= 1;
+      } else if (event.key === 'Home') {
+        nextValue = 0;
+      } else if (event.key === 'End') {
+        nextValue = state.adrenalineStore;
+      } else {
+        return;
+      }
+      event.preventDefault();
+      setAdrenalineSelection(nextValue);
+      updateAdrenalineUi();
+    };
+
+    adrenalineScale.addEventListener('keydown', handleSliderKey);
+    adrenalineThumb?.addEventListener('keydown', handleSliderKey);
+  };
+
   const setCards = (movementCards, abilityCards, options = {}) => {
     const previousMovement = new Set();
     const previousAbility = new Set();
@@ -947,7 +1152,7 @@ export const createActionHud = ({
     state.exhaustedCards = new Set();
 
     const attachCard = (card, index, container, type) => {
-      const element = buildCardElement(card, { asButton: true });
+      const element = buildHudCardElement(card, { asButton: true });
       element.draggable = !state.locked && state.turnActive;
       element.addEventListener('dragstart', (event) => {
         const record = state.cardsById.get(card.id);
@@ -1004,7 +1209,7 @@ export const createActionHud = ({
     requestAnimationFrame(() => {
       refreshHandLayouts();
       animatePendingDeals(pendingDeals);
-      fitAllCardText(root);
+      fitHudCardText();
       if (debugOverlay && debugOverlay.setEnabled) {
         debugOverlay.render(getHandCardsInOrder(), state.hoveredCardId);
       }
@@ -1049,6 +1254,7 @@ export const createActionHud = ({
   const setHidden = (hidden) => {
     state.hidden = Boolean(hidden);
     root.hidden = state.hidden;
+    updateAdrenalineVisibility();
     log('hidden', state.hidden);
   };
 
@@ -1089,9 +1295,11 @@ export const createActionHud = ({
     clearSlot('passive');
     state.selectedRotation = null;
     state.draggingCardId = null;
+    state.submittedAdrenaline = 0;
     wheel.clear();
     updateRotationRestriction();
     updateSubmitState();
+    updateAdrenalineUi();
   };
 
   const attemptSubmit = () => {
@@ -1104,6 +1312,7 @@ export const createActionHud = ({
       activeCardId: activeCard.id,
       passiveCardId: passiveCard.id,
       rotation,
+      submittedAdrenaline: isAlternateRuleset() ? state.submittedAdrenaline : 0,
       activeActions: activeCard.actions?.length ?? 0,
     });
     if (onSubmit) {
@@ -1111,6 +1320,7 @@ export const createActionHud = ({
         activeCardId: activeCard.id,
         passiveCardId: passiveCard.id,
         rotation,
+        submittedAdrenaline: isAlternateRuleset() ? state.submittedAdrenaline : 0,
         activeCard,
         passiveCard,
       });
@@ -1135,6 +1345,7 @@ export const createActionHud = ({
   bindSlot(activeSlot, 'active');
   bindSlot(passiveSlot, 'passive');
   bindHands();
+  bindAdrenalineControl();
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', scheduleLayoutRefresh);
   }
@@ -1152,10 +1363,75 @@ export const createActionHud = ({
   }
   updateRotationRestriction();
   updateSubmitState();
+  getCurrentCardLayout();
+  updateAdrenalineUi();
+  updateAdrenalineVisibility();
 
   const setPlayerDamage = (damage) => {
     const next = Number.isFinite(damage) ? Math.max(0, Math.floor(damage)) : 0;
     state.playerDamage = next;
+  };
+
+  const setAdrenaline = (adrenaline) => {
+    state.adrenalineStore = clampAdrenalineCount(adrenaline);
+    if (state.submittedAdrenaline > state.adrenalineStore) {
+      state.submittedAdrenaline = state.adrenalineStore;
+    }
+    updateAdrenalineUi();
+    updateAdrenalineVisibility();
+  };
+
+  const setRuleset = (ruleset) => {
+    const nextRuleset = normalizeRuleset(ruleset);
+    const rulesetChanged = nextRuleset !== state.ruleset;
+    state.ruleset = nextRuleset;
+    getCurrentCardLayout();
+    if (rulesetChanged && state.cardsById.size) {
+      const movementCards = [];
+      const abilityCards = [];
+      state.cardsById.forEach((card) => {
+        if (!card) return;
+        if (card.type === 'movement') {
+          movementCards.push(card);
+          return;
+        }
+        if (card.type === 'ability') {
+          abilityCards.push(card);
+        }
+      });
+      movementCards.sort((left, right) => left.order - right.order);
+      abilityCards.sort((left, right) => left.order - right.order);
+      const toCardData = (card) => ({
+        id: card.id,
+        name: card.name,
+        type: card.type,
+        priority: card.priority,
+        actions: Array.isArray(card.actions) ? [...card.actions] : [],
+        rotations: card.rotations,
+        damage: card.damage,
+        kbf: card.kbf,
+        activeText: card.activeText,
+        passiveText: card.passiveText,
+        triggerText: card.triggerText,
+        cardText: card.cardText,
+        beats: Array.isArray(card.beats) ? card.beats.map((beat) => ({ ...beat })) : undefined,
+      });
+      setCards(
+        movementCards.map(toCardData),
+        abilityCards.map(toCardData),
+        { exhaustedCardIds: [...state.exhaustedCards] },
+      );
+      setVisible(state.turnActive);
+      setLocked(state.locked);
+    }
+    if (!isAlternateRuleset()) {
+      state.submittedAdrenaline = 0;
+    }
+    if (state.submittedAdrenaline > state.adrenalineStore) {
+      state.submittedAdrenaline = state.adrenalineStore;
+    }
+    updateAdrenalineUi();
+    updateAdrenalineVisibility();
   };
 
   return {
@@ -1167,5 +1443,7 @@ export const createActionHud = ({
     setComboMode,
     clearSelection,
     setPlayerDamage,
+    setAdrenaline,
+    setRuleset,
   };
 };

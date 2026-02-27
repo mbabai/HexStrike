@@ -1,24 +1,8 @@
 import { ActionListItem, CardDefinition } from '../../types';
-import { isBracketedAction, patchActionEntry, updateActionEntries } from './actionListTransforms';
+import { patchActionEntry, updateActionEntries } from './actionListTransforms';
+import { getActiveEffectTargetIndices } from './activeEffectTargets';
 
 type RotationSource = ActionListItem['rotationSource'];
-
-const getBracketedActionIndices = (actions: string[]): number[] => {
-  const indices: number[] = [];
-  actions.forEach((action, index) => {
-    if (isBracketedAction(action)) {
-      indices.push(index);
-    }
-  });
-  return indices;
-};
-
-const getSymbolActionIndices = (actions: string[], symbol: string): number[] => {
-  if (symbol === 'i') {
-    return getBracketedActionIndices(actions);
-  }
-  return [];
-};
 
 const getOppositeRotation = (rotationLabel: string): string => {
   const trimmed = `${rotationLabel ?? ''}`.trim().toUpperCase();
@@ -47,7 +31,7 @@ const applyNinjaRollActiveText = (
   card: CardDefinition,
   rotationLabel: string,
 ): ActionListItem[] => {
-  const indices = getSymbolActionIndices(Array.isArray(card.actions) ? card.actions : [], 'i');
+  const indices = getActiveEffectTargetIndices(actionList, card, 'i', { fallbackToTextEntries: true });
   const targetIndex = indices.length ? indices[0] : null;
   if (targetIndex == null) return actionList;
   const opposite = getOppositeRotation(rotationLabel);

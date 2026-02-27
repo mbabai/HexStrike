@@ -1,0 +1,235 @@
+.action-card.action-card-alt {
+  cursor: default;
+}
+
+.action-card.action-card-alt::before {
+  border-radius: calc(var(--action-card-radius) - var(--action-card-inner-offset));
+  background: var(--action-card-inner-bg, var(--color-card-ability));
+}
+
+.action-card.action-card-alt .action-card-header {
+  height: calc(38px * var(--action-card-scale));
+  z-index: 4;
+}
+
+.action-card.action-card-alt .action-card-title {
+  left: calc(14px * var(--action-card-scale));
+  right: calc(92px * var(--action-card-scale));
+  width: auto;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.action-card-alt-badges {
+  pointer-events: none;
+}
+
+.action-card.action-card-alt .action-card-rotation {
+  width: calc(63px * var(--action-card-scale));
+  height: calc(63px * var(--action-card-scale));
+  left: auto;
+  right: calc(21px * var(--action-card-scale));
+  top: calc(17px * var(--action-card-scale));
+}
+
+.action-card-alt-body {
+  top: calc(46px * var(--action-card-scale));
+  left: calc(14px * var(--action-card-scale));
+  right: calc(10px * var(--action-card-scale));
+  bottom: calc(8px * var(--action-card-scale));
+  display: block;
+  --alt-art-left: calc(79px * var(--action-card-scale));
+  --alt-passive-height: calc(88px * var(--action-card-scale));
+  --alt-box-gap: calc(2px * var(--action-card-scale));
+  --alt-beats-top: calc(9px * var(--action-card-scale));
+  --alt-beats-bottom: calc(var(--alt-passive-height) + var(--alt-box-gap));
+  --alt-beats-height: calc(100% - var(--alt-beats-top) - var(--alt-beats-bottom));
+}
+
+.action-card-alt-art {
+  position: absolute;
+  top: var(--alt-beats-top);
+  left: var(--alt-art-left);
+  right: 0;
+  bottom: var(--alt-beats-bottom);
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.action-card-alt-art-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.action-card-alt-art.is-missing-art {
+  background: transparent;
+}
+
+.action-card-alt-beats {
+  position: absolute;
+  top: var(--alt-beats-top);
+  left: 0;
+  right: 0;
+  bottom: var(--alt-beats-bottom);
+  display: grid;
+  grid-template-rows: repeat(6, minmax(0, 1fr));
+  gap: 0;
+  padding-left: calc(3px * var(--action-card-scale));
+  z-index: 1;
+}
+
+.action-card-alt-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: calc(74px * var(--action-card-scale)) 1fr calc(40px * var(--action-card-scale));
+  column-gap: calc(5px * var(--action-card-scale));
+  align-items: center;
+  min-height: 0;
+}
+
+.action-card-alt-row.has-divider-before::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--alt-art-left) + (100% - var(--alt-art-left)) * 0.1);
+  right: calc((100% - var(--alt-art-left)) * 0.1);
+  top: 0;
+  height: calc(2px * var(--action-card-scale));
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.action-card-alt-beats.is-six-beat-terminal-end .action-card-alt-row.is-end-beat::before {
+  content: none;
+}
+
+.action-card-alt-row.is-empty .action-card-alt-row-text {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.action-card-alt-row-icon {
+  width: calc(74px * var(--action-card-scale));
+  height: calc(74px * var(--action-card-scale));
+  display: grid;
+  place-items: center;
+}
+
+.action-card-alt-row-icon.is-placeholder {
+  opacity: 0;
+}
+
+.action-card-alt-action-icon {
+  display: block;
+  width: calc(68px * var(--action-card-scale));
+  height: calc(68px * var(--action-card-scale));
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+
+.action-card-alt-adrenaline {
+  position: relative;
+  display: inline-block;
+  width: calc(68px * var(--action-card-scale));
+  height: calc(68px * var(--action-card-scale));
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.action-card-alt-adrenaline-value {
+  position: absolute;
+  left: 50%;
+  top: 71%;
+  transform: translate(-50%, -50%);
+  font-size: calc(62.4px * var(--action-card-scale));
+  line-height: 1;
+  font-weight: 900;
+  color: #1b1b1b;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+}
+
+.action-card-alt-row-text {
+  min-width: 0;
+  color: #ffffff;
+  font-size: calc(17.5px * var(--action-card-scale) * var(--action-card-text-scale, 1));
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.action-card-alt-row-text .card-inline-icon,
+.action-card-alt-row-text .card-inline-adrenaline {
+  margin-left: 1px;
+  margin-right: 1px;
+}
+
+.action-card-alt-subbeat {
+  width: calc(40px * var(--action-card-scale));
+  height: calc(40px * var(--action-card-scale));
+  background-repeat: no-repeat;
+  background-size: contain;
+  background-position: center;
+  display: grid;
+  place-items: center;
+  transform: translateX(calc(-6px * var(--action-card-scale)));
+}
+
+.action-card-alt-subbeat.is-empty {
+  opacity: 0;
+}
+
+.action-card-alt-subbeat-value {
+  font-size: calc(7.2px * var(--action-card-scale) * var(--action-card-text-scale, 1));
+  font-weight: 700;
+  color: #1b1b1b;
+  line-height: 1;
+  white-space: nowrap;
+  letter-spacing: -0.035em;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.action-card-alt-subbeat-value.is-single {
+  font-size: calc(18px * var(--action-card-scale) * var(--action-card-text-scale, 1));
+}
+
+.action-card-alt-subbeat-value.is-range {
+  font-size: calc(11.52px * var(--action-card-scale) * var(--action-card-text-scale, 1));
+}
+
+.action-card-alt-box {
+  position: absolute;
+  border: calc(1px * var(--action-card-scale)) solid rgba(30, 30, 34, 0.95);
+  background: linear-gradient(170deg, #f4efd9, #dfd8bd);
+  color: #202020;
+  padding: calc(4px * var(--action-card-scale)) calc(6px * var(--action-card-scale));
+  overflow: hidden;
+  z-index: 2;
+}
+
+.action-card-alt-trigger {
+  left: calc(92px * var(--action-card-scale));
+  right: 0;
+  top: calc(var(--alt-beats-top) + ((var(--alt-beats-height) / 6) * 5));
+  bottom: var(--alt-beats-bottom);
+}
+
+.action-card-alt-passive {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--alt-passive-height);
+}
+
+.action-card-alt-box-body {
+  margin-top: 0;
+  font-size: calc(13px * var(--action-card-scale) * var(--action-card-text-scale, 1));
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-height: 100%;
+  overflow: hidden;
+}

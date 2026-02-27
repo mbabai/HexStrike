@@ -52,19 +52,21 @@ export const getCharacterFirstEIndex = (beats: BeatEntry[][], character: PublicC
       return i;
     }
   }
-  return Math.max(0, Math.min(startIndex, beats.length - 1));
+  // No explicit open beat remains in the unresolved span; next open beat is after the tail.
+  return beats.length;
 };
 
 export const getTimelineEarliestEIndex = (beats: BeatEntry[][], characters: PublicCharacter[]): number => {
   if (!Array.isArray(beats) || !beats.length || !Array.isArray(characters) || !characters.length) {
     return 0;
   }
-  let earliest = beats.length - 1;
+  let earliest = Number.POSITIVE_INFINITY;
   characters.forEach((character) => {
     const firstE = getCharacterFirstEIndex(beats, character);
     if (firstE < earliest) earliest = firstE;
   });
-  return Math.max(0, earliest);
+  if (!Number.isFinite(earliest)) return 0;
+  return Math.max(0, Math.floor(earliest));
 };
 
 export const getTimelineResolvedIndex = (beats: BeatEntry[][]): number => {
