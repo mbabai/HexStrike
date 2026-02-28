@@ -381,7 +381,7 @@
       "rotations": "0-2",
       "damage": 4,
       "kbf": 4,
-      "passiveText": "If you are over the abyss, all {m} -> {2j}."
+      "passiveText": "If you are over the abyss, all {m} → {2j}."
     },
     {
       "id": "guard",
