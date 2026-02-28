@@ -212,7 +212,7 @@
       "damage": 0,
       "kbf": 0,
       "activeText": "{X1}: Place one arrow in front of you facing the direction you are.",
-      "passiveText": "If you rotated by 1 or 2, place an arrow facing your original direction after each successful move, on the original hex you were on."
+      "passiveText": "If you rotated by 1 or 2, place an arrow facing your original direction after each successful move, on the hex you were just on."
     },
     {
       "id": "burning-strike",
@@ -441,15 +441,15 @@
       "type": "ability",
       "priority": 16,
       "actions": [
-        "W",
-        "W",
+        "X1",
+        "X1",
         "X1",
         "E"
       ],
       "rotations": "*",
       "damage": 0,
       "kbf": 0,
-      "activeText": "{X1}: Reduce you and your allies' accumulated damage by 3.",
+      "activeText": "{X1}: Reduce you and your allies' accumulated damage by 1.",
       "passiveText": "If you are hit while this movement card is active, reduce the damage by 2 (min 0)."
     },
     {

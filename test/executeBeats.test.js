@@ -1581,6 +1581,54 @@ test('executeBeats blocks throws against hip-throw and tackle passives', () => {
   });
 });
 
+test('executeBeats does not apply throw immunity during DamageIcon interruption frames', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', '[a]', 20, characters[0].position, characters[0].facing, '', 2, 0),
+      buildEntry('beta', 'DamageIcon', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  beats[0][0].interaction = { type: 'throw' };
+  beats[0][1].passiveCardId = 'hip-throw';
+
+  const result = executeBeats(beats, characters);
+  const throwInteraction = (result.interactions || []).find(
+    (interaction) => interaction.type === 'throw' && interaction.actorUserId === 'alpha' && interaction.targetUserId === 'beta',
+  );
+
+  assert.ok(throwInteraction);
+  assert.equal(throwInteraction.status, 'pending');
+});
+
+test('executeBeats does not apply healing harmony passive damage reduction during DamageIcon interruption frames', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', '[a]', 20, characters[0].position, characters[0].facing, '', 3, 0),
+      buildEntry('beta', 'DamageIcon', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+  beats[0][1].passiveCardId = 'healing-harmony';
+
+  const result = executeBeats(beats, characters);
+  const betaEntry = (result.beats[0] || []).find((entry) => entry.username === 'beta');
+  const hit = (betaEntry?.consequences ?? []).find((effect) => effect?.type === 'hit');
+
+  assert.ok(betaEntry);
+  assert.equal(betaEntry.damage, 3);
+  assert.deepEqual(hit, { type: 'hit', damageDelta: 3, knockbackDistance: 0, sourceUserId: 'alpha' });
+});
+
 test('executeBeats still creates tackle throw interaction when thrower is hit with KBF 0', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
@@ -2261,9 +2309,56 @@ test('executeBeats records Healing Harmony self-heal as negative timeline conseq
   const hitConsequences = (alphaEntry?.consequences ?? []).filter((effect) => effect?.type === 'hit');
 
   assert.ok(alphaEntry);
-  assert.equal(alphaEntry.damage, 2);
+  assert.equal(alphaEntry.damage, 4);
   assert.equal(hitConsequences.length, 1);
-  assert.deepEqual(hitConsequences[0], { type: 'hit', damageDelta: -3, knockbackDistance: 0 });
+  assert.deepEqual(hitConsequences[0], { type: 'hit', damageDelta: -1, knockbackDistance: 0 });
+});
+
+test('executeBeats applies Healing Harmony X1 healing on each active beat', () => {
+  const characters = [
+    {
+      userId: 'alpha',
+      username: 'alpha',
+      position: { q: 0, r: 0 },
+      facing: 180,
+      damage: 5,
+      characterId: 'murelious',
+      characterName: 'Alpha',
+    },
+  ];
+
+  const beats = [
+    [buildEntry('alpha', 'X1', 20, characters[0].position, characters[0].facing)],
+    [buildEntry('alpha', 'X1', 20, characters[0].position, characters[0].facing)],
+    [buildEntry('alpha', 'X1', 20, characters[0].position, characters[0].facing)],
+  ];
+  beats.forEach((beat) => {
+    beat[0].cardId = 'healing-harmony';
+  });
+
+  const result = executeBeats(beats, characters);
+  const beat0 = (result.beats[0] || []).find((entry) => entry.username === 'alpha');
+  const beat1 = (result.beats[1] || []).find((entry) => entry.username === 'alpha');
+  const beat2 = (result.beats[2] || []).find((entry) => entry.username === 'alpha');
+
+  assert.ok(beat0);
+  assert.ok(beat1);
+  assert.ok(beat2);
+  assert.equal(beat0.damage, 4);
+  assert.equal(beat1.damage, 3);
+  assert.equal(beat2.damage, 2);
+  assert.deepEqual(
+    (beat0.consequences ?? []).find((effect) => effect?.type === 'hit'),
+    { type: 'hit', damageDelta: -1, knockbackDistance: 0 },
+  );
+  assert.deepEqual(
+    (beat1.consequences ?? []).find((effect) => effect?.type === 'hit'),
+    { type: 'hit', damageDelta: -1, knockbackDistance: 0 },
+  );
+  assert.deepEqual(
+    (beat2.consequences ?? []).find((effect) => effect?.type === 'hit'),
+    { type: 'hit', damageDelta: -1, knockbackDistance: 0 },
+  );
 });
 
 test('executeBeats resolves parry counters even when a defender is at E', () => {

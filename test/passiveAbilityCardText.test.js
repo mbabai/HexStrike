@@ -36,6 +36,16 @@ test('aerial-strike passive forces rotation after the final movement entry', () 
   assert.equal(actionList[3].rotationSource, 'forced');
 });
 
+test('aerial-strike passive treats charge movement as movement for final rotate 3', () => {
+  const actionList = buildActionList('grappling-hook', 'aerial-strike');
+  assert.deepEqual(
+    actionList.map((entry) => entry.action),
+    ['W', 'W', '[3c]', 'W', 'E'],
+  );
+  assert.equal(actionList[3].rotation, '3');
+  assert.equal(actionList[3].rotationSource, 'forced');
+});
+
 test('cross-slash passive replaces m with m-La-Ra and sets damage/KBF', () => {
   const actionList = buildActionList('step', 'cross-slash');
   assert.deepEqual(

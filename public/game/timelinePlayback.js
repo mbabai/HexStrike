@@ -432,7 +432,11 @@ const isOpenBeatAction = (action) => {
   return label === DEFAULT_ACTION || label === FOCUS_ACTION;
 };
 
-const isActionActive = (action) => !isOpenBeatAction(action);
+const isActionActive = (action) => {
+  const label = normalizeActionLabel(action ?? '').toUpperCase();
+  if (!label) return false;
+  return label !== DEFAULT_ACTION && label !== FOCUS_ACTION && label !== DAMAGE_ICON_ACTION.toUpperCase();
+};
 const isActionSetStart = (entry) =>
   `${entry?.rotationSource ?? ''}`.trim() === 'selected' || Boolean(entry?.comboStarter);
 
@@ -1045,7 +1049,7 @@ const buildActionSteps = (
 
       if (entry.cardId === HEALING_HARMONY_CARD_ID && actionLabel.toUpperCase() === 'X1') {
         const beforeDamage = Number.isFinite(actorState.damage) ? actorState.damage : 0;
-        const nextDamage = Math.max(0, beforeDamage - 3);
+        const nextDamage = Math.max(0, beforeDamage - 1);
         const delta = nextDamage - beforeDamage;
         if (delta) {
           actorState.damage = nextDamage;

@@ -37,6 +37,7 @@
 ## Combat modifiers
 - Hip Throw/Tackle passives grant throw immunity while the action set is active (non-`E`), blocking throw hits entirely.
 - Iron Will passive reduces incoming KBF by 1 (min 0) while the action set is active; hand-trigger use still sets KBF to 0.
+- Interruption frames (`DamageIcon`) are not active action-set beats for passive/ongoing checks; effects should stop immediately once knockback/stun interruption starts.
 - In code: `src/game/cardText/combatModifiers.ts` + `public/game/cardText/combatModifiers.js`; consumed in `execute.ts` and `timelinePlayback.js`.
 
 ## Parry counters
@@ -87,6 +88,9 @@
 - Spike passive grants discard immunity to opponent-driven discard effects while the action set is active.
 - Trip passive converts knockback distance into discard count (no knockback movement) but still uses the pre-conversion distance for stun checks.
 - Server mapping: `src/game/cardText/discardEffects.ts`; client mirror: `public/game/cardText/discardEffects.js`.
+
+## Known Follow-Ups
+- Healing Harmony active currently heals only the acting character in live rules because team relationships are not implemented yet. When teams are introduced, update this effect to include allies.
 
 ## Hand-trigger interactions (in-hand reveals)
 - Cards with "If X is in your hand..." create a `customInteractions` entry of type `hand-trigger` when the trigger fires and the card is still in hand.

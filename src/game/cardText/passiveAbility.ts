@@ -64,7 +64,7 @@ const actionHasMovementToken = (action: string): boolean => {
     .some((label) => {
       if (!label) return false;
       const type = label[label.length - 1]?.toLowerCase();
-      return type === 'm' || type === 'j';
+      return type === 'm' || type === 'j' || type === 'c';
     });
 };
 

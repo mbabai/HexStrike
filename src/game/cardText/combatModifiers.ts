@@ -5,6 +5,7 @@ type PassiveCardEntry = {
 
 const THROW_IMMUNE_PASSIVE_CARD_IDS = new Set(['hip-throw', 'tackle']);
 const PASSIVE_KBF_REDUCTION = new Map<string, number>([['iron-will', 1]]);
+const DAMAGE_ICON_ACTION = 'DAMAGEICON';
 
 const normalizeActionLabel = (action: string | null | undefined): string => {
   const trimmed = `${action ?? ''}`.trim();
@@ -15,8 +16,11 @@ const normalizeActionLabel = (action: string | null | undefined): string => {
   return trimmed;
 };
 
-const isActionActive = (action: string | null | undefined): boolean =>
-  normalizeActionLabel(action).toUpperCase() !== 'E';
+const isActionActive = (action: string | null | undefined): boolean => {
+  const label = normalizeActionLabel(action).toUpperCase();
+  if (!label) return false;
+  return label !== 'E' && label !== DAMAGE_ICON_ACTION;
+};
 
 export const isThrowImmune = (entry: PassiveCardEntry | null | undefined): boolean => {
   const passiveCardId = entry?.passiveCardId ?? '';

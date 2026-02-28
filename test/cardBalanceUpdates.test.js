@@ -13,7 +13,7 @@ test('card balance update applies timeline, damage, and naming changes', async (
   const catalog = await loadCardCatalog();
 
   assert.deepEqual(getCardById(catalog, 'iron-will').actions, ['W', 'W', 'X1', 'W', 'E']);
-  assert.deepEqual(getCardById(catalog, 'healing-harmony').actions, ['W', 'W', 'X1', 'E']);
+  assert.deepEqual(getCardById(catalog, 'healing-harmony').actions, ['X1', 'X1', 'X1', 'E']);
   assert.deepEqual(getCardById(catalog, 'tackle').actions, ['m', '[a]', 'W', 'W', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'chase').actions, ['m', 'c', 'a', 'Co', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'vengeance').actions, ['W', 'c', 'c', 'c', 'W', 'W', 'E']);

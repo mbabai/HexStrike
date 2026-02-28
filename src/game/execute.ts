@@ -268,7 +268,11 @@ const normalizeActionLabel = (action: string) => {
   return trimmed;
 };
 
-const isActionActive = (action: string | null | undefined) => normalizeActionLabel(action ?? '').toUpperCase() !== DEFAULT_ACTION;
+const isActionActive = (action: string | null | undefined) => {
+  const label = normalizeActionLabel(action ?? '').toUpperCase();
+  if (!label) return false;
+  return label !== DEFAULT_ACTION && label !== DAMAGE_ICON_ACTION.toUpperCase();
+};
 const isOpenBeatAction = (action: string | null | undefined) => {
   const label = normalizeActionLabel(action ?? '').toUpperCase();
   return label === DEFAULT_ACTION || label === FOCUS_ACTION;
@@ -3651,7 +3655,7 @@ export const executeBeatsWithInteractions = (
         const targetState = state.get(actorId);
         if (targetState) {
           const beforeDamage = Number.isFinite(targetState.damage) ? Math.max(0, targetState.damage) : 0;
-          const afterDamage = Math.max(0, beforeDamage - 3);
+          const afterDamage = Math.max(0, beforeDamage - 1);
           const healedAmount = Math.max(0, beforeDamage - afterDamage);
           targetState.damage = afterDamage;
           if (healedAmount > 0) {

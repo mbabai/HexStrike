@@ -69,13 +69,17 @@ const formatStatValue = (value) => {
   return raw.toUpperCase() === 'T' ? 'T' : raw;
 };
 
-const isNonZeroStatValue = (value) => {
-  if (value === null || value === undefined || value === '') return false;
-  const raw = `${value}`.trim();
-  if (!raw) return false;
-  if (raw.toUpperCase() === 'T') return true;
-  const parsed = Number.parseFloat(raw);
-  return Number.isFinite(parsed) && parsed !== 0;
+const actionHasAttackOrChargeToken = (action) => {
+  const normalized = stripActionBrackets(action);
+  if (!normalized) return false;
+  return normalized
+    .split('-')
+    .map((token) => stripActionBrackets(token).trim())
+    .some((token) => {
+      if (!token) return false;
+      const type = token[token.length - 1]?.toLowerCase();
+      return type === 'a' || type === 'c';
+    });
 };
 
 const buildStatBadge = (type, value, iconUrl) => {
@@ -275,8 +279,8 @@ export const fitAllCardText = (root = document) => {
 };
 
 const shouldRenderStatBadges = (card) => {
-  if (card?.type === 'ability') return true;
-  return isNonZeroStatValue(card?.damage) || isNonZeroStatValue(card?.kbf);
+  const actions = Array.isArray(card?.actions) ? card.actions : [];
+  return actions.some((action) => actionHasAttackOrChargeToken(action));
 };
 
 export const buildCardElement = (card, options = {}) => {

@@ -43,7 +43,7 @@ const actionHasMovementToken = (action) => {
     .some((label) => {
       if (!label) return false;
       const type = label[label.length - 1]?.toLowerCase();
-      return type === 'm' || type === 'j';
+      return type === 'm' || type === 'j' || type === 'c';
     });
 };
 

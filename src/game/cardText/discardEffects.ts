@@ -16,6 +16,7 @@ const PASSIVE_BLOCK_DISCARD = new Map<string, number>([['sweeping-strike', 1]]);
 const PASSIVE_START_DISCARD = new Map<string, number>();
 const PASSIVE_DISCARD_IMMUNE = new Set<string>(['spike']);
 const PASSIVE_CONVERT_KBF = new Set<string>(['trip']);
+const DAMAGE_ICON_ACTION = 'DAMAGEICON';
 
 const normalizeActionLabel = (action: string | undefined): string => {
   const trimmed = `${action ?? ''}`.trim();
@@ -26,7 +27,11 @@ const normalizeActionLabel = (action: string | undefined): string => {
   return trimmed;
 };
 
-const isActionActive = (action: string | undefined): boolean => normalizeActionLabel(action).toUpperCase() !== 'E';
+const isActionActive = (action: string | undefined): boolean => {
+  const label = normalizeActionLabel(action).toUpperCase();
+  if (!label) return false;
+  return label !== 'E' && label !== DAMAGE_ICON_ACTION;
+};
 
 export const getActiveHitDiscardRule = (cardId: string | undefined | null): HitDiscardRule | null =>
   cardId ? ACTIVE_HIT_DISCARD_RULES.get(cardId) ?? null : null;
