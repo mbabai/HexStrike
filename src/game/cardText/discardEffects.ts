@@ -8,14 +8,14 @@ type HitDiscardRule = {
 const ACTIVE_HIT_DISCARD_RULES = new Map<string, HitDiscardRule>([
   ['down-slash', { count: 1 }],
   ['spike', { count: 3 }],
-  ['trip', { count: 2 }],
-  ['sweeping-strike', { count: 1, centerOnly: true }],
+  ['sweeping-strike', { count: 2 }],
+  ['trip', { count: 1, centerOnly: true }],
 ]);
 
-const PASSIVE_BLOCK_DISCARD = new Map<string, number>([['sweeping-strike', 1]]);
+const PASSIVE_BLOCK_DISCARD = new Map<string, number>([['trip', 1]]);
 const PASSIVE_START_DISCARD = new Map<string, number>();
 const PASSIVE_DISCARD_IMMUNE = new Set<string>(['spike']);
-const PASSIVE_CONVERT_KBF = new Set<string>(['trip']);
+const PASSIVE_CONVERT_KBF = new Set<string>(['sweeping-strike']);
 const DAMAGE_ICON_ACTION = 'DAMAGEICON';
 
 const normalizeActionLabel = (action: string | undefined): string => {

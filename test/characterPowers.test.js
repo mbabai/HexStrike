@@ -93,7 +93,7 @@ test('Zenytha reduces opponent discard effects by 1', () => {
     buildEntry('alpha', '[a-La-Ra]', 50, characters[0].position, characters[0].facing, 0, 0),
     buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
   ]];
-  beats[0][0].cardId = 'trip';
+  beats[0][0].cardId = 'sweeping-strike';
 
   const result = executeBeats(beats, characters);
   const discard = result.interactions.find(

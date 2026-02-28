@@ -26,10 +26,10 @@ test('card balance update applies timeline, damage, and naming changes', async (
   assert.equal(getCardById(catalog, 'tackle').damage, 2);
   assert.equal(getCardById(catalog, 'double-daggers').damage, 3);
 
-  assert.equal(getCardById(catalog, 'sweeping-strike').name, 'Trip');
-  assert.equal(getCardById(catalog, 'trip').name, 'Sweeping Strike');
-  assert.deepEqual(getCardById(catalog, 'sweeping-strike').actions, ['[a-La-Ra]', 'W', 'W', 'E']);
-  assert.deepEqual(getCardById(catalog, 'trip').actions, ['W', '[a-La-Ra]', 'W', 'W', 'E']);
+  assert.equal(getCardById(catalog, 'trip').name, 'Trip');
+  assert.equal(getCardById(catalog, 'sweeping-strike').name, 'Sweeping Strike');
+  assert.deepEqual(getCardById(catalog, 'trip').actions, ['[a-La-Ra]', 'W', 'W', 'E']);
+  assert.deepEqual(getCardById(catalog, 'sweeping-strike').actions, ['W', '[a-La-Ra]', 'W', 'W', 'E']);
 
   assert.equal(existsSync('public/images/a-Bm.png'), true);
 });
@@ -49,7 +49,8 @@ test('card balance update keeps priorities unique with tie-break ordering', asyn
   assert.equal(getCardById(catalog, 'healing-harmony').priority, 16);
   assert.equal(getCardById(catalog, 'fleche').priority, 62);
   assert.equal(getCardById(catalog, 'stab').priority, 63);
-  assert.equal(getCardById(catalog, 'trip').priority, 65);
+  assert.equal(getCardById(catalog, 'trip').priority, 60);
+  assert.equal(getCardById(catalog, 'sweeping-strike').priority, 65);
   assert.equal(getCardById(catalog, 'jab').priority, 66);
   assert.equal(getCardById(catalog, 'leap').priority, 67);
   assert.equal(getCardById(catalog, 'whirlwind').priority, 68);

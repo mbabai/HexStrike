@@ -125,8 +125,8 @@
       "rotations": "1-2",
       "damage": 0,
       "kbf": 0,
-      "activeText": "{i}: Before this movement, rotate 1 in the opposite direction of your original rotation.",
-      "passiveText": "For any {a} attack, it becomes {a-La-Ra} but with half damage and KBF (rounded down)."
+      "activeText": "{i}: Before moving, rotate 1 opposite your rotation submission.",
+      "passiveText": "All {a} become {a-La-Ra} with half damage and KBF (rounded down)."
     },
     {
       "id": "step",
@@ -180,7 +180,7 @@
       "damage": 3,
       "kbf": 2,
       "activeText": "{i}: Must rotate 3 after jumping.",
-      "passiveText": "After completing the final move of any move ability, rotate 3."
+      "passiveText": "After completing the final move, rotate 3."
     },
     {
       "id": "balestra-lunge",
@@ -231,7 +231,7 @@
       "kbf": 0,
       "triggerText": "If Burning Strike is in your hand when you land an attack, you may reveal it to discard it and a movement card to place a fire hex on all hexes attacked.",
       "activeText": "{i}: Place a fire hex on this location.",
-      "passiveText": "For every {m}, if you actually move, place a fire hex on your starting hex."
+      "passiveText": "For every {m}, if successful, place a fire hex where you were."
     },
     {
       "id": "chase",
@@ -316,7 +316,7 @@
       "rotations": "0-2",
       "damage": 3,
       "kbf": 3,
-      "activeText": "{i}: Any target hit must {Discard 1}."
+      "activeText": "{i}: Target {Discard 1}."
     },
     {
       "id": "feint",
@@ -434,7 +434,7 @@
       "damage": 0,
       "kbf": 0,
       "activeText": "{X1}: Place an ethereal platform touching you.",
-      "passiveText": "If you are on the abyss, skip the first {W} on your movement."
+      "passiveText": "If on the abyss, skip the first {W}."
     },
     {
       "id": "healing-harmony",
@@ -451,7 +451,7 @@
       "damage": 0,
       "kbf": 0,
       "activeText": "{X1}: Reduce you and your allies' accumulated damage by 1.",
-      "passiveText": "If you are hit while this movement card is active, reduce the damage by 2 (min 0)."
+      "passiveText": "If you are hit, reduce the damage by 2 (min 0)."
     },
     {
       "id": "hip-throw",
@@ -469,7 +469,7 @@
       "rotations": "*",
       "damage": 3,
       "kbf": "T",
-      "passiveText": "While this move card is active, you cannot be thrown."
+      "passiveText": "You cannot be thrown."
     },
     {
       "id": "iron-will",
@@ -488,7 +488,7 @@
       "kbf": 0,
       "triggerText": "If Iron Will is in your hand when you are hit, you may reveal it to discard it and a movement card to reduce the KBF to 0.",
       "activeText": "{X1}: {Draw 3}.",
-      "passiveText": "If you are hit while this movement card is active, reduce the KBF by 1 (min 0)."
+      "passiveText": "Reduce the KBF against you by 1 (min 0)."
     },
     {
       "id": "jab",
@@ -728,7 +728,7 @@
       "rotations": "0-1",
       "damage": 2,
       "kbf": "T",
-      "passiveText": "While this move card is active, you cannot be thrown."
+      "passiveText": "You cannot be thrown."
     },
     {
       "id": "sweeping-strike",
@@ -786,7 +786,8 @@
       "rotations": "*",
       "damage": 3,
       "kbf": 0,
-      "activeText": "You can only use Whirlwind if you have at least 12 damage accumulated. \n{i}: KBF = 3",
+      "triggerText": "You can only use Whirlwind if you have at least 12 damage accumulated.",
+      "activeText": "{i}: KBF = 3",
       "passiveText": "The final {m} becomes {c-La-Ra-BLa-BRa-Ba} with damage 1, and KBF 0."
     }
   ],

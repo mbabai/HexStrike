@@ -186,7 +186,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Hip Throw/Tackle passives grant throw immunity while their action set is active (non-`E`), blocking throws from any direction; keep `cardText/combatModifiers` mirrored server/client.
 - Iron Will passive reduces KBF by 1 (min 0) on hits, including projectiles, while the action set is active; hand-trigger use still sets KBF to 0.
 - Jab active `{i}` draws 1 by emitting a `draw` interaction on the bracketed attack step.
-- Hit-driven discard effects (ex: Trip active hit discard, Trip passive KBF->discard) must still enqueue discard interactions when that beat later replays as resolved history after a hand-trigger pause; do not drop them solely because `beatIndex <= resolvedIndex`.
+- Hit-driven discard effects (ex: Trip active hit discard, Sweeping Strike passive KBF->discard) must still enqueue discard interactions when that beat later replays as resolved history after a hand-trigger pause; do not drop them solely because `beatIndex <= resolvedIndex`.
 - Iron Will/Jab draw interactions may need to be reconstructed on resolved-history replays when missing (for example after hand-trigger pauses), so draws are not silently lost.
 - Active ability card text is handled in `src/game/cardText/activeAbility.ts` + `public/game/cardText/activeAbility.js`; Counter Attack shifts the selected rotation to after `{i}` by clearing the start rotation and applying a forced rotation on the next entry.
 - The combo modal is filtered to the actor's beat entry by userId/username; keep interaction actor resolution aligned with roster identifiers.

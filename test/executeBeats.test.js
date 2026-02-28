@@ -1451,7 +1451,7 @@ test('executeBeats creates jab draw interactions on bracketed attacks', () => {
   assert.equal(draw.drawCount, 1);
 });
 
-test('executeBeatsWithInteractions preserves Trip discard after Iron Will hand trigger resolves', () => {
+test('executeBeatsWithInteractions preserves Sweeping Strike discard after Iron Will hand trigger resolves', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
     { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
@@ -1463,7 +1463,7 @@ test('executeBeatsWithInteractions preserves Trip discard after Iron Will hand t
       buildEntry('beta', 'W', 10, characters[1].position, characters[1].facing),
     ],
   ];
-  beats[0][0].cardId = 'trip';
+  beats[0][0].cardId = 'sweeping-strike';
   beats[0][0].passiveCardId = 'step';
 
   const handTriggerAvailability = new Map([['beta', new Set(['iron-will'])]]);
