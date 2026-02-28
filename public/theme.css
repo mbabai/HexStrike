@@ -3407,6 +3407,27 @@ img[src$='Death.png'] {
   margin: 0 2px;
 }
 
+.card-inline-flow-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 1.32em;
+  height: 1.32em;
+  margin: 0 2px;
+  vertical-align: -0.02em;
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.card-inline-flow-value {
+  color: #ffffff;
+  font-size: 0.754em;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+}
+
 .card-inline-damage-capsule {
   display: inline-flex;
   align-items: center;

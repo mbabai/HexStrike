@@ -4,6 +4,8 @@ const PRIORITY_ICON_URL = '/public/images/priority.png';
 const DAMAGE_ICON_URL = '/public/images/DamageIcon.png';
 const KNOCKBACK_ICON_URL = '/public/images/KnockBackIcon.png';
 const EMPHASIS_ICON_URL = '/public/images/i.png';
+const DRAW_ICON_URL = '/public/images/DrawIcon.png';
+const DISCARD_ICON_URL = '/public/images/DiscardIcon.png';
 const CARD_ART_BASE_URL = '/public/images/cardart';
 const UNIQUE_MOVEMENT_CARD_IDS = new Set(['grappling-hook', 'fleche', 'leap']);
 const MANDATORY_MOVEMENT_CARD_IDS = new Set(['step']);
@@ -122,9 +124,39 @@ const normalizeInlineStyleTag = (value) => {
   return normalized;
 };
 
+const buildInlineCardFlowIcon = ({ type, amountLabel, token }) => {
+  const icon = document.createElement('span');
+  const normalizedType = `${type ?? ''}`.trim().toLowerCase();
+  const normalizedAmount = `${amountLabel ?? ''}`.trim().toUpperCase();
+  if (!normalizedAmount) return null;
+  const isDraw = normalizedType === 'draw';
+  if (!isDraw && normalizedType !== 'discard') return null;
+  icon.className = `card-inline-flow-icon ${isDraw ? 'is-draw' : 'is-discard'}`;
+  icon.style.backgroundImage = `url('${isDraw ? DRAW_ICON_URL : DISCARD_ICON_URL}')`;
+  icon.setAttribute('role', 'img');
+  icon.setAttribute('aria-label', token);
+  const value = document.createElement('span');
+  value.className = 'card-inline-flow-value';
+  value.textContent = `${isDraw ? '+' : '-'}${normalizedAmount}`;
+  icon.appendChild(value);
+  return icon;
+};
+
 const appendInlineIconToken = (parent, part) => {
   const token = part.slice(1, -1).trim();
   if (!token) return;
+  const cardFlowMatch = token.match(/^(draw|discard)\s+([0-9]+|x)$/i);
+  if (cardFlowMatch) {
+    const icon = buildInlineCardFlowIcon({
+      type: cardFlowMatch[1],
+      amountLabel: cardFlowMatch[2],
+      token,
+    });
+    if (icon) {
+      parent.appendChild(icon);
+      return;
+    }
+  }
   const normalizedToken = token.toLowerCase();
   if (normalizedToken === 'red damage capsule') {
     const capsule = document.createElement('span');

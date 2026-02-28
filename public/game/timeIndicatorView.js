@@ -11,6 +11,7 @@ const EMPHASIS_ICON_KEY = 'i';
 const COMBO_ICON_KEY = 'Co';
 const FOCUS_ICON_KEY = 'F';
 const KNOCKBACK_ICON_KEY = 'KnockBackIcon';
+const DRAW_ICON_KEY = 'DrawIcon';
 const DISCARD_ICON_KEY = 'DiscardIcon';
 const REWIND_RETURN_INTERACTION_TYPE = 'rewind-return';
 const END_MARKER_ACTIONS = new Set(['Death', 'Victory', 'Handshake']);
@@ -1830,7 +1831,7 @@ const drawDiscardBadge = (ctx, x, y, size, discardCount, theme) => {
 const drawDrawBadge = (ctx, x, y, size, drawCount, theme, row = 0) => {
   const safeCount = Number.isFinite(drawCount) ? Math.max(0, Math.round(drawCount)) : 0;
   if (!safeCount) return;
-  const icon = getActionArt(DISCARD_ICON_KEY);
+  const icon = getActionArt(DRAW_ICON_KEY);
   if (!icon || !icon.complete || icon.naturalWidth === 0) return;
   const rect = getCardFlowBadgeRect(x, y, size, row);
   ctx.drawImage(icon, rect.x, rect.y, rect.size, rect.size);

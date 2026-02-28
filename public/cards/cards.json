@@ -76,7 +76,7 @@
       "rotations": "*",
       "damage": 0,
       "kbf": 1,
-      "activeText": "{i}: Grappling Hook charges at most only as far as the first land or target in front of you. If you started Grappling Hook on land, and the target is touching you, it is a Throw.",
+      "activeText": "{i}: Stop at first land or target. If starting on land, and the target is touching you: Throw.",
       "passiveText": "If a {a} lands, place the target on the opposite side of your character, and knock them in that direction."
     },
     {
@@ -159,8 +159,8 @@
       "rotations": "*",
       "damage": 0,
       "kbf": 0,
-      "activeText": "{i}: For each point of damage that would have hit you, draw 1 card.",
-      "passiveText": "After the last movement or jump of this movement card, draw 1."
+      "activeText": "{i}: For each point of damage that would have hit you, {Draw 1}.",
+      "passiveText": "After the last movement or jump of this movement card, {Draw 1}."
     },
     {
       "id": "aerial-strike",
@@ -315,7 +315,7 @@
       "rotations": "0-2",
       "damage": 3,
       "kbf": 3,
-      "activeText": "{i}: Any target hit must discard 1."
+      "activeText": "{i}: Any target hit must {Discard 1}."
     },
     {
       "id": "feint",
@@ -396,7 +396,7 @@
       "rotations": "*",
       "damage": 0,
       "kbf": 0,
-      "activeText": "{i}: On this beat you may choose to \"continue\" your block. If you do, then on Guard's {E} beat, instead return to this beat and discard 1.",
+      "activeText": "{i}: On this beat you may choose to \"continue\" your block. If you do, then on Guard's {E} beat, instead return to this beat and {Discard 1}.",
       "passiveText": "All {W} beats become {Bb} instead."
     },
     {
@@ -485,7 +485,7 @@
       "rotations": "*",
       "damage": 0,
       "kbf": 0,
-      "activeText": "{X1}: Draw 3.\n\nIf Iron Will is in your hand when you are hit, you may reveal it to discard it and a movement card to reduce the KBF to 0.",
+      "activeText": "{X1}: {Draw 3}.\n\nIf Iron Will is in your hand when you are hit, you may reveal it to discard it and a movement card to reduce the KBF to 0.",
       "passiveText": "If you are hit while this movement card is active, reduce the KBF by 1 (min 0)."
     },
     {
@@ -501,7 +501,7 @@
       "rotations": "*",
       "damage": 1,
       "kbf": 0,
-      "activeText": "{i}: Draw 1.",
+      "activeText": "{i}: {Draw 1}.",
       "passiveText": "Gain +30 priority."
     },
     {
@@ -603,7 +603,7 @@
       "rotations": "*",
       "damage": 4,
       "kbf": 2,
-      "activeText": "If Sinking Shot is in your hand when an enemy is hit by a projectile, you may reveal it to discard it and a movement card to force the target to discard 2 cards."
+      "activeText": "If Sinking Shot is in your hand when an enemy is hit by a projectile, you may reveal it to discard it and a movement card to force the target to {Discard 2}."
     },
     {
       "id": "smash-attack",
@@ -657,7 +657,7 @@
       "rotations": "0-2",
       "damage": 4,
       "kbf": 1,
-      "activeText": "{i}: Target discards 3.",
+      "activeText": "{i}: Target {Discard 3}.",
       "passiveText": "While this move is active, opponent effects cannot make you discard cards."
     },
     {
@@ -707,7 +707,7 @@
       "damage": 1,
       "kbf": 1,
       "activeText": "{i}: If the center attack hits, the target discards a card.",
-      "passiveText": "If an opponent stands in the way of your move, they must discard 1."
+      "passiveText": "If an opponent stands in the way of your move, they must {Discard 1}."
     },
     {
       "id": "tackle",
@@ -742,8 +742,8 @@
       "rotations": "*",
       "damage": 3,
       "kbf": 2,
-      "activeText": "{i}: Target discards 2.",
-      "passiveText": "If you are dealt damage during this movement, convert KBF X into discard X."
+      "activeText": "{i}: Target {Discard 2}.",
+      "passiveText": "If you are dealt damage during this movement, convert KBF X into {Discard X}."
     },
     {
       "id": "vengeance",
