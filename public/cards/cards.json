@@ -229,7 +229,8 @@
       "rotations": "*",
       "damage": 4,
       "kbf": 0,
-      "activeText": "{i}: Place a fire hex on this location.\n\nIf Burning Strike is in your hand when you land an attack, you may reveal it to discard it and a movement card to place a fire hex on all hexes attacked.",
+      "triggerText": "If Burning Strike is in your hand when you land an attack, you may reveal it to discard it and a movement card to place a fire hex on all hexes attacked.",
+      "activeText": "{i}: Place a fire hex on this location.",
       "passiveText": "For every {m}, if you actually move, place a fire hex on your starting hex."
     },
     {
@@ -485,7 +486,8 @@
       "rotations": "*",
       "damage": 0,
       "kbf": 0,
-      "activeText": "{X1}: {Draw 3}.\n\nIf Iron Will is in your hand when you are hit, you may reveal it to discard it and a movement card to reduce the KBF to 0.",
+      "triggerText": "If Iron Will is in your hand when you are hit, you may reveal it to discard it and a movement card to reduce the KBF to 0.",
+      "activeText": "{X1}: {Draw 3}.",
       "passiveText": "If you are hit while this movement card is active, reduce the KBF by 1 (min 0)."
     },
     {
@@ -586,7 +588,7 @@
       "rotations": "*",
       "damage": 0,
       "kbf": 0,
-      "activeText": "{F}: Note your current hex location. At any {E}, you may end Rewind's concentration to return to that location. While Rewind is concentrated, you cannot refresh, even on land. When returning back, if an obstacle is on that location, you are instead stunned 3."
+      "activeText": "{F}: Mark your current hex. At any {E}, end Rewind to return there. If that hex is occupied, you are stunned 3 instead. While focused, you cannot refresh."
     },
     {
       "id": "sinking-shot",
@@ -603,7 +605,8 @@
       "rotations": "*",
       "damage": 4,
       "kbf": 2,
-      "activeText": "If Sinking Shot is in your hand when an enemy is hit by a projectile, you may reveal it to discard it and a movement card to force the target to {Discard 2}."
+      "triggerText": "If Sinking Shot is in your hand when an enemy is hit by a projectile, you may reveal it to discard it and a movement card to force the target to {Discard 2}.",
+      "activeText": ""
     },
     {
       "id": "smash-attack",
@@ -658,7 +661,7 @@
       "damage": 4,
       "kbf": 1,
       "activeText": "{i}: Target {Discard 3}.",
-      "passiveText": "While this move is active, opponent effects cannot make you discard cards."
+      "passiveText": "Opponent effects cannot make you discard cards."
     },
     {
       "id": "spinning-back-kick",
@@ -693,7 +696,7 @@
       "activeText": "{i}: if you are behind your opponent, +3 damage and +3 KBF."
     },
     {
-      "id": "sweeping-strike",
+      "id": "trip",
       "name": "Trip",
       "type": "ability",
       "priority": 60,
@@ -728,7 +731,7 @@
       "passiveText": "While this move card is active, you cannot be thrown."
     },
     {
-      "id": "trip",
+      "id": "sweeping-strike",
       "name": "Sweeping Strike",
       "type": "ability",
       "priority": 65,
@@ -762,7 +765,8 @@
       "rotations": "*",
       "damage": 4,
       "kbf": 2,
-      "activeText": "If Vengeance is in your hand when you are knocked into the abyss, you may reveal it to discard it and a movement card. If you do, draw as many cards as the total hexes knocked back."
+      "triggerText": "If Vengeance is in your hand when you are knocked into the abyss, you may reveal it to discard it and a movement card. If you do, draw as many cards as the total hexes knocked back.",
+      "activeText": ""
     },
     {
       "id": "whirlwind",

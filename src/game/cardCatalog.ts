@@ -41,9 +41,10 @@ const normalizeCard = (card: unknown, type: CardType, index: number): CardDefini
   const priority = Number.isFinite(raw.priority) ? Number(raw.priority) : 0;
   const damage = Number.isFinite(raw.damage) ? Number(raw.damage) : 0;
   const kbf = Number.isFinite(raw.kbf) ? Number(raw.kbf) : 0;
+  const triggerText = typeof raw.triggerText === 'string' && raw.triggerText.trim() ? raw.triggerText : null;
   const activeText = typeof raw.activeText === 'string' ? raw.activeText : undefined;
   const passiveText = typeof raw.passiveText === 'string' ? raw.passiveText : undefined;
-  return { id, name, type, priority, actions, rotations, damage, kbf, activeText, passiveText };
+  return { id, name, type, priority, actions, rotations, damage, kbf, triggerText, activeText, passiveText };
 };
 
 const normalizeDeck = (deck: unknown): DeckDefinition => {

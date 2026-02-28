@@ -49,6 +49,8 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
 
 ### Card data and deck state
 - Card data lives in `public/cards/cards.json` and is loaded by `src/game/cardCatalog.ts`.
+- Card schema supports optional `triggerText` for "If this card is in your hand..." reveal copy on card/UI surfaces.
+- Hand-trigger gameplay logic remains sourced from `src/game/handTriggers.ts` + `src/game/execute.ts` interaction handling (not parsed from `triggerText`).
 - Character powers live in `public/characters/characters.json`; server reads them through `src/game/characterPowers.ts`, client reads them through `public/shared/characterCatalog.js`.
 - Deck definitions require 4 movement cards and 12 ability cards; duplicates are rejected.
 - `src/game/cardRules.ts` manages deck state:
@@ -109,7 +111,7 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
 - `public/game/interactionState.mjs` selects pending interactions (throw/discard/draw/combo/guard/rewind/hand-trigger/haven) for the UI overlay.
 - `public/game/controls.js` + `public/game/viewState.js` manage panning, zooming, and input.
 - `public/game/portraitBadges.js` and `public/game/characterTokens.mjs` draw UI badges and facing arrows.
-- `public/game/timelineTooltip.js` derives tooltips from card text.
+- `public/game/timelineTooltip.js` derives tooltips from card text (`activeText`/`passiveText`) plus `triggerText` for hand-trigger tooltip copy.
 
 ### Shared utilities and assets
 - `public/shared/hex.mjs` defines axial directions and pixel conversions for rendering.

@@ -121,6 +121,7 @@ export interface CardDefinition {
   rotations: string;
   damage?: number;
   kbf?: number;
+  triggerText?: string | null;
   activeText?: string;
   passiveText?: string;
 }

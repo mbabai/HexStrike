@@ -127,7 +127,8 @@ const buildCardMetadata = (catalog) => {
   const byId = new Map();
   const addCard = (card) => {
     if (!card?.id) return;
-    const handTriggerText = extractHandTriggerText(card.activeText);
+    const explicitTriggerText = typeof card.triggerText === 'string' ? card.triggerText.trim() : '';
+    const handTriggerText = explicitTriggerText || extractHandTriggerText(card.activeText);
     const enriched = { ...card, symbolText: parseSymbolInstructions(card.activeText), handTriggerText };
     list.push(enriched);
     byId.set(card.id, enriched);

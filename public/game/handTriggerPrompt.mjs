@@ -207,7 +207,9 @@ export const createHandTriggerPrompt = ({
       title.textContent = `Use ${cardName}?`;
     }
     if (copy) {
-      const triggerText = card?.activeText ? extractHandTriggerText(card.activeText) : '';
+      const triggerText =
+        (typeof card?.triggerText === 'string' && card.triggerText.trim()) ||
+        (card?.activeText ? extractHandTriggerText(card.activeText) : '');
       copy.textContent = triggerText || card?.activeText || '';
     }
 

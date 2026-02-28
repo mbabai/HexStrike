@@ -12,9 +12,10 @@ const normalizeCard = (card, type, index) => {
   const priority = Number.isFinite(card.priority) ? card.priority : 0;
   const damage = card.damage ?? 0;
   const kbf = card.kbf ?? 0;
+  const triggerText = typeof card.triggerText === 'string' && card.triggerText.trim() ? card.triggerText.trim() : null;
   const activeText = typeof card.activeText === 'string' ? card.activeText.trim() : '';
   const passiveText = typeof card.passiveText === 'string' ? card.passiveText.trim() : '';
-  return { id, name, type, priority, actions, rotations, damage, kbf, activeText, passiveText };
+  return { id, name, type, priority, actions, rotations, damage, kbf, triggerText, activeText, passiveText };
 };
 
 const normalizeDeck = (deck, index) => {

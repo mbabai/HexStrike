@@ -48,6 +48,8 @@
   --color-card-textbox-end: #e6d3b1;
   --color-card-textbox-border: #d2a64c;
   --color-card-textbox-text: #101010;
+  --color-card-trigger-overlay: rgba(158, 23, 23, 0.58);
+  --color-card-trigger-text: #fff4f4;
   --color-link: #8ac6c3;
   --color-text: #e3ecf2;
   --color-subtle: #a5b7c0;
@@ -98,9 +100,15 @@
   --action-card-surface-top: calc(35px * var(--action-card-scale));
   --action-card-surface-width: calc(194px * var(--action-card-scale));
   --action-card-surface-height: calc(295px * var(--action-card-scale));
-  --action-card-surface-top-height: calc(157px * var(--action-card-scale));
-  --action-card-surface-mid-height: calc(72px * var(--action-card-scale));
-  --action-card-surface-bottom-height: calc(66px * var(--action-card-scale));
+  --action-card-surface-active-height: calc(46.8px * var(--action-card-scale));
+  --action-card-surface-passive-height: calc(42.9px * var(--action-card-scale));
+  --action-card-surface-trigger-height: calc(38px * var(--action-card-scale));
+  --action-card-surface-art-height: calc(
+    var(--action-card-surface-height) - var(--action-card-surface-active-height) - var(--action-card-surface-passive-height)
+  );
+  --action-card-surface-art-height-with-trigger: calc(
+    var(--action-card-surface-art-height) - var(--action-card-surface-trigger-height)
+  );
   --action-card-title-padding-top: calc(6px * var(--action-card-scale));
   --action-card-title-padding-bottom: calc(2px * var(--action-card-scale));
   --action-card-title-top: 0;
@@ -3293,11 +3301,17 @@ img[src$='Death.png'] {
   background: transparent;
   box-shadow: none;
   display: grid;
-  grid-template-rows: var(--action-card-surface-top-height) var(--action-card-surface-mid-height) var(--action-card-surface-bottom-height);
+  grid-template-rows: var(--action-card-surface-art-height) var(--action-card-surface-active-height) var(--action-card-surface-passive-height);
   gap: 0;
 }
 
+.action-card-surface.has-trigger-text {
+  grid-template-rows: var(--action-card-surface-art-height-with-trigger) var(--action-card-surface-trigger-height) var(--action-card-surface-active-height) var(--action-card-surface-passive-height);
+}
+
 .action-card-surface-row {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -3314,6 +3328,12 @@ img[src$='Death.png'] {
   background: linear-gradient(160deg, var(--color-card-textbox-start), var(--color-card-textbox-end));
 }
 
+.action-card-surface-row.is-trigger {
+  background: var(--color-card-trigger-overlay);
+  color: var(--color-card-trigger-text);
+  z-index: 5;
+}
+
 .action-card-surface-row.is-passive {
   font-size: calc(8px * var(--action-card-scale) * var(--action-card-text-scale, 1));
 }
@@ -3323,11 +3343,14 @@ img[src$='Death.png'] {
 }
 
 .action-card-surface-row.is-empty {
+  z-index: 1;
   padding: 0;
   background: rgba(0, 0, 0, 0.12);
 }
 
 .action-card-art {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   display: block;
@@ -3342,8 +3365,9 @@ img[src$='Death.png'] {
   min-width: 0;
   padding: 0;
   display: block;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  line-height: inherit;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .action-card-stats {
@@ -3402,9 +3426,10 @@ img[src$='Death.png'] {
 .card-inline-icon {
   display: inline-block;
   height: 1em;
-  width: auto;
+  width: 1em;
   vertical-align: -0.05em;
-  margin: 0 2px;
+  margin: 0 1px;
+  object-fit: contain;
 }
 
 .card-inline-flow-icon {
@@ -3412,7 +3437,7 @@ img[src$='Death.png'] {
   place-items: center;
   width: 1.32em;
   height: 1.32em;
-  margin: 0 2px;
+  margin: 0 1px;
   vertical-align: -0.02em;
   background-size: contain;
   background-position: center;
@@ -3423,7 +3448,7 @@ img[src$='Death.png'] {
   color: #ffffff;
   font-size: 0.754em;
   font-weight: 700;
-  line-height: 1;
+  line-height: 1.03;
   letter-spacing: 0.01em;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
 }
@@ -3435,7 +3460,7 @@ img[src$='Death.png'] {
   min-width: 1.4em;
   height: 1.05em;
   padding: 0 0.3em;
-  margin: 0 2px;
+  margin: 0 1px;
   border-radius: 999px;
   background: var(--color-damage);
   color: var(--color-damage-text);
@@ -3451,7 +3476,7 @@ img[src$='Death.png'] {
   place-items: center;
   width: var(--card-inline-throw-kbf-size);
   height: var(--card-inline-throw-kbf-size);
-  margin: 0 2px;
+  margin: 0 1px;
   vertical-align: -0.09em;
   background-image: url('/public/images/KnockBackIcon.png');
   background-size: contain;

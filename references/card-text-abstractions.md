@@ -94,6 +94,7 @@
 
 ## Hand-trigger interactions (in-hand reveals)
 - Cards with "If X is in your hand..." create a `customInteractions` entry of type `hand-trigger` when the trigger fires and the card is still in hand.
+- Card data stores that reveal copy in `triggerText`; keep gameplay behavior sourced from hand-trigger definitions/execution (`src/game/handTriggers.ts`, `src/game/execute.ts`) instead of parsing `triggerText`.
 - Interaction fields: `cardId`, `cardType`, `effect`, optional `sourceUserId`, and payloads like `attackHexes` (Burning Strike) or `drawCount` (Vengeance).
 - Resolution: `/api/v1/game/interaction` with `{ use, movementCardIds, abilityCardIds }`; discard requirements follow `getDiscardRequirements` in `src/game/handRules.ts`.
 - UI prompt: `public/index.html` + `public/game/handTriggerPrompt.mjs` (green reveal glow on the trigger card, red discard glow on required extra cards).

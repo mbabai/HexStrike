@@ -115,15 +115,16 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Discard interactions reuse the existing hand UI: `public/game/discardPrompt.mjs` applies `.is-discard-pending` (pulsing) and `.is-discard-selected` (grey) on in-hand `.action-card` elements instead of rendering a separate discard hand; keep the `.action-hud.is-locked` override in `public/theme.css` so greyscale remains visible while the HUD is locked.
 - Discard requirements are capped to current hand sizes; if required >= cards in hand for a type, the client auto-selects all and auto-submits the discard.
 - Hand-trigger prompts are staged: confirm "Use X?" first, then show the discard selection; `public/game/handTriggerPrompt.mjs` owns the reveal glow on the trigger card and discard glow on extra cards.
+- `triggerText` in `public/cards/cards.json` is UI/display copy for in-hand reveal text; hand-trigger gameplay logic remains sourced from `src/game/handTriggers.ts` + `src/game/execute.ts` (do not infer behavior from card text copy).
 - Pending hand-trigger interactions are globally ordered by `handTriggerOrder`; only the lowest order is interactive (`public/game/handTriggerOrder.mjs` + `src/server.ts`).
 - Action HUD hover targeting is based on the hand column + header band (not card transforms); keep `--action-card-hover-shift` synced with the hover rail in `public/game/actionHud.js`.
-- Action HUD card text uses `public/shared/cardRenderer.js`; call `fitAllCardText` after hand renders so active/passive text fits the surface rows.
+- Action HUD and deck-builder card text both use `public/shared/cardRenderer.js`; keep trigger/active/passive row visuals unified there and call `fitAllCardText` after renders so those text rows fit their boxes.
 - Inline/tutorial text rendered through `appendInlineText` supports style tags (`<key>`, `<move>`, `<attack>`, `<guard>`, `<u>`, `<b>/<bold>`) plus `{token}` icons; keep parser tags and `public/theme.css` emphasis classes synchronized when adding new emphasis types.
 - Action HUD click selection: empty slots -> active; active filled + same type -> replace active; active filled + different type -> fill passive; both filled -> replace matching type slot; clicking a slotted card returns it to hand.
 - Active/passive slots must be filled with cards from different sides (movement vs ability); only the active card drives the action list and rotation restrictions.
 - Slot assignment overwrites same-type cards in the opposite slot by returning them to the hand.
 - Action card UI always appends an `E` symbol and uses `/public/images/rot*.png`, `priority.png`, `DamageIcon.png`, and `KnockBackIcon.png`.
-- Action card stat badges are anchored bottom-left with overlapping icons (damage left, knockback right), and the surface panel is split into 50%/25%/25% vertical bands with square corners in `public/theme.css`.
+- Action card stat badges are anchored bottom-left with overlapping icons (damage left, knockback right), and the surface panel uses a taller art row plus shorter active/passive rows (with optional trigger row above active) with square corners in `public/theme.css`.
 - Action card layout uses fixed pixel positions via CSS variables in `public/theme.css`; scale with `--action-card-scale` (cards page sets `1.5` in `public/cards.css`) instead of resizing individual elements to keep proportions locked.
 - Deck selection cards use `--action-card-scale` and `--deck-selection-hover-lift` in `public/theme.css`; keep the hover lift padding in sync so elevated cards are not clipped.
 - Action icon column placement is controlled by `--action-card-actions-top` in `public/theme.css`; adjust that single value to keep the top icon aligned without colliding with the border.
@@ -140,6 +141,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Timeline now includes double-arrow controls flanking the single-step arrows (`jump-left`/`jump-right`) that snap to beat 0 and the current max beat; keep `getTimeIndicatorHit` targets and `controls.js` handling aligned.
 - Timeline playback should advance beat-by-beat to the stop index; do not auto-jump the time indicator to the latest stop index on `game:update` or intermediate animations will be skipped.
 - Timeline tooltips use `cardId`/`passiveCardId` on beat entries for active/passive names; symbol instructions still come from `{X1}/{X2}/{i}` fragments in `activeText`.
+- Hand-trigger timeline/prompt copy should prefer `card.triggerText` and only fall back to parsing `activeText` for legacy cards.
 - Timeline tooltip action-set start prefers `rotationSource: 'selected'` and falls back to non-empty `rotation` when the source flag is missing (legacy data).
 - Timeline mini-card markers (movement pickup, hand-trigger, rewind-return) must share one geometry path for draw + hover (`buildMiniCardStackLayout` + `getMiniCardStackItemGeometry` in `public/game/timeIndicatorView.js`) or hit targets drift and flicker.
 - Timeline tooltip target switches must clear supplemental sections (including `cardPreview` and `.has-card-preview`) before rendering the next kind, or movement-pickup previews can leak into passive/action tooltips.

@@ -18,6 +18,9 @@ const INLINE_STYLE_CLASS_BY_TAG = {
   guard: 'card-inline-emphasis card-inline-emphasis-guard',
 };
 const INLINE_STYLE_TOKEN_PATTERN = /(\{[^}]+\}|<\/?(?:bold|b|u|key|move|attack|guard)>)/gi;
+const MIN_SURFACE_TEXT_PX = 7;
+const HARD_MIN_SURFACE_TEXT_PX = 6;
+const MAX_ROW_TEXT_GROWTH = 3;
 
 const stripActionBrackets = (value) => {
   const trimmed = `${value ?? ''}`.trim();
@@ -182,7 +185,18 @@ const appendInlineIconToken = (parent, part) => {
   image.className = 'card-inline-icon';
   image.src = `/public/images/${token}.png`;
   image.alt = token;
-  image.loading = 'lazy';
+  image.loading = 'eager';
+  image.decoding = 'async';
+  // Inline token image load can change line wraps; re-fit this card once loaded.
+  image.addEventListener('load', () => {
+    const card = parent?.closest?.('.action-card');
+    if (!card || card.dataset.refitQueued === '1') return;
+    card.dataset.refitQueued = '1';
+    requestAnimationFrame(() => {
+      card.dataset.refitQueued = '0';
+      fitAllCardText(card);
+    });
+  });
   parent.appendChild(image);
 };
 
@@ -255,29 +269,56 @@ const getCardScale = (element) => {
   return Number.isFinite(scaleValue) && scaleValue > 0 ? scaleValue : 1;
 };
 
-const fitFontSizeToBounds = ({ element, width, height, baseSize, minSize }) => {
+const fitFontSizeToBounds = ({ element, width, height, minSize, maxSize, hardMinSize }) => {
   if (!element || !width || !height) return;
-  const safeBaseSize = Number.isFinite(baseSize) ? Math.max(0, baseSize) : 0;
-  if (!safeBaseSize) return;
-  const safeMinSize = Number.isFinite(minSize) ? Math.min(safeBaseSize, Math.max(0, minSize)) : 0;
-  const epsilon = 0.5;
+  const safeMinSize = Number.isFinite(minSize) ? Math.max(0, minSize) : 0;
+  const safeHardMinSize = Number.isFinite(hardMinSize)
+    ? Math.max(0, Math.min(safeMinSize, hardMinSize))
+    : 0;
+  const safeMaxSize = Number.isFinite(maxSize) ? Math.max(safeMinSize, maxSize) : safeMinSize;
+  if (!safeMaxSize) return;
+  const epsilon = 0.75;
   const fits = () => element.scrollHeight <= height + epsilon && element.scrollWidth <= width + epsilon;
+  const setSize = (size) => {
+    element.style.fontSize = `${Math.max(safeMinSize, Math.min(safeMaxSize, size))}px`;
+  };
+  setSize(safeMinSize);
+  if (!fits()) {
+    if (!safeHardMinSize || safeHardMinSize >= safeMinSize) return;
+    let low = safeHardMinSize;
+    let high = safeMinSize;
+    let bestSize = safeHardMinSize;
+    setSize(safeHardMinSize);
+    if (!fits()) return;
+    for (let i = 0; i < 12; i += 1) {
+      const mid = (low + high) / 2;
+      setSize(mid);
+      if (fits()) {
+        bestSize = mid;
+        low = mid;
+      } else {
+        high = mid;
+      }
+    }
+    setSize(bestSize);
+    return;
+  }
+  setSize(safeMaxSize);
   if (fits()) return;
-  const minRatio = safeBaseSize > 0 ? Math.max(0, Math.min(1, safeMinSize / safeBaseSize)) : 0;
-  let low = minRatio;
-  let high = 1;
-  let bestRatio = minRatio;
-  for (let i = 0; i < 12; i += 1) {
+  let low = safeMinSize;
+  let high = safeMaxSize;
+  let bestSize = safeMinSize;
+  for (let i = 0; i < 14; i += 1) {
     const mid = (low + high) / 2;
-    element.style.fontSize = `${safeBaseSize * mid}px`;
+    setSize(mid);
     if (fits()) {
-      bestRatio = mid;
+      bestSize = mid;
       low = mid;
     } else {
       high = mid;
     }
   }
-  element.style.fontSize = `${Math.max(safeMinSize, safeBaseSize * bestRatio)}px`;
+  setSize(bestSize);
 };
 
 const fitTextToRow = (row) => {
@@ -289,8 +330,17 @@ const fitTextToRow = (row) => {
   if (!rowHeight || !rowWidth) return;
   const baseSize = Number.parseFloat(getComputedStyle(text).fontSize) || 10;
   const scaleValue = getCardScale(row);
-  const minSize = 5 * scaleValue;
-  fitFontSizeToBounds({ element: text, width: rowWidth, height: rowHeight, baseSize, minSize });
+  const minSize = Math.max(MIN_SURFACE_TEXT_PX, MIN_SURFACE_TEXT_PX * scaleValue);
+  const hardMinSize = Math.max(HARD_MIN_SURFACE_TEXT_PX, HARD_MIN_SURFACE_TEXT_PX * scaleValue);
+  const maxSize = Math.max(minSize, Math.min(baseSize * MAX_ROW_TEXT_GROWTH, rowHeight * 0.82));
+  fitFontSizeToBounds({
+    element: text,
+    width: rowWidth,
+    height: rowHeight,
+    minSize,
+    maxSize,
+    hardMinSize,
+  });
 };
 
 const fitTitleToHeader = (title) => {
@@ -301,8 +351,8 @@ const fitTitleToHeader = (title) => {
   if (!titleWidth || !titleHeight) return;
   const baseSize = Number.parseFloat(getComputedStyle(title).fontSize) || 10;
   const scaleValue = getCardScale(title);
-  const minSize = 6 * scaleValue;
-  fitFontSizeToBounds({ element: title, width: titleWidth, height: titleHeight, baseSize, minSize });
+  const minSize = Math.max(6, 6 * scaleValue);
+  fitFontSizeToBounds({ element: title, width: titleWidth, height: titleHeight, minSize, maxSize: baseSize });
 };
 
 export const fitAllCardText = (root = document) => {
@@ -380,6 +430,7 @@ export const buildCardElement = (card, options = {}) => {
 
   const surface = document.createElement('div');
   surface.className = 'action-card-surface';
+  const triggerTextValue = typeof card?.triggerText === 'string' ? card.triggerText.trim() : '';
 
   const emptyRow = document.createElement('div');
   emptyRow.className = 'action-card-surface-row is-empty';
@@ -399,6 +450,17 @@ export const buildCardElement = (card, options = {}) => {
   );
   emptyRow.appendChild(art);
 
+  let triggerRow = null;
+  if (triggerTextValue) {
+    triggerRow = document.createElement('div');
+    triggerRow.className = 'action-card-surface-row is-trigger';
+    const triggerText = document.createElement('div');
+    triggerText.className = 'action-card-surface-text';
+    triggerRow.appendChild(triggerText);
+    appendInlineText(triggerText, triggerTextValue);
+    surface.classList.add('has-trigger-text');
+  }
+
   const activeRow = document.createElement('div');
   activeRow.className = 'action-card-surface-row is-active';
   const activeText = document.createElement('div');
@@ -414,6 +476,9 @@ export const buildCardElement = (card, options = {}) => {
   appendInlineText(passiveText, card.passiveText);
 
   surface.appendChild(emptyRow);
+  if (triggerRow) {
+    surface.appendChild(triggerRow);
+  }
   surface.appendChild(activeRow);
   surface.appendChild(passiveRow);
 
