@@ -219,6 +219,28 @@
   background: rgba(0, 0, 0, 0.2);
 }
 
+.token-preview-hex-ring.is-terrain {
+  position: relative;
+}
+
+.terrain-preview-land .token-preview-hex-ring {
+  background: var(--color-hex-land-fill);
+  border-color: var(--color-hex-land-stroke);
+}
+
+.terrain-preview-abyss .token-preview-hex-ring {
+  border: none;
+  background: var(--color-hex-stroke, #2f75d6);
+}
+
+.terrain-preview-abyss .token-preview-hex-ring::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  clip-path: polygon(50% 3%, 92% 26%, 92% 74%, 50% 97%, 8% 74%, 8% 26%);
+  background: var(--color-hex-fill);
+}
+
 .token-preview-hex-ring img {
   width: 100%;
   height: 100%;
@@ -543,4 +565,8 @@
     width: auto;
     margin-right: 0.35rem;
   }
+}
+
+.rulebook-shell p {
+  color: var(--color-text-strong);
 }

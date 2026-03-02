@@ -1,4 +1,5 @@
 <!doctype html>
+
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -8,6 +9,50 @@
     <link rel="stylesheet" href="/public/theme.css" />
     <link rel="stylesheet" href="/public/cards.css" />
     <link rel="stylesheet" href="/public/rulebook.css" />
+    <style>
+      .term-abyss {
+        color: #2559bb;
+        font-weight: 700;
+      }
+
+      .term-land {
+        color: #1f8f3a;
+        font-weight: 700;
+      }
+
+      .term-damage {
+        color: #c62828;
+        font-weight: 700;
+      }
+
+      .term-knockback {
+        color: #d96a1d;
+        font-weight: 700;
+      }
+
+      .term-refresh {
+        color: #7ad17a;
+      }
+
+      .term-beat {
+        color: #c9a227;
+        font-weight: 700;
+      }
+
+      .term-five-or-more-hexes {
+        text-decoration: underline;
+        text-decoration-thickness: 2px;
+        text-underline-offset: 2px;
+      }
+
+      .term-ability-cards {
+        color: #c7a3ff;
+      }
+
+      .term-movement-cards {
+        color: #8adf8a;
+      }
+    </style>
   </head>
   <body class="rulebook-body">
     <main class="ui-shell rulebook-shell">
@@ -16,7 +61,7 @@
           <div class="branding">
             <p class="eyebrow">Official Rules</p>
             <h1>HexStrike Rulebook</h1>
-            <p class="subtitle">Current implementation reference for gameplay rules and resolution order.</p>
+            <p class="subtitle">Definitive gameplay reference for simultaneous card combat and beat resolution.</p>
           </div>
           <div class="hero-actions">
             <a class="btn btn-ghost btn-small" href="/">Back to Lobby</a>
@@ -25,429 +70,471 @@
         </div>
       </header>
 
-      <section class="panel">
-        <h2>Table of Contents</h2>
-        <ol class="toc">
-          <li><a href="#overview">Overview</a></li>
-          <li><a href="#setup">Setup</a></li>
-          <li><a href="#game-flow">Game Flow</a></li>
-          <li><a href="#beat-phase">Beat Phase - Detailed Explanation</a></li>
-          <li><a href="#combat-resolution">Combat &amp; Resolution Details</a></li>
-          <li><a href="#hand-economy">Cards in Hand Economy</a></li>
-          <li><a href="#trigger-text">Trigger Text</a></li>
-          <li><a href="#tokens">Tokens</a></li>
-          <li><a href="#end-of-game">End of Game</a></li>
-          <li><a href="#symbols-glossary">Symbols &amp; Glossary</a></li>
-          <li><a href="#quick-reference">Quick Reference</a></li>
-        </ol>
-      </section>
+  <section class="panel">
+    <h2>Table of Contents</h2>
+    <ol class="toc">
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#setup">Setup</a></li>
+      <li><a href="#game-flow">Game Flow</a></li>
+      <li><a href="#beat-phase">Beat Phase - Detailed Explanation</a></li>
+      <li><a href="#combat-resolution">Combat &amp; Resolution Details</a></li>
+      <li><a href="#hand-economy">Cards in Hand Economy</a></li>
+      <li><a href="#trigger-text">Trigger Text</a></li>
+      <li><a href="#tokens">Hexes &amp; Tokens</a></li>
+      <li><a href="#end-of-game">End of Game</a></li>
+      <li><a href="#symbols-glossary">Symbols &amp; Glossary</a></li>
+      <li><a href="#quick-reference">Quick Reference</a></li>
+    </ol>
+  </section>
 
-      <section id="overview" class="panel">
-        <h2>1. Overview</h2>
-        <p>HexStrike is a multiplayer card-combat game on a hex board, with a focus on simultaneous play.</p>
-        <p>
-          Each player submits a play composed of two cards, which locks them into a set of actions that will resolve over the course of some number of "beats."
-        </p>
-        <p>
-          The objective is to force opponents off the island by pushing them far into the abyss, or with no way to return back to the land.
-        </p>
-        <p>
-          "Beats" are the unit of tempo. The game repeats beat cycles until one winner is declared.
-        </p>
-      </section>
+  <section id="overview" class="panel">
+    <h2>1. Overview</h2>
+       <p>HexStrike is a simultaneous, deterministic combat game played on a hex grid. Players simultaneously commit an action set by submitting two cards—one active and one passive—plus a legal rotation. That commitment locks in a sequence of actions that will resolve in order across upcoming "beats", units of game tempo. Your objective is to eliminate opponents by forcing them off the island: either knock them deep into the abyss or pressure them into a state where they cannot safely return to land.</p>
+  </section>
 
-      <section id="setup" class="panel">
-        <h2>2. Setup</h2>
+  <section id="setup" class="panel">
+    <h2>2. Setup</h2>
 
-        <h3>Deck Construction Rules</h3>
-        <ul>
-          <li>A deck consists of a single character, 4 movement cards, and 12 ability cards</li>
-          <li>No duplicate cards are allowed.</li>
-          <li><strong>Step</strong> is required in every deck and cannot be removed.</li>
-          <li>Each deck can contain only <strong>one</strong> Signature Move (indicated by gold titles).</li>
-          <li>The order of ability cards is fixed. There is no shuffling</li>
-        </ul>
+    <h3>Deck Construction Rules</h3>
+    <ul>
+      <li>Each deck contains: 1 character, 4 movement cards, and 12 ability cards.</li>
+      <li>No duplicate cards are allowed.</li>
+      <li><strong>Step</strong> is mandatory and cannot be removed.</li>
+      <li>Each deck may include up to only <strong>one</strong> Signature Move (gold title).</li>
+      <li>Ability card order is fixed. There is no shuffling.</li>
+    </ul>
 
-        <h3>Starting State</h3>
+    <h3>Starting State</h3>
+    <ol>
+      <li>Place characters on designated starting land hexes, facing each other.</li>
+      <li>Each player draws 4 movement cards and 4 ability cards.</li>
+    </ol>
+  </section>
+
+  <section id="game-flow" class="panel">
+    <h2>3. Game Flow</h2>
+    <p>The game proceeds in repeating beats. Each beat follows this sequence:</p>
+    <ol>
+      <li>Refresh Phase</li>
+      <li>Simultaneous Play Phase</li>
+      <li>Beat Resolution</li>
+      <li>End of Beat</li>
+      <li>Advance to Next Beat</li>
+    </ol>
+  </section>
+
+  <section id="beat-phase" class="panel">
+    <h2>4. Beat Phase - Detailed Explanation</h2>
+
+    <h3>4.1 Refresh Phase</h3>
+    <p>At the start of each beat, a player refreshes if their character is on a <img class="inline-symbol" src="/public/images/E.png" alt="E symbol" /> beat, or has no active card.</p>
+    <p>To refresh:</p>
+    <ul>
+      <li>Discard any active and passive cards.</li>
+      <li>If the player is on land, draw until holding 4 ability cards.</li>
+      <li>Sync movement cards according to the hand economy rules.</li>
+    </ul>
+    <p>Players in the abyss adjacent to land who have no cards in hand may perform a "ledge grab": draw 1 movement and 1 ability card.</p>
+
+    <h3>4.2 Simultaneous Play Phase</h3>
+    <p>All players without cards in play simultaneously select:</p>
+    <ul>
+      <li>1 active card</li>
+      <li>1 passive card of the opposite type (movement card vs. ability card)</li>
+      <li>1 legal rotation</li>
+    </ul>
+    <p>If a player cannot legally play and is over the abyss, they lose immediately.</p>
+
+    <h3>4.3 Beat Resolution</h3>
+    <ul>
+      <li>Resolve chosen rotations immediately.</li>
+      <li>Resolve actions by priority (highest first).</li>
+      <li>If a character is knocked back before their action resolves, their action is canceled and their cards are discarded.</li>
+    </ul>
+
+    <h3>4.4 End of Beat</h3>
+    <p>Advance all in-play cards to the next beat on their timeline.</p>
+  </section>
+
+  <section id="combat-resolution" class="panel">
+    <h2>5. Combat &amp; Resolution Details</h2>
+
+    <h3>Hit Resolution</h3>
+    <ul>
+      <li>If the defender blocks correctly, the attack has no effect.</li>
+      <li>If the attack is a throw, it cannot be blocked and moves the defender exactly 2 hexes in any direction chosen by the attacker.</li>
+      <li>Otherwise, apply damage and knockback.</li>
+    </ul>
+
+    <h3>Damage</h3>
+    <p>Damage <img class="inline-symbol" src="/public/images/DamageIcon.png" alt="Damage icon" /> is added to the target’s accumulated damage. There is no upper limit.</p>
+
+    <h3>Knockback</h3>
+    <p>After damage is applied, calculate knockback using the Knockback Factor <img class="inline-symbol" src="/public/images/KnockBackIcon.png" alt="KBF icon" />.</p>
+    <ul>
+      <li><code>KBF = 0</code>: 0 hexes.</li>
+      <li><code>KBF = 1</code>: 1 hex.</li>
+      <li><code>KBF &gt; 1</code>: <code>floor((Damage × KBF) / 10)</code>, minimum 1.</li>
+    </ul>
+    <p>Knockback moves the defender directly away from the attacker. Obstacles stop movement early.</p>
+    <p>The defender is stunned for the same number of beats as the knockback distance + 1.</p>
+    <p>If a character ends 5 or more hexes from the island edge, they lose.</p>
+  </section>
+
+  <section id="hand-economy" class="panel">
+    <h2>6. Cards in Hand Economy</h2>
+    <p>“Cards in hand” always refers to ability cards only.</p>
+    <p>Movement cards must always mirror the number of ability cards in hand.</p>
+    <ul>
+      <li>If you discard ability cards, discard movement cards to match.</li>
+      <li>If you draw ability cards while at 3 or fewer, recover movement cards from discard to match.</li>
+      <li>If an active card expires while holding 4 or more ability cards, recover all movement cards.</li>
+      <li>Active and passive cards are always discarded together.</li>
+    </ul>
+  </section>
+
+  <section id="trigger-text" class="panel">
+    <h2>7. Trigger Text</h2>
+    <p>Trigger text overrides standard resolution order when its condition is met.</p>
+    <div class="text-panel">
+      <p><strong>Example – Burning Strike:</strong></p>
+      <p>"If Burning Strike is in your hand when you land an attack, you may reveal it and discard it along with a movement card to place a fire hex on all attacked hexes."</p>
+    </div>
+  </section>
+
+  <section id="tokens" class="panel">
+    <h2>8. Hexes &amp; Tokens</h2>
+    <p>Hexes define terrain and tokens are board objects placed by card effects. Both persist and resolve by their rules.</p>
+
+    <h3>Land Hex</h3>
+    <div class="token-preview-row">
+      <div class="token-preview token-preview-hex terrain-preview-land" aria-label="Land hex preview">
+        <span class="token-preview-hex-ring is-terrain"></span>
+      </div>
+    </div>
+    <p>
+      Land hexes form the playable island. Land is where normal refreshes occur.
+    </p>
+
+    <h3>Abyss Hex</h3>
+    <div class="token-preview-row">
+      <div class="token-preview token-preview-hex terrain-preview-abyss" aria-label="Abyss hex preview">
+        <span class="token-preview-hex-ring is-terrain"></span>
+      </div>
+    </div>
+    <p>
+      Abyss hexes surround the island. Characters pushed too far into the abyss lose.
+    </p>
+
+    <h3>Arrow Token</h3>
+    <div class="token-preview-row">
+      <div class="token-preview token-preview-circle" aria-label="Arrow token preview">
+        <span class="token-preview-circle-ring">
+          <img src="/public/images/ArrowToken.png" alt="Arrow token icon" />
+        </span>
+        <span class="token-preview-facing"></span>
+      </div>
+    </div>
+    <p>
+      Arrow tokens charge (<img class="inline-symbol" src="/public/images/c.png" alt="c symbol" />) forward in the direction it faces on every beat, dealing 4 damage with a KBF of 1. If it hits a target or is blocked, it leave the board.
+    </p>
+
+    <h3>Fire Token</h3>
+    <div class="token-preview-row">
+      <div class="token-preview token-preview-hex" aria-label="Fire token preview">
+        <span class="token-preview-hex-ring">
+          <img src="/public/images/FireHexToken.png" alt="Fire hex token icon" />
+        </span>
+      </div>
+    </div>
+    <p>
+      Fire tokens sit on land hexes and deal 1 damage per beat to the occupant.
+    </p>
+
+    <h3>Ethereal Platform</h3>
+    <div class="token-preview-row">
+      <div class="token-preview token-preview-hex" aria-label="Haven token preview">
+        <span class="token-preview-hex-ring">
+          <img src="/public/images/EtherealPlatform.png" alt="Haven platform token icon" />
+        </span>
+      </div>
+    </div>
+    <p>
+      Ethereal Platforms can be placed on abyss hexes. If a character stands on it during a <img class="inline-symbol" src="/public/images/E.png" alt="E symbol" />, they can refresh as though on land. Once they do, it vanishes.
+    </p>
+  </section>
+
+  <section id="end-of-game" class="panel">
+    <h2>9. End of Game</h2>
+    <p>In 1v1 play, the game ends immediately when one player loses.</p>
+    <ul>
+      <li>A character is 5 or more hexes from the island edge.</li>
+      <li>A player is on the abyss at the earliest open beat with no playable cards and no ledge grab available.</li>
+    </ul>
+    <p>In Free‑For‑All games, eliminated players respawn after 10 beats in the 
+      center hex of the island with 0 damage and a full hand.
+      For the first 5 beats after respawning, They cannot be knocked back, stunned, or dealt damage. 
+      The last player to hit someone that is eliminated gets a victory point. 
+      First to 2 victory points wins.</p>
+  </section>
+
+  <section id="symbols-glossary" class="panel">
+    <h2>10. Symbols &amp; Glossary</h2>
+
+    <h3>Symbol Reference</h3>
+    <table class="parity-table">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Definition</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><img class="symbol-ref-icon" src="/public/images/E.png" alt="E symbol" /></td>
+          <td>Refresh beat with no committed action.</td>
+        </tr>
+        <tr>
+          <td><img class="symbol-ref-icon" src="/public/images/W.png" alt="W symbol" /></td>
+          <td>Wait action. Characters do nothing here.</td>
+        </tr>
+        <tr>
+          <td><img class="symbol-ref-icon" src="/public/images/m.png" alt="m symbol" /></td>
+          <td>Step movement action. Charaters move straight forward , and stop if there are obstacles in the way. They move as far as they can before the obstacle.</td>
+        </tr>
+        <tr>
+          <td><img class="symbol-ref-icon" src="/public/images/2j.png" alt="j symbol" /></td>
+          <td>Jump movement action. Unlike step movement, jump movement does not stop if there are obstacles in the way. However, the move fails if the target location is occupied or out of bounds.</td>
+        </tr>
+        <tr>
+          <td><img class="symbol-ref-icon" src="/public/images/a.png" alt="a symbol" /></td>
+          <td>Attack action. Deal damage and knockback to any targets on ALL red hexes.</td>
+        </tr>
+        <tr>
+          <td><img class="symbol-ref-icon" src="/public/images/b.png" alt="b symbol" /></td>
+          <td>Block action. Block attacks from the hex directions with the gold lines.</td>
+        </tr>
+        <tr>
+          <td><img class="symbol-ref-icon" src="/public/images/c.png" alt="c symbol" /></td>
+          <td>Charge action (attack + movement behavior). First attempts an attack, then attempts a move.</td>
+        </tr>
+        <tr>
+          <td><img class="symbol-ref-icon" src="/public/images/F.png" alt="F symbol" /></td>
+          <td>Focus marker/state reference. Puts the card in "focus" state. This places the card to the side, and implements the focus text until that card is removed from focus.</td>
+        </tr>
+        <tr>
+          <td><img class="symbol-ref-icon" src="/public/images/Co.png" alt="Co symbol" /></td>
+          <td>Combo window marker. If the attack before this Combo symbol was successful, the player has a choice to "continue" the combo. They discard their current active and passive card and can play another card with a <img class="inline-symbol" src="/public/images/Co.png" alt="Co symbol" />.</td>
+        </tr>
+        <tr>
+          <td>
+            <span class="symbol-icon-wrap">
+              <img class="symbol-ref-icon" src="/public/images/X1.png" alt="X1 symbol" />
+            </span>
+            <span class="symbol-icon-wrap">
+              <img class="symbol-ref-icon" src="/public/images/X2.png" alt="X2 symbol" />
+            </span>
+          </td>
+          <td>Card-text trigger symbols. These mark effect trigger points within an action sequence.</td>
+        </tr>
+        <tr>
+          <td><img class="symbol-ref-icon" src="/public/images/i.png" alt="i symbol" /></td>
+          <td>This marks a trigger point in addition to a regular action on a card's timeline.</td>
+        </tr>
+        <tr>
+          <td>
+            <span class="symbol-icon-wrap">
+              <img class="symbol-ref-icon" src="/public/images/DrawIcon.png" alt="Draw X icon" />
+              <span class="symbol-icon-badge is-on-icon">X</span>
+            </span>
+          </td>
+          <td>Draw X: draw X ability cards, then movement hand count syncs to match ability hand size (see hand economy above).</td>
+        </tr>
+        <tr>
+          <td>
+            <span class="symbol-icon-wrap">
+              <img class="symbol-ref-icon" src="/public/images/DiscardIcon.png" alt="Discard X icon" />
+              <span class="symbol-icon-badge is-on-icon">X</span>
+            </span>
+          </td>
+          <td>Discard X: discard X ability cards, then movement hand count syncs to match ability hand size (see hand economy above).</td>
+        </tr>
+        <tr>
+          <td><img class="symbol-ref-icon" src="/public/images/DamageIcon.png" alt="Damage marker icon" /></td>
+          <td>Damage Badge: indicated how much damage this attack deals.</td>
+        </tr>
+        <tr>
+          <td><img class="symbol-ref-icon" src="/public/images/KnockBackIcon.png" alt="KBF icon" /></td>
+          <td>Knockback factor (KBF) stat marker.</td>
+        </tr>
+        <tr>
+          <td>
+            <span class="symbol-icon-wrap">
+              <img class="symbol-ref-icon is-muted" src="/public/images/KnockBackIcon.png" alt="KBF throw icon" />
+              <span class="symbol-icon-badge is-on-icon">T</span>
+            </span>
+          </td>
+          <td>Throw knockback marker (KBF throw). Uses throw rules instead of normal knockback formula.</td>
+        </tr>
+        <tr>
+          <td><img class="symbol-ref-icon" src="/public/images/rot0-2.png" alt="Rotation limitation badge" /></td>
+          <td>Rotation limitation badge. Indicates allowed rotation choices for that active card.</td>
+        </tr>
+        <tr>
+          <td><img class="symbol-ref-icon" src="/public/images/priority.png" alt="Priority badge" /></td>
+          <td>Priority badge. Higher priority resolves earlier within a beat.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Glossary</h3>
+    <dl class="glossary-list">
+      <div class="glossary-item">
+        <dt>Beat</dt>
+        <dd>One timeline index containing one entry per player.</dd>
+      </div>
+      <div class="glossary-item">
+        <dt>Priority</dt>
+        <dd>Resolution order value; higher resolves first.</dd>
+      </div>
+      <div class="glossary-item">
+        <dt>Active Card</dt>
+        <dd>Selected card that supplies action list and base stats.</dd>
+      </div>
+      <div class="glossary-item">
+        <dt>Passive Card</dt>
+        <dd>Selected companion card that modifies active behavior.</dd>
+      </div>
+      <div class="glossary-item">
+        <dt>Signature Move</dt>
+        <dd>Gold-title movement card; maximum one per deck.</dd>
+      </div>
+      <div class="glossary-item">
+        <dt>Refresh</dt>
+        <dd>Clearing out old cards, and redrawing a hand (if on land).</dd>
+      </div>
+      <div class="glossary-item">
+        <dt>Focus</dt>
+        <dd>Persistent interaction state that modifies rules while active.</dd>
+      </div>
+      <div class="glossary-item">
+        <dt>Knockback</dt>
+        <dd>Forced movement applied after a hit based on KBF rules.</dd>
+      </div>
+      <div class="glossary-item">
+        <dt>Ledge Grab</dt>
+        <dd>Drawing one ability and movement card if over the abyss, next to land, and having an empty hand.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <section id="quick-reference" class="panel">
+    <h2>11. Quick Reference</h2>
+    <div class="quick-ref-grid">
+      <div class="text-panel">
+        <h3>Beat Order</h3>
         <ol>
-          <li>Place characters on starting land hexes at opposite sides, facing each other.</li>
-          <li>Players draw 4 movement cards and 4 ability cards as opening hand.</li>
-        </ol>
-      </section>
-
-      <section id="game-flow" class="panel">
-        <h2>3. Game Flow</h2>
-        <p>The game proceeds in repeating beats. Each beat follows this order:</p>
-        <ol>
-          <li>Refresh Phase</li>
-          <li>Simultaneous Play Phase</li>
+          <li>Refresh</li>
+          <li>Simultaneous Play</li>
           <li>Beat Resolution</li>
           <li>End of Beat</li>
           <li>Proceed to next beat</li>
         </ol>
-      </section>
-
-      <section id="beat-phase" class="panel">
-        <h2>4. Beat Phase - Detailed Explanation</h2>
-
-        <h3>4.1 Refresh Phase</h3>
-        <p>At the start of each beat, all players who's character is currently on land AND on the <img class="inline-symbol" src="/public/images/E.png" alt="E symbol" />  
-          draw to their full hand size: 4 movement cards, and 4 ability cards. Once complete, any cards
-        they have in play are "discarded." Movement cards are put in a pile in front of them, and 
-        ability cards go under their deck.</p>
-
-        <p> Players who's characters are in the abyss adjacent to a land tile, if they have no cards in their hand, maye draw one movement and one ability card (called a "ledge grab).</p>
-
-        <h3>4.2 Simultaneous Play Phase</h3>
-        <p>All players without cards in play simultaneously choose one active card, one opposite-type passive card, and one legal rotation.</p>
-        <p>If a player has no cards left in their hand to play at this point, and they are over the Abyss, they lose.</p>
-          <ul>
-            <li>Card types are movement (green background) and ability (purple background).</li>
-            <li>Rotations are 0 (forward), L1, L2, R1, R2 (left and right by 1 or 2), or 3 (turn around), and may be limited by the card.</li>
-          </ul>
-
-
-        <h3>4.3 Beat Resolution</h3>
+      </div>
+      <div class="text-panel">
+        <h3>Damage / Knockback</h3>
         <ul>
-          <li>For any cards that were just played, immediately resolve the rotation chosen.</li>
-          <li>After that, entries resolve by priority from highest to lowest.</li>
-          <li>If a player is hit with knockback (see knockback rules) before their action resolves, That action is skipped, and their cards are immediately discarded.</li>
+          <li>Apply damage first.</li>
+          <li><code>KBF = 0</code>: 0 knockback.</li>
+          <li><code>KBF = 1</code>: 1 hex knockback.</li>
+          <li><code>KBF &gt; 1</code>: <code>max(1, floor((accumulatedDamage * KBF) / 10))</code>.</li>
+          <li>Throw rules replace normal knockback formula.</li>
         </ul>
-
-        <h3>4.4 End of Beat</h3>
-        <p>The timeline advances to the next beat for all players' in-play cards.</p>
-
-      </section>
-
-      <section id="combat-resolution" class="panel">
-        <h2>5. Combat &amp; Resolution Details</h2>
-
-        <h3>Hit Resolution</h3>
-        <p>When a character is hit, resolve as follows:</p>
+      </div>
+      <div class="text-panel">
+        <h3>Deck Restrictions</h3>
         <ul>
-          <li>If the defender was blocking, then the attack does nothing</li>
-          <li>If the attack is of type "throw", it cannot be blocked, and instead of regular knockback, the attack chooses to move the defending 2 hexes in any of the 6 directions.</li>
-          <li>If there was no block and it was not a throw, proceed with normal damage and knockback resolution below.</li>
+          <li>1 character, 16 cards total (4 movement, 12 ability).</li>
+          <li>No duplicates.</li>
+          <li><strong>Step</strong> is required.</li>
+          <li>Max 1 Signature Move.</li>
         </ul>
-
-        <h3>Damage</h3>
+      </div>
+      <div class="text-panel">
+        <h3>Win Condition</h3>
         <ul>
-          <li>Damage <img class="inline-symbol" src="/public/images/DamageIcon.png" alt="Damage icon" /> is first added to the target's accumulated damage.</li>
-          <li>There is no limit to how much damage can be accumulated.</li>
+          <li>Opponent is more than 4 hexes from nearest land, or</li>
+          <li>Opponent is on abyss at earliest open beat with no playable cards and no ledge grab.</li>
+          <li>FFA: 2 victory points wins: get victory points by "last hitting" opponents.</li>
         </ul>
+      </div>
+    </div>
+  </section>
 
-        <h3>Knockback</h3>
-        <p>In HexStrike, the object of the game is knock players off the island. 
-          The more damage they have accumulated, the easier it is to knock them off. 
-         Knockback Factor (<img class="inline-symbol" src="/public/images/KnockBackIcon.png" alt="Knockback icon" /> or KBF) is the factor by which you increase the knocback
-         relative to accumulated damage. The formula is below:</p>
-        <ul>
-          <li>Knockback is evaluated after damage is added.</li>
-          <li><code>KBF = 0</code> gives 0 knockback.</li>
-          <li><code>KBF = 1</code> gives 1 hex knockback.</li>
-          <li><code>KBF &gt; 1</code> does KBF * Damage / 10 knockback (rounded down).</li>
-          <li>Knockback direction is always in a straight line away from the attack, in the direction of the defender. </li>
-          <li>If an obstacle is in the way of knockback, knockback stops at that obstacle.</li>
-          <li>Character are stunned for + 1 calculated knockback distance number of beats. After that, they refresh. 
-            Obstacles reduce the stun beats as well.</li>
-          <li>If a character is 5 or more hexes away from the island edge, they lose the game.</li>
-        </ul>
+</main>
+  <script>
+    (function highlightRuleTerms() {
+      const root = document.querySelector('.rulebook-shell');
+      if (!root) return;
 
-      </section>
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      const textNodes = [];
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (!node.nodeValue || !node.nodeValue.trim()) continue;
+        const parentTag = node.parentElement ? node.parentElement.tagName : '';
+        if (parentTag === 'SCRIPT' || parentTag === 'STYLE') continue;
+        textNodes.push(node);
+      }
 
-      <section id="hand-economy" class="panel">
-        <h2>6. Cards in Hand Economy</h2>
-        <p>
-          Throughout the game, the "number of cards" in players' hands will be referenced frequently. This always refers
-          to non-movement ability cards.
-        </p>
-        <p>
-          These rules maintain parity between ability and movement cards. Movement cards (indicated with a green
-          background) should always attempt to match the number of non-movement cards in hand.
-        </p>
-        <p>This means:</p>
-        <ul>
-          <li>If the player has 4 or fewer ability cards in hand and must discard, the player must also discard a movement card.</li>
-          <li>
-            If the player has 3 or fewer cards in hand and draws a card, they must also pick up an equivalent number of
-            movement cards of their choosing from their movement discard pile.
-          </li>
-          <li>If the player has 4 or more cards in hand and their active card expires, they must also pick up all movement cards from their discard pile.</li>
-          <li>When an active card is discarded, always discard the passive card with it at the same time.</li>
-          <li>Movement cards go to the movement discard pile.</li>
-          <li>Ability cards go under the ability card deck.</li>
-        </ul>
-      </section>
+      const pattern = /\b(5 or more hexes|ability cards?|movement cards?|knockback factor|knockback|damage|refresh|abyss|land|beats?)\b/gi;
+      const classByTerm = {
+        '5 or more hexes': 'term-five-or-more-hexes',
+        'ability card': 'term-ability-cards',
+        'ability cards': 'term-ability-cards',
+        'movement card': 'term-movement-cards',
+        'movement cards': 'term-movement-cards',
+        'knockback factor': 'term-knockback',
+        knockback: 'term-knockback',
+        damage: 'term-damage',
+        refresh: 'term-refresh',
+        abyss: 'term-abyss',
+        land: 'term-land',
+        beat: 'term-beat',
+        beats: 'term-beat',
+      };
 
-      <section id="trigger-text" class="panel">
-        <h2>7. Trigger Text</h2>
-        <p>Some cards will have "trigger text" on them. This trigger text takes priority above all other effects, if used.</p>
-        <h3>Example: Burning Strike</h3>
-        <div class="text-panel">
-          <p>
-            "If Burning Strike is in your hand when you land an attack, you may reveal it to discard it and a movement card
-            to place a fire hex on all hexes attacked."
-          </p>
-        </div>
-      </section>
+      for (const node of textNodes) {
+        const text = node.nodeValue;
+        if (!pattern.test(text)) {
+          pattern.lastIndex = 0;
+          continue;
+        }
+        pattern.lastIndex = 0;
 
-      <section id="tokens" class="panel">
-        <h2>8. Tokens</h2>
-        <p>Tokens are board objects placed by card effects. They persist and resolve according to their own rules.</p>
-
-        <h3>Arrow Token</h3>
-        <div class="token-preview-row">
-          <div class="token-preview token-preview-circle" aria-label="Arrow token preview">
-            <span class="token-preview-circle-ring">
-              <img src="/public/images/ArrowToken.png" alt="Arrow token icon" />
-            </span>
-            <span class="token-preview-facing"></span>
-          </div>
-        </div>
-        <p>
-          Arrow tokens charge (<img class="inline-symbol" src="/public/images/c.png" alt="c symbol" />) forward in the direction it faces on every beat, dealing 4 damage with a KBF of 1. If it hits a target or is blocked, it leave the board. 
-        </p>
-
-        <h3>Fire Token</h3>
-        <div class="token-preview-row">
-          <div class="token-preview token-preview-hex" aria-label="Fire token preview">
-            <span class="token-preview-hex-ring">
-              <img src="/public/images/FireHexToken.png" alt="Fire hex token icon" />
-            </span>
-          </div>
-        </div>
-        <p>
-          Fire tokens sit on land hexes and deal 1 damage per beat to the occupant. 
-        </p>
-
-        <h3>Ethereal Platform</h3>
-        <div class="token-preview-row">
-          <div class="token-preview token-preview-hex" aria-label="Haven token preview">
-            <span class="token-preview-hex-ring">
-              <img src="/public/images/EtherealPlatform.png" alt="Haven platform token icon" />
-            </span>
-          </div>
-        </div>
-        <p>
-          Ethereal Platforms can be placed on abyss hexes. If a character stands on it during a <img class="inline-symbol" src="/public/images/E.png" alt="E symbol" />, they can refresh as though on land. Once they do, it vanishes.
-        </p>
-      </section>
-
-      <section id="end-of-game" class="panel">
-        <h2>9. End of Game</h2>
-        <p>In a 1v1, 2 player game, the game ends immediately once one player loses. A player can lose in one of two ways:</p>
-        <ul>
-          <li>If a character is 5 or more hexes away from the island edge, they lose the game.</li>
-          <li>If a player is on abyss at the earliest open beat with no playable cards and no valid ledge grab, they lose the game.</li>
-        </ul>
-        <p>In a Free For All game, (3 player or 4 player), when one player falls off, the game is not immediately over. </p>
-        <ul>
-          <li>The player who hit that player last gets a "victory point."</li>
-          <li>The player who fell off discards their hand, and remains out of the game for 10 beats</li>
-          <li>After 10 beats, they are put on the center hext of the island. If it is occupied, pick a free hex adjacent to the center.</li>
-          <li>After being respawned, they draw to full hand, are immune to damage, stun, and knockback for 5 beats, and can play on the next beat.</li>
-          <li>First player to 2 victory points wins the game.</li>
-        </ul>
-
-        
-      </section>
-
-      <section id="symbols-glossary" class="panel">
-        <h2>10. Symbols &amp; Glossary</h2>
-
-        <h3>Symbol Reference</h3>
-        <table class="parity-table">
-          <thead>
-            <tr>
-              <th>Symbol</th>
-              <th>Definition</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><img class="symbol-ref-icon" src="/public/images/E.png" alt="E symbol" /></td>
-              <td>Refresh beat with no committed action.</td>
-            </tr>
-            <tr>
-              <td><img class="symbol-ref-icon" src="/public/images/W.png" alt="W symbol" /></td>
-              <td>Wait action. Characters do nothing here.</td>
-            </tr>
-            <tr>
-              <td><img class="symbol-ref-icon" src="/public/images/m.png" alt="m symbol" /></td>
-              <td>Step movement action. Charaters move straight forward , and stop if there are obstacles in the way. They move as far as they can before the obstacle. </td>
-            </tr>
-            <tr>
-              <td><img class="symbol-ref-icon" src="/public/images/2j.png" alt="j symbol" /></td>
-              <td>Jump movement action. Unlike step movement, jump movement does not stop if there are obstacles in the way. However, the move fails if the target location is occupied or out of bounds.</td>
-            </tr>
-            <tr>
-              <td><img class="symbol-ref-icon" src="/public/images/a.png" alt="a symbol" /></td>
-              <td>Attack action. Deal damage and knockback to any targets on ALL red hexes. </td>
-            </tr>
-            <tr>
-              <td><img class="symbol-ref-icon" src="/public/images/b.png" alt="b symbol" /></td>
-              <td>Block action. Block attacks from the hex directions with the gold lines. </td>
-            </tr>
-            <tr>
-              <td><img class="symbol-ref-icon" src="/public/images/c.png" alt="c symbol" /></td>
-              <td>Charge action (attack + movement behavior). First attempts an attack, then attempts a move. </td>
-            </tr>
-            <tr>
-              <td><img class="symbol-ref-icon" src="/public/images/F.png" alt="F symbol" /></td>
-              <td>Focus marker/state reference. Puts the card in "focus" state. This places the card to the side, and implements the focus text until that card is removed from focus. </td>
-            </tr>
-            <tr>
-              <td><img class="symbol-ref-icon" src="/public/images/Co.png" alt="Co symbol" /></td>
-              <td>Combo window marker. If the attack before this Combo symbol was successful, the player has a choice to "continue" the combo. They discard their current active and passive card and can play another card with a <img class="inline-symbol" src="/public/images/Co.png" alt="Co symbol" />.</td>
-            </tr>
-            <tr>
-              <td>
-                <span class="symbol-icon-wrap">
-                  <img class="symbol-ref-icon" src="/public/images/X1.png" alt="X1 symbol" />
-                </span>
-                <span class="symbol-icon-wrap">
-                  <img class="symbol-ref-icon" src="/public/images/X2.png" alt="X2 symbol" />
-                </span>
-              </td>
-              <td>Card-text trigger symbols. These mark effect trigger points within an action sequence.</td>
-            </tr>
-            <tr>
-              <td><img class="symbol-ref-icon" src="/public/images/i.png" alt="i symbol" /></td>
-              <td>This marks a trigger point in addition to a regular action on a card's timeline.</td>
-            </tr>
-            <tr>
-              <td>
-                <span class="symbol-icon-wrap">
-                  <img class="symbol-ref-icon" src="/public/images/DrawIcon.png" alt="Draw X icon" />
-                  <span class="symbol-icon-badge is-on-icon">X</span>
-                </span>
-              </td>
-              <td>Draw X: draw X ability cards, then movement hand count syncs to match ability hand size (see hand economy above).</td>
-            </tr>
-            <tr>
-              <td>
-                <span class="symbol-icon-wrap">
-                  <img class="symbol-ref-icon" src="/public/images/DiscardIcon.png" alt="Discard X icon" />
-                  <span class="symbol-icon-badge is-on-icon">X</span>
-                </span>
-              </td>
-              <td>Discard X: discard X ability cards, then movement hand count syncs to match ability hand size (see hand economy above).</td>
-            </tr>
-            <tr>
-              <td><img class="symbol-ref-icon" src="/public/images/DamageIcon.png" alt="Damage marker icon" /></td>
-              <td>Damage Badge: indicated how much damage this attack deals.</td>
-            </tr>
-            <tr>
-              <td><img class="symbol-ref-icon" src="/public/images/KnockBackIcon.png" alt="KBF icon" /></td>
-              <td>Knockback factor (KBF) stat marker.</td>
-            </tr>
-            <tr>
-              <td>
-                <span class="symbol-icon-wrap">
-                  <img class="symbol-ref-icon is-muted" src="/public/images/KnockBackIcon.png" alt="KBF throw icon" />
-                  <span class="symbol-icon-badge is-on-icon">T</span>
-                </span>
-              </td>
-              <td>Throw knockback marker (KBF throw). Uses throw rules instead of normal knockback formula.</td>
-            </tr>
-            <tr>
-              <td><img class="symbol-ref-icon" src="/public/images/rot0-2.png" alt="Rotation limitation badge" /></td>
-              <td>Rotation limitation badge. Indicates allowed rotation choices for that active card.</td>
-            </tr>
-            <tr>
-              <td><img class="symbol-ref-icon" src="/public/images/priority.png" alt="Priority badge" /></td>
-              <td>Priority badge. Higher priority resolves earlier within a beat.</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <h3>Glossary</h3>
-        <dl class="glossary-list">
-          <div class="glossary-item">
-            <dt>Beat</dt>
-            <dd>One timeline index containing one entry per player.</dd>
-          </div>
-          <div class="glossary-item">
-            <dt>Priority</dt>
-            <dd>Resolution order value; higher resolves first.</dd>
-          </div>
-          <div class="glossary-item">
-            <dt>Active Card</dt>
-            <dd>Selected card that supplies action list and base stats.</dd>
-          </div>
-          <div class="glossary-item">
-            <dt>Passive Card</dt>
-            <dd>Selected companion card that modifies active behavior.</dd>
-          </div>
-          <div class="glossary-item">
-            <dt>Signature Move</dt>
-            <dd>Gold-title movement card; maximum one per deck.</dd>
-          </div>
-          <div class="glossary-item">
-            <dt>Refresh</dt>
-            <dd>Land-gated phase that clears movement exhaustion and draws to hand cap.</dd>
-          </div>
-          <div class="glossary-item">
-            <dt>Focus</dt>
-            <dd>Persistent interaction state that modifies rules while active.</dd>
-          </div>
-          <div class="glossary-item">
-            <dt>Knockback</dt>
-            <dd>Forced movement applied after a hit based on KBF rules.</dd>
-          </div>
-          <div class="glossary-item">
-            <dt>Action Set</dt>
-            <dd>Active card + passive card + selected rotation submitted together.</dd>
-          </div>
-          <div class="glossary-item">
-            <dt>Earliest Open Beat</dt>
-            <dd>First unresolved open slot used for submission and refresh gating.</dd>
-          </div>
-        </dl>
-      </section>
-
-      <section id="quick-reference" class="panel">
-        <h2>11. Quick Reference</h2>
-        <div class="quick-ref-grid">
-          <div class="text-panel">
-            <h3>Beat Order</h3>
-            <ol>
-              <li>Refresh</li>
-              <li>Simultaneous Play</li>
-              <li>Beat Resolution</li>
-              <li>End of Beat</li>
-              <li>Proceed to next beat</li>
-            </ol>
-          </div>
-          <div class="text-panel">
-            <h3>Damage / Knockback</h3>
-            <ul>
-              <li>Apply damage first.</li>
-              <li><code>KBF = 0</code>: 0 knockback.</li>
-              <li><code>KBF = 1</code>: 1 hex knockback.</li>
-              <li><code>KBF &gt; 1</code>: <code>max(1, floor((accumulatedDamage * KBF) / 10))</code>.</li>
-              <li>Throw rules replace normal knockback formula.</li>
-            </ul>
-          </div>
-          <div class="text-panel">
-            <h3>Deck Restrictions</h3>
-            <ul>
-              <li>16 cards total (4 movement, 12 ability).</li>
-              <li>No duplicates.</li>
-              <li><strong>Step</strong> is required.</li>
-              <li>Max 1 Signature Move.</li>
-            </ul>
-          </div>
-          <div class="text-panel">
-            <h3>Win Condition</h3>
-            <ul>
-              <li>Opponent is more than 4 hexes from nearest land, or</li>
-              <li>Opponent is on abyss at earliest open beat with no playable cards and no ledge grab.</li>
-            </ul>
-          </div>
-        </div>
-      </section>
-    </main>
-
+        const fragment = document.createDocumentFragment();
+        let lastIndex = 0;
+        let match;
+        while ((match = pattern.exec(text)) !== null) {
+          const start = match.index;
+          if (start > lastIndex) {
+            fragment.appendChild(document.createTextNode(text.slice(lastIndex, start)));
+          }
+          const matchedText = match[0];
+          const normalized = matchedText.toLowerCase();
+          const span = document.createElement('span');
+          span.className = classByTerm[normalized];
+          span.textContent = matchedText;
+          fragment.appendChild(span);
+          lastIndex = pattern.lastIndex;
+        }
+        if (lastIndex < text.length) {
+          fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+        }
+        node.parentNode.replaceChild(fragment, node);
+        pattern.lastIndex = 0;
+      }
+    })();
+  </script>
   </body>
 </html>
