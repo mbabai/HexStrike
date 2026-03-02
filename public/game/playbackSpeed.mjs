@@ -1,5 +1,3 @@
-const ATTACK_SPEED_SCALE_FACTOR = 0.5;
-
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 const normalizeDegrees = (value) => {
@@ -16,17 +14,15 @@ const shortestAngleDelta = (fromDegrees, toDegrees) => {
   return delta;
 };
 
-const getSafePlaybackSpeed = (value) =>
-  Number.isFinite(value) && value > 0 ? Math.max(0.01, value) : 1;
-
-const getAttackSpeedScale = (playbackSpeed) => 1 + (playbackSpeed - 1) * ATTACK_SPEED_SCALE_FACTOR;
-
 const getStepProgressByChannel = (stepProgress, playbackSpeed) => {
-  const safeSpeed = getSafePlaybackSpeed(playbackSpeed);
+  // Playback speed controls beat-to-beat auto-advance timing in game.js.
+  // Keep per-step channel progress stable so speed changes mid-beat do not rewind/teleport animations.
+  const clamped = clamp(stepProgress, 0, 1);
+  void playbackSpeed;
   return {
-    movement: clamp(stepProgress * safeSpeed, 0, 1),
-    rotation: clamp(stepProgress * safeSpeed, 0, 1),
-    attack: clamp(stepProgress * getAttackSpeedScale(safeSpeed), 0, 1),
+    movement: clamped,
+    rotation: clamped,
+    attack: clamped,
   };
 };
 
@@ -37,10 +33,7 @@ const getInterpolatedFacing = (fromFacing, toFacing, progress) => {
 };
 
 export {
-  ATTACK_SPEED_SCALE_FACTOR,
-  getAttackSpeedScale,
   getInterpolatedFacing,
-  getSafePlaybackSpeed,
   getStepProgressByChannel,
   normalizeDegrees,
   shortestAngleDelta,

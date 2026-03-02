@@ -8,6 +8,7 @@ import {
   splitActionTokens,
 } from './cardText/actionListTransforms.js';
 import { getInterpolatedFacing, getStepProgressByChannel } from './playbackSpeed.mjs';
+import { getDebugBeatFilter, isDebugLoggingEnabled } from './debugFlags.mjs';
 
 const DEFAULT_ACTION = 'E';
 const FOCUS_ACTION = 'F';
@@ -19,6 +20,9 @@ const KNOCKBACK_DIVISOR = 10;
 export const ACTION_DURATION_MS = 1200;
 const MIN_TRAIL_VISIBLE_MS = 90;
 const MAX_TRAIL_VISIBLE_MS = 180;
+// Real-time floor so high-speed playback still renders visible in-between frames.
+const MIN_STEP_DURATION_MS = 80;
+const DIAG_PREFIX = '[timelinePlayback:diag]';
 const THROW_DISTANCE = 2;
 const FIRE_HEX_TOKEN_TYPE = 'fire-hex';
 const ETHEREAL_PLATFORM_TOKEN_TYPE = 'ethereal-platform';
@@ -139,6 +143,15 @@ const hashSeed = (value) => {
   return (hash / 100000) * Math.PI * 2;
 };
 
+const hashString = (value) => {
+  const str = `${value ?? ''}`;
+  let hash = 0;
+  for (let i = 0; i < str.length; i += 1) {
+    hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+  }
+  return hash.toString(16);
+};
+
 const getShakeOffset = (progress, intensity, seed) => {
   if (!intensity) return { x: 0, y: 0 };
   const phase = clamp(progress, 0, 1) * Math.PI * 2;
@@ -206,6 +219,65 @@ const AXIAL_DIRECTIONS = [
   { q: -1, r: 1 },
   { q: 0, r: 1 },
 ];
+
+const logDiagnostic = (event, payload = {}) => {
+  if (!isDebugLoggingEnabled()) return;
+  const beatFilter = getDebugBeatFilter();
+  if (beatFilter != null && Number.isFinite(payload?.beatIndex) && Math.round(payload.beatIndex) !== beatFilter) {
+    return;
+  }
+  if (event === 'rebuild') {
+    const brief = [
+      `beat=${payload?.beatIndex ?? 'na'}`,
+      `stamp=${payload?.gameStamp ?? 'null'}`,
+      `sameVisual=${payload?.sameVisualAsPrevious === true ? '1' : '0'}`,
+      `sameBeat=${payload?.sameBeatAsPrevious === true ? '1' : '0'}`,
+      `sameTrigger=${payload?.sameTriggerAsPrevious === true ? '1' : '0'}`,
+    ].join(' ');
+    console.log(`${DIAG_PREFIX} ${event} ${brief}`, payload);
+    return;
+  }
+  if (event === 'rebuild-skipped') {
+    const brief = [
+      `beat=${payload?.beatIndex ?? 'na'}`,
+      `stamp=${payload?.gameStamp ?? 'null'}`,
+      `reason=${payload?.reason ?? 'unknown'}`,
+    ].join(' ');
+    console.log(`${DIAG_PREFIX} ${event} ${brief}`, payload);
+    return;
+  }
+  if (event === 'plan') {
+    const brief = [
+      `beat=${payload?.beatIndex ?? 'na'}`,
+      `steps=${payload?.stepCount ?? 0}`,
+      `stepMs=${payload?.stepDurationMs ?? 0}`,
+      `durMs=${payload?.durationMs ?? 0}`,
+      `baseIdx=${payload?.baseLookupIndex ?? 'na'}`,
+    ].join(' ');
+    console.log(`${DIAG_PREFIX} ${event} ${brief}`, payload);
+    return;
+  }
+  if (event === 'progress') {
+    const brief = [
+      `beat=${payload?.beatIndex ?? 'na'}`,
+      `step=${payload?.stepIndex ?? 'na'}`,
+      `prog=${payload?.stepProgress ?? 0}`,
+      `elapsed=${payload?.elapsedMs ?? 0}/${payload?.durationMs ?? 0}`,
+    ].join(' ');
+    console.log(`${DIAG_PREFIX} ${event} ${brief}`, payload);
+    return;
+  }
+  if (event === 'time-reset') {
+    const brief = [
+      `beat=${payload?.beatIndex ?? 'na'}`,
+      `from=${payload?.fromElapsedMs ?? 0}`,
+      `to=${payload?.toElapsedMs ?? 0}`,
+    ].join(' ');
+    console.log(`${DIAG_PREFIX} ${event} ${brief}`, payload);
+    return;
+  }
+  console.log(DIAG_PREFIX, event, payload);
+};
 
 const normalizeDegrees = (value) => {
   const normalized = ((value % 360) + 360) % 360;
@@ -673,6 +745,140 @@ const getHavenTargetHex = (interaction) => {
 
 const resolveEntryKey = (entry) => entry?.username ?? entry?.userId ?? entry?.userID ?? '';
 
+const buildBeatEntrySignature = (entry, index) => {
+  const key = `${resolveEntryKey(entry) || `unknown-${index}`}`.trim();
+  const action = `${entry?.action ?? ''}`.trim();
+  const rotation = `${entry?.rotation ?? ''}`.trim();
+  const priority = Number.isFinite(entry?.priority) ? Math.round(entry.priority) : 0;
+  const cardId = `${entry?.cardId ?? ''}`.trim();
+  const passiveCardId = `${entry?.passiveCardId ?? ''}`.trim();
+  const location = entry?.location
+    ? `${Math.round(entry.location.q)},${Math.round(entry.location.r)}`
+    : 'na';
+  const damage = Number.isFinite(entry?.damage) ? Math.round(entry.damage) : 0;
+  const facing = Number.isFinite(entry?.facing) ? Math.round(entry.facing) : 0;
+  const calculated = Boolean(entry?.calculated);
+  const interactionType = `${entry?.interaction?.type ?? ''}`.trim();
+  return [
+    index,
+    key,
+    action,
+    rotation,
+    priority,
+    cardId,
+    passiveCardId,
+    location,
+    damage,
+    facing,
+    calculated ? '1' : '0',
+    interactionType,
+  ].join(':');
+};
+
+const getBeatDuplicateSummary = (beat) => {
+  const byActor = new Map();
+  (beat ?? []).forEach((entry, index) => {
+    const key = `${resolveEntryKey(entry) || `unknown-${index}`}`.trim();
+    const existing = byActor.get(key) ?? [];
+    existing.push(entry);
+    byActor.set(key, existing);
+  });
+  return Array.from(byActor.entries())
+    .filter(([, entries]) => entries.length > 1)
+    .map(([actorKey, entries]) => ({
+      actorKey,
+      count: entries.length,
+      actions: entries.map((entry) => `${entry?.action ?? ''}`.trim() || DEFAULT_ACTION),
+      cards: entries.map((entry) => `${entry?.cardId ?? ''}`.trim() || null),
+      passives: entries.map((entry) => `${entry?.passiveCardId ?? ''}`.trim() || null),
+    }));
+};
+
+const buildCurrentBeatSignature = (gameState, beatIndex) => {
+  const publicState = gameState?.state?.public ?? null;
+  const beats = publicState?.beats ?? [];
+  const interactions = publicState?.customInteractions ?? [];
+  const boardTokens = publicState?.boardTokens ?? [];
+  const pending = publicState?.pendingActions ?? null;
+  const safeBeatIndex = Number.isFinite(beatIndex) ? Math.max(0, Math.round(beatIndex)) : 0;
+  const beat = beats[safeBeatIndex] ?? [];
+  const beatSignature = beat.map((entry, index) => buildBeatEntrySignature(entry, index)).join('|');
+  const interactionSignature = interactions
+    .filter((interaction) => {
+      if (!interaction || !Number.isFinite(interaction.beatIndex)) return false;
+      return Math.round(interaction.beatIndex) === safeBeatIndex;
+    })
+    .map((interaction) => {
+      const actor = `${interaction.actorUserId ?? ''}`.trim();
+      const target = `${interaction.targetUserId ?? ''}`.trim();
+      const type = `${interaction.type ?? ''}`.trim();
+      const status = `${interaction.status ?? ''}`.trim();
+      const id = `${interaction.id ?? ''}`.trim();
+      return `${id}:${type}:${status}:${actor}:${target}`;
+    })
+    .sort()
+    .join('|');
+  const tokenSignature = boardTokens
+    .map((token) => {
+      const type = `${token?.type ?? ''}`.trim();
+      const owner = `${token?.ownerUserId ?? ''}`.trim();
+      const facing = Number.isFinite(token?.facing) ? Math.round(token.facing) : 0;
+      const position = token?.position ? `${Math.round(token.position.q)},${Math.round(token.position.r)}` : 'na';
+      return `${type}:${owner}:${facing}:${position}`;
+    })
+    .sort()
+    .join('|');
+  const pendingSignature = pending
+    ? [
+        Number.isFinite(pending.beatIndex) ? Math.round(pending.beatIndex) : 'na',
+        (pending.requiredUserIds ?? []).slice().sort().join(','),
+        (pending.submittedUserIds ?? []).slice().sort().join(','),
+      ].join(':')
+    : 'none';
+  return `${safeBeatIndex}::${beatSignature}::${interactionSignature}::${tokenSignature}::${pendingSignature}`;
+};
+
+const buildPlaybackVisualSignature = (gameState, beatIndex) => {
+  const publicState = gameState?.state?.public ?? null;
+  const beats = publicState?.beats ?? [];
+  const interactions = publicState?.customInteractions ?? [];
+  const safeBeatIndex = Number.isFinite(beatIndex) ? Math.max(0, Math.round(beatIndex)) : 0;
+  const cappedBeatIndex = Math.min(safeBeatIndex, Math.max(0, beats.length - 1));
+
+  const beatWindowSignature = beats
+    .slice(0, cappedBeatIndex + 1)
+    .map((historyBeat) => (historyBeat ?? []).map((entry, index) => buildBeatEntrySignature(entry, index)).join('|'))
+    .join('||');
+
+  const interactionSignature = interactions
+    .filter((interaction) => {
+      if (!interaction || !Number.isFinite(interaction?.beatIndex)) return false;
+      return Math.round(interaction.beatIndex) <= cappedBeatIndex;
+    })
+    .map((interaction) => {
+      const interactionBeat = Number.isFinite(interaction?.beatIndex) ? Math.round(interaction.beatIndex) : 'na';
+      const actor = `${interaction?.actorUserId ?? ''}`.trim();
+      const target = `${interaction?.targetUserId ?? ''}`.trim();
+      const type = `${interaction?.type ?? ''}`.trim();
+      const status = `${interaction?.status ?? ''}`.trim();
+      const id = `${interaction?.id ?? ''}`.trim();
+      const cardId = `${interaction?.cardId ?? ''}`.trim();
+      let resolutionHash = '';
+      if (interaction?.resolution && typeof interaction.resolution === 'object') {
+        try {
+          resolutionHash = hashString(JSON.stringify(interaction.resolution));
+        } catch {
+          resolutionHash = 'resolution:unserializable';
+        }
+      }
+      return `${interactionBeat}:${id}:${type}:${status}:${actor}:${target}:${cardId}:${resolutionHash}`;
+    })
+    .sort()
+    .join('|');
+
+  return `${cappedBeatIndex}::${beatWindowSignature}::${interactionSignature}`;
+};
+
 const getBeatEntryForCharacter = (beat, character) => {
   if (!Array.isArray(beat) || !character) return null;
   const lookupKeys = new Set([character.username, character.userId].filter(Boolean));
@@ -728,8 +934,10 @@ const getLastEntryForCharacter = (beats, character, uptoIndex) => {
 
 const buildCalculatedBaseState = (beats, beatIndex, characters) => {
   const targetIndex = Number.isFinite(beatIndex) ? Math.max(0, Math.round(beatIndex)) : (beats?.length ?? 0) - 1;
-  const currentBeatCalculated = isBeatCalculated(beats?.[targetIndex] ?? []);
-  const lookupIndex = currentBeatCalculated ? targetIndex - 1 : targetIndex;
+  // Base scene state should always come from the last committed beat before the selected beat.
+  // Using the selected uncalculated beat as base pre-applies future locations/damage and causes
+  // "jump to end then rewind" artifacts when that beat later animates.
+  const lookupIndex = targetIndex - 1;
   return characters.map((character) => {
     const entry = lookupIndex >= 0 ? getLastEntryForCharacter(beats, character, lookupIndex) : null;
     const entryAbilityHandCount = getAbilityHandCountFromEntry(entry);
@@ -797,6 +1005,62 @@ const buildBaseState = (beats, beatIndex, characters, interactions) => {
 
 const isBeatCalculated = (beat) =>
   Array.isArray(beat) && beat.length && beat.every((entry) => entry && entry.calculated);
+
+const getStepAffectedIds = (step) => {
+  const affected = new Set();
+  if (!step) return affected;
+  if (step.actorId) affected.add(step.actorId);
+  (step.damageChanges ?? []).forEach((change) => {
+    if (change?.targetId) affected.add(change.targetId);
+  });
+  (step.positionChanges ?? []).forEach((change) => {
+    if (change?.targetId) affected.add(change.targetId);
+  });
+  (step.hitTargets ?? []).forEach((hit) => {
+    if (hit?.targetId) affected.add(hit.targetId);
+  });
+  return affected;
+};
+
+const captureCharacterSnapshots = (characters, characterIndex, ids) => {
+  const snapshots = [];
+  const seenIndices = new Set();
+  ids.forEach((id) => {
+    const index = characterIndex.get(id);
+    if (index == null || seenIndices.has(index)) return;
+    seenIndices.add(index);
+    const character = characters[index];
+    if (!character) return;
+    snapshots.push({
+      userId: character.userId,
+      username: character.username ?? null,
+      damage: Number.isFinite(character.damage) ? character.damage : 0,
+      position: character.position ? { q: character.position.q, r: character.position.r } : null,
+    });
+  });
+  return snapshots;
+};
+
+const getSelfStepDeltas = (step) => {
+  if (!step || !step.actorId) {
+    return { selfDamageDelta: 0, hasSelfPositionDelta: false };
+  }
+  const selfDamageDelta = (step.damageChanges ?? []).reduce((sum, change) => {
+    if (change?.targetId !== step.actorId) return sum;
+    const delta = Number.isFinite(change?.delta) ? Number(change.delta) : 0;
+    return sum + delta;
+  }, 0);
+  const hasSelfPositionDelta = (step.positionChanges ?? []).some((change) => change?.targetId === step.actorId);
+  return { selfDamageDelta, hasSelfPositionDelta };
+};
+
+const hasPotentialDoubleApply = (step) => {
+  if (!step || step.kind === 'token' || !step.actorId) return false;
+  const { selfDamageDelta, hasSelfPositionDelta } = getSelfStepDeltas(step);
+  const hasFinalDamage = Number.isFinite(step.finalActorDamage);
+  const hasFinalPosition = Boolean(step.finalActorPosition);
+  return (hasFinalDamage && selfDamageDelta !== 0) || (hasFinalPosition && hasSelfPositionDelta);
+};
 
 const buildActionSteps = (
   beat,
@@ -898,11 +1162,19 @@ const buildActionSteps = (
     .sort((a, b) => {
       const priorityDelta = (b.priority ?? 0) - (a.priority ?? 0);
       if (priorityDelta) return priorityDelta;
-      const orderA = rosterOrder.get(a.username) ?? Number.MAX_SAFE_INTEGER;
-      const orderB = rosterOrder.get(b.username) ?? Number.MAX_SAFE_INTEGER;
+      const orderA = rosterOrder.get(resolveEntryKey(a)) ?? Number.MAX_SAFE_INTEGER;
+      const orderB = rosterOrder.get(resolveEntryKey(b)) ?? Number.MAX_SAFE_INTEGER;
       return orderA - orderB;
     })
     .filter((entry) => entry && !isOpenBeatAction(entry.action));
+
+  const duplicateSummary = getBeatDuplicateSummary(beat);
+  if (duplicateSummary.length) {
+    logDiagnostic('duplicate-beat-entries', {
+      beatIndex,
+      duplicateSummary,
+    });
+  }
 
   const steps = [];
   const persistentEffects = [];
@@ -1328,15 +1600,12 @@ const buildActionSteps = (
       }
     });
 
-    const finalActorPosition = entry?.location
-      ? { q: entry.location.q, r: entry.location.r }
-      : { q: actorState.position.q, r: actorState.position.r };
-    const finalActorDamage =
-      typeof entry?.damage === 'number'
-        ? entry.damage
-        : Number.isFinite(actorState.damage)
-          ? actorState.damage
-          : 0;
+    // Important: use the actor's simulated state at the end of THIS step.
+    // Do not read entry.location/entry.damage here because those are end-of-beat
+    // resolved values (can include future hits from later priority entries),
+    // which causes jump-forward then rewind artifacts during playback.
+    const finalActorPosition = { q: actorState.position.q, r: actorState.position.r };
+    const finalActorDamage = Number.isFinite(actorState.damage) ? actorState.damage : 0;
     steps.push({
       actorId,
       facingAfter: actorState.facing,
@@ -1379,6 +1648,9 @@ const applyStep = (characters, step) => {
   });
 
   damageChanges.forEach((change) => {
+    if (change?.targetId === step.actorId && typeof step.finalActorDamage === 'number') {
+      return;
+    }
     const index = updated.findIndex((character) => character.userId === change.targetId);
     if (index >= 0) {
       const target = updated[index];
@@ -1387,6 +1659,9 @@ const applyStep = (characters, step) => {
   });
 
   positionChanges.forEach((change) => {
+    if (change?.targetId === step.actorId && step.finalActorPosition) {
+      return;
+    }
     const index = updated.findIndex((character) => character.userId === change.targetId);
     if (index >= 0) {
       const target = updated[index];
@@ -2341,6 +2616,9 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
 export const createTimelinePlayback = () => {
   let lastBeatIndex = null;
   let lastGameStamp = null;
+  let lastBuildTriggerHash = null;
+  let lastBuildBeatHash = null;
+  let lastBuildVisualHash = null;
   let playback = null;
   let speedMultiplier = 1;
   let characterPowersById = new Map();
@@ -2354,12 +2632,40 @@ export const createTimelinePlayback = () => {
     minElapsedForMovementTrail: 0,
   };
 
-  const buildPlayback = (gameState, beatIndex, now) => {
+  const buildPlayback = (gameState, beatIndex, now, rebuildMeta = null) => {
     const publicState = gameState?.state?.public ?? null;
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
     const interactions = gameState?.state?.public?.customInteractions ?? [];
     const beat = beats[beatIndex] ?? [];
+    const triggerSignature = buildCurrentBeatSignature(gameState, beatIndex);
+    const triggerHash = hashString(triggerSignature);
+    const visualHash =
+      typeof rebuildMeta?.visualHash === 'string' && rebuildMeta.visualHash
+        ? rebuildMeta.visualHash
+        : hashString(buildPlaybackVisualSignature(gameState, beatIndex));
+    const beatSignature = (beat ?? []).map((entry, index) => buildBeatEntrySignature(entry, index)).join('|');
+    const beatHash = hashString(beatSignature);
+    const duplicateSummary = getBeatDuplicateSummary(beat);
+    logDiagnostic('rebuild', {
+      beatIndex,
+      gameStamp: gameState?.updatedAt ?? null,
+      rebuildMeta,
+      triggerHash,
+      previousTriggerHash: lastBuildTriggerHash,
+      sameTriggerAsPrevious: lastBuildTriggerHash === triggerHash,
+      visualHash,
+      previousVisualHash: lastBuildVisualHash,
+      sameVisualAsPrevious: lastBuildVisualHash === visualHash,
+      beatHash,
+      previousBeatHash: lastBuildBeatHash,
+      sameBeatAsPrevious: lastBuildBeatHash === beatHash,
+      beatEntryCount: Array.isArray(beat) ? beat.length : 0,
+      duplicateSummary: duplicateSummary.length ? duplicateSummary : undefined,
+    });
+    lastBuildTriggerHash = triggerHash;
+    lastBuildVisualHash = visualHash;
+    lastBuildBeatHash = beatHash;
     const beatAbilityHandCountById = buildBeatAbilityHandCountLookup(beat, characters);
     const baseState = buildBaseState(beats, beatIndex, characters, interactions);
     const tokenPlayback = buildTokenPlayback(gameState, beatIndex, characterPowersById);
@@ -2404,35 +2710,54 @@ export const createTimelinePlayback = () => {
     if (Array.isArray(tokenPlayback?.tokenSteps) && tokenPlayback.tokenSteps.length) {
       steps.push(...tokenPlayback.tokenSteps);
     }
-    const stepDuration = steps.length ? ACTION_DURATION_MS / steps.length : 0;
+    const playbackSpeed = Number.isFinite(speedMultiplier) && speedMultiplier > 0 ? speedMultiplier : 1;
+    const stepDuration = steps.length
+      ? Math.max(MIN_STEP_DURATION_MS, ACTION_DURATION_MS / steps.length / playbackSpeed)
+      : 0;
     const firstTrailStepIndex = steps.findIndex((step) => hasRenderableMovementTrail(step));
     const firstTrailStartMs = firstTrailStepIndex >= 0 ? firstTrailStepIndex * stepDuration : 0;
     const trailVisibleMs =
       firstTrailStepIndex >= 0
         ? Math.min(MAX_TRAIL_VISIBLE_MS, Math.max(MIN_TRAIL_VISIBLE_MS, stepDuration * 0.65))
         : 0;
+    const totalDuration = stepDuration * steps.length;
     const minElapsedForMovementTrail =
-      firstTrailStepIndex >= 0
-        ? Math.min(stepDuration * steps.length, firstTrailStartMs + trailVisibleMs)
+      firstTrailStepIndex >= 0 ? Math.min(totalDuration, firstTrailStartMs + trailVisibleMs) : 0;
+    const resumeElapsed =
+      Number.isFinite(rebuildMeta?.resumeElapsedMs) && rebuildMeta.resumeElapsedMs > 0
+        ? Math.min(totalDuration, Math.max(0, rebuildMeta.resumeElapsedMs))
         : 0;
+    const isComplete = stepDuration <= 0 || steps.length === 0 || resumeElapsed >= totalDuration;
     playback = {
       baseState,
       steps,
       stepDuration,
-      startTime: now,
+      startTime: now - resumeElapsed,
       persistentEffects,
       damagePreviewByStep: new Map(),
       abilityHandPreviewByStep: new Map(),
       beatAbilityHandCountById,
       baseTokens,
       minElapsedForMovementTrail,
+      diagLoggedStepKeys: new Set(),
+      diagLastLoggedStepIndex: -1,
+      diagLastElapsedMs: resumeElapsed,
     };
+    logDiagnostic('plan', {
+      beatIndex,
+      stepCount: steps.length,
+      stepDurationMs: Math.round(stepDuration),
+      durationMs: Math.round(totalDuration),
+      minTrailMs: Math.round(minElapsedForMovementTrail),
+      baseLookupIndex: Math.max(-1, beatIndex - 1),
+      isCalculated: true,
+    });
     status = {
       isCalculated: true,
       isAnimating: stepDuration > 0 && steps.length > 0,
-      isComplete: stepDuration <= 0 || steps.length === 0,
-      elapsed: 0,
-      duration: stepDuration * steps.length,
+      isComplete,
+      elapsed: resumeElapsed,
+      duration: totalDuration,
       minElapsedForMovementTrail,
     };
     scene = { characters: baseState, effects: [], boardTokens: baseTokens };
@@ -2451,6 +2776,9 @@ export const createTimelinePlayback = () => {
       beatAbilityHandCountById,
       baseTokens,
       minElapsedForMovementTrail,
+      diagLoggedStepKeys,
+      diagLastLoggedStepIndex,
+      diagLastElapsedMs,
     } = playback;
     if (!steps.length || stepDuration <= 0) {
       const snapshotTokens = Array.isArray(baseTokens)
@@ -2470,6 +2798,15 @@ export const createTimelinePlayback = () => {
     const elapsed = Math.max(0, now - startTime);
     const totalDuration = stepDuration * steps.length;
     const clamped = Math.min(elapsed, totalDuration);
+    if (Number.isFinite(diagLastElapsedMs) && clamped + 1 < diagLastElapsedMs) {
+      logDiagnostic('time-reset', {
+        beatIndex: lastBeatIndex,
+        fromElapsedMs: Math.round(diagLastElapsedMs),
+        toElapsedMs: Math.round(clamped),
+        durationMs: Math.round(totalDuration),
+      });
+    }
+    playback.diagLastElapsedMs = clamped;
     status = {
       isCalculated: true,
       isAnimating: elapsed < totalDuration,
@@ -2481,6 +2818,20 @@ export const createTimelinePlayback = () => {
     const completed = Math.floor(clamped / stepDuration);
     const stepIndex = Math.min(completed, steps.length - 1);
     const stepProgress = Math.min(1, Math.max(0, (clamped - stepIndex * stepDuration) / stepDuration));
+    if (diagLastLoggedStepIndex !== stepIndex || clamped <= 1 || elapsed >= totalDuration) {
+      const currentStep = steps[stepIndex];
+      logDiagnostic('progress', {
+        beatIndex: lastBeatIndex,
+        stepIndex,
+        stepProgress: Number(stepProgress.toFixed(3)),
+        elapsedMs: Math.round(clamped),
+        durationMs: Math.round(totalDuration),
+        stepKind: currentStep?.kind ?? null,
+        actorId: currentStep?.actorId ?? null,
+        action: currentStep?.action ?? null,
+      });
+      playback.diagLastLoggedStepIndex = stepIndex;
+    }
     const channelProgress = getStepProgressByChannel(stepProgress, speedMultiplier);
     const movementStepProgress = channelProgress.movement;
     const rotationStepProgress = channelProgress.rotation;
@@ -2523,12 +2874,36 @@ export const createTimelinePlayback = () => {
     };
     for (let i = 0; i < stepIndex; i += 1) {
       const step = steps[i];
+      const shouldLogPotentialDouble =
+        Boolean(diagLoggedStepKeys) &&
+        !diagLoggedStepKeys.has(`completed:${i}`) &&
+        hasPotentialDoubleApply(step);
+      const beforeSnapshot = shouldLogPotentialDouble
+        ? captureCharacterSnapshots(renderCharacters, characterIndex, getStepAffectedIds(step))
+        : null;
       renderCharacters = applyStep(renderCharacters, step);
       if (step?.tokenSpawns) {
         tokenState.applyTokenSpawns(step.tokenSpawns);
       }
       if (step?.kind === 'token') {
         tokenState.applyTokenStep(step);
+      }
+      if (shouldLogPotentialDouble) {
+        const afterSnapshot = captureCharacterSnapshots(renderCharacters, characterIndex, getStepAffectedIds(step));
+        const { selfDamageDelta, hasSelfPositionDelta } = getSelfStepDeltas(step);
+        logDiagnostic('potential-double-apply', {
+          beatIndex: lastBeatIndex,
+          phase: 'completed',
+          stepIndex: i,
+          actorId: step?.actorId ?? null,
+          selfDamageDelta,
+          hasSelfPositionDelta,
+          finalActorDamage: Number.isFinite(step?.finalActorDamage) ? step.finalActorDamage : null,
+          finalActorPosition: step?.finalActorPosition ?? null,
+          beforeSnapshot,
+          afterSnapshot,
+        });
+        diagLoggedStepKeys.add(`completed:${i}`);
       }
     }
 
@@ -2565,6 +2940,13 @@ export const createTimelinePlayback = () => {
       applyResolvedAbilityHandCounts();
     }
     if (currentStep && stepProgress > 0) {
+      const shouldLogPotentialDouble =
+        Boolean(diagLoggedStepKeys) &&
+        !diagLoggedStepKeys.has(`current:${stepIndex}`) &&
+        hasPotentialDoubleApply(currentStep);
+      const beforeSnapshot = shouldLogPotentialDouble
+        ? captureCharacterSnapshots(renderCharacters, characterIndex, getStepAffectedIds(currentStep))
+        : null;
       const currentStepHasVisibleAction =
         Boolean(currentStep.moveDestination) ||
         (Array.isArray(currentStep.damageChanges) && currentStep.damageChanges.length > 0) ||
@@ -2597,6 +2979,27 @@ export const createTimelinePlayback = () => {
       }
       if (attackStepProgress >= 1) {
         applyResolvedAbilityHandCounts();
+      }
+      if (shouldLogPotentialDouble) {
+        const afterSnapshot = captureCharacterSnapshots(
+          renderCharacters,
+          characterIndex,
+          getStepAffectedIds(currentStep),
+        );
+        const { selfDamageDelta, hasSelfPositionDelta } = getSelfStepDeltas(currentStep);
+        logDiagnostic('potential-double-apply', {
+          beatIndex: lastBeatIndex,
+          phase: 'current',
+          stepIndex,
+          actorId: currentStep?.actorId ?? null,
+          selfDamageDelta,
+          hasSelfPositionDelta,
+          finalActorDamage: Number.isFinite(currentStep?.finalActorDamage) ? currentStep.finalActorDamage : null,
+          finalActorPosition: currentStep?.finalActorPosition ?? null,
+          beforeSnapshot,
+          afterSnapshot,
+        });
+        diagLoggedStepKeys.add(`current:${stepIndex}`);
       }
     }
 
@@ -2829,13 +3232,53 @@ export const createTimelinePlayback = () => {
       characterPowersById = nextMap instanceof Map ? nextMap : new Map();
       lastGameStamp = null;
       lastBeatIndex = null;
+      lastBuildTriggerHash = null;
+      lastBuildVisualHash = null;
+      lastBuildBeatHash = null;
     },
     update(now, gameState, beatIndex) {
       const gameStamp = gameState?.updatedAt ?? beatsStamp(gameState);
-      if (gameStamp !== lastGameStamp || beatIndex !== lastBeatIndex) {
+      const gameStampChanged = gameStamp !== lastGameStamp;
+      const beatIndexChanged = beatIndex !== lastBeatIndex;
+      if (gameStampChanged || beatIndexChanged) {
+        const previousGameStamp = lastGameStamp;
+        const previousBeatIndex = lastBeatIndex;
+        const resumeElapsedMs =
+          !beatIndexChanged && playback ? Math.min(status.duration ?? 0, Math.max(0, status.elapsed ?? 0)) : 0;
+        const visualHash = hashString(buildPlaybackVisualSignature(gameState, beatIndex));
         lastBeatIndex = beatIndex;
         lastGameStamp = gameStamp;
-        buildPlayback(gameState, beatIndex, now);
+        const shouldSkipRebuild =
+          gameStampChanged &&
+          !beatIndexChanged &&
+          playback &&
+          typeof lastBuildVisualHash === 'string' &&
+          lastBuildVisualHash === visualHash;
+        if (shouldSkipRebuild) {
+          logDiagnostic('rebuild-skipped', {
+            beatIndex,
+            gameStamp,
+            reason: 'same-visual-signature',
+            visualHash,
+            previousVisualHash: lastBuildVisualHash,
+            rebuildMeta: {
+              gameStampChanged,
+              beatIndexChanged,
+              previousGameStamp,
+              previousBeatIndex,
+              resumeElapsedMs,
+            },
+          });
+        } else {
+          buildPlayback(gameState, beatIndex, now, {
+            gameStampChanged,
+            beatIndexChanged,
+            previousGameStamp,
+            previousBeatIndex,
+            visualHash,
+            resumeElapsedMs,
+          });
+        }
       }
       updateScene(now);
     },

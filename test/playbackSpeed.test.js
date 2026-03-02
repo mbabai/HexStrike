@@ -15,20 +15,32 @@ test('getStepProgressByChannel keeps all channels equal at 1x speed', async () =
   assertApprox(result.attack, 0.42);
 });
 
-test('getStepProgressByChannel scales movement/rotation fully and attack at half-rate', async () => {
+test('getStepProgressByChannel keeps channels speed-invariant at >1x speed', async () => {
   const { getStepProgressByChannel } = await loadModule();
   const result = getStepProgressByChannel(0.4, 2);
-  assertApprox(result.movement, 0.8);
-  assertApprox(result.rotation, 0.8);
-  assertApprox(result.attack, 0.6);
+  assertApprox(result.movement, 0.4);
+  assertApprox(result.rotation, 0.4);
+  assertApprox(result.attack, 0.4);
 });
 
-test('getStepProgressByChannel clamps channel progress to 1', async () => {
+test('getStepProgressByChannel keeps in-range step progress unchanged', async () => {
   const { getStepProgressByChannel } = await loadModule();
   const result = getStepProgressByChannel(0.6, 3);
-  assert.equal(result.movement, 1);
-  assert.equal(result.rotation, 1);
-  assert.equal(result.attack, 1);
+  assert.equal(result.movement, 0.6);
+  assert.equal(result.rotation, 0.6);
+  assert.equal(result.attack, 0.6);
+});
+
+test('getStepProgressByChannel clamps out-of-range step progress', async () => {
+  const { getStepProgressByChannel } = await loadModule();
+  const low = getStepProgressByChannel(-0.5, 3);
+  assert.equal(low.movement, 0);
+  assert.equal(low.rotation, 0);
+  assert.equal(low.attack, 0);
+  const high = getStepProgressByChannel(2, 3);
+  assert.equal(high.movement, 1);
+  assert.equal(high.rotation, 1);
+  assert.equal(high.attack, 1);
 });
 
 test('getInterpolatedFacing uses shortest-angle interpolation across 0/360', async () => {

@@ -21,7 +21,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 - Front-end animation: `public/game/timelinePlayback.js` builds beat-by-beat scenes (characters + effects) consumed by `public/game/renderer.js`.
 - UI portrait badges (name capsules) are drawn with `public/game/portraitBadges.js`; local player accents use `--color-player-accent`.
 - Board tokens show an ability-hand counter icon (`CardInHand.png`) just left of each player name; placement uses name-text bounds from `drawNameCapsule` metadata so it stays anchored for variable name lengths.
-- Timeline controls: play/pause is rendered in the center time slot; a turtle->rabbit speed slider sits above the timeline, and auto-advance uses slider timing (can overlap beats at high speed).
+- Timeline controls: play/pause is rendered in the center time slot; a turtle->rabbit speed slider sits above the timeline, and auto-advance only steps after the current beat animation completes.
 - UI timeline shows a local-only pending action preview (faded + pulsing) when you've submitted and are waiting on other players.
 - Matchmaking: Quickplay and bot-queue joins are wired from the UI; selecting a bot queue starts an immediate 1v1 versus the selected profile (`Strike-bot`, `Hex-bot`, or `Bot-bot`).
 
@@ -220,11 +220,14 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Board damage capsules are offset outside the ring and drawn without clipping so they sit over the border.
 - Name capsule sizing is centralized in `public/game/portraitBadges.js`; pass config overrides for board vs timeline to keep consistency.
 - `drawNameCapsule` returns geometry metadata (`textLeft`/`textRight`); anchor adjacent token badges (like ability-hand count) to the text bounds, not full capsule width, so icon spacing remains stable across different usernames.
-- Timeline playback timing is tuned in `public/game/timelinePlayback.js` via `ACTION_DURATION_MS`, per-channel speed scaling, and swipe/hit/knockback windows; movement/rotation scale with slider speed, while attack/hit timing uses half-speed scaling (`ATTACK_SPEED_SCALE_FACTOR`).
+- Timeline playback timing is tuned in `public/game/timelinePlayback.js` via `ACTION_DURATION_MS`, `MIN_STEP_DURATION_MS`, and swipe/hit/knockback windows; slider speed scales per-step duration (all channels share the same normalized step progress).
 - Abyss grid borders are rendered via `drawAbyssGrid` in `public/game/abyssRendering.mjs`; keep `minLineWidth = max(baseLineWidth * 0.2, 1 / (dpr * scale))` to avoid vanishing outlines at high zoom.
 - Trails are drawn as tapered polygons (sharp edges) in `public/game/renderer.js` instead of stroked lines; keep this in mind if changing trail caps or widths.
 - Board portraits render in greyscale when the beat action is `DamageIcon`/`knockbackIcon`; keep the renderer's action tag matching server output.
-- Timeline playback base state should come from the last calculated beat entry at/ before the selected beat; do not fall back to uncalculated entries or `public.characters` or scrubbing will drift.
+- Timeline playback base state should come from the beat immediately before the selected beat (`beatIndex - 1`); never seed from the selected uncalculated beat or `public.characters`, or playback can jump to end-of-beat state and then rewind.
+- Per-step `finalActorPosition`/`finalActorDamage` must come from the simulated actor state at the end of that step, not from the beat entry's final resolved values, or early-priority actions can rubber-band.
+- Timeline auto-advance while playing must require `status.isCalculated && status.isComplete`; unresolved/open beats are stop points and should never be auto-skipped.
+- Client debug logs are opt-in only; enable with `localStorage.setItem('hexstrike:diag','1')` and optional beat filter `localStorage.setItem('hexstrike:diag:beat','<beatIndex>')`.
 - Damage previews during hit shakes are drawn via `displayDamage` using pre-step damage to avoid double-counting when the step completes.
 - Map panning/zooming is bound to the game area and must ignore UI elements like action cards, slots, or rotation controls; update `PAN_BLOCK_SELECTORS` in `public/game/controls.js` when adding new HUD controls.
 - Find Game is disabled until a deck is selected; the selected deck ID is stored in cookies and its `characterId` plus movement/ability lists are sent with `/api/v1/lobby/join`.

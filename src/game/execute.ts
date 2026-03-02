@@ -2291,11 +2291,15 @@ export const executeBeatsWithInteractions = (
     const existingArrowIds = new Set(
       boardTokens.filter((token) => token.type === ARROW_TOKEN_TYPE).map((token) => token.id),
     );
+    const beatEntriesByUser = new Map<string, BeatEntry[]>();
     const entriesByUser = new Map<string, BeatEntry>();
     beat.forEach((entry) => {
       const key = resolveEntryKey(entry);
       const resolved = userLookup.get(key) ?? key;
       if (!resolved) return;
+      const duplicateEntries = beatEntriesByUser.get(resolved) ?? [];
+      duplicateEntries.push(entry);
+      beatEntriesByUser.set(resolved, duplicateEntries);
       const existing = entriesByUser.get(resolved);
       if (!existing) {
         entriesByUser.set(resolved, entry);
@@ -2319,6 +2323,23 @@ export const executeBeatsWithInteractions = (
         });
       }
     });
+    const duplicateEntryCounts = Array.from(beatEntriesByUser.entries())
+      .filter(([, entries]) => entries.length > 1)
+      .map(([resolved, entries]) => ({
+        resolved,
+        count: entries.length,
+        actions: entries.map((item) => `${item.action ?? DEFAULT_ACTION}`),
+        rotations: entries.map((item) => `${item.rotation ?? ''}`),
+        cardIds: entries.map((item) => `${item.cardId ?? ''}` || null),
+        passiveCardIds: entries.map((item) => `${item.passiveCardId ?? ''}` || null),
+        interactionTypes: entries.map((item) => `${item.interaction?.type ?? ''}` || null),
+      }));
+    if (duplicateEntryCounts.length) {
+      console.log(LOG_PREFIX, 'duplicate-entry-counts', {
+        index,
+        duplicateEntryCounts,
+      });
+    }
     entriesByUser.forEach((entry, actorId) => {
       const actorState = state.get(actorId);
       if (!actorState) return;

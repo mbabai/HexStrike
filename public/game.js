@@ -37,10 +37,13 @@ import {
 import { getOrCreateUserId, getTimelineSpeedPreference, setTimelineSpeedPreference } from './storage.js';
 import { buildReplayShareUrl, copyTextToClipboard, normalizeReplayPayload } from './replayShare.mjs';
 import { showToast } from './toast.js';
+import { createDebugLogger, createDebugWarnLogger } from './game/debugFlags.mjs';
 
 const HOLD_INITIAL_DELAY = 320;
 const HOLD_REPEAT_DELAY = 90;
 const LOG_PREFIX = '[hexstrike]';
+const debugLog = createDebugLogger();
+const debugWarn = createDebugWarnLogger();
 const COMBO_ACTION = 'CO';
 const GUARD_CONTINUE_INTERACTION_TYPE = 'guard-continue';
 const REWIND_RETURN_INTERACTION_TYPE = 'rewind-return';
@@ -302,7 +305,6 @@ export const initGame = () => {
   let havenHoverKey = null;
   let timelinePointer = null;
   let gameMenuUi = null;
-  let nextAutoAdvanceAt = null;
   let viewMode = null;
   let activeReplay = null;
   let activeSpectatorGameId = null;
@@ -345,9 +347,6 @@ export const initGame = () => {
 
   const timeIndicatorViewModel = createTimeIndicatorViewModel({ getMaxIndex });
   let actionHud = null;
-  const resetAutoAdvanceClock = (now = performance.now()) => {
-    nextAutoAdvanceAt = now + timeIndicatorViewModel.getBeatAdvanceIntervalMs();
-  };
 
   const initialTimelineSpeed = getTimelineSpeedPreference() ?? TIMELINE_SPEED_MIN;
   if (timelineSpeedSlider instanceof HTMLInputElement) {
@@ -360,7 +359,6 @@ export const initGame = () => {
       timelinePlayback.setSpeedMultiplier(nextSpeed);
       timelineSpeedSlider.value = `${nextSpeed}`;
       setTimelineSpeedPreference(nextSpeed);
-      resetAutoAdvanceClock();
     };
     timelineSpeedSlider.addEventListener('input', onSpeedChange);
     timelineSpeedSlider.addEventListener('change', onSpeedChange);
@@ -749,7 +747,7 @@ export const initGame = () => {
         lastHudKey = null;
       }
       if (lastHudStateKey !== null) {
-        console.log(`${LOG_PREFIX} hud`, { visible: false, locked: true, reason: 'missing-state' });
+        debugLog(`${LOG_PREFIX} hud`, { visible: false, locked: true, reason: 'missing-state' });
         lastHudStateKey = null;
       }
       actionHud.setVisible(false);
@@ -764,7 +762,7 @@ export const initGame = () => {
         lastHudKey = null;
       }
       if (lastHudStateKey !== null) {
-        console.log(`${LOG_PREFIX} hud`, { visible: false, locked: true, reason: 'missing-player-cards' });
+        debugLog(`${LOG_PREFIX} hud`, { visible: false, locked: true, reason: 'missing-player-cards' });
         lastHudStateKey = null;
       }
       actionHud.setVisible(false);
@@ -857,7 +855,7 @@ export const initGame = () => {
     }
     const hudStateKey = `${isTurn}|${locked}|${earliestIndex}|${timeIndicatorViewModel.value}`;
     if (hudStateKey !== lastHudStateKey) {
-      console.log(`${LOG_PREFIX} hud`, {
+      debugLog(`${LOG_PREFIX} hud`, {
         visible: isTurn,
         locked,
         earliestIndex,
@@ -884,7 +882,7 @@ export const initGame = () => {
     pendingActionPreview.setFromCard(previewCard, cardLookup.get(passiveCardId), rotation);
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
-    console.log(`${LOG_PREFIX} action:set submit`, {
+    debugLog(`${LOG_PREFIX} action:set submit`, {
       userId: localUserId,
       gameId: gameState.id,
       activeCardId,
@@ -908,14 +906,14 @@ export const initGame = () => {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         const message = payload?.error ? `${payload.error}` : 'Failed to submit action set.';
-        console.warn(`${LOG_PREFIX} action:set rejected`, {
+        debugWarn(`${LOG_PREFIX} action:set rejected`, {
           status: response.status,
           error: payload?.error,
           code: payload?.code,
         });
         throw new Error(message);
       }
-      console.log(`${LOG_PREFIX} action:set ack`, { status: response.status, gameId: gameState.id });
+      debugLog(`${LOG_PREFIX} action:set ack`, { status: response.status, gameId: gameState.id });
       tutorialGuide?.notifyActionSubmitted?.({ activeCardId, passiveCardId, rotation });
       if (actionHud) actionHud.clearSelection();
     } catch (err) {
@@ -937,7 +935,7 @@ export const initGame = () => {
     if (!Number.isFinite(directionIndex) || directionIndex < 0 || directionIndex > 5) return;
     interactionSubmitInFlight = true;
     setThrowButtonsEnabled(false);
-    console.log(`${LOG_PREFIX} interaction:submit`, {
+    debugLog(`${LOG_PREFIX} interaction:submit`, {
       userId: localUserId,
       gameId: gameState.id,
       interactionId: pendingInteractionId,
@@ -957,14 +955,14 @@ export const initGame = () => {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         const message = payload?.error ? `${payload.error}` : 'Failed to resolve throw.';
-        console.warn(`${LOG_PREFIX} interaction:rejected`, {
+        debugWarn(`${LOG_PREFIX} interaction:rejected`, {
           status: response.status,
           error: payload?.error,
           code: payload?.code,
         });
         throw new Error(message);
       }
-      console.log(`${LOG_PREFIX} interaction:ack`, {
+      debugLog(`${LOG_PREFIX} interaction:ack`, {
         status: response.status,
         interactionId: pendingInteractionId,
       });
@@ -993,7 +991,7 @@ export const initGame = () => {
     if (getMatchOutcome(gameState?.state?.public)) return;
     interactionSubmitInFlight = true;
     setComboButtonsEnabled(false);
-    console.log(`${LOG_PREFIX} interaction:submit`, {
+    debugLog(`${LOG_PREFIX} interaction:submit`, {
       userId: localUserId,
       gameId: gameState.id,
       interactionId: pendingInteractionId,
@@ -1028,14 +1026,14 @@ export const initGame = () => {
               : isDrawOffer
                 ? 'Failed to resolve draw offer.'
                 : 'Failed to resolve combo.';
-        console.warn(`${LOG_PREFIX} interaction:rejected`, {
+        debugWarn(`${LOG_PREFIX} interaction:rejected`, {
           status: response.status,
           error: payload?.error,
           code: payload?.code,
         });
         throw new Error(message);
       }
-      console.log(`${LOG_PREFIX} interaction:ack`, {
+      debugLog(`${LOG_PREFIX} interaction:ack`, {
         status: response.status,
         interactionId: pendingInteractionId,
       });
@@ -1069,7 +1067,7 @@ export const initGame = () => {
     if (pendingInteractionType !== 'hand-trigger') return;
     if (getMatchOutcome(gameState?.state?.public)) return;
     interactionSubmitInFlight = true;
-    console.log(`${LOG_PREFIX} interaction:submit`, {
+    debugLog(`${LOG_PREFIX} interaction:submit`, {
       userId: localUserId,
       gameId: gameState.id,
       interactionId: pendingInteractionId,
@@ -1093,14 +1091,14 @@ export const initGame = () => {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         const message = payload?.error ? `${payload.error}` : 'Failed to resolve hand trigger.';
-        console.warn(`${LOG_PREFIX} interaction:rejected`, {
+        debugWarn(`${LOG_PREFIX} interaction:rejected`, {
           status: response.status,
           error: payload?.error,
           code: payload?.code,
         });
         throw new Error(message);
       }
-      console.log(`${LOG_PREFIX} interaction:ack`, {
+      debugLog(`${LOG_PREFIX} interaction:ack`, {
         status: response.status,
         interactionId: pendingInteractionId,
       });
@@ -1120,7 +1118,7 @@ export const initGame = () => {
     if (pendingInteractionType !== 'discard') return;
     if (getMatchOutcome(gameState?.state?.public)) return;
     interactionSubmitInFlight = true;
-    console.log(`${LOG_PREFIX} interaction:submit`, {
+    debugLog(`${LOG_PREFIX} interaction:submit`, {
       userId: localUserId,
       gameId: gameState.id,
       interactionId: pendingInteractionId,
@@ -1142,14 +1140,14 @@ export const initGame = () => {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         const message = payload?.error ? `${payload.error}` : 'Failed to resolve discard.';
-        console.warn(`${LOG_PREFIX} interaction:rejected`, {
+        debugWarn(`${LOG_PREFIX} interaction:rejected`, {
           status: response.status,
           error: payload?.error,
           code: payload?.code,
         });
         throw new Error(message);
       }
-      console.log(`${LOG_PREFIX} interaction:ack`, {
+      debugLog(`${LOG_PREFIX} interaction:ack`, {
         status: response.status,
         interactionId: pendingInteractionId,
       });
@@ -1169,7 +1167,7 @@ export const initGame = () => {
     if (pendingInteractionType !== 'draw') return;
     if (getMatchOutcome(gameState?.state?.public)) return;
     interactionSubmitInFlight = true;
-    console.log(`${LOG_PREFIX} interaction:submit`, {
+    debugLog(`${LOG_PREFIX} interaction:submit`, {
       userId: localUserId,
       gameId: gameState.id,
       interactionId: pendingInteractionId,
@@ -1189,14 +1187,14 @@ export const initGame = () => {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         const message = payload?.error ? `${payload.error}` : 'Failed to resolve draw.';
-        console.warn(`${LOG_PREFIX} interaction:rejected`, {
+        debugWarn(`${LOG_PREFIX} interaction:rejected`, {
           status: response.status,
           error: payload?.error,
           code: payload?.code,
         });
         throw new Error(message);
       }
-      console.log(`${LOG_PREFIX} interaction:ack`, {
+      debugLog(`${LOG_PREFIX} interaction:ack`, {
         status: response.status,
         interactionId: pendingInteractionId,
       });
@@ -1218,7 +1216,7 @@ export const initGame = () => {
     const target = normalizeHavenHexCoord(targetHex);
     if (!target) return;
     interactionSubmitInFlight = true;
-    console.log(`${LOG_PREFIX} interaction:submit`, {
+    debugLog(`${LOG_PREFIX} interaction:submit`, {
       userId: localUserId,
       gameId: gameState.id,
       interactionId: pendingInteractionId,
@@ -1238,14 +1236,14 @@ export const initGame = () => {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         const message = payload?.error ? `${payload.error}` : 'Failed to place ethereal platform.';
-        console.warn(`${LOG_PREFIX} interaction:rejected`, {
+        debugWarn(`${LOG_PREFIX} interaction:rejected`, {
           status: response.status,
           error: payload?.error,
           code: payload?.code,
         });
         throw new Error(message);
       }
-      console.log(`${LOG_PREFIX} interaction:ack`, {
+      debugLog(`${LOG_PREFIX} interaction:ack`, {
         status: response.status,
         interactionId: pendingInteractionId,
       });
@@ -1680,7 +1678,6 @@ export const initGame = () => {
   }
   const clampTimeline = () => {
     timeIndicatorViewModel.setValue(timeIndicatorViewModel.value);
-    resetAutoAdvanceClock();
     refreshActionHud();
     refreshInteractionOverlay();
   };
@@ -1693,7 +1690,6 @@ export const initGame = () => {
     gameMenuUi?.closeAll();
     setGameMenuLabels();
     timeIndicatorViewModel.isPlaying = mode === VIEW_MODE_LIVE;
-    resetAutoAdvanceClock();
     if (actionHud) actionHud.setHidden(mode !== VIEW_MODE_LIVE);
     if (mode === VIEW_MODE_LIVE) {
       viewState.scale = GAME_CONFIG.defaultScale;
@@ -1715,7 +1711,6 @@ export const initGame = () => {
     gameMenuUi?.closeAll();
     timeIndicatorViewModel.isPlaying = false;
     timeIndicatorViewModel.setValue(0);
-    nextAutoAdvanceAt = null;
     gameState = null;
     viewMode = null;
     activeReplay = null;
@@ -1828,7 +1823,6 @@ export const initGame = () => {
       }
       didInitTimelinePosition = true;
     }
-    resetAutoAdvanceClock();
     clampTimeline();
     refreshActionHud();
     refreshInteractionOverlay();
@@ -1950,7 +1944,7 @@ export const initGame = () => {
     const beats = nextGameState?.state?.public?.beats ?? [];
     const characters = nextGameState?.state?.public?.characters ?? [];
     const summary = buildTimelineSummary(nextGameState);
-    console.log(`${LOG_PREFIX} game:update`, {
+    debugLog(`${LOG_PREFIX} game:update`, {
       gameId: nextGameState?.id,
       beats: beats.length,
       characters: characters.length,
@@ -1974,25 +1968,11 @@ export const initGame = () => {
     timelinePlayback.update(now, gameState, timeIndicatorViewModel.value);
     const status = timelinePlayback.getStatus();
     if (timeIndicatorViewModel.isPlaying) {
-      if (status.duration <= 0 && status.isComplete) {
-        const stepped = timeIndicatorViewModel.step(1);
-        if (stepped) {
-          resetAutoAdvanceClock(now);
-        }
-      } else {
-        if (!Number.isFinite(nextAutoAdvanceAt)) {
-          resetAutoAdvanceClock(now);
-        }
-        const trailGateReached =
-          !Number.isFinite(status.minElapsedForMovementTrail) ||
-          status.elapsed >= status.minElapsedForMovementTrail;
-        if (Number.isFinite(nextAutoAdvanceAt) && now >= nextAutoAdvanceAt && trailGateReached) {
-          timeIndicatorViewModel.step(1);
-          resetAutoAdvanceClock(now);
-        }
+      // Only advance through fully-calculated beats.
+      // Uncalculated/open beats are timeline stop points and must not be auto-skipped.
+      if (status.isCalculated && status.isComplete) {
+        timeIndicatorViewModel.step(1);
       }
-    } else {
-      nextAutoAdvanceAt = null;
     }
     refreshActionHud();
     refreshInteractionOverlay();

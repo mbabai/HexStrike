@@ -1,8 +1,9 @@
 import { buildCardElement, fitAllCardText } from '../shared/cardRenderer.js';
 import { buildRotationWheel, ROTATION_LABELS } from './rotationWheel.js';
+import { createDebugLogger } from './debugFlags.mjs';
 
 const LOG_PREFIX = '[actionHud]';
-const log = (...args) => console.log(LOG_PREFIX, ...args);
+const log = createDebugLogger(LOG_PREFIX);
 const DEBUG_HOVER = false;
 const WHIRLWIND_CARD_ID = 'whirlwind';
 const WHIRLWIND_MIN_DAMAGE = 12;
