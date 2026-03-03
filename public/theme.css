@@ -2750,9 +2750,9 @@ img[src$='Death.png'] {
 
 .timeline-speed-control {
   position: absolute;
-  top: 12px;
+  top: 92px;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, 0);
   z-index: 9;
   display: flex;
   align-items: center;
@@ -4306,7 +4306,7 @@ html.is-mobile .game-menu-panel {
 }
 
 html.is-mobile .timeline-speed-control {
-  top: calc(var(--mobile-safe-top) + 4px);
+  top: calc(var(--mobile-safe-top) + 86px);
   padding: 8px 12px;
   gap: 10px;
 }
@@ -4373,7 +4373,7 @@ html.is-mobile .app-toast {
 
 @media (max-width: 640px) {
   .timeline-speed-control {
-    top: 10px;
+    top: 84px;
     padding: 5px 8px;
     gap: 6px;
   }

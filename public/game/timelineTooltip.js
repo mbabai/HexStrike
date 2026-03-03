@@ -541,7 +541,10 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
     }
     setTimeIndicatorPlayerCount(gameState?.state?.public?.characters?.length ?? 2);
     const rect = canvas.getBoundingClientRect();
-    const layout = getTimeIndicatorLayout({ width: rect.width, height: rect.height });
+    const layout = getTimeIndicatorLayout(
+      { width: rect.width, height: rect.height },
+      { isExpanded: timeIndicatorViewModel?.isTimelineExpanded !== false },
+    );
     let target = getTimeIndicatorActionTarget(
       layout,
       timeIndicatorViewModel,

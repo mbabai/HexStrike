@@ -4,7 +4,7 @@ import { createViewState, createPointerState, centerView, applyMomentum } from '
 import { bindControls } from './game/controls.js';
 import { ACTION_DURATION_MS, createTimelinePlayback } from './game/timelinePlayback.js';
 import { createTimelineTooltip } from './game/timelineTooltip.js';
-import { setTimeIndicatorPlayerCount } from './game/timeIndicatorView.js';
+import { getTimeIndicatorLayout, setTimeIndicatorPlayerCount } from './game/timeIndicatorView.js';
 import { GAME_CONFIG } from './game/config.js';
 import { createGameOverView } from './game/gameOverView.js';
 import { getMatchOutcome } from './game/matchEndRules.js';
@@ -34,7 +34,13 @@ import {
   normalizeHexCoord as normalizeHavenHexCoord,
   resolveHavenTargetFromPointer as resolveHavenPointerTarget,
 } from './game/havenInteraction.mjs';
-import { getOrCreateUserId, getTimelineSpeedPreference, setTimelineSpeedPreference } from './storage.js';
+import {
+  getOrCreateUserId,
+  getTimelineAutoplayPreference,
+  getTimelineSpeedPreference,
+  setTimelineAutoplayPreference,
+  setTimelineSpeedPreference,
+} from './storage.js';
 import { buildReplayShareUrl, copyTextToClipboard, normalizeReplayPayload } from './replayShare.mjs';
 import { showToast } from './toast.js';
 import { createDebugLogger, createDebugWarnLogger } from './game/debugFlags.mjs';
@@ -69,6 +75,15 @@ const isDirectionChoiceInteractionType = (type) =>
   type === 'throw' || type === TIE_KNOCKBACK_INTERACTION_TYPE;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const isEditableTarget = (target) => {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  if (!tag) return false;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return true;
+  return Boolean(target.closest('input, textarea, select, button, [contenteditable="true"]'));
+};
 
 const getDefaultScaleForPlayerCount = (playerCount) => {
   const count = Number(playerCount);
@@ -147,16 +162,23 @@ const buildTimelineSummary = (gameState) => {
   };
 };
 
-const createTimeIndicatorViewModel = ({ getMaxIndex }) => {
+const createTimeIndicatorViewModel = ({ getMaxIndex, initialAutoplayEnabled = false, onAutoplayChange = null }) => {
   let holdState = null;
   const clearHoldState = () => {
     holdState = null;
     viewModel.isHolding = false;
   };
+  const persistAutoplayPreference = () => {
+    if (typeof onAutoplayChange === 'function') {
+      onAutoplayChange(Boolean(viewModel.autoPlayEnabled));
+    }
+  };
   const viewModel = {
     value: 0,
-    isPlaying: true,
+    isPlaying: Boolean(initialAutoplayEnabled),
+    autoPlayEnabled: Boolean(initialAutoplayEnabled),
     isHolding: false,
+    isTimelineExpanded: true,
     speedMultiplier: TIMELINE_SPEED_MIN,
     canStep(direction) {
       const maxIndex = getMaxIndex();
@@ -215,8 +237,38 @@ const createTimeIndicatorViewModel = ({ getMaxIndex }) => {
       holdState.lastTick = now;
       holdState.delay = HOLD_REPEAT_DELAY;
     },
-    togglePlaying() {
-      viewModel.isPlaying = !viewModel.isPlaying;
+    setPlaying(nextPlaying, options = {}) {
+      const persist = options?.persist === true;
+      const normalized = Boolean(nextPlaying);
+      viewModel.isPlaying = normalized;
+      if (persist) {
+        viewModel.autoPlayEnabled = normalized;
+        persistAutoplayPreference();
+      }
+      return viewModel.isPlaying;
+    },
+    togglePlaying(options = {}) {
+      const persist = options?.persist !== false;
+      return viewModel.setPlaying(!viewModel.isPlaying, { persist });
+    },
+    setAutoplayEnabled(enabled) {
+      const normalized = Boolean(enabled);
+      viewModel.autoPlayEnabled = normalized;
+      viewModel.isPlaying = normalized;
+      persistAutoplayPreference();
+      return viewModel.autoPlayEnabled;
+    },
+    syncToAutoplay() {
+      viewModel.isPlaying = Boolean(viewModel.autoPlayEnabled);
+      return viewModel.isPlaying;
+    },
+    toggleTimelineExpanded() {
+      viewModel.isTimelineExpanded = !viewModel.isTimelineExpanded;
+      return viewModel.isTimelineExpanded;
+    },
+    setTimelineExpanded(nextExpanded) {
+      viewModel.isTimelineExpanded = Boolean(nextExpanded);
+      return viewModel.isTimelineExpanded;
     },
     setSpeedMultiplier(nextSpeed) {
       const parsed = Number(nextSpeed);
@@ -277,6 +329,7 @@ export const initGame = () => {
   const gameMenuModalCopy = document.getElementById('gameMenuModalCopy');
   const gameMenuModalCancel = document.getElementById('gameMenuModalCancel');
   const gameMenuModalConfirm = document.getElementById('gameMenuModalConfirm');
+  const timelineSpeedControl = document.getElementById('timelineSpeedControl');
   const timelineSpeedSlider = document.getElementById('timelineSpeedSlider');
 
   const renderer = createRenderer(canvas);
@@ -349,7 +402,14 @@ export const initGame = () => {
     return getTimelineStopIndex(beats, characters, interactions);
   };
 
-  const timeIndicatorViewModel = createTimeIndicatorViewModel({ getMaxIndex });
+  const initialTimelineAutoplay = getTimelineAutoplayPreference();
+  const timeIndicatorViewModel = createTimeIndicatorViewModel({
+    getMaxIndex,
+    initialAutoplayEnabled: initialTimelineAutoplay === null ? false : initialTimelineAutoplay,
+    onAutoplayChange: (enabled) => {
+      setTimelineAutoplayPreference(enabled);
+    },
+  });
   let actionHud = null;
 
   const initialTimelineSpeed = getTimelineSpeedPreference() ?? TIMELINE_SPEED_MIN;
@@ -367,6 +427,27 @@ export const initGame = () => {
     timelineSpeedSlider.addEventListener('input', onSpeedChange);
     timelineSpeedSlider.addEventListener('change', onSpeedChange);
   }
+
+  let lastTimelineSpeedLayoutKey = '';
+  const updateTimelineSpeedControlPosition = () => {
+    if (!timelineSpeedControl) return;
+    const viewportWidth = renderer.viewport.width || canvas.clientWidth || 0;
+    const viewportHeight = renderer.viewport.height || canvas.clientHeight || 0;
+    if (viewportWidth <= 0 || viewportHeight <= 0) return;
+    const layout = getTimeIndicatorLayout(
+      { width: viewportWidth, height: viewportHeight },
+      { isExpanded: timeIndicatorViewModel.isTimelineExpanded },
+    );
+    if (!layout) return;
+    const left = Math.round(layout.x + layout.width / 2);
+    const top = Math.round(layout.timelineBottom + layout.speedControlGap);
+    const key = `${left}:${top}`;
+    if (key === lastTimelineSpeedLayoutKey) return;
+    timelineSpeedControl.style.left = `${left}px`;
+    timelineSpeedControl.style.top = `${top}px`;
+    timelineSpeedControl.style.transform = 'translate(-50%, 0)';
+    lastTimelineSpeedLayoutKey = key;
+  };
 
   const getThrowAngle = (direction) => {
     const vector = axialToPixel(direction.q, direction.r, 1);
@@ -1710,13 +1791,14 @@ export const initGame = () => {
     document.body.classList.add('is-in-game');
     gameMenuUi?.closeAll();
     setGameMenuLabels();
-    timeIndicatorViewModel.isPlaying = mode === VIEW_MODE_LIVE;
+    timeIndicatorViewModel.syncToAutoplay();
     if (actionHud) actionHud.setHidden(mode !== VIEW_MODE_LIVE);
     if (mode === VIEW_MODE_LIVE) {
       viewState.scale = GAME_CONFIG.defaultScale;
     }
     renderer.resize();
     centerView(viewState, renderer.viewport);
+    updateTimelineSpeedControlPosition();
     applyThrowLayout(getPendingThrowInteraction());
     refreshActionHud();
     refreshInteractionOverlay();
@@ -1730,8 +1812,9 @@ export const initGame = () => {
     document.body.classList.remove('is-in-game');
     if (menuShell) menuShell.hidden = false;
     gameMenuUi?.closeAll();
-    timeIndicatorViewModel.isPlaying = false;
+    timeIndicatorViewModel.setPlaying(false, { persist: false });
     timeIndicatorViewModel.setValue(0);
+    lastTimelineSpeedLayoutKey = '';
     gameState = null;
     viewMode = null;
     activeReplay = null;
@@ -1845,6 +1928,7 @@ export const initGame = () => {
       didInitTimelinePosition = true;
     }
     clampTimeline();
+    updateTimelineSpeedControlPosition();
     refreshActionHud();
     refreshInteractionOverlay();
     refreshGameOver();
@@ -1874,6 +1958,29 @@ export const initGame = () => {
     });
 
   bindControls(canvas, viewState, pointerState, undefined, timeIndicatorViewModel, gameArea);
+
+  window.addEventListener('keydown', (event) => {
+    if (gameArea.hidden || !document.body.classList.contains('is-in-game')) return;
+    if (event.defaultPrevented) return;
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if (isEditableTarget(event.target)) return;
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      timeIndicatorViewModel.setPlaying(false, { persist: false });
+      timeIndicatorViewModel.step(1);
+      return;
+    }
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      timeIndicatorViewModel.setPlaying(false, { persist: false });
+      timeIndicatorViewModel.step(-1);
+      return;
+    }
+    if (event.key === ' ' || event.key === 'Spacebar' || event.code === 'Space') {
+      event.preventDefault();
+      timeIndicatorViewModel.togglePlaying({ persist: true });
+    }
+  });
 
   canvas.addEventListener('pointermove', (event) => {
     const rect = canvas.getBoundingClientRect();
@@ -1918,6 +2025,7 @@ export const initGame = () => {
   window.addEventListener('resize', () => {
     if (gameArea.hidden) return;
     renderer.resize();
+    updateTimelineSpeedControlPosition();
     applyThrowLayout(getPendingThrowInteraction());
   });
 
@@ -1985,6 +2093,7 @@ export const initGame = () => {
     const dt = lastFrame ? Math.min(48, now - lastFrame) : 16;
     lastFrame = now;
     timeIndicatorViewModel.updateHold(now);
+    updateTimelineSpeedControlPosition();
     applyMomentum(viewState, dt);
     timelinePlayback.update(now, gameState, timeIndicatorViewModel.value);
     const status = timelinePlayback.getStatus();

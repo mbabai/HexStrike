@@ -29,6 +29,7 @@ const PREVIEW_PULSE_MS = 1400;
 const PREVIEW_ALPHA = 0.5;
 const PREVIEW_SCALE_AMPLITUDE = 0.06;
 const PLAY_BUTTON_MIN_SIZE = 22;
+const TOGGLE_BUTTON_MIN_SIZE = 16;
 const COMBO_SKIPPED_ALPHA = 0.35;
 const KNOCKBACK_BADGE_OUTSET = 0.25;
 const DAMAGE_BADGE_OUTSET = 0.22;
@@ -45,6 +46,8 @@ const REWIND_RETURN_STACK_OFFSET = 0.22;
 const JUMP_ARROW_MIN_WIDTH = 22;
 const JUMP_ARROW_WIDTH_FACTOR = 0.74;
 const JUMP_ARROW_OVERLAP_FACTOR = 0.4;
+const COLLAPSED_ARROW_GAP_FACTOR = 0.18;
+const COLLAPSED_JUMP_GAP_FACTOR = 0.2;
 const THREE_PLAYER_TIMELINE_SCALE = 0.9;
 const FOUR_PLAYER_TIMELINE_SCALE = 0.75;
 const PLAYED_CARD_HEIGHT_FACTOR = 0.9;
@@ -568,10 +571,14 @@ const getPlayedCardRevealState = (actorKey, pairKey, now) => {
   return { phase: 'front', flipScaleX: 1 };
 };
 
-export const getTimeIndicatorLayout = (viewport) => {
+export const getTimeIndicatorLayout = (viewport, options = {}) => {
+  const isExpanded = options?.isExpanded !== false;
+  const playerCount = Number.isFinite(options?.playerCount)
+    ? Math.max(1, Math.round(options.playerCount))
+    : Math.max(1, timeIndicatorPlayerCount);
   const padding = viewport.width < 520 ? 8 : 12;
-  const speedControlHeight = viewport.width < 520 ? 26 : 30;
-  const speedControlGap = viewport.width < 520 ? 6 : 8;
+  const topToggleGap = viewport.width < 520 ? 4 : 6;
+  const speedControlGap = viewport.width < 520 ? 8 : 10;
   const maxWidth = Math.max(180, viewport.width - padding * 4);
   const borderWidth = DEFAULT_BORDER_SIZE.width;
   const borderHeight = DEFAULT_BORDER_SIZE.height;
@@ -595,18 +602,19 @@ export const getTimeIndicatorLayout = (viewport) => {
   }
 
   const groupX = (viewport.width - groupWidth) / 2;
-  const x = groupX + actionHeight - portraitOverlap;
-  const y = padding + speedControlHeight + speedControlGap;
+  let x = groupX + actionHeight - portraitOverlap;
+  const topOffset = Math.max(0, topToggleGap + Math.max(TOGGLE_BUTTON_MIN_SIZE, timeHeight * 0.4));
+  const y = padding + topOffset;
   const arrowWidth = Math.max(30, actionHeight * 0.25);
   const innerPadding = Math.max(6, actionHeight * 0.12);
-  const numberArea = {
+  let numberArea = {
     x: x + arrowWidth * 0.7,
     y,
     width: width - arrowWidth * 1.4,
     height: timeHeight,
   };
-  const leftArrow = { x, y, width: arrowWidth, height: timeHeight };
-  const rightArrow = {
+  let leftArrow = { x, y, width: arrowWidth, height: timeHeight };
+  let rightArrow = {
     x: x + width - arrowWidth,
     y,
     width: arrowWidth,
@@ -614,13 +622,13 @@ export const getTimeIndicatorLayout = (viewport) => {
   };
   const jumpArrowWidth = Math.max(JUMP_ARROW_MIN_WIDTH, arrowWidth * JUMP_ARROW_WIDTH_FACTOR);
   const jumpArrowOverlap = jumpArrowWidth * JUMP_ARROW_OVERLAP_FACTOR;
-  const leftJumpArrow = {
+  let leftJumpArrow = {
     x: leftArrow.x - jumpArrowWidth + jumpArrowOverlap,
     y,
     width: jumpArrowWidth,
     height: timeHeight,
   };
-  const rightJumpArrow = {
+  let rightJumpArrow = {
     x: rightArrow.x + rightArrow.width - jumpArrowOverlap,
     y,
     width: jumpArrowWidth,
@@ -639,8 +647,68 @@ export const getTimeIndicatorLayout = (viewport) => {
     centerY: playCenterY,
     radius: playSize / 2,
   };
+  const toggleSize = Math.max(TOGGLE_BUTTON_MIN_SIZE, timeHeight * 0.4);
+  const toggleCenterY = y - topToggleGap - toggleSize / 2;
+  const toggleButton = {
+    x: playCenterX - toggleSize / 2,
+    y: toggleCenterY - toggleSize / 2,
+    width: toggleSize,
+    height: toggleSize,
+    centerX: playCenterX,
+    centerY: toggleCenterY,
+    radius: toggleSize / 2,
+  };
+
+  if (!isExpanded) {
+    const collapsedArrowWidth = Math.max(24, arrowWidth * 0.84);
+    const collapsedJumpArrowWidth = Math.max(JUMP_ARROW_MIN_WIDTH, jumpArrowWidth * 0.8);
+    const arrowGap = Math.max(8, timeHeight * COLLAPSED_ARROW_GAP_FACTOR);
+    const jumpGap = Math.max(10, timeHeight * COLLAPSED_JUMP_GAP_FACTOR);
+    leftArrow = {
+      x: playButton.x - arrowGap - collapsedArrowWidth,
+      y,
+      width: collapsedArrowWidth,
+      height: timeHeight,
+    };
+    rightArrow = {
+      x: playButton.x + playButton.size + arrowGap,
+      y,
+      width: collapsedArrowWidth,
+      height: timeHeight,
+    };
+    leftJumpArrow = {
+      x: leftArrow.x - jumpGap - collapsedJumpArrowWidth,
+      y,
+      width: collapsedJumpArrowWidth,
+      height: timeHeight,
+    };
+    rightJumpArrow = {
+      x: rightArrow.x + rightArrow.width + jumpGap,
+      y,
+      width: collapsedJumpArrowWidth,
+      height: timeHeight,
+    };
+
+    const collapsedStartX = Math.min(leftJumpArrow.x, leftArrow.x, playButton.x);
+    const collapsedEndX = Math.max(
+      rightJumpArrow.x + rightJumpArrow.width,
+      rightArrow.x + rightArrow.width,
+      playButton.x + playButton.size,
+    );
+    const collapsedPadding = Math.max(8, timeHeight * 0.3);
+    x = collapsedStartX - collapsedPadding;
+    width = collapsedEndX - collapsedStartX + collapsedPadding * 2;
+    numberArea = {
+      x: x + arrowWidth * 0.25,
+      y,
+      width: Math.max(0, width - arrowWidth * 0.5),
+      height: timeHeight,
+    };
+  }
+  const timelineBottom = y + timeHeight + (isExpanded ? playerCount * actionHeight : 0);
 
   return {
+    isExpanded,
     x,
     y,
     width,
@@ -657,33 +725,40 @@ export const getTimeIndicatorLayout = (viewport) => {
     portraitSize: actionHeight,
     portraitBorderWidth,
     playButton,
+    toggleButton,
+    timelineBottom,
+    speedControlGap,
   };
 };
 
 const getRowLayout = (layout, rowIndex) => {
   const rowHeight = rowIndex === 0 ? layout.timeHeight : layout.actionHeight;
   const y = rowIndex === 0 ? layout.y : layout.y + layout.timeHeight + (rowIndex - 1) * layout.actionHeight;
-  const numberArea = {
+  const defaultNumberArea = {
     x: layout.x + layout.arrowWidth * 0.7,
     y,
     width: layout.width - layout.arrowWidth * 1.4,
     height: rowHeight,
   };
-  const leftArrow = { x: layout.x, y, width: layout.arrowWidth, height: rowHeight };
-  const rightArrow = {
+  const defaultLeftArrow = { x: layout.x, y, width: layout.arrowWidth, height: rowHeight };
+  const defaultRightArrow = {
     x: layout.x + layout.width - layout.arrowWidth,
     y,
     width: layout.arrowWidth,
     height: rowHeight,
   };
-  const leftJumpArrow = rowIndex === 0 ? layout.leftJumpArrow : null;
-  const rightJumpArrow = rowIndex === 0 ? layout.rightJumpArrow : null;
+  const numberArea = rowIndex === 0 && layout.numberArea ? { ...layout.numberArea } : defaultNumberArea;
+  const leftArrow = rowIndex === 0 && layout.leftArrow ? { ...layout.leftArrow } : defaultLeftArrow;
+  const rightArrow = rowIndex === 0 && layout.rightArrow ? { ...layout.rightArrow } : defaultRightArrow;
+  const leftJumpArrow = rowIndex === 0 ? layout.leftJumpArrow ?? null : null;
+  const rightJumpArrow = rowIndex === 0 ? layout.rightJumpArrow ?? null : null;
 
   return { y, rowHeight, numberArea, leftArrow, rightArrow, leftJumpArrow, rightJumpArrow };
 };
 
 export const getTimeIndicatorHit = (layout, x, y) => {
   if (!layout) return null;
+  if (layout.toggleButton && isPointInCircle(x, y, layout.toggleButton)) return 'timeline-toggle';
   if (layout.playButton && isPointInCircle(x, y, layout.playButton)) return 'play';
   if (layout.leftJumpArrow && isPointInRect(x, y, layout.leftJumpArrow)) return 'jump-left';
   if (layout.rightJumpArrow && isPointInRect(x, y, layout.rightJumpArrow)) return 'jump-right';
@@ -694,6 +769,7 @@ export const getTimeIndicatorHit = (layout, x, y) => {
 
 export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y) => {
   if (!layout) return null;
+  if (layout.isExpanded === false) return null;
   const characters = gameState?.state?.public?.characters ?? [];
   setTimeIndicatorPlayerCount(characters.length || 2);
   const beats = gameState?.state?.public?.beats ?? [];
@@ -915,8 +991,12 @@ export const drawTimeIndicator = (
   const publicState = gameState?.state?.public ?? null;
   const characters = gameState?.state?.public?.characters ?? [];
   setTimeIndicatorPlayerCount(characters.length || 2);
-  const layout = getTimeIndicatorLayout(viewport);
+  const layout = getTimeIndicatorLayout(viewport, {
+    isExpanded: viewModel?.isTimelineExpanded !== false,
+    playerCount: characters.length || 2,
+  });
   if (!layout) return;
+  const isExpanded = layout.isExpanded !== false;
 
   ctx.setTransform(viewport.dpr, 0, 0, viewport.dpr, 0, 0);
 
@@ -966,7 +1046,9 @@ export const drawTimeIndicator = (
   const previewPhase = (performance.now() % PREVIEW_PULSE_MS) / PREVIEW_PULSE_MS;
   const previewScale = 1 + PREVIEW_SCALE_AMPLITUDE * Math.sin(previewPhase * Math.PI * 2);
   const topRow = getRowLayout(layout, 0);
-  drawNumberWell(ctx, topRow.numberArea, theme.queueLavender || theme.panel);
+  if (isExpanded) {
+    drawNumberWell(ctx, topRow.numberArea, theme.queueLavender || theme.panel);
+  }
 
   const fontSize = Math.max(12, topRow.numberArea.height * 0.47);
   ctx.font = `${fontSize}px ${theme.fontBody}`;
@@ -977,21 +1059,27 @@ export const drawTimeIndicator = (
   const centerY = topRow.numberArea.y + topRow.numberArea.height / 2;
   const spacingTarget = Math.max(26, layout.actionHeight * 0.72);
   const spacing = Math.min(spacingTarget, topRow.numberArea.width / (offsets.length - 1));
-
-  offsets.forEach((offset) => {
-    const target = value + offset;
-    if (target < 0) return;
-    const xPos = centerX + offset * spacing;
-    if (offset === 0) {
-      drawPlayButton(ctx, layout.playButton, theme, isPlaying);
-      return;
-    }
-    ctx.fillStyle = target === highlightIndex ? theme.accentStrong : theme.text;
-    ctx.fillText(`${target}`.padStart(2, '0'), xPos, centerY);
-  });
+  if (isExpanded) {
+    offsets.forEach((offset) => {
+      const target = value + offset;
+      if (target < 0) return;
+      const xPos = centerX + offset * spacing;
+      if (offset === 0) {
+        drawPlayButton(ctx, layout.playButton, theme, isPlaying);
+        return;
+      }
+      ctx.fillStyle = target === highlightIndex ? theme.accentStrong : theme.text;
+      ctx.fillText(`${target}`.padStart(2, '0'), xPos, centerY);
+    });
+  } else {
+    drawPlayButton(ctx, layout.playButton, theme, isPlaying);
+  }
+  ctx.fillStyle = value === highlightIndex ? theme.accentStrong : theme.text;
+  ctx.font = `${Math.max(10, topRow.numberArea.height * (isExpanded ? 0.27 : 0.32))}px ${theme.fontBody}`;
+  ctx.fillText(`${value}`.padStart(2, '0'), centerX, topRow.numberArea.y + topRow.numberArea.height * 0.84);
 
   ctx.globalAlpha = 1;
-  if (leftDisabled) {
+  if (leftDisabled && isExpanded) {
     ctx.strokeStyle = theme.subtle;
     ctx.lineWidth = Math.max(1, topRow.numberArea.height * 0.04);
     ctx.beginPath();
@@ -1008,6 +1096,12 @@ export const drawTimeIndicator = (
   drawArrow(ctx, topRow.rightArrow, 'right', arrowColor, rightDisabled ? 0.35 : 0.95);
   if (topRow.rightJumpArrow) {
     drawDoubleArrow(ctx, topRow.rightJumpArrow, 'right', arrowColor, rightDisabled ? 0.35 : 0.95);
+  }
+  drawTimelineToggleButton(ctx, layout.toggleButton, theme, isExpanded);
+
+  if (!isExpanded) {
+    playedCardRevealByActor.clear();
+    return;
   }
 
   if (!characters.length) {
@@ -1886,6 +1980,43 @@ const drawPlayButton = (ctx, playButton, theme, isPlaying) => {
   ctx.restore();
 };
 
+const drawChevronGlyph = (ctx, cx, cy, size, direction) => {
+  const halfWidth = size * 0.9;
+  const halfHeight = size * 0.55;
+  ctx.beginPath();
+  if (direction === 'up') {
+    ctx.moveTo(cx - halfWidth, cy + halfHeight * 0.5);
+    ctx.lineTo(cx, cy - halfHeight);
+    ctx.lineTo(cx + halfWidth, cy + halfHeight * 0.5);
+  } else {
+    ctx.moveTo(cx - halfWidth, cy - halfHeight * 0.5);
+    ctx.lineTo(cx, cy + halfHeight);
+    ctx.lineTo(cx + halfWidth, cy - halfHeight * 0.5);
+  }
+  ctx.stroke();
+};
+
+const drawTimelineToggleButton = (ctx, toggleButton, theme, isExpanded) => {
+  if (!toggleButton) return;
+  const fill = theme.panelStrong || theme.panel;
+  const stroke = theme.accentStrong || theme.accent;
+  const glyphSize = toggleButton.radius * 0.52;
+  ctx.save();
+  ctx.fillStyle = fill;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = Math.max(1.2, toggleButton.radius * 0.24);
+  ctx.beginPath();
+  ctx.arc(toggleButton.centerX, toggleButton.centerY, toggleButton.radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = stroke;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(1.6, toggleButton.radius * 0.34);
+  drawChevronGlyph(ctx, toggleButton.centerX, toggleButton.centerY, glyphSize, isExpanded ? 'up' : 'down');
+  ctx.restore();
+};
+
 const drawArrowGlyph = (ctx, cx, cy, size, direction) => {
   ctx.beginPath();
   if (direction === 'left') {
@@ -1915,7 +2046,7 @@ const drawArrow = (ctx, rect, direction, color, alpha) => {
 const drawDoubleArrow = (ctx, rect, direction, color, alpha) => {
   const cx = rect.x + rect.width / 2;
   const cy = rect.y + rect.height / 2;
-  const size = Math.min(rect.width, rect.height) * 0.34;
+  const size = Math.min(rect.width / 3.1, rect.height * 0.31);
   const separation = size * 1.55;
   ctx.save();
   ctx.fillStyle = color;

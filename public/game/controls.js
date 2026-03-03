@@ -49,15 +49,22 @@ export const bindControls = (canvas, viewState, pointerState, config = GAME_CONF
     if (shouldBlockPan(event.target)) return;
     if (timeIndicatorViewModel && event.target === canvas) {
       const rect = canvas.getBoundingClientRect();
-      const layout = getTimeIndicatorLayout({ width: rect.width, height: rect.height });
+      const layout = getTimeIndicatorLayout(
+        { width: rect.width, height: rect.height },
+        { isExpanded: timeIndicatorViewModel.isTimelineExpanded !== false },
+      );
       const hit = getTimeIndicatorHit(layout, event.clientX - rect.left, event.clientY - rect.top);
       if (hit) {
+        if (hit === 'timeline-toggle') {
+          timeIndicatorViewModel.toggleTimelineExpanded?.();
+          return;
+        }
         if (hit === 'play') {
           timeIndicatorViewModel.togglePlaying?.();
           return;
         }
         if (hit === 'jump-left') {
-          timeIndicatorViewModel.isPlaying = false;
+          timeIndicatorViewModel.setPlaying?.(false, { persist: false });
           if (typeof timeIndicatorViewModel.jumpToStart === 'function') {
             timeIndicatorViewModel.jumpToStart();
           } else {
@@ -66,7 +73,7 @@ export const bindControls = (canvas, viewState, pointerState, config = GAME_CONF
           return;
         }
         if (hit === 'jump-right') {
-          timeIndicatorViewModel.isPlaying = false;
+          timeIndicatorViewModel.setPlaying?.(false, { persist: false });
           if (typeof timeIndicatorViewModel.jumpToEnd === 'function') {
             timeIndicatorViewModel.jumpToEnd();
           } else {
