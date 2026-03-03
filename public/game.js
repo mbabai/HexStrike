@@ -100,6 +100,11 @@ const normalizeActionLabel = (value) => {
   return trimmed;
 };
 
+const normalizeRotationLabel = (value) => {
+  const trimmed = `${value ?? ''}`.trim().toUpperCase();
+  return trimmed || null;
+};
+
 const cardHasCombo = (card) =>
   Array.isArray(card?.actions) && card.actions.some((action) => normalizeActionLabel(action).toUpperCase() === COMBO_ACTION);
 
@@ -365,6 +370,7 @@ export const initGame = () => {
   let viewMode = null;
   let activeReplay = null;
   let activeSpectatorGameId = null;
+  let selectedRotationPreview = null;
   let leaveReplayView = () => {};
   const pendingActionPreview = createPendingActionPreview();
 
@@ -976,6 +982,7 @@ export const initGame = () => {
     if (!gameState?.id || actionSubmitInFlight) return;
     if (getMatchOutcome(gameState?.state?.public)) return;
     actionSubmitInFlight = true;
+    selectedRotationPreview = null;
     if (actionHud) actionHud.setLocked(true);
     const previewCard = activeCard ?? cardLookup.get(activeCardId);
     pendingActionPreview.setFromCard(previewCard, cardLookup.get(passiveCardId), rotation);
@@ -1692,6 +1699,9 @@ export const initGame = () => {
     submitButton,
     rotationWheel,
     onSubmit: handleActionSubmit,
+    onRotationChange: (rotation) => {
+      selectedRotationPreview = normalizeRotationLabel(rotation);
+    },
   });
   discardPrompt = createDiscardPrompt({
     movementHand,
@@ -1829,6 +1839,7 @@ export const initGame = () => {
     pendingInteractionType = null;
     clearHavenHover();
     timelinePointer = null;
+    selectedRotationPreview = null;
     interactionSubmitInFlight = false;
     gameOverInFlight = false;
     shareLinkInFlight = false;
@@ -2114,6 +2125,7 @@ export const initGame = () => {
     const scene = timelinePlayback.getScene();
     const pendingPreview = pendingActionPreview.getTimelinePreview(gameState, localUserId);
     const interactionHighlightState = buildHavenHighlightState(now);
+    const rotationPreview = !isReplayMode() && !actionSubmitInFlight ? selectedRotationPreview : null;
     renderer.draw(
       viewState,
       gameState,
@@ -2124,6 +2136,7 @@ export const initGame = () => {
       interactionHighlightState,
       cardLookup,
       timelinePointer,
+      rotationPreview,
     );
     requestAnimationFrame(renderFrame);
   };

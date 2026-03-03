@@ -93,6 +93,30 @@ const withAlpha = (color, alpha) => {
   return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${safe})`;
 };
 
+const normalizeDegrees = (value) => {
+  const normalized = Number.isFinite(value) ? value : 0;
+  return ((normalized % 360) + 360) % 360;
+};
+
+const parseRotationDegrees = (rotationLabel) => {
+  const trimmed = `${rotationLabel ?? ''}`.trim().toUpperCase();
+  if (!trimmed) return null;
+  if (trimmed === '0') return 0;
+  if (trimmed === '3') return 180;
+  if (trimmed.startsWith('R') || trimmed.startsWith('L')) {
+    const amount = Number(trimmed.slice(1));
+    if (!Number.isFinite(amount)) return null;
+    return (trimmed[0] === 'R' ? 1 : -1) * amount * 60;
+  }
+  return null;
+};
+
+const resolveRotationPreviewFacing = (currentFacing, rotationLabel) => {
+  const rotationDegrees = parseRotationDegrees(rotationLabel);
+  if (!Number.isFinite(rotationDegrees)) return null;
+  return normalizeDegrees((Number.isFinite(currentFacing) ? currentFacing : 0) + rotationDegrees);
+};
+
 const drawHexPath = (ctx, x, y, size) => {
   ctx.beginPath();
   for (let i = 0; i < 6; i += 1) {
@@ -156,6 +180,38 @@ const drawFacingArrow = (ctx, points, color) => {
   ctx.lineTo(points.baseBottom.x, points.baseBottom.y);
   ctx.closePath();
   ctx.fill();
+};
+
+const drawRotationPreviewArrow = (ctx, x, y, size, previewFacing, nowMs) => {
+  if (!Number.isFinite(previewFacing)) return;
+  const baseMetrics = getCharacterTokenMetrics(size);
+  const previewMetrics = getCharacterTokenMetrics(size * 2);
+  const angle = (previewFacing * Math.PI) / 180;
+  const forward = { x: -Math.cos(angle), y: -Math.sin(angle) };
+  // Keep the preview base anchored like the normal facing arrow so it "hangs off" the token.
+  // Nudge a touch inward so it sits slightly closer to token center.
+  const inwardNudge = Math.max(2, size * 0.06);
+  const offsetDistance = baseMetrics.arrow.base - previewMetrics.arrow.base - inwardNudge;
+  const centerX = x + forward.x * offsetDistance;
+  const centerY = y + forward.y * offsetDistance;
+  const points = getFacingArrowPoints(centerX, centerY, previewMetrics, previewFacing);
+  const pulse = (Math.sin((Number.isFinite(nowMs) ? nowMs : performance.now()) * 0.008) + 1) / 2;
+  const fillAlpha = 0.2 + pulse * 0.22;
+  const strokeAlpha = 0.28 + pulse * 0.22;
+
+  ctx.save();
+  ctx.fillStyle = withAlpha('#acacac', fillAlpha);
+  ctx.beginPath();
+  ctx.moveTo(points.tip.x, points.tip.y);
+  ctx.lineTo(points.baseTop.x, points.baseTop.y);
+  ctx.lineTo(points.baseBottom.x, points.baseBottom.y);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = withAlpha('#d2d2d2', strokeAlpha);
+  ctx.lineWidth = Math.max(1.5, size * 0.08);
+  ctx.stroke();
+  ctx.restore();
 };
 
 const drawDamageCapsule = (ctx, x, y, radius, damage, theme) => {
@@ -768,6 +824,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     interactionOverlayState = null,
     cardLookup = null,
     timelinePointer = null,
+    rotationPreviewSelection = null,
   ) => {
     if (!viewport.width || !viewport.height) return;
     const size = getHexSize(viewport.width, config.hexSizeFactor);
@@ -874,6 +931,13 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
         const beatEntry = getBeatEntryForCharacter(beatLookup, character);
         const actionTag = normalizeActionTag(beatEntry?.action);
         const isKnockbackIcon = actionTag === 'knockbackicon' || actionTag === 'damageicon';
+        if (isLocalPlayer && rotationPreviewSelection) {
+          const previewFacing = resolveRotationPreviewFacing(character.facing, rotationPreviewSelection);
+          if (previewFacing !== null) {
+            // Draw preview beneath token so overlap is naturally occluded.
+            drawRotationPreviewArrow(ctx, drawX, drawY, size, previewFacing);
+          }
+        }
 
         drawCharacterPortrait(ctx, image, drawX, drawY, metrics.radius, theme.panelStrong, isKnockbackIcon);
         if (character.healFlashAlpha) {

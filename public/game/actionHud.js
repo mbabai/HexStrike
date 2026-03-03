@@ -46,6 +46,7 @@ export const createActionHud = ({
   submitButton,
   rotationWheel,
   onSubmit,
+  onRotationChange,
 } = {}) => {
   if (!root || !movementHand || !abilityHand || !activeSlot || !passiveSlot || !submitButton || !rotationWheel) {
     return {
@@ -77,6 +78,11 @@ export const createActionHud = ({
     lastLocked: null,
     hasDealtCards: false,
     playerDamage: 0,
+  };
+  const emitRotationChange = () => {
+    if (typeof onRotationChange === 'function') {
+      onRotationChange(state.selectedRotation);
+    }
   };
 
   const debugOverlay = (() => {
@@ -240,6 +246,7 @@ export const createActionHud = ({
   const wheel = buildRotationWheel(rotationWheel, (rotation) => {
     if (state.locked) return;
     state.selectedRotation = rotation;
+    emitRotationChange();
     log('rotation', rotation);
     updateSubmitState();
   });
@@ -945,6 +952,9 @@ export const createActionHud = ({
     updateSlotState('passive');
     state.selectedRotation = null;
     wheel.clear();
+    if (state.locked) {
+      emitRotationChange();
+    }
     state.exhaustedCards = new Set();
 
     const attachCard = (card, index, container, type) => {
@@ -1091,6 +1101,9 @@ export const createActionHud = ({
     state.selectedRotation = null;
     state.draggingCardId = null;
     wheel.clear();
+    if (state.locked) {
+      emitRotationChange();
+    }
     updateRotationRestriction();
     updateSubmitState();
   };
