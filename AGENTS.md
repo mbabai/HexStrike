@@ -41,6 +41,7 @@ HexStrike is a Node.js, server-driven living card game played over a hex-grid. P
 # ExecPlans
 
 When writing complex features or significant refactors, use an ExecPlan (as described in `PLANS.md`) from design to implementation.
+- For larger tasks (features, refactors, or multi-file changes), if the request or discovered context is inconsistent or ambiguous, always ask clarifying question(s) before implementing.
 
 ## Architectural principles (current)
 - Front-end UI: For any browser-facing UI styling or layout, follow `front-end-ui.md` as the single source of truth for palette, components, and interactions. Extend that document when adding reusable primitives.

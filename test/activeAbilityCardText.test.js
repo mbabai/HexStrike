@@ -32,7 +32,7 @@ test('aerial-strike active forces a 3 rotation after the jump without clearing t
   const actionList = buildActionList('aerial-strike', 'step', 'R2');
   assert.deepEqual(
     actionList.map((entry) => entry.action),
-    ['W', '[2j]', 'a', 'W', 'W', 'W', 'E'],
+    ['W', '[2j]', 'a', 'W', 'W', 'E'],
   );
   assert.equal(actionList[0].rotation, 'R2');
   assert.equal(actionList[0].rotationSource, 'selected');

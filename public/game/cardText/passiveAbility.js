@@ -1,4 +1,5 @@
 import { isBracketedAction, mapActionList, patchActionEntry, updateActionEntries } from './actionListTransforms.js';
+import { getTimingPriority } from '../../shared/timing.js';
 
 const normalizeActionLabel = (action) => {
   const trimmed = `${action ?? ''}`.trim();
@@ -81,7 +82,7 @@ const applyChasePassiveText = (actionList) => {
   return replaceAllActions(shifted, 'm', '2m');
 };
 
-const applyCounterAttackPassiveText = (actionList) => replaceFirstAction(actionList, 'm', 'm-Ba', { damage: 3, kbf: 3 });
+const applyCounterAttackPassiveText = (actionList) => replaceFirstAction(actionList, 'm', 'm-Ba', { damage: 2, kbf: 2 });
 
 const applyCrossSlashPassiveText = (actionList) => replaceAllActions(actionList, 'm', 'm-La-Ra', { damage: 2, kbf: 1 });
 
@@ -102,6 +103,8 @@ const buildSmashAttackEntry = (entry) => ({
   action: 'a-La-Ra-BLa-BRa-Ba',
   rotation: '',
   rotationSource: undefined,
+  timing: ['early'],
+  priority: getTimingPriority(['early']),
   interaction: undefined,
   damage: 1,
   kbf: 1,
@@ -117,16 +120,6 @@ const applySmashAttackPassiveText = (actionList) => {
   });
   return next;
 };
-
-const applyPushKickPassiveText = (actionList) =>
-  mapActionList(actionList, (entry) => {
-    const label = normalizeActionLabel(entry.action);
-    if (!label) return entry;
-    const lower = label.toLowerCase();
-    if (!lower.endsWith('m') && !lower.endsWith('j')) return entry;
-    if (label.startsWith('B')) return entry;
-    return replaceEntryAction(entry, `B${label}`);
-  });
 
 const applySmokeBombPassiveText = (actionList) =>
   mapActionList(actionList, (entry) => {
@@ -145,7 +138,6 @@ const PASSIVE_ABILITY_EFFECTS = new Map([
   ['cross-slash', applyCrossSlashPassiveText],
   ['flying-knee', applyFlyingKneePassiveText],
   ['guard', applyGuardPassiveText],
-  ['push-kick', applyPushKickPassiveText],
   ['smash-attack', applySmashAttackPassiveText],
   ['smoke-bomb', applySmokeBombPassiveText],
   ['whirlwind', applyWhirlwindPassiveText],

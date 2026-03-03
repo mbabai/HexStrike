@@ -10,6 +10,7 @@
 - Movement indications are split into two forms:
   - Symbol form (for example `{m}`, `{2j}`, `{c}`) targets that exact token/effect anchor.
   - Word form (`move`/`movement`) is category-wide and includes all movement-style relocation tokens (movement, jump, and charge variants).
+- Timed symbol shorthand: use `{<action>}[early|mid|late]` (for example `{m}[late]`) when text needs a specific timing tied to an action symbol.
 
 ## Rotation injections
 - `rotationSource` marks where a rotation comes from:
@@ -27,7 +28,7 @@
 - Haven pointer/hover resolution (self-click + adjacent hex pick) is centralized in `public/game/havenInteraction.mjs`.
 
 ## Passive movement effects
-- Fleche passive: remove the final `{W}` from the active ability action list when an exact `{a}` token appears before it (for example `a` or `2a-a`, but not `2a` alone).
+- Fleche passive: find the first exact `{a}` in the active ability action list; if there is a `{W}` before it, replace the closest preceding `{W}` with `m` timed `late`.
 - Ninja Roll passive: only `{a}` (or `[a]`) becomes `{a-La-Ra}`; other attack tokens are unchanged. Halve damage/KBF (rounded down) on the affected step.
 - Grappling Hook passive: when an exact `{a}` lands, flip the target to the opposite side of the attacker and knock them further in that direction (execution + playback).
 - `{m}` symbol passives: Burning Strike fire and Gigantic Staff abyss conversion only trigger on exact `m`.

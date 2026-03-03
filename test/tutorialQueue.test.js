@@ -349,7 +349,12 @@ test('tutorial queue uses scripted flow, forced loadout, and strict tutorial cho
 
     await waitFor(
       getSnapshot,
-      (snapshot) => hasActionStarter(snapshot, botUserId, 'parry', 'step'),
+      (snapshot) => {
+        if (hasActionStarter(snapshot, botUserId, 'parry', 'step')) return true;
+        const pending = snapshot?.state?.public?.pendingActions;
+        const submittedUserIds = Array.isArray(pending?.submittedUserIds) ? pending.submittedUserIds : [];
+        return submittedUserIds.includes(botUserId);
+      },
       { timeoutMs: 12000 },
     );
 

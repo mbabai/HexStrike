@@ -22,7 +22,7 @@ const ABILITY_PASSIVE_ACTIVE_OVERRIDES = new Map([
 ]);
 
 const MOVEMENT_PASSIVE_ACTIVE_OVERRIDES = new Map([
-  ['fleche', 'balestra-lunge'],
+  ['fleche', 'long-thrust'],
   ['ninja-roll', 'balestra-lunge'],
 ]);
 

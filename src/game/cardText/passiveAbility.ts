@@ -1,5 +1,6 @@
 import { ActionListItem, CardDefinition } from '../../types';
 import { isBracketedAction, mapActionList, patchActionEntry, updateActionEntries } from './actionListTransforms';
+import { getTimingPriority } from '../timing';
 
 const normalizeActionLabel = (action: string): string => {
   const trimmed = `${action ?? ''}`.trim();
@@ -106,7 +107,7 @@ const applyChasePassiveText = (actionList: ActionListItem[]): ActionListItem[] =
 };
 
 const applyCounterAttackPassiveText = (actionList: ActionListItem[]): ActionListItem[] =>
-  replaceFirstAction(actionList, 'm', 'm-Ba', { damage: 3, kbf: 3 });
+  replaceFirstAction(actionList, 'm', 'm-Ba', { damage: 2, kbf: 2 });
 
 const applyCrossSlashPassiveText = (actionList: ActionListItem[]): ActionListItem[] =>
   replaceAllActions(actionList, 'm', 'm-La-Ra', { damage: 2, kbf: 1 });
@@ -129,6 +130,8 @@ const buildSmashAttackEntry = (entry: ActionListItem): ActionListItem => ({
   action: 'a-La-Ra-BLa-BRa-Ba',
   rotation: '',
   rotationSource: undefined,
+  timing: ['early'],
+  priority: getTimingPriority(['early']),
   interaction: undefined,
   damage: 1,
   kbf: 1,
@@ -144,16 +147,6 @@ const applySmashAttackPassiveText = (actionList: ActionListItem[]): ActionListIt
   });
   return next;
 };
-
-const applyPushKickPassiveText = (actionList: ActionListItem[]): ActionListItem[] =>
-  mapActionList(actionList, (entry) => {
-    const label = normalizeActionLabel(entry.action);
-    if (!label) return entry;
-    const lower = label.toLowerCase();
-    if (!lower.endsWith('m') && !lower.endsWith('j')) return entry;
-    if (label.startsWith('B')) return entry;
-    return replaceEntryAction(entry, `B${label}`);
-  });
 
 const applySmokeBombPassiveText = (actionList: ActionListItem[]): ActionListItem[] =>
   mapActionList(actionList, (entry) => {
@@ -175,7 +168,6 @@ const PASSIVE_ABILITY_EFFECTS = new Map<string, PassiveAbilityEffect>([
   ['cross-slash', applyCrossSlashPassiveText],
   ['flying-knee', applyFlyingKneePassiveText],
   ['guard', applyGuardPassiveText],
-  ['push-kick', applyPushKickPassiveText],
   ['smash-attack', applySmashAttackPassiveText],
   ['smoke-bomb', applySmokeBombPassiveText],
   ['whirlwind', applyWhirlwindPassiveText],

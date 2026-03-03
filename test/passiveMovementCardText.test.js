@@ -14,23 +14,31 @@ const buildEntry = (action, patch = {}) => ({
   ...patch,
 });
 
-test('fleche passive only counts exact {a} tokens before the final W', () => {
+test('fleche passive replaces the last W before the first exact {a} with a late m', () => {
   const activeCard = { id: 'mock-ability', type: 'ability' };
   const passiveCard = { id: 'fleche', type: 'movement' };
 
   const noExactA = [buildEntry('W'), buildEntry('2a'), buildEntry('W'), buildEntry('E')];
-  const withExactAInMultiToken = [buildEntry('W'), buildEntry('2a-a'), buildEntry('W'), buildEntry('E')];
+  const withWaitBeforeExactA = [buildEntry('W'), buildEntry('2a-a'), buildEntry('W'), buildEntry('E')];
+  const noWaitBeforeAttack = [buildEntry('a'), buildEntry('W'), buildEntry('E')];
 
   const unchanged = applyPassiveMovementCardText(noExactA, activeCard, passiveCard, '0');
-  const trimmed = applyPassiveMovementCardText(withExactAInMultiToken, activeCard, passiveCard, '0');
+  const replaced = applyPassiveMovementCardText(withWaitBeforeExactA, activeCard, passiveCard, '0');
+  const noWait = applyPassiveMovementCardText(noWaitBeforeAttack, activeCard, passiveCard, '0');
 
   assert.deepEqual(
     unchanged.map((entry) => entry.action),
     ['W', '2a', 'W', 'E'],
   );
   assert.deepEqual(
-    trimmed.map((entry) => entry.action),
-    ['W', '2a-a', 'E'],
+    replaced.map((entry) => entry.action),
+    ['m', '2a-a', 'W', 'E'],
+  );
+  assert.deepEqual(replaced[0].timing, ['late']);
+  assert.equal(replaced[0].priority, 20);
+  assert.deepEqual(
+    noWait.map((entry) => entry.action),
+    ['a', 'W', 'E'],
   );
 });
 

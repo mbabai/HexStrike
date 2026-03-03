@@ -3,19 +3,12 @@ import {
   mapActionList,
   normalizeActionToken,
   patchActionEntry,
-  removeActionAtIndex,
+  updateActionEntries,
   splitActionTokens,
 } from './actionListTransforms.js';
+import { getTimingPriority } from '../../shared/timing.js';
 
 const WAIT_ACTION = 'W';
-
-const getLastWaitIndex = (actionList) => {
-  for (let index = actionList.length - 1; index >= 0; index -= 1) {
-    const label = `${actionList[index]?.action ?? ''}`.trim().toUpperCase();
-    if (label === WAIT_ACTION) return index;
-  }
-  return null;
-};
 
 const actionHasExactSymbol = (action, symbol) => {
   const normalizedSymbol = `${symbol ?? ''}`.trim().toLowerCase();
@@ -23,15 +16,33 @@ const actionHasExactSymbol = (action, symbol) => {
   return splitActionTokens(action).some((token) => normalizeActionToken(token).toLowerCase() === normalizedSymbol);
 };
 
-const hasAttackBeforeIndex = (actionList, index) =>
-  actionList.slice(0, index).some((entry) => actionHasExactSymbol(entry.action, 'a'));
+const isWaitAction = (entry) => normalizeActionToken(entry.action).toUpperCase() === WAIT_ACTION;
+
+const getFirstAttackIndex = (actionList) => {
+  const index = actionList.findIndex((entry) => actionHasExactSymbol(entry.action, 'a'));
+  return index >= 0 ? index : null;
+};
+
+const getLastWaitBeforeIndex = (actionList, index) => {
+  for (let current = index - 1; current >= 0; current -= 1) {
+    if (isWaitAction(actionList[current])) return current;
+  }
+  return null;
+};
 
 const applyFlechePassiveText = (actionList, activeCard) => {
   if (activeCard?.type !== 'ability') return actionList;
-  const lastWaitIndex = getLastWaitIndex(actionList);
-  if (lastWaitIndex == null) return actionList;
-  if (!hasAttackBeforeIndex(actionList, lastWaitIndex)) return actionList;
-  return removeActionAtIndex(actionList, lastWaitIndex);
+  const firstAttackIndex = getFirstAttackIndex(actionList);
+  if (firstAttackIndex == null) return actionList;
+  const waitIndex = getLastWaitBeforeIndex(actionList, firstAttackIndex);
+  if (waitIndex == null) return actionList;
+  return updateActionEntries(actionList, [waitIndex], (entry) =>
+    patchActionEntry(entry, {
+      action: 'm',
+      timing: ['late'],
+      priority: getTimingPriority(['late']),
+    }),
+  );
 };
 
 const applyNinjaRollPassiveText = (actionList, activeCard) => {

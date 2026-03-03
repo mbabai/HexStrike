@@ -56,6 +56,16 @@ test('cross-slash passive replaces m with m-La-Ra and sets damage/KBF', () => {
   assert.equal(actionList[1].kbf, 1);
 });
 
+test('counter-attack passive converts first m to m-Ba with damage/KBF 2', () => {
+  const actionList = buildActionList('step', 'counter-attack');
+  assert.deepEqual(
+    actionList.map((entry) => entry.action),
+    ['W', 'm-Ba', 'E'],
+  );
+  assert.equal(actionList[1].damage, 2);
+  assert.equal(actionList[1].kbf, 2);
+});
+
 test('flying-knee passive converts movement to charges with 1 damage/kbf', () => {
   const actionList = buildActionList('dash', 'flying-knee');
   assert.deepEqual(
@@ -84,21 +94,20 @@ test('smash-attack passive inserts the follow-up attack after a jump', () => {
   );
   assert.equal(actionList[2].damage, 1);
   assert.equal(actionList[2].kbf, 1);
+  assert.deepEqual(actionList[2].timing, ['early']);
+  assert.equal(actionList[2].priority, 100);
 });
 
-test('push-kick passive converts jumps to backward jumps', () => {
-  const actionList = buildActionList('leap', 'push-kick');
+test('push-kick has no passive timeline override', () => {
+  const leapActionList = buildActionList('leap', 'push-kick');
+  const dashActionList = buildActionList('dash', 'push-kick');
   assert.deepEqual(
-    actionList.map((entry) => entry.action),
-    ['W', 'B3j', 'W', 'W', 'E'],
+    leapActionList.map((entry) => entry.action),
+    ['W', '3j', 'W', 'W', 'E'],
   );
-});
-
-test('push-kick passive converts movement to backward movement', () => {
-  const actionList = buildActionList('dash', 'push-kick');
   assert.deepEqual(
-    actionList.map((entry) => entry.action),
-    ['B2m', 'W', 'W', 'E'],
+    dashActionList.map((entry) => entry.action),
+    ['2m', 'W', 'W', 'E'],
   );
 });
 
