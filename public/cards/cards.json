@@ -249,7 +249,7 @@
       "rotations": "0-1",
       "damage": 4,
       "kbf": 1,
-      "passiveText": "Add a {W} at the start of your move, turn all {m} to {2m}."
+      "passiveText": "Add {W} at the start of your move, turn all {m} to {2m}."
     },
     {
       "id": "counter-attack",

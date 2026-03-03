@@ -95,8 +95,8 @@
   --action-card-actions-left: calc(6px * var(--action-card-scale));
   --action-card-actions-top: calc(7px * var(--action-card-scale));
   --action-card-symbol-scale: 1.1;
-  --action-card-action-width: calc(37.4px * var(--action-card-scale));
-  --action-card-action-height: calc(33px * var(--action-card-scale));
+  --action-card-action-width: calc(44.7678px * var(--action-card-scale));
+  --action-card-action-height: calc(39.501px * var(--action-card-scale));
   --action-card-surface-left: calc(6px * var(--action-card-scale));
   --action-card-surface-top: calc(35px * var(--action-card-scale));
   --action-card-surface-width: calc(228px * var(--action-card-scale));
@@ -113,9 +113,9 @@
   --action-card-title-padding-top: calc(6px * var(--action-card-scale));
   --action-card-title-padding-bottom: calc(2px * var(--action-card-scale));
   --action-card-title-top: 0;
-  --action-card-art-inset-left: calc(37.4px * var(--action-card-scale));
-  --action-card-title-left: calc(43.4px * var(--action-card-scale));
-  --action-card-title-width: calc(135.6px * var(--action-card-scale));
+  --action-card-art-inset-left: calc(44.7678px * var(--action-card-scale));
+  --action-card-title-left: calc(50.7678px * var(--action-card-scale));
+  --action-card-title-width: calc(128.2322px * var(--action-card-scale));
   --action-card-title-height: var(--action-card-header-height);
   --action-card-title-font-size: calc(
     var(--action-card-title-height) - var(--action-card-title-padding-top) - var(--action-card-title-padding-bottom)
@@ -3341,6 +3341,11 @@ img[src$='Death.png'] {
 .action-card-surface-row.is-active,
 .action-card-surface-row.is-passive {
   background: linear-gradient(160deg, var(--color-card-textbox-start), var(--color-card-textbox-end));
+}
+
+.action-card-surface-row.is-active {
+  width: calc(100% - var(--action-card-art-inset-left));
+  margin-left: var(--action-card-art-inset-left);
 }
 
 .action-card-surface-row.is-trigger {
