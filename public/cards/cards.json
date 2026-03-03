@@ -151,8 +151,8 @@
       "priority": 96,
       "actions": [
         "W",
-        "[b-Lb-Rb]",
-        "[b-Lb-Rb]",
+        "[b-Lb-Rb-BLb-BRb-Bb]",
+        "[b-Lb-Rb-BLb-BRb-Bb]",
         "W",
         "E"
       ],
