@@ -94,11 +94,12 @@
   --action-card-header-height: calc(35px * var(--action-card-scale));
   --action-card-actions-left: calc(6px * var(--action-card-scale));
   --action-card-actions-top: calc(7px * var(--action-card-scale));
-  --action-card-action-width: calc(34px * var(--action-card-scale));
-  --action-card-action-height: calc(30px * var(--action-card-scale));
-  --action-card-surface-left: calc(40px * var(--action-card-scale));
+  --action-card-symbol-scale: 1.1;
+  --action-card-action-width: calc(37.4px * var(--action-card-scale));
+  --action-card-action-height: calc(33px * var(--action-card-scale));
+  --action-card-surface-left: calc(6px * var(--action-card-scale));
   --action-card-surface-top: calc(35px * var(--action-card-scale));
-  --action-card-surface-width: calc(194px * var(--action-card-scale));
+  --action-card-surface-width: calc(228px * var(--action-card-scale));
   --action-card-surface-height: calc(295px * var(--action-card-scale));
   --action-card-surface-active-height: calc(46.8px * var(--action-card-scale));
   --action-card-surface-passive-height: calc(42.9px * var(--action-card-scale));
@@ -112,8 +113,9 @@
   --action-card-title-padding-top: calc(6px * var(--action-card-scale));
   --action-card-title-padding-bottom: calc(2px * var(--action-card-scale));
   --action-card-title-top: 0;
-  --action-card-title-left: calc(40px * var(--action-card-scale));
-  --action-card-title-width: calc(139px * var(--action-card-scale));
+  --action-card-art-inset-left: calc(37.4px * var(--action-card-scale));
+  --action-card-title-left: calc(43.4px * var(--action-card-scale));
+  --action-card-title-width: calc(135.6px * var(--action-card-scale));
   --action-card-title-height: var(--action-card-header-height);
   --action-card-title-font-size: calc(
     var(--action-card-title-height) - var(--action-card-title-padding-top) - var(--action-card-title-padding-bottom)
@@ -126,14 +128,27 @@
   --action-card-priority-left: calc(209px * var(--action-card-scale));
   --action-card-priority-width: calc(25px * var(--action-card-scale));
   --action-card-priority-height: calc(26px * var(--action-card-scale));
-  --action-card-damage-top: calc(300px * var(--action-card-scale));
-  --action-card-damage-left: calc(6px * var(--action-card-scale));
+  --action-card-stat-art-inset: calc(2px * var(--action-card-scale));
+  --action-card-row-inline-padding: calc(2px * var(--action-card-scale));
+  --action-card-damage-top: calc(
+    var(--action-card-surface-top) + var(--action-card-surface-art-height) - var(--action-card-damage-height) -
+      var(--action-card-stat-art-inset)
+  );
+  --action-card-damage-top-trigger: calc(
+    var(--action-card-surface-top) + var(--action-card-surface-art-height-with-trigger) - var(--action-card-damage-height) -
+      var(--action-card-stat-art-inset)
+  );
+  --action-card-damage-left: calc(var(--action-card-title-left) + var(--action-card-stat-art-inset));
   --action-card-damage-width: calc(26px * var(--action-card-scale));
   --action-card-damage-height: calc(30px * var(--action-card-scale));
-  --action-card-kbf-top: calc(299px * var(--action-card-scale));
-  --action-card-kbf-left: calc(18px * var(--action-card-scale));
+  --action-card-kbf-overlap-left: calc(12px * var(--action-card-scale));
+  --action-card-kbf-overlap-top: calc(1px * var(--action-card-scale));
+  --action-card-kbf-top: calc(var(--action-card-damage-top) - var(--action-card-kbf-overlap-top));
+  --action-card-kbf-top-trigger: calc(var(--action-card-damage-top-trigger) - var(--action-card-kbf-overlap-top));
+  --action-card-kbf-left: calc(var(--action-card-damage-left) + var(--action-card-kbf-overlap-left));
   --action-card-kbf-width: calc(30px * var(--action-card-scale));
   --action-card-kbf-height: calc(30px * var(--action-card-scale));
+  --action-card-image-border-width: calc(1px * var(--action-card-scale));
   --action-card-hover-shift: calc(var(--action-card-width) * 0.1);
   --deck-card-scale: 0.5;
   --deck-card-width: calc(var(--action-card-base-width) * var(--deck-card-scale));
@@ -3296,7 +3311,7 @@ img[src$='Death.png'] {
   width: var(--action-card-surface-width);
   height: var(--action-card-surface-height);
   border-radius: 0;
-  border: calc(1px * var(--action-card-scale)) solid var(--color-card-textbox-border);
+  border: none;
   color: var(--color-card-textbox-text);
   background: transparent;
   box-shadow: none;
@@ -3335,17 +3350,49 @@ img[src$='Death.png'] {
 }
 
 .action-card-surface-row.is-passive {
+  background: linear-gradient(165deg, #3a3e47, #232831);
+  color: #ffffff;
   font-size: calc(8px * var(--action-card-scale) * var(--action-card-text-scale, 1));
+  font-style: italic;
 }
 
 .action-card-surface-row + .action-card-surface-row {
-  border-top: calc(1px * var(--action-card-scale)) solid var(--color-card-textbox-border);
+  border-top: none;
+}
+
+.action-card-surface-row.is-active + .action-card-surface-row.is-passive {
+  border-top: calc(2.5px * var(--action-card-scale)) solid rgba(255, 255, 255, 0.9);
 }
 
 .action-card-surface-row.is-empty {
   z-index: 1;
   padding: 0;
   background: rgba(0, 0, 0, 0.12);
+}
+
+.action-card-surface-row.is-empty,
+.action-card-surface-row.is-trigger {
+  width: calc(100% - var(--action-card-art-inset-left));
+  margin-left: var(--action-card-art-inset-left);
+}
+
+.action-card-surface-row.is-empty {
+  border: var(--action-card-image-border-width) solid var(--color-card-textbox-border);
+  border-bottom: 0;
+}
+
+.action-card-surface:not(.has-trigger-text) .action-card-surface-row.is-empty {
+  border-bottom: var(--action-card-image-border-width) solid var(--color-card-textbox-border);
+}
+
+.action-card-surface-row.is-empty + .action-card-surface-row.is-trigger {
+  border-top: 0;
+}
+
+.action-card-surface-row.is-trigger {
+  border-left: var(--action-card-image-border-width) solid var(--color-card-textbox-border);
+  border-right: var(--action-card-image-border-width) solid var(--color-card-textbox-border);
+  border-bottom: var(--action-card-image-border-width) solid var(--color-card-textbox-border);
 }
 
 .action-card-art {
@@ -3363,7 +3410,7 @@ img[src$='Death.png'] {
 .action-card-surface-text {
   width: 100%;
   min-width: 0;
-  padding: 0;
+  padding: 0 var(--action-card-row-inline-padding);
   display: block;
   line-height: inherit;
   overflow-wrap: break-word;
@@ -3375,6 +3422,7 @@ img[src$='Death.png'] {
   inset: 0;
   display: block;
   z-index: 4;
+  pointer-events: none;
 }
 
 .action-card-stat {
@@ -3411,6 +3459,14 @@ img[src$='Death.png'] {
   height: var(--action-card-kbf-height);
   top: var(--action-card-kbf-top);
   left: var(--action-card-kbf-left);
+}
+
+.action-card-stats.has-trigger-text .action-card-stat-damage {
+  top: var(--action-card-damage-top-trigger);
+}
+
+.action-card-stats.has-trigger-text .action-card-stat-kbf {
+  top: var(--action-card-kbf-top-trigger);
 }
 
 .action-card-stat-kbf.is-throw-indicator::before {

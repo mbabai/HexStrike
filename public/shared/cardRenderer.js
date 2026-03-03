@@ -488,6 +488,9 @@ export const buildCardElement = (card, options = {}) => {
   if (shouldRenderStatBadges(card)) {
     const stats = document.createElement('div');
     stats.className = 'action-card-stats';
+    if (triggerRow) {
+      stats.classList.add('has-trigger-text');
+    }
     stats.appendChild(buildStatBadge('damage', card.damage, DAMAGE_ICON_URL));
     stats.appendChild(buildStatBadge('kbf', card.kbf, KNOCKBACK_ICON_URL));
     body.appendChild(stats);
