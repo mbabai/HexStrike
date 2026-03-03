@@ -1,5 +1,6 @@
 const SPECIAL_MARKERS = new Set(['X1', 'X2', 'F']);
 const ROTATION_LABELS = ['0', 'R1', 'R2', '3', 'L2', 'L1'];
+const TIMING_ORDER = ['early', 'mid', 'late'];
 
 const toFiniteNumber = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -131,6 +132,20 @@ export const getCardDamageValue = (card) => toFiniteNumber(card?.damage);
 export const getCardKbfValue = (card) => toFiniteNumber(card?.kbf);
 
 export const getCardPriorityValue = (card) => toFiniteNumber(card?.priority);
+
+export const getCardTimingSortValue = (card) => {
+  const timings = Array.isArray(card?.timings) ? card.timings : [];
+  let best = TIMING_ORDER.length;
+  timings.forEach((timing) => {
+    if (!Array.isArray(timing)) return;
+    TIMING_ORDER.forEach((phase, index) => {
+      if (timing.includes(phase)) {
+        best = Math.min(best, index);
+      }
+    });
+  });
+  return best;
+};
 
 export const getCardRotationOptionCount = (card) => {
   const allowed = buildAllowedRotationSet(card?.rotations);

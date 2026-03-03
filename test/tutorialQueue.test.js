@@ -307,11 +307,11 @@ test('tutorial queue uses scripted flow, forced loadout, and strict tutorial cho
       (snapshot) => isUserAtBat(snapshot, playerUserId) && !getPendingInteractionForUser(snapshot, playerUserId),
       { timeoutMs: 12000 },
     );
-    await submitAction({ activeCardId: 'step', passiveCardId: 'guard', rotation: 'R1' });
+    await submitAction({ activeCardId: 'backflip', passiveCardId: 'guard', rotation: 'L1' });
 
     await waitFor(
       getSnapshot,
-      (snapshot) => hasActionStarter(snapshot, botUserId, 'advance', 'sinking-shot'),
+      (snapshot) => hasActionStarter(snapshot, botUserId, 'vengeance', 'advance'),
       { timeoutMs: 12000 },
     );
 
@@ -320,13 +320,13 @@ test('tutorial queue uses scripted flow, forced loadout, and strict tutorial cho
       (snapshot) => isUserAtBat(snapshot, playerUserId) && !getPendingInteractionForUser(snapshot, playerUserId),
       { timeoutMs: 12000 },
     );
-    await submitAction({ activeCardId: 'hip-throw', passiveCardId: 'step', rotation: '3' });
+    await submitAction({ activeCardId: 'hip-throw', passiveCardId: 'advance', rotation: 'L1' });
 
     const postHipThrowSnapshot = await waitFor(
       getSnapshot,
       (snapshot) =>
         Boolean(getPendingInteractionForUser(snapshot, playerUserId, 'throw')) ||
-        hasActionStarter(snapshot, botUserId, 'fleche', 'jab'),
+        (isUserAtBat(snapshot, playerUserId) && !getPendingInteractionForUser(snapshot, playerUserId)),
       { timeoutMs: 12000 },
     );
     const throwInteraction = getPendingInteractionForUser(postHipThrowSnapshot, playerUserId, 'throw');
@@ -349,23 +349,17 @@ test('tutorial queue uses scripted flow, forced loadout, and strict tutorial cho
 
     await waitFor(
       getSnapshot,
-      (snapshot) => isUserAtBat(snapshot, playerUserId) && !getPendingInteractionForUser(snapshot, playerUserId),
-      { timeoutMs: 12000 },
-    );
-    await submitAction({ activeCardId: 'feint', passiveCardId: 'step', rotation: '0' });
-
-    await waitFor(
-      getSnapshot,
       (snapshot) => hasActionStarter(snapshot, botUserId, 'parry', 'step'),
       { timeoutMs: 12000 },
     );
 
-    await waitFor(
+    const preFinishSnapshot = await waitFor(
       getSnapshot,
       (snapshot) => isUserAtBat(snapshot, playerUserId) && !getPendingInteractionForUser(snapshot, playerUserId),
       { timeoutMs: 12000 },
     );
-    await submitAction({ activeCardId: 'smash-attack', passiveCardId: 'advance', rotation: '3' });
+    void preFinishSnapshot;
+    await submitAction({ activeCardId: 'smash-attack', passiveCardId: 'fleche', rotation: '3' });
 
     const postFinishSnapshot = await getSnapshot();
     assert.ok(postFinishSnapshot?.state?.public, 'expected game state after tutorial finish submission');

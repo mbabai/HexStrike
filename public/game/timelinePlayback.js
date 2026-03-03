@@ -9,6 +9,7 @@ import {
 } from './cardText/actionListTransforms.js';
 import { getInterpolatedFacing, getStepProgressByChannel } from './playbackSpeed.mjs';
 import { getDebugBeatFilter, isDebugLoggingEnabled } from './debugFlags.mjs';
+import { getTimingOrder, hasTimingPhase, resolveActionTiming } from '../shared/timing.js';
 
 const DEFAULT_ACTION = 'E';
 const FOCUS_ACTION = 'F';
@@ -52,7 +53,19 @@ const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
 const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
 const GRAPPLING_HOOK_CARD_ID = 'grappling-hook';
 
-const getEntryPriority = (entry) => (Number.isFinite(entry?.priority) ? Number(entry.priority) : 0);
+const getEntryPriority = (entry) => {
+  const actionLabel = normalizeActionLabel(entry?.action ?? '').toUpperCase();
+  if (actionLabel === COMBO_ACTION) return ARROW_PRIORITY + 10;
+  if (Number.isFinite(entry?.priority)) return Number(entry.priority);
+  const timing = resolveActionTiming(entry?.action, entry?.timing);
+  if (!Array.isArray(timing) || !timing.length) return 0;
+  return timing.reduce((highest, phase) => {
+    if (phase === 'early') return Math.max(highest, 100);
+    if (phase === 'mid') return Math.max(highest, 60);
+    if (phase === 'late') return Math.max(highest, 20);
+    return highest;
+  }, 0);
+};
 
 const partitionEntriesByArrowPriority = (entries) => {
   const highPriorityEntries = [];
@@ -529,6 +542,85 @@ const parseActionTokens = (action) => {
     .filter((token) => token.type);
 };
 
+const ACTION_CLASS_ORDER = ['combo', 'throw', 'block', 'attack', 'move', 'focus', 'special', 'other'];
+const ACTION_CLASS_RANK = new Map(ACTION_CLASS_ORDER.map((name, index) => [name, index]));
+
+const getEntryActionSetStep = (entry) =>
+  Number.isFinite(entry?.actionSetStep) ? Math.max(1, Math.floor(entry.actionSetStep)) : 1;
+
+const getEntryActionClass = (entry) => {
+  if (!entry) return 'other';
+  const label = normalizeActionLabel(entry.action ?? '').toUpperCase();
+  if (label === COMBO_ACTION) return 'combo';
+  if (label === FOCUS_ACTION) return 'focus';
+  if (label === 'X1' || label === 'X2') return 'special';
+  const tokens = parseActionTokens(entry.action ?? '');
+  const hasAttack = tokens.some((token) => token.type === 'a' || token.type === 'c');
+  const hasBlock = tokens.some((token) => token.type === 'b');
+  const hasMove = tokens.some((token) => token.type === 'm' || token.type === 'j');
+  if (
+    hasAttack &&
+    (entry?.interaction?.type === 'throw' ||
+      (entry?.cardId ? ACTIVE_THROW_CARD_IDS.has(entry.cardId) : false) ||
+      (entry?.passiveCardId ? PASSIVE_THROW_CARD_IDS.has(entry.passiveCardId) : false))
+  ) {
+    return 'throw';
+  }
+  if (hasBlock) return 'block';
+  if (hasAttack) return 'attack';
+  if (hasMove) return 'move';
+  return 'other';
+};
+
+const getEntryAttackKbf = (entry) =>
+  Number.isFinite(entry?.attackKbf) ? Math.max(0, Math.floor(entry.attackKbf)) : 0;
+
+const getEntryTimingRank = (entry) => {
+  if (!entry) return Number.MAX_SAFE_INTEGER;
+  const actionLabel = normalizeActionLabel(entry.action ?? '').toUpperCase();
+  if (actionLabel === COMBO_ACTION) return -2;
+  if (actionLabel === DEFAULT_ACTION) return -1;
+  const timing = resolveActionTiming(entry.action, entry.timing);
+  if (!Array.isArray(timing) || !timing.length) return Number.MAX_SAFE_INTEGER;
+  const timingOrder = getTimingOrder();
+  let best = Number.MAX_SAFE_INTEGER;
+  timingOrder.forEach((phase, index) => {
+    if (hasTimingPhase(timing, phase)) {
+      best = Math.min(best, index);
+    }
+  });
+  return best;
+};
+
+const compareBeatEntriesForExecutionBase = (left, right) => {
+  const timingDelta = getEntryTimingRank(left) - getEntryTimingRank(right);
+  if (timingDelta) return timingDelta;
+
+  const classRankLeft = ACTION_CLASS_RANK.get(getEntryActionClass(left)) ?? Number.MAX_SAFE_INTEGER;
+  const classRankRight = ACTION_CLASS_RANK.get(getEntryActionClass(right)) ?? Number.MAX_SAFE_INTEGER;
+  const classDelta = classRankLeft - classRankRight;
+  if (classDelta) return classDelta;
+
+  const stepDelta = getEntryActionSetStep(right) - getEntryActionSetStep(left);
+  if (stepDelta) return stepDelta;
+
+  const leftClass = getEntryActionClass(left);
+  const rightClass = getEntryActionClass(right);
+  if (leftClass === 'attack' && rightClass === 'attack') {
+    const kbfDelta = getEntryAttackKbf(right) - getEntryAttackKbf(left);
+    if (kbfDelta) return kbfDelta;
+  }
+
+  return 0;
+};
+
+const buildExecutionTieBucketKey = (entry) => {
+  const actionClass = getEntryActionClass(entry);
+  const attackKey = actionClass === 'attack' ? getEntryAttackKbf(entry) : 'x';
+  const classRank = ACTION_CLASS_RANK.get(actionClass) ?? Number.MAX_SAFE_INTEGER;
+  return [getEntryTimingRank(entry), classRank, getEntryActionSetStep(entry), attackKey].join('|');
+};
+
 const isClassicAttackSweep = (attackTokens) =>
   attackTokens.length === 3 &&
   attackTokens.every((token) => token.tokenType === 'a') &&
@@ -617,7 +709,7 @@ const applyGiganticStaffAction = (action) => {
 
 const applyRotationPhase = (entries, state, userLookup) => {
   entries.forEach((entry) => {
-    const actorId = userLookup.get(entry.username);
+    const actorId = userLookup.get(resolveEntryKey(entry));
     if (!actorId) return;
     const actorState = state.get(actorId);
     if (!actorState) return;
@@ -1156,17 +1248,93 @@ const buildActionSteps = (
 
   const blockMap = new Map();
   const disabledActors = new Set();
+  const deferredDisabledActors = new Set();
+  let currentExecutionBucketKey = null;
 
   const ordered = (beat ?? [])
     .slice()
     .sort((a, b) => {
-      const priorityDelta = (b.priority ?? 0) - (a.priority ?? 0);
-      if (priorityDelta) return priorityDelta;
+      const baseDelta = compareBeatEntriesForExecutionBase(a, b);
+      if (baseDelta) return baseDelta;
       const orderA = rosterOrder.get(resolveEntryKey(a)) ?? Number.MAX_SAFE_INTEGER;
       const orderB = rosterOrder.get(resolveEntryKey(b)) ?? Number.MAX_SAFE_INTEGER;
       return orderA - orderB;
     })
     .filter((entry) => entry && !isOpenBeatAction(entry.action));
+
+  const entriesByTieBucket = new Map();
+  ordered.forEach((entry) => {
+    const bucketKey = buildExecutionTieBucketKey(entry);
+    const list = entriesByTieBucket.get(bucketKey) ?? [];
+    list.push(entry);
+    entriesByTieBucket.set(bucketKey, list);
+  });
+
+  const movementTieBlockedBy = new Map();
+  entriesByTieBucket.forEach((entriesInBucket) => {
+    if (!entriesInBucket.length) return;
+    if (getEntryActionClass(entriesInBucket[0]) !== 'move') return;
+    if (entriesInBucket.length < 2) return;
+    const destinationToActors = new Map();
+    entriesInBucket.forEach((entry) => {
+      const actorId = userLookup.get(entry.username ?? entry.userId ?? entry.userID);
+      if (!actorId) return;
+      const actorState = state.get(actorId);
+      if (!actorState) return;
+      const firstMoveToken = parseActionTokens(entry.action ?? '').find(
+        (token) => token.type === 'm' || token.type === 'j',
+      );
+      if (!firstMoveToken) return;
+      const path = buildPath(
+        { q: actorState.position.q, r: actorState.position.r },
+        firstMoveToken.steps,
+        actorState.facing,
+      );
+      const destinationKey = coordKey(path.destination);
+      const existing = destinationToActors.get(destinationKey) ?? [];
+      existing.push(actorId);
+      destinationToActors.set(destinationKey, existing);
+    });
+    destinationToActors.forEach((actorIds) => {
+      if (actorIds.length < 2) return;
+      actorIds.forEach((actorId, index) => {
+        if (movementTieBlockedBy.has(actorId)) return;
+        const blockerId = actorIds[(index + 1) % actorIds.length];
+        if (!blockerId || blockerId === actorId) return;
+        movementTieBlockedBy.set(actorId, blockerId);
+      });
+    });
+  });
+
+  const tieBucketActorsByKey = new Map();
+  entriesByTieBucket.forEach((entriesInBucket, bucketKey) => {
+    if (!entriesInBucket.length) return;
+    if (getEntryActionClass(entriesInBucket[0]) !== 'attack') return;
+    if (entriesInBucket.length < 2) return;
+    const actorIds = new Set();
+    entriesInBucket.forEach((entry) => {
+      const actorId = userLookup.get(entry.username ?? entry.userId ?? entry.userID);
+      if (actorId) actorIds.add(actorId);
+    });
+    if (actorIds.size > 1) {
+      tieBucketActorsByKey.set(bucketKey, actorIds);
+    }
+  });
+
+  const flushDeferredDisabledActors = () => {
+    deferredDisabledActors.forEach((actorId) => disabledActors.add(actorId));
+    deferredDisabledActors.clear();
+  };
+
+  const markActorDisabled = (actorId) => {
+    if (!actorId) return;
+    const bucketActors = currentExecutionBucketKey ? tieBucketActorsByKey.get(currentExecutionBucketKey) : null;
+    if (bucketActors?.has(actorId)) {
+      deferredDisabledActors.add(actorId);
+      return;
+    }
+    disabledActors.add(actorId);
+  };
 
   const duplicateSummary = getBeatDuplicateSummary(beat);
   if (duplicateSummary.length) {
@@ -1286,11 +1454,11 @@ const buildActionSteps = (
         blockHits: [],
         effects: [],
       });
-      disabledActors.add(attackerId);
+      markActorDisabled(attackerId);
     });
   }
 
-  ordered.forEach((entry) => {
+  const processOrderedEntry = (entry) => {
     const actorId = userLookup.get(entry.username);
     if (!actorId) return;
     if (disabledActors.has(actorId)) return;
@@ -1465,7 +1633,7 @@ const buildActionSteps = (
                     damageChanges.push({ targetId: actorId, delta: reflected });
                   }
                 }
-                disabledActors.add(targetId);
+                markActorDisabled(targetId);
               } else {
                 hitTargets.push({
                   targetId,
@@ -1473,7 +1641,7 @@ const buildActionSteps = (
                   to: { q: fromPosition.q, r: fromPosition.r },
                   path: knockbackPath,
                 });
-                disabledActors.add(targetId);
+                markActorDisabled(targetId);
               }
               return;
             }
@@ -1562,7 +1730,7 @@ const buildActionSteps = (
               }
             }
             if (shouldStun) {
-              disabledActors.add(targetId);
+              markActorDisabled(targetId);
             }
           }
         }
@@ -1570,13 +1738,16 @@ const buildActionSteps = (
 
       if (token.type === 'm' || token.type === 'c') {
         let finalPosition = origin;
-        for (const stepPosition of positions) {
-          const stepKey = coordKey(stepPosition);
-          const occupant = occupancy.get(stepKey);
-          if (occupant && occupant !== actorId) {
-            break;
+        const forcedTieBlocker = movementTieBlockedBy.get(actorId);
+        if (!forcedTieBlocker) {
+          for (const stepPosition of positions) {
+            const stepKey = coordKey(stepPosition);
+            const occupant = occupancy.get(stepKey);
+            if (occupant && occupant !== actorId) {
+              break;
+            }
+            finalPosition = stepPosition;
           }
-          finalPosition = stepPosition;
         }
         if (!sameCoord(finalPosition, actorState.position)) {
           occupancy.delete(coordKey(actorState.position));
@@ -1623,7 +1794,20 @@ const buildActionSteps = (
       blockHits,
       effects,
     });
+  };
+
+  let previousBucketKey = null;
+  ordered.forEach((entry) => {
+    const bucketKey = buildExecutionTieBucketKey(entry);
+    if (previousBucketKey !== null && bucketKey !== previousBucketKey) {
+      flushDeferredDisabledActors();
+    }
+    currentExecutionBucketKey = bucketKey;
+    processOrderedEntry(entry);
+    previousBucketKey = bucketKey;
   });
+  flushDeferredDisabledActors();
+  currentExecutionBucketKey = null;
 
   return { steps, persistentEffects };
 };
@@ -2219,8 +2403,8 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
     const ordered = beat
       .slice()
       .sort((a, b) => {
-        const priorityDelta = (b.priority ?? 0) - (a.priority ?? 0);
-        if (priorityDelta) return priorityDelta;
+        const baseDelta = compareBeatEntriesForExecutionBase(a, b);
+        if (baseDelta) return baseDelta;
         const orderA = rosterOrder.get(resolveEntryKey(a)) ?? Number.MAX_SAFE_INTEGER;
         const orderB = rosterOrder.get(resolveEntryKey(b)) ?? Number.MAX_SAFE_INTEGER;
         return orderA - orderB;

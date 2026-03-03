@@ -95,12 +95,6 @@ const applyFlyingKneePassiveText = (actionList) =>
 
 const applyGuardPassiveText = (actionList) => replaceAllActions(actionList, 'W', 'Bb');
 
-const applyJabPassiveText = (actionList) =>
-  mapActionList(actionList, (entry) => {
-    const basePriority = Number.isFinite(entry.priority) ? entry.priority : 0;
-    return patchActionEntry(entry, { priority: basePriority + 30 });
-  });
-
 const isJumpAction = (entry) => normalizeActionLabel(entry.action).toLowerCase().endsWith('j');
 
 const buildSmashAttackEntry = (entry) => ({
@@ -151,7 +145,6 @@ const PASSIVE_ABILITY_EFFECTS = new Map([
   ['cross-slash', applyCrossSlashPassiveText],
   ['flying-knee', applyFlyingKneePassiveText],
   ['guard', applyGuardPassiveText],
-  ['jab', applyJabPassiveText],
   ['push-kick', applyPushKickPassiveText],
   ['smash-attack', applySmashAttackPassiveText],
   ['smoke-bomb', applySmokeBombPassiveText],

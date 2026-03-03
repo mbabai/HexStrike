@@ -1,21 +1,36 @@
+import { getTimingPriority, normalizeCardTimings } from './timing.js';
 const CARD_DATA_URL = '/public/cards/cards.json';
 let catalogPromise = null;
 
 const normalizeCard = (card, type, index) => {
   if (!card || typeof card !== 'object') {
-    return { id: `${type}-${index}`, name: `${type}-${index}`, type, priority: 0, actions: [], rotations: '*' };
+    return { id: `${type}-${index}`, name: `${type}-${index}`, type, actions: [], timings: [], rotations: '*' };
   }
   const id = typeof card.id === 'string' && card.id.trim() ? card.id.trim() : `${type}-${index}`;
   const name = typeof card.name === 'string' && card.name.trim() ? card.name.trim() : id;
   const actions = Array.isArray(card.actions) ? card.actions.map((action) => `${action}`.trim()).filter(Boolean) : [];
+  const timings = normalizeCardTimings(actions, card.timings);
   const rotations = typeof card.rotations === 'string' && card.rotations.trim() ? card.rotations.trim() : '*';
-  const priority = Number.isFinite(card.priority) ? card.priority : 0;
   const damage = card.damage ?? 0;
   const kbf = card.kbf ?? 0;
   const triggerText = typeof card.triggerText === 'string' && card.triggerText.trim() ? card.triggerText.trim() : null;
   const activeText = typeof card.activeText === 'string' ? card.activeText.trim() : '';
   const passiveText = typeof card.passiveText === 'string' ? card.passiveText.trim() : '';
-  return { id, name, type, priority, actions, rotations, damage, kbf, triggerText, activeText, passiveText };
+  return {
+    id,
+    name,
+    type,
+    actions,
+    timings,
+    rotations,
+    damage,
+    kbf,
+    triggerText,
+    activeText,
+    passiveText,
+    // Keep a derived numeric value for older UI code paths.
+    priority: getTimingPriority(timings[0]),
+  };
 };
 
 const normalizeDeck = (deck, index) => {

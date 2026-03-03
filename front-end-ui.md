@@ -39,6 +39,8 @@ This document defines the single source of truth for HexStrike's browser UI styl
 
 ## Assets and motifs
 - Favor ornamental framing through borders, gradients, and glows rather than heavy image assets. When adding imagery, keep it color-corrected to the palette.
+- Rulebook timing icons must use `/public/images/earlyRules.png`, `/public/images/midRules.png`, and `/public/images/lateRules.png` (not the in-game action overlay timing icons).
+- In the Rulebook symbol-reference table, render timing icons as a single non-wrapping left-to-right row (use an inline-flex icon row wrapper).
 
 ## Documentation
 - Update this file when introducing new reusable UI primitives. Reference the specific class names, variables, and intended usage.

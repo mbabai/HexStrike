@@ -1,6 +1,7 @@
 import { readFile } from 'fs';
 import { join } from 'path';
 import { CardCatalog, CardDefinition, CardType, DeckDefinition } from '../types';
+import { getTimingPriority, normalizeCardTimings } from './timing';
 
 const CARD_DATA_PATH = join(process.cwd(), 'public', 'cards', 'cards.json');
 
@@ -24,8 +25,8 @@ const normalizeCard = (card: unknown, type: CardType, index: number): CardDefini
       id: `${type}-${index}`,
       name: `${type}-${index}`,
       type,
-      priority: 0,
       actions: [],
+      timings: [],
       rotations: '*',
       damage: 0,
       kbf: 0,
@@ -37,14 +38,28 @@ const normalizeCard = (card: unknown, type: CardType, index: number): CardDefini
   const actions = Array.isArray(raw.actions)
     ? raw.actions.map((action) => `${action ?? ''}`.trim()).filter(Boolean)
     : [];
+  const timings = normalizeCardTimings(actions, raw.timings);
   const rotations = typeof raw.rotations === 'string' && raw.rotations.trim() ? raw.rotations.trim() : '*';
-  const priority = Number.isFinite(raw.priority) ? Number(raw.priority) : 0;
   const damage = Number.isFinite(raw.damage) ? Number(raw.damage) : 0;
   const kbf = Number.isFinite(raw.kbf) ? Number(raw.kbf) : 0;
   const triggerText = typeof raw.triggerText === 'string' && raw.triggerText.trim() ? raw.triggerText : null;
   const activeText = typeof raw.activeText === 'string' ? raw.activeText : undefined;
   const passiveText = typeof raw.passiveText === 'string' ? raw.passiveText : undefined;
-  return { id, name, type, priority, actions, rotations, damage, kbf, triggerText, activeText, passiveText };
+  return {
+    id,
+    name,
+    type,
+    actions,
+    timings,
+    rotations,
+    damage,
+    kbf,
+    triggerText,
+    activeText,
+    passiveText,
+    // Keep a derived numeric value for compatibility with older call sites/tests.
+    priority: getTimingPriority(timings[0]),
+  };
 };
 
 const normalizeDeck = (deck: unknown): DeckDefinition => {

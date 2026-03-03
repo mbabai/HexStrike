@@ -847,7 +847,7 @@ test('executeBeats does not flip targets for Grappling Hook passive on non-exact
   });
 });
 
-test('executeBeats preserves action when hit after acting and records consequences', () => {
+test('executeBeats replaces untimed W with DamageIcon when hit by a timed action and records consequences', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
     { userId: 'beta', username: 'beta', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
@@ -865,7 +865,7 @@ test('executeBeats preserves action when hit after acting and records consequenc
   const alphaEntry = beat0.find((entry) => entry.username === 'alpha');
 
   assert.ok(alphaEntry);
-  assert.equal(alphaEntry.action, 'W');
+  assert.equal(alphaEntry.action, 'DamageIcon');
   assert.ok(Array.isArray(alphaEntry.consequences));
   assert.deepEqual(alphaEntry.consequences[0], {
     type: 'hit',

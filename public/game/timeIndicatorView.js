@@ -3,6 +3,7 @@ import { getEarliestPendingInteractionIndex, getTimelineStopIndex } from './beat
 import { getActiveHandTriggerId } from './handTriggerOrder.mjs';
 import { drawNameCapsule } from './portraitBadges.js';
 import { getFfaScoreMapAtBeat, isFfaEnabled, isFfaPlayerInvulnerableAtBeat } from './ffaState.js';
+import { resolveActionTiming } from '../shared/timing.js';
 
 const DEFAULT_BORDER_SIZE = { width: 640, height: 64 };
 const DEFAULT_ACTION = 'E';
@@ -20,8 +21,6 @@ const TIMELINE_OFFSETS = Array.from({ length: VISIBLE_BEAT_RADIUS * 2 + 1 }, (_,
 const actionArt = new Map();
 const characterArt = new Map();
 const cardArt = new Map();
-const priorityIcon = new Image();
-  priorityIcon.src = '/public/images/priority.png';
 const playedCardBackImage = new Image();
   playedCardBackImage.src = '/public/images/CardBack.png';
 const playedCardRevealByActor = new Map();
@@ -1190,8 +1189,7 @@ export const drawTimeIndicator = (
         actionLabel !== ACTION_ICON_FALLBACK &&
         actionLabel !== 'DamageIcon'
       ) {
-        const priorityValue = Number.isFinite(entry?.priority) ? entry.priority : 0;
-        drawPriorityBadge(ctx, imageX, imageY, drawSize, priorityValue, theme);
+        drawTimingBadges(ctx, imageX, imageY, drawSize, entry);
       }
       const rotation = entry?.rotation;
       if (rotation !== undefined && rotation !== null && rotation !== '') {
@@ -1674,25 +1672,18 @@ const drawRotationBadge = (ctx, x, y, size, rotation, theme) => {
   ctx.restore();
 };
 
-const drawPriorityBadge = (ctx, x, y, size, priority, theme) => {
-  const radius = Math.max(6, size * 0.22);
-  const padding = Math.max(2, size * 0.05);
-  const badgeOffset = Math.max(4, size * 0.25);
-  const centerX = x + size - radius - padding;
-  const centerY = y + size - radius - padding + badgeOffset;
-  const fontSize = Math.max(9, radius * 1.05);
-
-  if (priorityIcon.complete && priorityIcon.naturalWidth > 0) {
-    ctx.drawImage(priorityIcon, centerX - radius, centerY - radius, radius * 2, radius * 2);
-  }
-
-  ctx.save();
-  ctx.fillStyle = '#000000';
-  ctx.font = `600 ${fontSize}px ${theme.fontBody}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(`${priority}`, centerX, centerY + radius * 0.05);
-  ctx.restore();
+const drawTimingBadges = (ctx, x, y, size, entry) => {
+  const timing = resolveActionTiming(entry?.action, entry?.timing);
+  if (!Array.isArray(timing) || !timing.length) return;
+  const icons = timing
+    .map((phase) => getActionArt(phase))
+    .filter((icon) => icon && icon.complete && icon.naturalWidth > 0);
+  if (!icons.length) return;
+  // Timing art is authored as full-frame overlays with directional markers.
+  // Draw each phase at full action-icon size so markers line up with the base icon.
+  icons.forEach((icon) => {
+    ctx.drawImage(icon, x, y, size, size);
+  });
 };
 
 const drawFocusBadge = (ctx, x, y, size) => {

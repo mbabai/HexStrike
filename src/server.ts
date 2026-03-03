@@ -68,6 +68,7 @@ import {
   DeckDefinition,
   DeckState,
   GameDoc,
+  GamePublicState,
   GameStateDoc,
   FfaState,
   HexCoord,
@@ -275,7 +276,7 @@ const TUTORIAL_BOT_DECK: DeckDefinition = {
     'parry',
     'smash-attack',
     'guard',
-    'jab',
+    'vengeance',
     'cross-slash',
     'feint',
     'iron-will',
@@ -313,9 +314,8 @@ const TUTORIAL_PLAYER_ACTION_SEQUENCE: TutorialActionStep[] = [
   { activeCardId: 'step', passiveCardIds: ['fumikomi'], rotation: '0' },
   { activeCardId: 'jab', passiveCardIds: ['fleche'], rotation: '0' },
   { activeCardId: 'cross-slash', passiveCardIds: ['step'], rotation: '0' },
-  { activeCardId: 'step', passiveCardIds: ['guard'], rotation: 'R1' },
-  { activeCardId: 'hip-throw', passiveCardIds: ['step'], rotation: '3' },
-  { activeCardId: 'feint', passiveCardIds: ['step'], rotation: '0' },
+  { activeCardId: 'backflip', passiveCardIds: ['guard'], rotation: 'L1' },
+  { activeCardId: 'hip-throw', passiveCardIds: ['advance'], rotation: 'L1' },
   { activeCardId: 'smash-attack', passiveCardIds: ['step', 'advance', 'fleche', 'backflip'], rotation: '3' },
 ];
 
@@ -327,13 +327,12 @@ const TUTORIAL_BOT_ACTION_SEQUENCE: TutorialActionStep[] = [
     rotation: '0',
     minPlayerActionIndex: 3,
   },
-  { activeCardId: 'advance', passiveCardIds: ['sinking-shot'], rotation: '0', minPlayerActionIndex: 3 },
-  { activeCardId: 'fleche', passiveCardIds: ['jab'], rotation: '0', minPlayerActionIndex: 5 },
+  { activeCardId: 'vengeance', passiveCardIds: ['advance'], rotation: '0', minPlayerActionIndex: 3 },
   {
     activeCardId: 'parry',
     passiveCardIds: ['step'],
     rotation: 'R1',
-    minPlayerActionIndex: 5,
+    minPlayerActionIndex: 4,
     minInteractionIndex: 2,
   },
 ];
@@ -346,7 +345,7 @@ const TUTORIAL_INTERACTION_SEQUENCE: TutorialInteractionStep[] = [
 const TUTORIAL_BOT_FALLBACK_ACTIONS: TutorialActionStep[] = [
   { activeCardId: 'step', passiveCardIds: ['jab'], rotation: '0' },
   { activeCardId: 'feint', passiveCardIds: ['dash'], rotation: '0' },
-  { activeCardId: 'fleche', passiveCardIds: ['guard'], rotation: '0' },
+  { activeCardId: 'vengeance', passiveCardIds: ['dash'], rotation: '0' },
   { activeCardId: 'cross-slash', passiveCardIds: ['dash'], rotation: '0' },
   { activeCardId: 'hammer', passiveCardIds: ['dash'], rotation: '0' },
   { activeCardId: 'iron-will', passiveCardIds: ['dash'], rotation: '0' },
@@ -1085,10 +1084,29 @@ export function buildServer(port: number) {
     session.botActionIndex += 1;
   };
 
-  const consumeTutorialInteraction = (session: TutorialSession, expectedIndex: number) => {
-    if (session.interactionIndex !== expectedIndex) return;
-    session.interactionIndex += 1;
-  };
+const consumeTutorialInteraction = (session: TutorialSession, expectedIndex: number) => {
+  if (session.interactionIndex !== expectedIndex) return;
+  session.interactionIndex += 1;
+};
+
+const maybeSkipTutorialThrowInteractionStep = (
+  session: TutorialSession,
+  publicState: GamePublicState,
+): boolean => {
+  const throwStepIndex = 1;
+  if (session.interactionIndex !== throwStepIndex) return false;
+  // Player has already submitted Hip Throw in the scripted sequence.
+  if (session.playerActionIndex < 5) return false;
+  const pendingThrowForPlayer = (publicState.customInteractions ?? []).some(
+    (interaction) =>
+      interaction?.status === 'pending' &&
+      interaction?.type === 'throw' &&
+      interaction?.actorUserId === session.playerUserId,
+  );
+  if (pendingThrowForPlayer) return false;
+  consumeTutorialInteraction(session, throwStepIndex);
+  return true;
+};
 
   const applyTutorialComboAvailability = (
     comboAvailability: Map<string, boolean>,
@@ -2350,6 +2368,14 @@ export function buildServer(port: number) {
         if (!session) return;
 
         const publicState = game.state.public;
+        if (maybeSkipTutorialThrowInteractionStep(session, publicState)) {
+          writeDevTempEvent('tutorial-bot', {
+            stage: 'interaction:skip-throw',
+            gameId,
+            interactionIndex: session.interactionIndex,
+            playerActionIndex: session.playerActionIndex,
+          });
+        }
         const pendingInteraction = (publicState.customInteractions ?? []).find(
           (interaction) => interaction?.status === 'pending',
         );
@@ -4018,35 +4044,65 @@ export function buildServer(port: number) {
       sendGameUpdate(match, updatedGame, deckStates);
       const view = buildGameViewForPlayer(updatedGame, userId, deckStates);
       return { ok: true, status: 200, payload: view };
-    } else if (interaction.type === 'throw') {
+    } else if (interaction.type === 'throw' || interaction.type === 'tie-knockback') {
       const resolvedDirection = Number(directionIndex);
       if (!Number.isFinite(resolvedDirection) || resolvedDirection < 0 || resolvedDirection > 5) {
         console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'invalid-direction' });
-        return { ok: false, status: 400, error: 'Invalid throw direction' };
-      }
-      const tutorialInteractionValidation = validateTutorialInteractionRequest({
-        gameId,
-        userId,
-        interaction,
-        continueChoice: null,
-        directionIndex: Math.round(resolvedDirection),
-        characters,
-        beats,
-      });
-      if ('error' in tutorialInteractionValidation) {
-        console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'tutorial-step-mismatch' });
         return {
           ok: false,
-          status: 409,
-          error: tutorialInteractionValidation.error,
-          code: 'tutorial-step-mismatch',
+          status: 400,
+          error: interaction.type === 'throw' ? 'Invalid throw direction' : 'Invalid knockback direction',
         };
       }
-      interaction.status = 'resolved';
-      interaction.resolution = { directionIndex: Math.round(resolvedDirection) };
-      if (tutorialInteractionValidation.session && tutorialInteractionValidation.consumeIndex != null) {
-        consumeTutorialInteraction(tutorialInteractionValidation.session, tutorialInteractionValidation.consumeIndex);
+      const roundedDirection = Math.round(resolvedDirection);
+      const allowedDirectionIndices = Array.isArray(interaction.allowedDirectionIndices)
+        ? interaction.allowedDirectionIndices
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value) && value >= 0 && value <= 5)
+            .map((value) => Math.round(value))
+        : null;
+      if (allowedDirectionIndices?.length && !allowedDirectionIndices.includes(roundedDirection)) {
+        console.log(`${LOG_PREFIX} interaction:resolve rejected`, {
+          userId,
+          gameId,
+          reason: 'direction-not-allowed',
+          directionIndex: roundedDirection,
+          allowedDirectionIndices,
+        });
+        return {
+          ok: false,
+          status: 400,
+          error:
+            interaction.type === 'throw'
+              ? 'Selected direction is not available for this throw'
+              : 'Selected direction is not available for this knockback',
+        };
       }
+      if (interaction.type === 'throw') {
+        const tutorialInteractionValidation = validateTutorialInteractionRequest({
+          gameId,
+          userId,
+          interaction,
+          continueChoice: null,
+          directionIndex: roundedDirection,
+          characters,
+          beats,
+        });
+        if ('error' in tutorialInteractionValidation) {
+          console.log(`${LOG_PREFIX} interaction:resolve rejected`, { userId, gameId, reason: 'tutorial-step-mismatch' });
+          return {
+            ok: false,
+            status: 409,
+            error: tutorialInteractionValidation.error,
+            code: 'tutorial-step-mismatch',
+          };
+        }
+        if (tutorialInteractionValidation.session && tutorialInteractionValidation.consumeIndex != null) {
+          consumeTutorialInteraction(tutorialInteractionValidation.session, tutorialInteractionValidation.consumeIndex);
+        }
+      }
+      interaction.status = 'resolved';
+      interaction.resolution = { directionIndex: roundedDirection };
     } else if (
       interaction.type === 'combo' ||
       interaction.type === GUARD_CONTINUE_INTERACTION_TYPE ||

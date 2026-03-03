@@ -1,5 +1,6 @@
 import { ActionListItem, BeatEntry, PublicCharacter } from '../types';
 import { getTimelineResolvedIndex } from './beatTimeline';
+import { getTimingPriority, resolveActionTiming } from './timing';
 
 const DEFAULT_ACTION = 'E';
 const FOCUS_ACTION = 'F';
@@ -61,7 +62,9 @@ const buildTargetEntry = (
   action: string,
   rotation: string,
   rotationSource: ActionListItem['rotationSource'],
+  timing: ActionListItem['timing'],
   priority: number,
+  actionSetStep: number | undefined,
   interaction: ActionListItem['interaction'],
   attackDamage: number | undefined,
   attackKbf: number | undefined,
@@ -74,7 +77,9 @@ const buildTargetEntry = (
     username: target.username ?? target.userId,
     action,
     rotation,
+    timing,
     priority,
+    actionSetStep,
     damage: seed.damage,
     location: cloneLocation(seed.location),
     facing: seed.facing,
@@ -167,7 +172,11 @@ export const applyActionSetToBeats = (
     action: item.action,
     rotation: item.rotation,
     rotationSource: item.rotationSource,
-    priority: item.priority,
+    timing: resolveActionTiming(item.action, item.timing),
+    priority: Number.isFinite(item.priority)
+      ? item.priority
+      : getTimingPriority(resolveActionTiming(item.action, item.timing)),
+    actionSetStep: Number.isFinite(item.actionSetStep) ? Math.max(1, Math.floor(item.actionSetStep as number)) : index + 1,
     interaction: item.interaction,
     attackDamage: item.damage,
     attackKbf: item.kbf,
@@ -199,7 +208,9 @@ export const applyActionSetToBeats = (
       } else if ('rotationSource' in entry) {
         delete entry.rotationSource;
       }
+      entry.timing = actionItem.timing;
       entry.priority = actionItem.priority;
+      entry.actionSetStep = actionItem.actionSetStep;
       if (actionItem.interaction) {
         entry.interaction = actionItem.interaction;
       } else if ('interaction' in entry) {
@@ -248,7 +259,9 @@ export const applyActionSetToBeats = (
         actionItem.action,
         actionItem.rotation,
         actionItem.rotationSource,
+        actionItem.timing,
         actionItem.priority,
+        actionItem.actionSetStep,
         actionItem.interaction,
         actionItem.attackDamage,
         actionItem.attackKbf,

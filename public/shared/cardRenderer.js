@@ -1,9 +1,15 @@
+import { resolveActionTiming } from './timing.js';
+
 const ACTION_ICON_FALLBACK = 'empty';
 const ROTATION_ICON_FALLBACK = 'rotStar';
-const PRIORITY_ICON_URL = '/public/images/priority.png';
 const DAMAGE_ICON_URL = '/public/images/DamageIcon.png';
 const KNOCKBACK_ICON_URL = '/public/images/KnockBackIcon.png';
 const EMPHASIS_ICON_URL = '/public/images/i.png';
+const TIMING_ICON_URLS = {
+  early: '/public/images/early.png',
+  mid: '/public/images/mid.png',
+  late: '/public/images/late.png',
+};
 const DRAW_ICON_URL = '/public/images/DrawIcon.png';
 const DISCARD_ICON_URL = '/public/images/DiscardIcon.png';
 const CARD_ART_BASE_URL = '/public/images/cardart';
@@ -103,7 +109,7 @@ const buildStatBadge = (type, value, iconUrl) => {
   return stat;
 };
 
-const buildActionIcon = (action) => {
+const buildActionIcon = (action, timing) => {
   const icon = document.createElement('span');
   icon.className = 'action-card-action';
   const { label, emphasized } = parseActionToken(action);
@@ -116,6 +122,25 @@ const buildActionIcon = (action) => {
     icon.style.backgroundRepeat = 'no-repeat, no-repeat';
   } else {
     icon.style.backgroundImage = `url('${iconUrl}')`;
+  }
+  const resolvedTiming = resolveActionTiming(action, timing);
+  if (Array.isArray(resolvedTiming) && resolvedTiming.length) {
+    const timingWrap = document.createElement('span');
+    timingWrap.className = 'action-card-action-timing';
+    resolvedTiming.forEach((phase) => {
+      const timingUrl = TIMING_ICON_URLS[phase];
+      if (!timingUrl) return;
+      const timingIcon = document.createElement('img');
+      timingIcon.className = 'action-card-action-timing-icon';
+      timingIcon.src = timingUrl;
+      timingIcon.alt = `${phase} timing`;
+      timingIcon.loading = 'eager';
+      timingIcon.decoding = 'async';
+      timingWrap.appendChild(timingIcon);
+    });
+    if (timingWrap.childElementCount) {
+      icon.appendChild(timingWrap);
+    }
   }
   icon.setAttribute('aria-label', label);
   return icon;
@@ -408,15 +433,6 @@ export const buildCardElement = (card, options = {}) => {
   rotationBadge.setAttribute('aria-label', `Rotation ${card.rotations ?? '*'}`);
   badgeRow.appendChild(rotationBadge);
 
-  const priorityBadge = document.createElement('span');
-  priorityBadge.className = 'action-card-badge action-card-priority';
-  priorityBadge.style.backgroundImage = `url('${PRIORITY_ICON_URL}')`;
-  const priorityValue = document.createElement('span');
-  priorityValue.className = 'action-card-priority-value';
-  priorityValue.textContent = `${card.priority ?? 0}`;
-  priorityBadge.appendChild(priorityValue);
-  badgeRow.appendChild(priorityBadge);
-
   header.appendChild(badgeRow);
 
   const body = document.createElement('div');
@@ -424,8 +440,10 @@ export const buildCardElement = (card, options = {}) => {
 
   const actions = document.createElement('div');
   actions.className = 'action-card-actions';
-  ensureActionList(card.actions).forEach((action) => {
-    actions.appendChild(buildActionIcon(action));
+  const cardActions = ensureActionList(card.actions);
+  const cardTimings = Array.isArray(card?.timings) ? card.timings : [];
+  cardActions.forEach((action, index) => {
+    actions.appendChild(buildActionIcon(action, cardTimings[index]));
   });
 
   const surface = document.createElement('div');

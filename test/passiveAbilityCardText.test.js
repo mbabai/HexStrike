@@ -115,12 +115,14 @@ test('smoke-bomb passive inverts movement direction', () => {
   );
 });
 
-test('jab passive increases priority across the action list', () => {
-  const basePriority = catalog.cardsById.get('step').priority;
+test('jab has no passive timeline override', () => {
+  const stepCard = catalog.cardsById.get('step');
+  assert.ok(stepCard);
   const actionList = buildActionList('step', 'jab');
-  actionList.forEach((entry) => {
-    assert.equal(entry.priority, basePriority + 30);
-  });
+  assert.deepEqual(
+    actionList.map((entry) => entry.action),
+    stepCard.actions,
+  );
 });
 
 test('whirlwind passive replaces the final m with c-La-Ra-BLa-BRa-Ba', () => {

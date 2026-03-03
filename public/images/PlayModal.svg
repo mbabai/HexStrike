@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="210mm"
+   height="297mm"
+   viewBox="0 0 210 297"
+   version="1.1"
+   id="svg8"
+   inkscape:version="0.92.4 (5da689c313, 2019-01-14)"
+   sodipodi:docname="PlayModal.svg">
+  <defs
+     id="defs2" />
+  <sodipodi:namedview
+     id="base"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageopacity="0.0"
+     inkscape:pageshadow="2"
+     inkscape:zoom="0.7"
+     inkscape:cx="261.78033"
+     inkscape:cy="510.52731"
+     inkscape:document-units="mm"
+     inkscape:current-layer="layer1"
+     showgrid="false"
+     inkscape:window-width="1920"
+     inkscape:window-height="1009"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1" />
+  <metadata
+     id="metadata5">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <path
+       sodipodi:type="star"
+       style="opacity:1;fill:#dbdbdb;fill-opacity:1;fill-rule:nonzero;stroke:#000000;stroke-width:2.67048478;stroke-linecap:round;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;paint-order:fill markers stroke"
+       id="path977"
+       sodipodi:sides="6"
+       sodipodi:cx="105"
+       sodipodi:cy="66.775803"
+       sodipodi:r1="48.004467"
+       sodipodi:r2="41.573086"
+       sodipodi:arg1="1.0471976"
+       sodipodi:arg2="1.5707963"
+       inkscape:flatsided="true"
+       inkscape:rounded="0"
+       inkscape:randomized="0"
+       d="m 129.00223,108.34889 -48.004466,0 -24.002231,-41.57309 24.002236,-41.573086 48.004471,2e-6 24.00223,41.573089 z"
+       transform="matrix(1.12448,0,0,1.1223042,-13.228841,-26.094975)" />
+    <rect
+       style="opacity:1;fill:#e8d5b3;fill-opacity:1;fill-rule:nonzero;stroke:#000000;stroke-width:3.00000024;stroke-linecap:round;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;paint-order:fill markers stroke"
+       id="rect815"
+       width="114.01553"
+       height="165.07526"
+       x="48.042809"
+       y="96.501945"
+       ry="5.4582148" />
+    <rect
+       style="opacity:1;fill:#272b34;fill-opacity:1;fill-rule:nonzero;stroke:#000000;stroke-width:3.00000024;stroke-linecap:round;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;paint-order:fill markers stroke"
+       id="rect815-5"
+       width="114.01553"
+       height="31.983326"
+       x="47.941658"
+       y="261.23331"
+       ry="1.0575289" />
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:32.73122025px;line-height:100%;font-family:'Yaahowu Bold';-inkscape-font-specification:'Yaahowu Bold, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:start;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="61.07021"
+       y="190.73605"
+       id="text853"
+       transform="scale(1.0009688,0.99903213)"><tspan
+         sodipodi:role="line"
+         id="tspan851"
+         x="61.07021"
+         y="190.73605"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:Arial;-inkscape-font-specification:Arial;stroke-width:0.26458332">Active</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:28.785429px;line-height:100%;font-family:'Yaahowu Bold';-inkscape-font-specification:'Yaahowu Bold, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:start;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="53.963928"
+       y="287.62747"
+       id="text853-0"
+       transform="scale(1.0009688,0.99903213)"><tspan
+         sodipodi:role="line"
+         id="tspan851-8"
+         x="53.963928"
+         y="287.62747"
+         style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:Arial;-inkscape-font-specification:Arial;fill:#ffffff;fill-opacity:1;stroke-width:0.26458332">Passive</tspan></text>
+    <path
+       sodipodi:type="star"
+       style="opacity:1;fill:none;fill-opacity:1;fill-rule:nonzero;stroke:#000000;stroke-width:2.67048478;stroke-linecap:round;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;paint-order:fill markers stroke"
+       id="path975"
+       sodipodi:sides="6"
+       sodipodi:cx="105"
+       sodipodi:cy="66.775803"
+       sodipodi:r1="48.004467"
+       sodipodi:r2="5.2804914"
+       sodipodi:arg1="1.0471976"
+       sodipodi:arg2="1.5707963"
+       inkscape:flatsided="false"
+       inkscape:rounded="0"
+       inkscape:randomized="0"
+       d="M 129.00223,108.34889 105,72.056294 80.997764,108.34889 100.42696,69.416048 56.995533,66.7758 100.42696,64.135557 80.997769,25.202714 105,61.495311 l 24.00224,-36.292595 -19.4292,38.932841 43.43143,2.640248 -43.43143,2.640243 z"
+       transform="matrix(1.12448,0,0,1.1223042,-13.228841,-26.094975)"
+       inkscape:transform-center-y="2.3897801e-06"
+       inkscape:transform-center-x="-4.3106621e-06" />
+    <ellipse
+       style="opacity:1;fill:#ffffff;fill-opacity:1;fill-rule:nonzero;stroke:#000000;stroke-width:2.99999976;stroke-linecap:round;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;paint-order:fill markers stroke"
+       id="path834-9"
+       cx="104.84155"
+       cy="48.847794"
+       rx="15.726964"
+       ry="15.65153" />
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:22.87296295px;line-height:100%;font-family:'Yaahowu Bold';-inkscape-font-specification:'Yaahowu Bold, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:center;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="104.81828"
+       y="24.026304"
+       id="text853-5"
+       transform="scale(1.0009688,0.99903213)"><tspan
+         sodipodi:role="line"
+         id="tspan851-2"
+         x="104.81828"
+         y="24.026304"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;stroke-width:0.26458332">0</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:23.69668388px;line-height:100%;font-family:'Yaahowu Bold';-inkscape-font-specification:'Yaahowu Bold, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:center;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="104.78636"
+       y="89.211716"
+       id="text853-5-8"
+       transform="scale(1.0009688,0.99903213)"><tspan
+         sodipodi:role="line"
+         id="tspan851-2-0"
+         x="104.78636"
+         y="89.211716"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;stroke-width:0.26458332">3</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:17.15887451px;line-height:100%;font-family:'Yaahowu Bold';-inkscape-font-specification:'Yaahowu Bold, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:center;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="77.204193"
+       y="38.801598"
+       id="text853-5-4"
+       transform="scale(1.0009688,0.99903213)"><tspan
+         sodipodi:role="line"
+         id="tspan851-2-4"
+         x="77.204193"
+         y="38.801598"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;stroke-width:0.26458332">L1</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:17.15887451px;line-height:100%;font-family:'Yaahowu Bold';-inkscape-font-specification:'Yaahowu Bold, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:center;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="134.02715"
+       y="38.801598"
+       id="text853-5-4-8"
+       transform="scale(1.0009688,0.99903213)"><tspan
+         sodipodi:role="line"
+         id="tspan851-2-4-5"
+         x="134.02715"
+         y="38.801598"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;stroke-width:0.26458332">R1</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:17.15887451px;line-height:100%;font-family:'Yaahowu Bold';-inkscape-font-specification:'Yaahowu Bold, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:center;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="76.081497"
+       y="71.993599"
+       id="text853-5-4-5"
+       transform="scale(1.0009688,0.99903213)"><tspan
+         sodipodi:role="line"
+         id="tspan851-2-4-3"
+         x="76.081497"
+         y="71.993599"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;stroke-width:0.26458332">L2</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:17.15887451px;line-height:100%;font-family:'Yaahowu Bold';-inkscape-font-specification:'Yaahowu Bold, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:center;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="132.90443"
+       y="71.693336"
+       id="text853-5-4-8-2"
+       transform="scale(1.0009688,0.99903213)"><tspan
+         sodipodi:role="line"
+         id="tspan851-2-4-5-6"
+         x="132.90443"
+         y="71.693336"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:Arial;-inkscape-font-specification:Arial;text-align:center;text-anchor:middle;stroke-width:0.26458332">R2</tspan></text>
+    <path
+       sodipodi:type="star"
+       style="opacity:1;fill:#000000;fill-opacity:1;fill-rule:nonzero;stroke:#000000;stroke-width:9.4883461;stroke-linecap:round;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;paint-order:fill markers stroke"
+       id="path1065"
+       sodipodi:sides="3"
+       sodipodi:cx="-33.639881"
+       sodipodi:cy="53.205357"
+       sodipodi:r1="11.868693"
+       sodipodi:r2="5.9343462"
+       sodipodi:arg1="2.6179939"
+       sodipodi:arg2="3.6651914"
+       inkscape:flatsided="true"
+       inkscape:rounded="0"
+       inkscape:randomized="0"
+       d="m -43.918471,59.139703 10.27859,-17.80304 10.27859,17.80304 z"
+       inkscape:transform-center-y="-0.8879584"
+       transform="matrix(0.33405101,0,0,0.29925997,116.079,15.622925)"
+       inkscape:transform-center-x="-7.8780439e-06" />
+  </g>
+</svg>

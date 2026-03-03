@@ -82,6 +82,7 @@
       <li><a href="#tokens">Hexes &amp; Tokens</a></li>
       <li><a href="#end-of-game">End of Game</a></li>
       <li><a href="#symbols-glossary">Symbols &amp; Glossary</a></li>
+      <li><a href="#tie-breakers">Tie Breakers</a></li>
       <li><a href="#quick-reference">Quick Reference</a></li>
     </ol>
   </section>
@@ -147,7 +148,12 @@
     <h3>4.3 Beat Resolution</h3>
     <ul>
       <li>Resolve chosen rotations immediately.</li>
-      <li>Resolve actions by priority (highest first).</li>
+      <li>
+        Resolve actions by timing: <img class="inline-symbol" src="/public/images/earlyRules.png" alt="Early timing" />
+        first, then <img class="inline-symbol" src="/public/images/midRules.png" alt="Mid timing" />, then
+        <img class="inline-symbol" src="/public/images/lateRules.png" alt="Late timing" />.
+      </li>
+      <li>When actions share the same timing on the same beat, use the tie-break rules in Section 11.</li>
       <li>If a character is knocked back before their action resolves, their action is canceled and their cards are discarded.</li>
     </ul>
 
@@ -380,8 +386,20 @@
           <td>Rotation limitation badge. Indicates allowed rotation choices for that active card.</td>
         </tr>
         <tr>
-          <td><img class="symbol-ref-icon" src="/public/images/priority.png" alt="Priority badge" /></td>
-          <td>Priority badge. Higher priority resolves earlier within a beat.</td>
+          <td>
+            <span class="symbol-icon-row is-timing-rules">
+              <span class="symbol-icon-wrap">
+                <img class="symbol-ref-icon" src="/public/images/earlyRules.png" alt="Early timing icon" />
+              </span>
+              <span class="symbol-icon-wrap">
+                <img class="symbol-ref-icon" src="/public/images/midRules.png" alt="Mid timing icon" />
+              </span>
+              <span class="symbol-icon-wrap">
+                <img class="symbol-ref-icon" src="/public/images/lateRules.png" alt="Late timing icon" />
+              </span>
+            </span>
+          </td>
+          <td>Timing markers. Early resolves before mid, and mid resolves before late.</td>
         </tr>
       </tbody>
     </table>
@@ -393,8 +411,8 @@
         <dd>One timeline index containing one entry per player.</dd>
       </div>
       <div class="glossary-item">
-        <dt>Priority</dt>
-        <dd>Resolution order value; higher resolves first.</dd>
+        <dt>Timing</dt>
+        <dd>Action phase marker: early, mid, or late.</dd>
       </div>
       <div class="glossary-item">
         <dt>Active Card</dt>
@@ -427,8 +445,32 @@
     </dl>
   </section>
 
+  <section id="tie-breakers" class="panel">
+    <h2>11. Tie Breakers</h2>
+
+    <h3>Same Beat + Same Timing</h3>
+    <ol>
+      <li><img class="inline-symbol" src="/public/images/Co.png" alt="Co symbol" /> resolves first, then <img class="inline-symbol" src="/public/images/E.png" alt="E symbol" />.</li>
+      <li>Throws resolve before blocks.</li>
+      <li>Blocks resolve before other non-throw actions.</li>
+      <li>Attacks resolve next.</li>
+      <li>Moves resolve next.</li>
+      <li><img class="inline-symbol" src="/public/images/F.png" alt="F symbol" /> resolves before <img class="inline-symbol" src="/public/images/X1.png" alt="X1 symbol" /> / <img class="inline-symbol" src="/public/images/X2.png" alt="X2 symbol" />.</li>
+      <li><img class="inline-symbol" src="/public/images/X1.png" alt="X1 symbol" /> / <img class="inline-symbol" src="/public/images/X2.png" alt="X2 symbol" /> are lowest.</li>
+    </ol>
+
+    <h3>Within the Same Class</h3>
+    <ol>
+      <li>If tied actions are from different points in each action set, the later step resolves first (for example, step 3 beats step 2).</li>
+      <li>If two attacks still tie, higher KBF resolves first.</li>
+      <li>If two attacks still tie on KBF, both hit. IF they are striking a third target, apply damage from both hits first, then apply only one knockback chosen by the target from the available hit directions.</li>
+      <li>If two moves still tie and both try to enter the same hex, both moves fail (treated as blocked movement).</li>
+      <li>If two <img class="inline-symbol" src="/public/images/X1.png" alt="X1 symbol" /> / <img class="inline-symbol" src="/public/images/X2.png" alt="X2 symbol" /> choices still tie, those choices are made simultaneously.</li>
+    </ol>
+  </section>
+
   <section id="quick-reference" class="panel">
-    <h2>11. Quick Reference</h2>
+    <h2>12. Quick Reference</h2>
     <div class="quick-ref-grid">
       <div class="text-panel">
         <h3>Beat Order</h3>

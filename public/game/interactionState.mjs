@@ -81,6 +81,7 @@ export const selectPendingInteraction = ({
   resolvedIndex,
   alwaysAllowTypes = [
     'throw',
+    'tie-knockback',
     'discard',
     'hand-trigger',
     'draw',
@@ -104,7 +105,9 @@ export const selectPendingInteraction = ({
     return interaction?.id === activeHandTriggerId;
   });
   if (!gated.length) return null;
-  const pendingThrows = gated.filter((interaction) => interaction?.type === 'throw');
+  const pendingThrows = gated.filter(
+    (interaction) => interaction?.type === 'throw' || interaction?.type === 'tie-knockback',
+  );
   if (pendingThrows.length) {
     pendingThrows.sort((a, b) => (a?.beatIndex ?? 0) - (b?.beatIndex ?? 0));
     return pendingThrows[0] ?? null;

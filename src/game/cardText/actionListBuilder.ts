@@ -1,5 +1,6 @@
 import { ActionListItem, CardDefinition } from '../../types';
 import { applyActiveCardTextEffects, applyPassiveCardTextEffects } from './index';
+import { getTimingPriority, resolveActionTiming } from '../timing';
 
 const THROW_KEYWORD_REGEX = /\bthrow\b/i;
 // Conditional throw logic (ex: grappling hook) is resolved during execution.
@@ -62,6 +63,7 @@ export const buildCardActionList = (
   options: { allowSmokeSwap?: boolean } = {},
 ): ActionListItem[] => {
   const actions = Array.isArray(activeCard?.actions) ? activeCard.actions : [];
+  const cardTimings = Array.isArray(activeCard?.timings) ? activeCard.timings : [];
   if (!actions.length) return [];
   const supportsThrow = cardHasThrowKeyword(activeCard, 'active') || cardHasThrowKeyword(passiveCard, 'passive');
   const attackDamage = Number.isFinite(activeCard?.damage) ? activeCard.damage : 0;
@@ -70,7 +72,9 @@ export const buildCardActionList = (
     action,
     rotation: index === 0 ? rotationLabel : '',
     rotationSource: index === 0 ? 'selected' : undefined,
-    priority: activeCard.priority,
+    timing: resolveActionTiming(action, cardTimings[index]),
+    priority: getTimingPriority(resolveActionTiming(action, cardTimings[index])),
+    actionSetStep: index + 1,
     interaction: supportsThrow && actionHasAttackToken(action) ? { type: 'throw' } : undefined,
     damage: attackDamage,
     kbf: attackKbf,
@@ -81,7 +85,15 @@ export const buildCardActionList = (
   const withPassiveText = applyPassiveCardTextEffects(activeTextList, activeCard, passiveCard, rotationLabel);
   const allowSmokeSwap = options.allowSmokeSwap !== false;
   if (!allowSmokeSwap || activeCard.id !== SMOKE_BOMB_CARD_ID) {
-    return withPassiveText;
+    return withPassiveText.map((entry, index) => {
+      const timing = resolveActionTiming(entry.action, entry.timing);
+      return {
+        ...entry,
+        timing,
+        priority: getTimingPriority(timing),
+        actionSetStep: index + 1,
+      };
+    });
   }
   const swapIndex = withPassiveText.findIndex(
     (entry) => normalizeActionLabel(entry.action).toUpperCase() === 'X1',
@@ -89,5 +101,13 @@ export const buildCardActionList = (
   if (swapIndex < 0) return withPassiveText;
   const swappedList = buildCardActionList(passiveCard, activeCard, rotationLabel, { allowSmokeSwap: false });
   if (!swappedList.length) return withPassiveText;
-  return [...withPassiveText.slice(0, swapIndex), ...swappedList];
+  return [...withPassiveText.slice(0, swapIndex), ...swappedList].map((entry, index) => {
+    const timing = resolveActionTiming(entry.action, entry.timing);
+    return {
+      ...entry,
+      timing,
+      priority: getTimingPriority(timing),
+      actionSetStep: index + 1,
+    };
+  });
 };

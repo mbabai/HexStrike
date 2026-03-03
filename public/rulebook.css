@@ -294,6 +294,24 @@
   flex: 0 0 24px;
 }
 
+.symbol-icon-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
+.symbol-icon-row.is-timing-rules .symbol-icon-wrap {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+}
+
+.symbol-icon-row.is-timing-rules .symbol-ref-icon {
+  width: 20px;
+  height: 20px;
+}
+
 .symbol-icon-wrap img.is-muted {
   filter: grayscale(1) brightness(0.9);
   opacity: 0.9;

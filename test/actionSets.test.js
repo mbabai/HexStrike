@@ -28,11 +28,33 @@ test('applyActionSetToBeats replaces trailing E with provided actions', () => {
 
   assert.deepEqual(updated, [
     [
-      { username: 'Player A', action: 'A', rotation: 'R1', priority: 50, damage: 0, location: { q: 1, r: 0 }, facing: 0, calculated: false },
+      {
+        username: 'Player A',
+        action: 'A',
+        rotation: 'R1',
+        timing: ['mid'],
+        priority: 50,
+        actionSetStep: 1,
+        damage: 0,
+        location: { q: 1, r: 0 },
+        facing: 0,
+        calculated: false,
+      },
       { username: 'Player B', action: 'W', rotation: '', priority: 0, damage: 0, location: { q: -1, r: 0 }, facing: 180, calculated: false },
     ],
     [
-      { username: 'Player A', action: 'B', rotation: '', priority: 40, damage: 0, location: { q: 1, r: 0 }, facing: 0, calculated: false },
+      {
+        username: 'Player A',
+        action: 'B',
+        rotation: '',
+        timing: ['mid'],
+        priority: 40,
+        actionSetStep: 2,
+        damage: 0,
+        location: { q: 1, r: 0 },
+        facing: 0,
+        calculated: false,
+      },
       { username: 'Player B', action: 'm', rotation: '', priority: 0, damage: 0, location: { q: -1, r: 0 }, facing: 180, calculated: false },
     ],
     [
@@ -65,7 +87,18 @@ test('applyActionSetToBeats fills the first missing beat for a player', () => {
 
   assert.deepEqual(updated[1], [
     { username: 'Player A', action: 'a', rotation: '', priority: 0, damage: 0, location: { q: 1, r: 0 }, facing: 0, calculated: false },
-    { username: 'Player B', action: 'm', rotation: '', priority: 10, damage: 0, location: { q: -1, r: 0 }, facing: 180, calculated: false },
+    {
+      username: 'Player B',
+      action: 'm',
+      rotation: '',
+      timing: ['mid'],
+      priority: 10,
+      actionSetStep: 1,
+      damage: 0,
+      location: { q: -1, r: 0 },
+      facing: 180,
+      calculated: false,
+    },
   ]);
   assert.equal(updated[2], undefined);
 });
@@ -200,4 +233,3 @@ test('applyActionSetToBeats seeds from the open start entry state when replacing
   assert.equal(targetEntry.damage, 0);
   assert.equal(targetEntry.facing, 60);
 });
-

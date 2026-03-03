@@ -30,6 +30,15 @@ import { isBracketedAction, normalizeActionToken, splitActionTokens } from './ca
 import { buildCardActionList } from './cardText/actionListBuilder';
 import { DEFAULT_LAND_HEXES } from './hexGrid';
 import { getHandTriggerDefinition } from './handTriggers';
+import {
+  getPrimaryTimingPhase,
+  getTimingOrder,
+  getTimingPriority,
+  hasTimingPhase,
+  normalizeActionLabel as normalizeActionLabelForTiming,
+  normalizeCardTimings,
+  resolveActionTiming,
+} from './timing';
 
 declare const require: (id: string) => any;
 
@@ -51,6 +60,7 @@ const ARROW_KBF = 1;
 const ARROW_LAND_DISTANCE_LIMIT = 5;
 const ARROW_PRIORITY = 95;
 const HAVEN_PLATFORM_INTERACTION_TYPE = 'haven-platform';
+const TIE_KNOCKBACK_INTERACTION_TYPE = 'tie-knockback';
 const GUARD_CONTINUE_INTERACTION_TYPE = 'guard-continue';
 const REWIND_FOCUS_INTERACTION_TYPE = 'rewind-focus';
 const REWIND_RETURN_INTERACTION_TYPE = 'rewind-return';
@@ -103,8 +113,14 @@ const AXIAL_DIRECTIONS = [
   { q: 0, r: 1 },
 ];
 
-const getEntryPriority = (entry: { priority?: number }) =>
-  Number.isFinite(entry.priority) ? Number(entry.priority) : 0;
+const getEntryPriority = (entry: { priority?: number; timing?: string[] | null; action?: string }) => {
+  const actionLabel = normalizeActionLabel(entry.action ?? '').toUpperCase();
+  if (actionLabel === COMBO_ACTION) {
+    return ARROW_PRIORITY + 10;
+  }
+  if (Number.isFinite(entry.priority)) return Number(entry.priority);
+  return getTimingPriority(resolveActionTiming(entry.action, entry.timing));
+};
 
 const partitionEntriesByArrowPriority = <T extends { priority?: number }>(entries: T[]) => {
   const highPriorityEntries: T[] = [];
@@ -339,6 +355,98 @@ const parseActionTokens = (action: string) => {
     .filter((token) => token.type);
 };
 
+type ActionClass = 'combo' | 'throw' | 'block' | 'attack' | 'move' | 'focus' | 'special' | 'other';
+
+const ACTION_CLASS_ORDER: ActionClass[] = ['combo', 'throw', 'block', 'attack', 'move', 'focus', 'special', 'other'];
+
+const ACTION_CLASS_RANK = new Map<ActionClass, number>(ACTION_CLASS_ORDER.map((name, index) => [name, index]));
+
+const getEntryActionSetStep = (entry: BeatEntry | null | undefined): number =>
+  Number.isFinite(entry?.actionSetStep) ? Math.max(1, Math.floor(entry?.actionSetStep as number)) : 1;
+
+const getEntryActionClass = (entry: BeatEntry | null | undefined): ActionClass => {
+  if (!entry) return 'other';
+  const label = normalizeActionLabel(entry.action ?? '').toUpperCase();
+  if (label === COMBO_ACTION) return 'combo';
+  if (label === FOCUS_ACTION) return 'focus';
+  if (label === 'X1' || label === 'X2') return 'special';
+  const tokens = parseActionTokens(entry.action ?? '');
+  const hasAttack = tokens.some((token) => token.type === 'a' || token.type === 'c');
+  const hasBlock = tokens.some((token) => token.type === 'b');
+  const hasMove = tokens.some((token) => token.type === 'm' || token.type === 'j');
+  if (
+    hasAttack &&
+    (entry.interaction?.type === 'throw' ||
+      (entry.cardId ? ACTIVE_THROW_CARD_IDS.has(entry.cardId) : false) ||
+      (entry.passiveCardId ? PASSIVE_THROW_CARD_IDS.has(entry.passiveCardId) : false))
+  ) {
+    return 'throw';
+  }
+  if (hasBlock) return 'block';
+  if (hasAttack) return 'attack';
+  if (hasMove) return 'move';
+  return 'other';
+};
+
+const getEntryTimingRank = (entry: BeatEntry | null | undefined): number => {
+  if (!entry) return Number.MAX_SAFE_INTEGER;
+  const actionLabel = normalizeActionLabel(entry.action ?? '').toUpperCase();
+  if (actionLabel === COMBO_ACTION) return -2;
+  if (actionLabel === DEFAULT_ACTION) return -1;
+  const timing = resolveActionTiming(entry.action, entry.timing);
+  if (!timing?.length) return Number.MAX_SAFE_INTEGER;
+  const timingOrder = getTimingOrder();
+  let best = Number.MAX_SAFE_INTEGER;
+  timingOrder.forEach((phase, index) => {
+    if (hasTimingPhase(timing, phase)) {
+      best = Math.min(best, index);
+    }
+  });
+  return best;
+};
+
+const getEntryClassRank = (entry: BeatEntry | null | undefined): number => {
+  const actionClass = getEntryActionClass(entry);
+  return ACTION_CLASS_RANK.get(actionClass) ?? Number.MAX_SAFE_INTEGER;
+};
+
+const getEntryAttackKbf = (entry: BeatEntry | null | undefined): number =>
+  Number.isFinite(entry?.attackKbf) ? Math.max(0, Math.floor(entry?.attackKbf as number)) : 0;
+
+const compareBeatEntriesForExecutionBase = (
+  left: BeatEntry | null | undefined,
+  right: BeatEntry | null | undefined,
+): number => {
+  const timingDelta = getEntryTimingRank(left) - getEntryTimingRank(right);
+  if (timingDelta) return timingDelta;
+
+  const classDelta = getEntryClassRank(left) - getEntryClassRank(right);
+  if (classDelta) return classDelta;
+
+  const stepDelta = getEntryActionSetStep(right) - getEntryActionSetStep(left);
+  if (stepDelta) return stepDelta;
+
+  const leftClass = getEntryActionClass(left);
+  const rightClass = getEntryActionClass(right);
+  if (leftClass === 'attack' && rightClass === 'attack') {
+    const kbfDelta = getEntryAttackKbf(right) - getEntryAttackKbf(left);
+    if (kbfDelta) return kbfDelta;
+  }
+
+  return 0;
+};
+
+const buildExecutionTieBucketKey = (entry: BeatEntry | null | undefined): string => {
+  const actionClass = getEntryActionClass(entry);
+  const attackKey = actionClass === 'attack' ? getEntryAttackKbf(entry) : 'x';
+  return [
+    getEntryTimingRank(entry),
+    getEntryClassRank(entry),
+    getEntryActionSetStep(entry),
+    attackKey,
+  ].join('|');
+};
+
 const isExactActionSymbolToken = (
   token: { type: string; path: string },
   symbol: string,
@@ -450,6 +558,9 @@ const applyGrapplingHookPassiveFlip = (
 const buildInteractionId = (type: string, beatIndex: number, actorId: string, targetId: string) =>
   `${type}:${beatIndex}:${actorId}:${targetId}`;
 
+const buildTieKnockbackInteractionId = (beatIndex: number, targetId: string, bucketKey: string) =>
+  `${TIE_KNOCKBACK_INTERACTION_TYPE}:${beatIndex}:${targetId}:${bucketKey}`;
+
 const buildHandTriggerKey = (cardId: string, beatIndex: number, actorId: string) =>
   `${cardId}:${beatIndex}:${actorId}`;
 
@@ -519,14 +630,27 @@ const normalizeRuntimeCard = (
   const actions = Array.isArray(raw.actions)
     ? raw.actions.map((action) => `${action ?? ''}`.trim()).filter(Boolean)
     : [];
+  const timings = normalizeCardTimings(actions, raw.timings);
   const rotations = typeof raw.rotations === 'string' && raw.rotations.trim() ? raw.rotations.trim() : '*';
-  const priority = Number.isFinite(raw.priority) ? Number(raw.priority) : 0;
   const damage = Number.isFinite(raw.damage) ? Number(raw.damage) : 0;
   const kbf = Number.isFinite(raw.kbf) ? Number(raw.kbf) : 0;
   const triggerText = typeof raw.triggerText === 'string' && raw.triggerText.trim() ? raw.triggerText : null;
   const activeText = typeof raw.activeText === 'string' ? raw.activeText : undefined;
   const passiveText = typeof raw.passiveText === 'string' ? raw.passiveText : undefined;
-  return { id, name, type, priority, actions, rotations, damage, kbf, triggerText, activeText, passiveText };
+  return {
+    id,
+    name,
+    type,
+    actions,
+    timings,
+    rotations,
+    damage,
+    kbf,
+    triggerText,
+    activeText,
+    passiveText,
+    priority: getTimingPriority(timings[0]),
+  };
 };
 
 const getRuntimeCardLookup = (): Map<string, CardDefinition> => {
@@ -556,17 +680,22 @@ const getRewindReturnActionList = (): ActionListItem[] => {
   const focusIndex = actions.findIndex((action) => normalizeActionLabel(action).toUpperCase() === FOCUS_ACTION);
   const trailingActions = focusIndex >= 0 ? actions.slice(focusIndex + 1) : [];
   const fallbackActions = trailingActions.length ? trailingActions : [DEFAULT_ACTION];
-  const priority = Number.isFinite(rewindCard?.priority) ? Number(rewindCard?.priority) : 0;
+  const cardTimings = Array.isArray(rewindCard?.timings) ? rewindCard.timings : [];
   const damage = Number.isFinite(rewindCard?.damage) ? Number(rewindCard?.damage) : 0;
   const kbf = Number.isFinite(rewindCard?.kbf) ? Number(rewindCard?.kbf) : 0;
-  return fallbackActions.map((action) => ({
-    action: `${action ?? ''}`,
-    rotation: '',
-    priority,
-    damage,
-    kbf,
-    cardId: REWIND_CARD_ID,
-  }));
+  return fallbackActions.map((action, index) => {
+    const timing = resolveActionTiming(action, cardTimings[focusIndex + 1 + index]);
+    return {
+      action: `${action ?? ''}`,
+      rotation: '',
+      timing,
+      priority: getTimingPriority(timing),
+      damage,
+      kbf,
+      cardId: REWIND_CARD_ID,
+      actionSetStep: index + 1,
+    };
+  });
 };
 
 const buildSwappedActionList = (
@@ -657,11 +786,17 @@ const buildEntryForCharacter = (
   terrain?: 'land' | 'abyss',
 ): BeatEntry => {
   const action = entry?.action ?? DEFAULT_ACTION;
+  const timing = resolveActionTiming(action, entry?.timing);
   const next: BeatEntry = {
     username: character.username ?? character.userId,
     action,
     rotation: entry?.rotation ?? '',
-    priority: typeof entry?.priority === 'number' ? entry.priority : 0,
+    timing,
+    priority:
+      typeof entry?.priority === 'number' && Number.isFinite(entry.priority)
+        ? entry.priority
+        : getTimingPriority(timing),
+    actionSetStep: Number.isFinite(entry?.actionSetStep) ? Math.max(1, Math.floor(entry?.actionSetStep as number)) : 1,
     damage: state.damage,
     location: { q: state.position.q, r: state.position.r },
     terrain,
@@ -1170,7 +1305,12 @@ export const executeBeatsWithInteractions = (
       const action = typeof entry.action === 'string' ? entry.action : DEFAULT_ACTION;
       entry.action = action;
       entry.rotation = entry.rotation ?? '';
-      entry.priority = typeof entry.priority === 'number' ? entry.priority : 0;
+      entry.timing = resolveActionTiming(action, entry.timing);
+      entry.priority =
+        typeof entry.priority === 'number' && Number.isFinite(entry.priority)
+          ? entry.priority
+          : getTimingPriority(entry.timing);
+      entry.actionSetStep = Number.isFinite(entry.actionSetStep) ? Math.max(1, Math.floor(entry.actionSetStep)) : 1;
       if (current) {
         entry.location = { q: current.position.q, r: current.position.r };
         entry.damage = current.damage;
@@ -1318,7 +1458,9 @@ export const executeBeatsWithInteractions = (
         delete target.rotationSource;
       }
     }
-    target.priority = Number.isFinite(source.priority) ? source.priority : 0;
+    target.timing = resolveActionTiming(target.action, source.timing);
+    target.priority = Number.isFinite(source.priority) ? source.priority : getTimingPriority(target.timing);
+    target.actionSetStep = Number.isFinite(source.actionSetStep) ? Math.max(1, Math.floor(source.actionSetStep)) : 1;
     if (source.interaction) {
       target.interaction = source.interaction;
     } else if ('interaction' in target) {
@@ -1474,7 +1616,9 @@ export const executeBeatsWithInteractions = (
     if (entry) {
       entry.username = character.username ?? character.userId;
       entry.action = action;
+      entry.timing = resolveActionTiming(action, null);
       entry.priority = 0;
+      entry.actionSetStep = 1;
       if ('cardId' in entry) {
         delete entry.cardId;
       }
@@ -1541,12 +1685,16 @@ export const executeBeatsWithInteractions = (
       entry.username = character.username ?? character.userId;
       entry.action = item.action ?? DEFAULT_ACTION;
       entry.rotation = item.rotation ?? '';
+      entry.timing = resolveActionTiming(entry.action, item.timing);
       if (item.rotationSource) {
         entry.rotationSource = item.rotationSource;
       } else if ('rotationSource' in entry) {
         delete entry.rotationSource;
       }
-      entry.priority = Number.isFinite(item.priority) ? item.priority : 0;
+      entry.priority = Number.isFinite(item.priority)
+        ? item.priority
+        : getTimingPriority(resolveActionTiming(entry.action, item.timing));
+      entry.actionSetStep = Number.isFinite(item.actionSetStep) ? Math.max(1, Math.floor(item.actionSetStep as number)) : offset + 1;
       if (item.interaction) {
         entry.interaction = item.interaction;
       } else if ('interaction' in entry) {
@@ -1925,7 +2073,9 @@ export const executeBeatsWithInteractions = (
     const returnActions = getRewindReturnActionList().map((item) => ({
       action: item.action,
       rotation: item.rotation,
+      timing: item.timing,
       priority: item.priority,
+      actionSetStep: item.actionSetStep,
       damage: item.damage,
       kbf: item.kbf,
       cardId: item.cardId,
@@ -2471,7 +2621,9 @@ export const executeBeatsWithInteractions = (
         nextResolution.returnActions = returnActions.map((item) => ({
           action: item.action,
           rotation: item.rotation ?? '',
+          timing: resolveActionTiming(item.action, item.timing),
           priority: Number.isFinite(item.priority) ? Number(item.priority) : 0,
+          actionSetStep: Number.isFinite(item.actionSetStep) ? Math.max(1, Math.floor(item.actionSetStep)) : 1,
           damage: Number.isFinite(item.damage) ? Number(item.damage) : 0,
           kbf: Number.isFinite(item.kbf) ? Number(item.kbf) : 0,
           cardId: `${item.cardId ?? REWIND_CARD_ID}` || REWIND_CARD_ID,
@@ -2873,10 +3025,13 @@ export const executeBeatsWithInteractions = (
         if (!actorEntry) return '__missing__';
         const interactionType = `${actorEntry.interaction?.type ?? ''}`.trim();
         const rotationSource = `${actorEntry.rotationSource ?? ''}`.trim();
+        const timingSignature = Array.isArray(actorEntry.timing) ? actorEntry.timing.join(',') : '';
         return [
           actorEntry.action ?? DEFAULT_ACTION,
           actorEntry.rotation ?? '',
           Number.isFinite(actorEntry.priority) ? actorEntry.priority : 0,
+          timingSignature,
+          Number.isFinite(actorEntry.actionSetStep) ? actorEntry.actionSetStep : 1,
           actorEntry.cardId ?? '',
           actorEntry.passiveCardId ?? '',
           rotationSource,
@@ -3474,13 +3629,336 @@ export const executeBeatsWithInteractions = (
     const ordered = beat
       .slice()
       .sort((a, b) => {
-        const priorityDelta = (b.priority ?? 0) - (a.priority ?? 0);
-        if (priorityDelta) return priorityDelta;
-        const orderA = rosterOrder.get(resolveEntryKey(a)) ?? Number.MAX_SAFE_INTEGER;
-        const orderB = rosterOrder.get(resolveEntryKey(b)) ?? Number.MAX_SAFE_INTEGER;
-        return orderA - orderB;
+        const baseDelta = compareBeatEntriesForExecutionBase(a, b);
+        if (baseDelta) return baseDelta;
+        return getRosterIndex(a) - getRosterIndex(b);
       })
       .filter((entry) => !isOpenBeatAction(entry.action));
+
+    const movementTieBlockedBy = new Map<string, string>();
+    const entriesByTieBucket = new Map<string, BeatEntry[]>();
+    ordered.forEach((entry) => {
+      const key = buildExecutionTieBucketKey(entry);
+      const list = entriesByTieBucket.get(key) ?? [];
+      list.push(entry);
+      entriesByTieBucket.set(key, list);
+    });
+    entriesByTieBucket.forEach((entriesInBucket) => {
+      if (!entriesInBucket.length) return;
+      if (getEntryActionClass(entriesInBucket[0]) !== 'move') return;
+      if (entriesInBucket.length < 2) return;
+      const destinationToActors = new Map<string, string[]>();
+      entriesInBucket.forEach((entry) => {
+        const actorId = userLookup.get(resolveEntryKey(entry));
+        if (!actorId) return;
+        const actorState = state.get(actorId);
+        if (!actorState) return;
+        const firstMoveToken = parseActionTokens(entry.action ?? '').find(
+          (token) => token.type === 'm' || token.type === 'j',
+        );
+        if (!firstMoveToken) return;
+        const path = buildPath(
+          { q: actorState.position.q, r: actorState.position.r },
+          firstMoveToken.steps,
+          actorState.facing,
+        );
+        const destinationKey = coordKey(path.destination);
+        const existing = destinationToActors.get(destinationKey) ?? [];
+        existing.push(actorId);
+        destinationToActors.set(destinationKey, existing);
+      });
+      destinationToActors.forEach((actorIds) => {
+        if (actorIds.length < 2) return;
+        actorIds.forEach((actorId, index) => {
+          if (movementTieBlockedBy.has(actorId)) return;
+          const blockerId = actorIds[(index + 1) % actorIds.length];
+          if (!blockerId || blockerId === actorId) return;
+          movementTieBlockedBy.set(actorId, blockerId);
+        });
+      });
+    });
+
+    const tieBucketActorsByKey = new Map<string, Set<string>>();
+    type TieThirdTargetBucketEntry = {
+      actorIds: Set<string>;
+      allowedDirectionIndices: number[];
+    };
+    const attackTieThirdTargetsByBucket = new Map<string, Map<string, TieThirdTargetBucketEntry>>();
+    entriesByTieBucket.forEach((entriesInBucket, bucketKey) => {
+      if (!entriesInBucket.length) return;
+      if (getEntryActionClass(entriesInBucket[0]) !== 'attack') return;
+      if (entriesInBucket.length < 2) return;
+      const actorIds = new Set<string>();
+      const thirdTargetCandidates = new Map<
+        string,
+        {
+          actorIds: Set<string>;
+          directionIndices: Set<number>;
+        }
+      >();
+      entriesInBucket.forEach((entry) => {
+        const actorId = userLookup.get(resolveEntryKey(entry));
+        if (!actorId) return;
+        actorIds.add(actorId);
+        const actorState = state.get(actorId);
+        if (!actorState) return;
+        const origin = { q: actorState.position.q, r: actorState.position.r };
+        const tokens = parseActionTokens(entry.action ?? '');
+        tokens.forEach((token) => {
+          if (token.type !== 'a' && token.type !== 'c') return;
+          const { destination, lastStep } = buildPath(origin, token.steps, actorState.facing);
+          const targetId = occupancy.get(coordKey(destination));
+          if (!targetId || targetId === actorId) return;
+          const direction = getKnockbackDirection(origin, destination, lastStep);
+          const directionIndex = direction ? getDirectionIndex(direction) : null;
+          const current = thirdTargetCandidates.get(targetId) ?? {
+            actorIds: new Set<string>(),
+            directionIndices: new Set<number>(),
+          };
+          current.actorIds.add(actorId);
+          if (directionIndex != null) {
+            current.directionIndices.add(directionIndex);
+          }
+          thirdTargetCandidates.set(targetId, current);
+        });
+      });
+      if (actorIds.size > 1) {
+        tieBucketActorsByKey.set(bucketKey, actorIds);
+      }
+      if (!thirdTargetCandidates.size) return;
+      const acceptedTargets = new Map<string, TieThirdTargetBucketEntry>();
+      thirdTargetCandidates.forEach((candidate, targetId) => {
+        if (candidate.actorIds.size < 2) return;
+        // This rule only applies when tied attacks hit a third-party target.
+        if (candidate.actorIds.has(targetId)) return;
+        const allowedDirectionIndices = [...candidate.directionIndices]
+          .filter((value) => Number.isFinite(value) && value >= 0 && value <= 5)
+          .map((value) => Math.round(value))
+          .sort((left, right) => left - right);
+        acceptedTargets.set(targetId, {
+          actorIds: candidate.actorIds,
+          allowedDirectionIndices:
+            allowedDirectionIndices.length > 0
+              ? allowedDirectionIndices
+              : AXIAL_DIRECTIONS.map((_, directionIndex) => directionIndex),
+        });
+      });
+      if (acceptedTargets.size) {
+        attackTieThirdTargetsByBucket.set(bucketKey, acceptedTargets);
+      }
+    });
+    let currentExecutionBucketKey: string | null = null;
+    const deferredDisabledActors = new Set<string>();
+    const flushDeferredDisabledActors = () => {
+      deferredDisabledActors.forEach((actorId) => disabledActors.add(actorId));
+      deferredDisabledActors.clear();
+    };
+    const markActorDisabled = (actorId: string) => {
+      if (!actorId) return;
+      const bucketActors = currentExecutionBucketKey ? tieBucketActorsByKey.get(currentExecutionBucketKey) : null;
+      if (bucketActors?.has(actorId)) {
+        deferredDisabledActors.add(actorId);
+        return;
+      }
+      disabledActors.add(actorId);
+    };
+    type DeferredTieKnockbackHit = {
+      actorId: string;
+      targetId: string;
+      targetEntry: BeatEntry | null;
+      preserveAction: boolean;
+      effectiveKbf: number;
+      fromPosition: HexCoord;
+      directionIndex: number | null;
+      causePriority: number;
+    };
+    const deferredTieHitsByInteraction = new Map<string, DeferredTieKnockbackHit[]>();
+    const deferredTieInteractionIdsByBucket = new Map<string, Set<string>>();
+    const tieDirectionIndicesByInteraction = new Map<string, Set<number>>();
+    const appliedTieKnockbackInteractions = new Set<string>();
+    const pushDeferredTieHit = (
+      bucketKey: string,
+      interactionId: string,
+      hit: DeferredTieKnockbackHit,
+      directionIndex: number | null,
+    ) => {
+      const hits = deferredTieHitsByInteraction.get(interactionId) ?? [];
+      hits.push(hit);
+      deferredTieHitsByInteraction.set(interactionId, hits);
+      const bucketInteractionIds = deferredTieInteractionIdsByBucket.get(bucketKey) ?? new Set<string>();
+      bucketInteractionIds.add(interactionId);
+      deferredTieInteractionIdsByBucket.set(bucketKey, bucketInteractionIds);
+      if (directionIndex != null) {
+        const directionSet = tieDirectionIndicesByInteraction.get(interactionId) ?? new Set<number>();
+        directionSet.add(directionIndex);
+        tieDirectionIndicesByInteraction.set(interactionId, directionSet);
+      }
+    };
+    const applyDeferredTieKnockback = (interactionId: string, directionIndex: number | null) => {
+      if (appliedTieKnockbackInteractions.has(interactionId)) return;
+      const hits = deferredTieHitsByInteraction.get(interactionId) ?? [];
+      if (!hits.length) return;
+      const primaryHit = hits[0];
+      const targetState = state.get(primaryHit.targetId);
+      if (!targetState) return;
+      const attackerState = state.get(primaryHit.actorId);
+      const baseKnockbackDistance = getKnockbackDistance(targetState.damage, primaryHit.effectiveKbf);
+      const calculatedKnockbackDistance =
+        baseKnockbackDistance +
+        getKnockbackBonusByUser(primaryHit.actorId, attackerState?.damage ?? 0, primaryHit.effectiveKbf);
+      const convertKbf = shouldConvertKbfToDiscard(primaryHit.targetEntry);
+      if (convertKbf && calculatedKnockbackDistance > 0) {
+        queueDiscard(primaryHit.targetId, calculatedKnockbackDistance, 'self', primaryHit.targetEntry, { force: true });
+      }
+      const knockbackDistance = convertKbf ? 0 : calculatedKnockbackDistance;
+      const knockbackDirection =
+        directionIndex != null && directionIndex >= 0 && directionIndex < AXIAL_DIRECTIONS.length
+          ? AXIAL_DIRECTIONS[directionIndex]
+          : null;
+      let knockedSteps = 0;
+      if (knockbackDirection && knockbackDistance > 0) {
+        let finalPosition = { ...targetState.position };
+        for (let step = 0; step < knockbackDistance; step += 1) {
+          const candidate = {
+            q: finalPosition.q + knockbackDirection.q,
+            r: finalPosition.r + knockbackDirection.r,
+          };
+          const occupant = occupancy.get(coordKey(candidate));
+          if (occupant && occupant !== primaryHit.targetId) break;
+          finalPosition = candidate;
+          knockedSteps += 1;
+        }
+        if (!sameCoord(finalPosition, targetState.position)) {
+          occupancy.delete(coordKey(targetState.position));
+          targetState.position = { q: finalPosition.q, r: finalPosition.r };
+          occupancy.set(coordKey(targetState.position), primaryHit.targetId);
+        }
+      }
+      const shouldStun =
+        primaryHit.effectiveKbf === 1 || (primaryHit.effectiveKbf > 1 && calculatedKnockbackDistance > 0);
+      const drawOnKnockbackCount = getDrawOnKnockbackByUser(primaryHit.targetId);
+      if (drawOnKnockbackCount > 0 && calculatedKnockbackDistance > 0) {
+        queueDraw(primaryHit.targetId, drawOnKnockbackCount);
+      }
+      if (shouldStun || knockedSteps > 0) {
+        markRewindFocusInactive(primaryHit.targetId, index, shouldStun ? 'stun' : 'knockback');
+        removeFocusAnchorToken(primaryHit.targetId);
+      }
+      if (shouldStun) {
+        const beforeSignature = currentBeatActionSignature(primaryHit.targetId);
+        applyHitTimeline(primaryHit.targetId, index, targetState, knockedSteps, primaryHit.preserveAction);
+        rerunIfCurrentFrameChanged(primaryHit.targetId, beforeSignature, {
+          causeActorId: primaryHit.actorId,
+          causePriority: primaryHit.causePriority,
+        });
+      }
+      if (knockedSteps > 0) {
+        recordHitConsequence(primaryHit.targetId, index, targetState, 0, knockedSteps, primaryHit.actorId);
+      }
+      if (shouldStun) {
+        markActorDisabled(primaryHit.targetId);
+      }
+      const wasOnLand = resolveTerrain(primaryHit.fromPosition) === 'land';
+      const nowOnAbyss = resolveTerrain(targetState.position) === 'abyss';
+      if (
+        knockedSteps > 0 &&
+        wasOnLand &&
+        nowOnAbyss &&
+        hasHandTriggerCard(primaryHit.targetId, VENGEANCE_CARD_ID) &&
+        !handTriggerKeys.has(buildHandTriggerKey(VENGEANCE_CARD_ID, index, primaryHit.targetId)) &&
+        !isHistoryIndex(index)
+      ) {
+        const definition = getHandTriggerDefinition(VENGEANCE_CARD_ID);
+        const interactionId = buildHandTriggerInteractionId(
+          VENGEANCE_CARD_ID,
+          index,
+          primaryHit.targetId,
+          primaryHit.targetId,
+        );
+        if (!interactionById.has(interactionId)) {
+          const created: CustomInteraction = {
+            id: interactionId,
+            type: 'hand-trigger',
+            beatIndex: index,
+            actorUserId: primaryHit.targetId,
+            targetUserId: primaryHit.targetId,
+            status: 'pending',
+            discardCount: definition?.discardCount ?? 1,
+            cardId: definition?.cardId ?? VENGEANCE_CARD_ID,
+            cardType: definition?.cardType ?? 'ability',
+            effect: definition?.effect ?? 'vengeance',
+            drawCount: knockedSteps,
+          };
+          updatedInteractions.push(created);
+          interactionById.set(interactionId, created);
+          handTriggerKeys.add(buildHandTriggerKey(VENGEANCE_CARD_ID, index, primaryHit.targetId));
+          if (haltIndex == null || index < haltIndex) {
+            haltIndex = index;
+          }
+        }
+      }
+      appliedTieKnockbackInteractions.add(interactionId);
+    };
+    const flushDeferredTieKnockbacksForBucket = (bucketKey: string | null) => {
+      if (!bucketKey) return;
+      const interactionIds = deferredTieInteractionIdsByBucket.get(bucketKey);
+      if (!interactionIds?.size) return;
+      const tieTargets = attackTieThirdTargetsByBucket.get(bucketKey) ?? new Map<string, TieThirdTargetBucketEntry>();
+      interactionIds.forEach((interactionId) => {
+        const hits = deferredTieHitsByInteraction.get(interactionId) ?? [];
+        if (!hits.length) return;
+        const actorIds = new Set<string>();
+        hits.forEach((hit) => actorIds.add(hit.actorId));
+        const primary = hits[0];
+        const tieTarget = tieTargets.get(primary.targetId);
+        const trackedDirections = tieDirectionIndicesByInteraction.get(interactionId);
+        const directionCandidates =
+          trackedDirections && trackedDirections.size
+            ? [...trackedDirections]
+            : tieTarget?.allowedDirectionIndices ?? AXIAL_DIRECTIONS.map((_, directionIndex) => directionIndex);
+        const allowedDirectionIndices = directionCandidates
+          .filter((value) => Number.isFinite(value) && value >= 0 && value <= 5)
+          .map((value) => Math.round(value))
+          .sort((left, right) => left - right);
+        const existing = interactionById.get(interactionId);
+        if (actorIds.size < 2) {
+          if (existing && existing.type === TIE_KNOCKBACK_INTERACTION_TYPE && existing.status === 'pending') {
+            existing.status = 'resolved';
+            existing.resolution = { ...(existing.resolution ?? {}), skipped: true };
+          }
+          const fallbackDirection = Number.isFinite(primary.directionIndex) ? primary.directionIndex : null;
+          applyDeferredTieKnockback(interactionId, fallbackDirection);
+          return;
+        }
+        const resolvedDirection = getResolvedDirectionIndex(existing);
+        if (existing?.status === 'resolved' && resolvedDirection != null) {
+          applyDeferredTieKnockback(interactionId, resolvedDirection);
+          return;
+        }
+        if (!existing) {
+          const created: CustomInteraction = {
+            id: interactionId,
+            type: TIE_KNOCKBACK_INTERACTION_TYPE,
+            beatIndex: index,
+            actorUserId: primary.targetId,
+            targetUserId: primary.targetId,
+            sourceUserId: primary.actorId,
+            status: 'pending',
+            resolution: undefined,
+            allowedDirectionIndices,
+          };
+          updatedInteractions.push(created);
+          interactionById.set(interactionId, created);
+        } else if (existing.type === TIE_KNOCKBACK_INTERACTION_TYPE) {
+          existing.allowedDirectionIndices = allowedDirectionIndices;
+        }
+        markActorDisabled(primary.targetId);
+        if (haltIndex == null || index < haltIndex) {
+          haltIndex = index;
+        }
+      });
+      deferredTieInteractionIdsByBucket.delete(bucketKey);
+    };
 
     const burningStrikeBeatData = new Map<string, { attackedHexes: HexCoord[]; hasHit: boolean }>();
     const recordBurningStrikeAttack = (actorId: string, coord: { q: number; r: number }) => {
@@ -3528,7 +4006,10 @@ export const executeBeatsWithInteractions = (
     const processOrderedEntry = (entry: BeatEntry) => {
       const actorId = userLookup.get(resolveEntryKey(entry));
       if (!actorId) return;
-      if (disabledActors.has(actorId)) return;
+      if (disabledActors.has(actorId)) {
+        const bucketActors = currentExecutionBucketKey ? tieBucketActorsByKey.get(currentExecutionBucketKey) : null;
+        if (!bucketActors?.has(actorId)) return;
+      }
       const actorState = state.get(actorId);
       if (!actorState) return;
       const actorCharacter = characterById.get(actorId);
@@ -3946,12 +4427,13 @@ export const executeBeatsWithInteractions = (
                       recordHitConsequence(actorId, index, attackerState, reflected, 0, targetId);
                     }
                   }
-                  disabledActors.add(targetId);
+                  markActorDisabled(targetId);
                   return;
                 }
                 if (isThrow) {
                   const interactionId = buildInteractionId('throw', index, actorId, targetId);
                   const existing = interactionById.get(interactionId);
+                const throwDirectionIndices = AXIAL_DIRECTIONS.map((_, directionIndex) => directionIndex);
                 const resolvedDirection = getResolvedDirectionIndex(existing);
                 if (existing?.status === 'resolved' && resolvedDirection != null) {
                   const beforeSignature = currentBeatActionSignature(targetId);
@@ -4003,8 +4485,11 @@ export const executeBeatsWithInteractions = (
                         recordHitConsequence(actorId, index, attackerState, reflected, 0, targetId);
                       }
                   }
-                  disabledActors.add(targetId);
+                  markActorDisabled(targetId);
                 } else {
+                  if (existing && !Array.isArray(existing.allowedDirectionIndices)) {
+                    existing.allowedDirectionIndices = throwDirectionIndices;
+                  }
                   if (!existing) {
                     const created: CustomInteraction = {
                       id: interactionId,
@@ -4014,11 +4499,12 @@ export const executeBeatsWithInteractions = (
                       targetUserId: targetId,
                       status: 'pending',
                       resolution: undefined,
+                      allowedDirectionIndices: throwDirectionIndices,
                     };
                     updatedInteractions.push(created);
                     interactionById.set(interactionId, created);
                   }
-                  disabledActors.add(targetId);
+                  markActorDisabled(targetId);
                   if (haltIndex == null || index < haltIndex) {
                     haltIndex = index;
                   }
@@ -4101,6 +4587,43 @@ export const executeBeatsWithInteractions = (
                 const passiveKbfReduction = getPassiveKbfReduction(resolvedTargetEntry);
                 const baseKbf = Math.max(0, attackKbf - passiveKbfReduction);
                 const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : baseKbf;
+                const tieTargetRule = currentExecutionBucketKey
+                  ? attackTieThirdTargetsByBucket.get(currentExecutionBucketKey)?.get(targetId)
+                  : null;
+                const isTieThirdTargetHit = Boolean(tieTargetRule?.actorIds.has(actorId));
+                if (isTieThirdTargetHit && currentExecutionBucketKey) {
+                  recordHitConsequence(targetId, index, targetState, adjustedDamage, 0, actorId);
+                  if (hasHammerPassive && actorId !== targetId) {
+                    const attackerState = state.get(actorId);
+                    const reflected = applyCharacterDamage(actorId, 2);
+                    if (attackerState && reflected > 0) {
+                      recordHitConsequence(actorId, index, attackerState, reflected, 0, targetId);
+                    }
+                  }
+                  const tieDirectionIndex = knockbackDirection ? getDirectionIndex(knockbackDirection) : null;
+                  const tieInteractionId = buildTieKnockbackInteractionId(index, targetId, currentExecutionBucketKey);
+                  pushDeferredTieHit(
+                    currentExecutionBucketKey,
+                    tieInteractionId,
+                    {
+                      actorId,
+                      targetId,
+                      targetEntry: resolvedTargetEntry,
+                      preserveAction,
+                      effectiveKbf,
+                      fromPosition,
+                      directionIndex: tieDirectionIndex,
+                      causePriority: Number.isFinite(entry.priority) ? entry.priority : 0,
+                    },
+                    tieDirectionIndex,
+                  );
+                  const existingTieInteraction = interactionById.get(tieInteractionId);
+                  const resolvedTieDirection = getResolvedDirectionIndex(existingTieInteraction);
+                  if (existingTieInteraction?.status === 'resolved' && resolvedTieDirection != null) {
+                    applyDeferredTieKnockback(tieInteractionId, resolvedTieDirection);
+                  }
+                  return;
+                }
                 const baseKnockbackDistance = getKnockbackDistance(targetState.damage, effectiveKbf);
                 const calculatedKnockbackDistance =
                   baseKnockbackDistance + getKnockbackBonusByUser(actorId, state.get(actorId)?.damage ?? 0, effectiveKbf);
@@ -4154,7 +4677,7 @@ export const executeBeatsWithInteractions = (
                   }
                 }
                 if (shouldStun) {
-                  disabledActors.add(targetId);
+                  markActorDisabled(targetId);
                 }
 
                 const wasOnLand = resolveTerrain(fromPosition) === 'land';
@@ -4206,24 +4729,29 @@ export const executeBeatsWithInteractions = (
           const moveStartPosition = { q: actorState.position.q, r: actorState.position.r };
           let finalPosition = origin;
           let blockedBy: string | null = null;
-          for (const stepPosition of positions) {
-            const stepKey = coordKey(stepPosition);
-            const occupant = occupancy.get(stepKey);
-            if (occupant && occupant !== actorId) {
-              blockedBy = occupant;
-              break;
-            }
-            finalPosition = stepPosition;
-            const arrowAtStep = findArrowTokenAt(stepPosition);
-            if (arrowAtStep) {
-              if (!sameCoord(finalPosition, actorState.position)) {
-                occupancy.delete(coordKey(actorState.position));
-                actorState.position = { q: finalPosition.q, r: finalPosition.r };
-                occupancy.set(coordKey(actorState.position), actorId);
+          const forcedTieBlocker = movementTieBlockedBy.get(actorId);
+          if (forcedTieBlocker) {
+            blockedBy = forcedTieBlocker;
+          } else {
+            for (const stepPosition of positions) {
+              const stepKey = coordKey(stepPosition);
+              const occupant = occupancy.get(stepKey);
+              if (occupant && occupant !== actorId) {
+                blockedBy = occupant;
+                break;
               }
-              consumeArrowAtPosition(actorId, actorState.position, { preserveAction: false, requestRerun: false });
-              interruptedByArrow = true;
-              break;
+              finalPosition = stepPosition;
+              const arrowAtStep = findArrowTokenAt(stepPosition);
+              if (arrowAtStep) {
+                if (!sameCoord(finalPosition, actorState.position)) {
+                  occupancy.delete(coordKey(actorState.position));
+                  actorState.position = { q: finalPosition.q, r: finalPosition.r };
+                  occupancy.set(coordKey(actorState.position), actorId);
+                }
+                consumeArrowAtPosition(actorId, actorState.position, { preserveAction: false, requestRerun: false });
+                interruptedByArrow = true;
+                break;
+              }
             }
           }
           if (blockedBy) {
@@ -4269,10 +4797,27 @@ export const executeBeatsWithInteractions = (
     };
 
     const { highPriorityEntries, lowPriorityEntries } = partitionEntriesByArrowPriority(ordered);
+    const processOrderedEntries = (entries: BeatEntry[]) => {
+      let previousBucketKey: string | null = null;
+      entries.forEach((entry) => {
+        const bucketKey = buildExecutionTieBucketKey(entry);
+        if (previousBucketKey !== null && bucketKey !== previousBucketKey) {
+          flushDeferredTieKnockbacksForBucket(previousBucketKey);
+          flushDeferredDisabledActors();
+        }
+        currentExecutionBucketKey = bucketKey;
+        processOrderedEntry(entry);
+        previousBucketKey = bucketKey;
+      });
+      flushDeferredTieKnockbacksForBucket(previousBucketKey);
+      flushDeferredDisabledActors();
+      currentExecutionBucketKey = null;
+    };
 
-    highPriorityEntries.forEach(processOrderedEntry);
+    processOrderedEntries(highPriorityEntries);
+    flushDeferredDisabledActors();
     resolveExistingArrows();
-    lowPriorityEntries.forEach(processOrderedEntry);
+    processOrderedEntries(lowPriorityEntries);
 
     updatedInteractions.forEach((interaction) => {
       if (interaction.type !== 'hand-trigger') return;

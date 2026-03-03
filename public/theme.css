@@ -115,15 +115,17 @@
   --action-card-title-top: 0;
   --action-card-art-inset-left: calc(44.7678px * var(--action-card-scale));
   --action-card-title-left: calc(50.7678px * var(--action-card-scale));
-  --action-card-title-width: calc(128.2322px * var(--action-card-scale));
+  --action-card-title-width: calc(
+    var(--action-card-rotation-left) - var(--action-card-title-left) - calc(2px * var(--action-card-scale))
+  );
   --action-card-title-height: var(--action-card-header-height);
   --action-card-title-font-size: calc(
     var(--action-card-title-height) - var(--action-card-title-padding-top) - var(--action-card-title-padding-bottom)
   );
-  --action-card-rotation-top: calc(6px * var(--action-card-scale));
-  --action-card-rotation-left: calc(179px * var(--action-card-scale));
-  --action-card-rotation-width: calc(30px * var(--action-card-scale));
-  --action-card-rotation-height: calc(30px * var(--action-card-scale));
+  --action-card-rotation-top: var(--action-card-priority-top);
+  --action-card-rotation-left: var(--action-card-priority-left);
+  --action-card-rotation-width: var(--action-card-priority-width);
+  --action-card-rotation-height: var(--action-card-priority-height);
   --action-card-priority-top: calc(8px * var(--action-card-scale));
   --action-card-priority-left: calc(209px * var(--action-card-scale));
   --action-card-priority-width: calc(25px * var(--action-card-scale));
@@ -3296,12 +3298,31 @@ img[src$='Death.png'] {
   width: var(--action-card-action-width);
   height: var(--action-card-action-height);
   display: block;
+  position: relative;
+  overflow: visible;
   border-radius: 0;
   border: none;
   background-color: transparent;
   background-size: contain;
   background-position: center;
   background-repeat: no-repeat;
+}
+
+.action-card-action-timing {
+  position: absolute;
+  inset: 0;
+  display: block;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.action-card-action-timing-icon {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8));
 }
 
 .action-card-surface {

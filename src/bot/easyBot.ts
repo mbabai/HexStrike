@@ -693,9 +693,21 @@ const enumerateInteractionPayloads = (
   const payloads: Array<Record<string, unknown>> = [];
   const seen = new Set<string>();
 
-  if (interaction.type === 'throw') {
-    for (let directionIndex = 0; directionIndex < 6; directionIndex += 1) {
-      appendUniquePayload(payloads, { directionIndex }, seen);
+  if (interaction.type === 'throw' || interaction.type === 'tie-knockback') {
+    const allowedDirectionIndices = Array.isArray(interaction.allowedDirectionIndices)
+      ? interaction.allowedDirectionIndices
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value) && value >= 0 && value <= 5)
+          .map((value) => Math.round(value))
+      : [];
+    if (allowedDirectionIndices.length) {
+      allowedDirectionIndices.forEach((directionIndex) => {
+        appendUniquePayload(payloads, { directionIndex }, seen);
+      });
+    } else {
+      for (let directionIndex = 0; directionIndex < 6; directionIndex += 1) {
+        appendUniquePayload(payloads, { directionIndex }, seen);
+      }
     }
     return payloads;
   }
@@ -799,13 +811,23 @@ const applyInteractionChoice = (
   choicePayload: Record<string, unknown>,
   deckState: DeckState | undefined,
 ): { ok: true } | { ok: false; error: string } => {
-  if (interaction.type === 'throw') {
+  if (interaction.type === 'throw' || interaction.type === 'tie-knockback') {
     const directionIndex = Number(choicePayload.directionIndex);
     if (!Number.isFinite(directionIndex) || directionIndex < 0 || directionIndex > 5) {
       return { ok: false, error: 'invalid-direction' };
     }
+    const roundedDirection = Math.round(directionIndex);
+    const allowedDirectionIndices = Array.isArray(interaction.allowedDirectionIndices)
+      ? interaction.allowedDirectionIndices
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value) && value >= 0 && value <= 5)
+          .map((value) => Math.round(value))
+      : [];
+    if (allowedDirectionIndices.length && !allowedDirectionIndices.includes(roundedDirection)) {
+      return { ok: false, error: 'direction-not-allowed' };
+    }
     interaction.status = 'resolved';
-    interaction.resolution = { directionIndex: Math.round(directionIndex) };
+    interaction.resolution = { directionIndex: roundedDirection };
     return { ok: true };
   }
 

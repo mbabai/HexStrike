@@ -2,9 +2,9 @@ import { loadCardCatalog } from './shared/cardCatalog.js';
 import { loadCharacterCatalog } from './shared/characterCatalog.js';
 import {
   getCardFramesToFirstAction,
-  getCardPriorityValue,
   getCardRecoveryFrames,
   getCardRotationOptionCount,
+  getCardTimingSortValue,
   getCardTotalBeats,
   getCardWaitBeats,
   isAbilityAttackCard,
@@ -107,7 +107,7 @@ const sortCards = (cards, sortKey, sortDirection) => {
     if (sortKey === 'beats') return getCardTotalBeats(card);
     if (sortKey === 'damage') return getNumericValue(card.damage);
     if (sortKey === 'kbf') return getNumericValue(card.kbf);
-    if (sortKey === 'priority') return getCardPriorityValue(card);
+    if (sortKey === 'timing') return getCardTimingSortValue(card);
     if (sortKey === 'rotations') return getCardRotationOptionCount(card);
     if (sortKey === 'wait-beats') return getCardWaitBeats(card);
     if (sortKey === 'wind-up-beats') return getCardFramesToFirstAction(card);

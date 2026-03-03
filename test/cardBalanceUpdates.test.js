@@ -34,27 +34,42 @@ test('card balance update applies timeline, damage, and naming changes', async (
   assert.equal(existsSync('public/images/a-Bm.png'), true);
 });
 
-test('card balance update keeps priorities unique with tie-break ordering', async () => {
+const normalizeActionLabel = (action) => {
+  const trimmed = `${action ?? ''}`.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+};
+
+test('card timing data is present for non-E/W beats', async () => {
   const catalog = await loadCardCatalog();
   const cards = [...catalog.movement, ...catalog.ability];
-  const uniquePriorities = new Set(cards.map((card) => card.priority));
+  cards.forEach((card) => {
+    const timings = Array.isArray(card.timings) ? card.timings : [];
+    card.actions.forEach((action, index) => {
+      const label = normalizeActionLabel(action).toUpperCase();
+      const timing = timings[index];
+      if (label === 'E' || label === 'W' || label === 'CO') {
+        assert.equal(
+          timing == null || (Array.isArray(timing) && timing.length === 0),
+          true,
+          `Expected ${card.id} action ${index} (${action}) to be untimed`,
+        );
+        return;
+      }
+      assert.equal(
+        Array.isArray(timing) && timing.length > 0,
+        true,
+        `Expected ${card.id} action ${index} (${action}) to include timing`,
+      );
+    });
+  });
 
-  assert.equal(uniquePriorities.size, cards.length, 'Expected all priorities to be unique');
-
-  assert.equal(getCardById(catalog, 'balestra-lunge').priority, 49);
-  assert.equal(getCardById(catalog, 'chase').priority, 58);
-  assert.equal(getCardById(catalog, 'fumikomi').priority, 48);
-
-  assert.equal(getCardById(catalog, 'advance').priority, 15);
-  assert.equal(getCardById(catalog, 'healing-harmony').priority, 16);
-  assert.equal(getCardById(catalog, 'fleche').priority, 62);
-  assert.equal(getCardById(catalog, 'stab').priority, 63);
-  assert.equal(getCardById(catalog, 'trip').priority, 60);
-  assert.equal(getCardById(catalog, 'sweeping-strike').priority, 65);
-  assert.equal(getCardById(catalog, 'jab').priority, 66);
-  assert.equal(getCardById(catalog, 'leap').priority, 67);
-  assert.equal(getCardById(catalog, 'whirlwind').priority, 68);
-  assert.equal(getCardById(catalog, 'spike').priority, 69);
-  assert.equal(getCardById(catalog, 'aerial-strike').priority, 88);
-  assert.equal(getCardById(catalog, 'burning-strike').priority, 89);
+  assert.deepEqual(getCardById(catalog, 'step').timings, [null, ['late'], null]);
+  assert.deepEqual(getCardById(catalog, 'long-thrust').timings, [null, ['early'], null, null, null]);
+  assert.deepEqual(getCardById(catalog, 'guard').timings, [null, ['early', 'mid', 'late'], ['early', 'mid', 'late'], null]);
+  assert.deepEqual(getCardById(catalog, 'absorb').timings, [null, ['mid', 'late'], ['early', 'mid'], null, null]);
+  assert.deepEqual(getCardById(catalog, 'aerial-strike').timings, [null, ['mid'], ['early'], null, null, null, null]);
 });

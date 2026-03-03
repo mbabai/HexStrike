@@ -48,6 +48,7 @@ const COMBO_ACTION = 'CO';
 const GUARD_CONTINUE_INTERACTION_TYPE = 'guard-continue';
 const REWIND_RETURN_INTERACTION_TYPE = 'rewind-return';
 const DRAW_OFFER_INTERACTION_TYPE = 'draw-offer';
+const TIE_KNOCKBACK_INTERACTION_TYPE = 'tie-knockback';
 const TIMELINE_SPEED_MIN = 1;
 const TIMELINE_SPEED_MAX = 3;
 const MAX_HAND_SIZE = 4;
@@ -63,6 +64,9 @@ const AXIAL_DIRECTIONS = [
   { q: -1, r: 1 },
   { q: 0, r: 1 },
 ];
+
+const isDirectionChoiceInteractionType = (type) =>
+  type === 'throw' || type === TIE_KNOCKBACK_INTERACTION_TYPE;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -371,10 +375,24 @@ export const initGame = () => {
 
   const throwAngles = AXIAL_DIRECTIONS.map((direction) => getThrowAngle(direction));
 
-  const setThrowButtonsEnabled = (enabled) => {
+  const normalizeAllowedThrowDirections = (allowedDirectionIndices) => {
+    if (!Array.isArray(allowedDirectionIndices)) return null;
+    const normalized = allowedDirectionIndices
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value) && value >= 0 && value <= 5)
+      .map((value) => Math.round(value));
+    return normalized.length ? new Set(normalized) : null;
+  };
+
+  const setThrowButtonsEnabled = (enabled, allowedDirectionIndices = null) => {
+    const allowedSet = normalizeAllowedThrowDirections(allowedDirectionIndices);
     throwButtons.forEach((button) => {
-      button.disabled = !enabled;
-      button.classList.toggle('is-disabled', !enabled);
+      const index = Number(button.dataset.dir);
+      const isDirectionAllowed = !allowedSet || (Number.isFinite(index) && allowedSet.has(Math.round(index)));
+      const canUse = Boolean(enabled) && isDirectionAllowed;
+      button.hidden = !isDirectionAllowed;
+      button.disabled = !canUse;
+      button.classList.toggle('is-disabled', !canUse);
     });
   };
 
@@ -436,7 +454,7 @@ export const initGame = () => {
 
   const getPendingThrowInteraction = () => {
     const pending = getPendingInteractionForUser();
-    return pending?.type === 'throw' ? pending : null;
+    return isDirectionChoiceInteractionType(pending?.type) ? pending : null;
   };
 
   const getPendingHavenInteraction = () => getPendingHavenInteractionType(getPendingInteractionForUser());
@@ -597,14 +615,14 @@ export const initGame = () => {
     pendingInteractionId = pending.id;
     pendingInteractionType = pending.type;
     const playerCards = gameState?.state?.player?.cards ?? null;
-    if (pending.type === 'throw') {
+    if (isDirectionChoiceInteractionType(pending.type)) {
       clearHavenHover();
       setModalVisibility(throwModal, true);
       setModalVisibility(comboModal, false);
       setModalVisibility(handTriggerModal, false);
       setModalVisibility(discardModal, false);
       setModalVisibility(drawModal, false);
-      setThrowButtonsEnabled(!interactionSubmitInFlight);
+      setThrowButtonsEnabled(!interactionSubmitInFlight, pending?.allowedDirectionIndices ?? null);
       setComboButtonsEnabled(false);
       discardPrompt?.sync();
       drawPrompt?.sync();
@@ -930,11 +948,14 @@ export const initGame = () => {
   const handleThrowSubmit = async (directionIndex) => {
     if (isReplayMode()) return;
     if (!gameState?.id || !pendingInteractionId || interactionSubmitInFlight) return;
-    if (pendingInteractionType && pendingInteractionType !== 'throw') return;
+    if (pendingInteractionType && !isDirectionChoiceInteractionType(pendingInteractionType)) return;
     if (getMatchOutcome(gameState?.state?.public)) return;
     if (!Number.isFinite(directionIndex) || directionIndex < 0 || directionIndex > 5) return;
+    const pendingThrow = getPendingThrowInteraction();
+    const allowedDirections = normalizeAllowedThrowDirections(pendingThrow?.allowedDirectionIndices ?? null);
+    if (allowedDirections && !allowedDirections.has(Math.round(directionIndex))) return;
     interactionSubmitInFlight = true;
-    setThrowButtonsEnabled(false);
+    setThrowButtonsEnabled(false, pendingThrow?.allowedDirectionIndices ?? null);
     debugLog(`${LOG_PREFIX} interaction:submit`, {
       userId: localUserId,
       gameId: gameState.id,
@@ -954,7 +975,7 @@ export const initGame = () => {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const message = payload?.error ? `${payload.error}` : 'Failed to resolve throw.';
+        const message = payload?.error ? `${payload.error}` : 'Failed to resolve direction choice.';
         debugWarn(`${LOG_PREFIX} interaction:rejected`, {
           status: response.status,
           error: payload?.error,
@@ -967,12 +988,12 @@ export const initGame = () => {
         interactionId: pendingInteractionId,
       });
       tutorialGuide?.notifyInteractionSubmitted?.({
-        type: 'throw',
+        type: pendingInteractionType === TIE_KNOCKBACK_INTERACTION_TYPE ? 'tie-knockback' : 'throw',
         directionIndex: Math.round(directionIndex),
       });
     } catch (err) {
-      console.error('Failed to resolve throw', err);
-      const message = err instanceof Error ? err.message : 'Failed to resolve throw.';
+      console.error('Failed to resolve direction choice', err);
+      const message = err instanceof Error ? err.message : 'Failed to resolve direction choice.';
       window.alert(message);
     } finally {
       interactionSubmitInFlight = false;

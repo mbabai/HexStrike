@@ -111,13 +111,15 @@ export interface PendingInputs {
 }
 
 export type CardType = 'movement' | 'ability';
+export type ActionTiming = 'early' | 'mid' | 'late';
 
 export interface CardDefinition {
   id: string;
   name: string;
   type: CardType;
-  priority: number;
   actions: string[];
+  timings?: Array<ActionTiming[] | null>;
+  priority?: number;
   rotations: string;
   damage?: number;
   kbf?: number;
@@ -174,7 +176,9 @@ export interface ActionListItem {
   action: string;
   rotation: string;
   rotationSource?: RotationSource;
+  timing?: ActionTiming[] | null;
   priority: number;
+  actionSetStep?: number;
   interaction?: BeatInteraction;
   damage?: number;
   kbf?: number;
@@ -221,7 +225,9 @@ export interface BeatEntry {
   action: string;
   rotation: string;
   rotationSource?: RotationSource;
+  timing?: ActionTiming[] | null;
   priority: number;
+  actionSetStep?: number;
   damage: number;
   location: HexCoord;
   terrain?: 'land' | 'abyss';
@@ -282,6 +288,7 @@ export interface CustomInteraction {
   directionIndex?: number | null;
   touchingHexes?: HexCoord[];
   targetHex?: HexCoord;
+  allowedDirectionIndices?: number[];
 }
 
 export interface MatchOutcome {
