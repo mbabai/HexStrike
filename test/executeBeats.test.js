@@ -3427,3 +3427,53 @@ test('executeBeatsWithInteractions rehydrates applied blocked rewind return stun
   assert.equal(updatedReturn?.resolution?.blockedByOccupant, true);
   assert.equal(updatedReturn?.resolution?.stunDuration, 3);
 });
+test('executeBeats keeps arrow hit damage at 4 even when the owner has attack bonus', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 5, r: 0 }, facing: 180, characterId: 'strylan', characterName: 'Beta' },
+  ];
+
+  const beats = [[
+    buildEntry('alpha', 'W', 20, characters[0].position, characters[0].facing),
+    buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+  ]];
+  const boardTokens = [
+    { id: 'arrow:0', type: 'arrow', position: { q: 1, r: 0 }, facing: 0, ownerUserId: 'beta' },
+  ];
+
+  const result = executeBeats(beats, characters, undefined, boardTokens);
+  const beat0 = result.beats[0] || [];
+  const alphaEntry = beat0.find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.action, 'DamageIcon');
+  assert.equal(alphaEntry.damage, 4);
+  assert.equal((result.boardTokens || []).length, 0);
+});
+
+test('executeBeats absorb draw from blocked arrows stays at 4 even when owner has attack bonus', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 5, r: 0 }, facing: 180, characterId: 'strylan', characterName: 'Beta' },
+  ];
+
+  const beats = [[
+    buildEntry('alpha', '[b]', 120, characters[0].position, characters[0].facing),
+    buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+  ]];
+  beats[0][0].cardId = 'absorb';
+  beats[0][0].passiveCardId = 'step';
+
+  const boardTokens = [
+    { id: 'arrow:0', type: 'arrow', position: { q: 1, r: 0 }, facing: 0, ownerUserId: 'beta' },
+  ];
+
+  const result = executeBeats(beats, characters, undefined, boardTokens);
+  const draw = (result.interactions || []).find(
+    (interaction) => interaction.type === 'draw' && interaction.actorUserId === 'alpha',
+  );
+
+  assert.ok(draw);
+  assert.equal(draw.drawCount, 4);
+});
+

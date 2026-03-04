@@ -31,6 +31,8 @@ const ROTATION_LABELS = ['0', 'R1', 'R2', '3', 'L2', 'L1'];
 const REWIND_CARD_ID = 'rewind';
 const REWIND_FOCUS_INTERACTION_TYPE = 'rewind-focus';
 const DRAW_SELECTION_MAX_MOVEMENT = 3;
+const REQUIRED_MOVEMENT_CARD_ID = 'step';
+const SIGNATURE_MOVEMENT_CARD_IDS = new Set(['grappling-hook', 'fleche', 'leap']);
 
 export const isActionValidationFailure = (result: ActionValidationResult): result is { ok: false; error: CardValidationError } =>
   !result.ok;
@@ -261,6 +263,22 @@ export const parseDeckDefinition = (
   }
   if (!ability.length) {
     errors.push({ code: 'missing-ability', message: 'Deck has no ability cards.' });
+  }
+  if (movement.length && !movement.includes(REQUIRED_MOVEMENT_CARD_ID)) {
+    errors.push({
+      code: 'missing-required-movement',
+      message: 'Deck must include Step as a movement card.',
+    });
+  }
+  const signatureMovementCount = movement.reduce(
+    (count, cardId) => count + (SIGNATURE_MOVEMENT_CARD_IDS.has(cardId) ? 1 : 0),
+    0,
+  );
+  if (signatureMovementCount > 1) {
+    errors.push({
+      code: 'too-many-signature-moves',
+      message: 'Deck can include at most one signature movement card.',
+    });
   }
   return { deck: { movement, ability }, errors };
 };

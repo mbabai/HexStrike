@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { buildDefaultDeckDefinition } = require('../dist/game/cardRules.js');
+const { buildDefaultDeckDefinition, parseDeckDefinition } = require('../dist/game/cardRules.js');
 
 test('buildDefaultDeckDefinition uses the first catalog deck when available', () => {
   const catalog = {
@@ -59,3 +59,70 @@ test('buildDefaultDeckDefinition falls back to catalog cards when decks are miss
     'ability-12',
   ]);
 });
+const createParseCatalog = () => ({
+  movement: [],
+  ability: [],
+  decks: [],
+  cardsById: new Map([
+    ['step', { id: 'step', type: 'movement' }],
+    ['dash', { id: 'dash', type: 'movement' }],
+    ['jump', { id: 'jump', type: 'movement' }],
+    ['advance', { id: 'advance', type: 'movement' }],
+    ['fleche', { id: 'fleche', type: 'movement' }],
+    ['grappling-hook', { id: 'grappling-hook', type: 'movement' }],
+    ['leap', { id: 'leap', type: 'movement' }],
+    ['jab', { id: 'jab', type: 'ability' }],
+    ['guard', { id: 'guard', type: 'ability' }],
+    ['parry', { id: 'parry', type: 'ability' }],
+    ['trip', { id: 'trip', type: 'ability' }],
+  ]),
+});
+
+test('parseDeckDefinition requires Step in movement cards', () => {
+  const catalog = createParseCatalog();
+  const parsed = parseDeckDefinition(
+    {
+      movement: ['dash', 'jump', 'advance', 'fleche'],
+      ability: ['jab', 'guard', 'parry', 'trip'],
+    },
+    catalog,
+  );
+
+  assert.ok(parsed.deck);
+  assert.equal(
+    parsed.errors.some((error) => error.code === 'missing-required-movement'),
+    true,
+  );
+});
+
+test('parseDeckDefinition limits decks to one signature movement card', () => {
+  const catalog = createParseCatalog();
+  const parsed = parseDeckDefinition(
+    {
+      movement: ['step', 'fleche', 'grappling-hook', 'dash'],
+      ability: ['jab', 'guard', 'parry', 'trip'],
+    },
+    catalog,
+  );
+
+  assert.ok(parsed.deck);
+  assert.equal(
+    parsed.errors.some((error) => error.code === 'too-many-signature-moves'),
+    true,
+  );
+});
+
+test('parseDeckDefinition allows decks with Step and one signature movement card', () => {
+  const catalog = createParseCatalog();
+  const parsed = parseDeckDefinition(
+    {
+      movement: ['step', 'fleche', 'dash', 'jump'],
+      ability: ['jab', 'guard', 'parry', 'trip'],
+    },
+    catalog,
+  );
+
+  assert.ok(parsed.deck);
+  assert.equal(parsed.errors.length, 0);
+});
+

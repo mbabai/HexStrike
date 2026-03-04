@@ -3363,7 +3363,7 @@ export const executeBeatsWithInteractions = (
             reflexDodgeAvoidedByUser.add(targetId);
           }
           if (blockCardId === ABSORB_CARD_ID && isBracketedAction(blockAction ?? '')) {
-            const arrowDamage = ARROW_DAMAGE + getAttackDamageBonusByUser(ownerId);
+            const arrowDamage = ARROW_DAMAGE;
             queueDraw(targetId, Math.max(0, arrowDamage - getDamageReductionByUser(targetId)));
           }
           return;
@@ -3448,7 +3448,7 @@ export const executeBeatsWithInteractions = (
 
       const fromPosition = { q: targetState.position.q, r: targetState.position.r };
       const damageReduction = getHealingHarmonyReduction(targetEntry);
-      const arrowDamage = ARROW_DAMAGE + getAttackDamageBonusByUser(safeOwnerId);
+      const arrowDamage = ARROW_DAMAGE;
       const adjustedDamage = applyCharacterDamage(targetId, Math.max(0, arrowDamage - damageReduction));
       const passiveKbfReduction = getPassiveKbfReduction(targetEntry);
       const baseKbf = Math.max(0, ARROW_KBF - passiveKbfReduction);

@@ -6,7 +6,7 @@ HexStrike is a two-player, simultaneous, card-based combat game on a hex board.
 
 The objective is to force the opponent to lose by either:
 - pushing them more than 4 hexes away from the nearest land hex, or
-- reaching a state where they are on abyss at the earliest open beat with no playable cards and no valid ledge grab.
+- reaching a state where they are on abyss at the earliest open beat with no cards to play and no valid ledge grab.
 
 Time is structured as repeating **beats** on a shared timeline. Each player has one timeline entry per beat.
 
@@ -205,4 +205,4 @@ The game runs in repeating beats. Each beat follows this order:
   4. Max 1 Signature Move (gold-title movement)
 - Win condition:
   1. Opponent is >4 hexes from nearest land, or
-  2. Opponent is on abyss at earliest open beat with no playable cards and no ledge grab
+  2. Opponent is on abyss at earliest open beat with no cards to play and no ledge grab

@@ -163,7 +163,7 @@
     <h2>4. Beat Phase - Detailed Explanation</h2>
 
     <h3>4.1 Refresh Phase</h3>
-    <p>At the start of each beat, a player refreshes if their character is on a <img class="inline-symbol" src="/public/images/E.png" alt="E symbol" /> beat, or has no active card.</p>
+    <p>At the start of each beat, a player refreshes their hand if their active card is current on the <img class="inline-symbol" src="/public/images/E.png" alt="E symbol" /> beat, or has no active card.</p>
     <p>To refresh:</p>
     <ul>
       <li>Discard any active and passive cards.</li>
@@ -179,7 +179,7 @@
       <li>1 passive card of the opposite type (movement card vs. ability card)</li>
       <li>1 legal rotation</li>
     </ul>
-    <p>If a player cannot legally play and is over the abyss, they lose immediately.</p>
+    <p>If a player has no cards to play and is over the abyss during this phase, they lose immediately.</p>
 
     <h3>4.3 Beat Resolution</h3>
     <ul>
@@ -325,7 +325,7 @@
       </div>
     </div>
     <p>
-      Arrow tokens charge (<img class="inline-symbol" src="/public/images/c.png" alt="c symbol" />) forward in the direction it faces on every beat, dealing 4 damage with a KBF of 1. If it hits a target or is blocked, it leave the board.
+      Arrow tokens charge (<img class="inline-symbol" src="/public/images/c.png" alt="c symbol" />) forward in the direction it faces on every beat, dealing 4 damage with a KBF of 1. If it hits a target or is blocked, it leaves the board.
     </p>
 
     <h3>Fire Token</h3>
@@ -358,11 +358,11 @@
     <p>In 1v1 play, the game ends immediately when one player loses.</p>
     <ul>
       <li>A character is 5 or more hexes from the island edge.</li>
-      <li>A player is on the abyss at the earliest open beat with no playable cards and no ledge grab available.</li>
+      <li>A player is on the abyss at the earliest open beat with no cards to play and no ledge grab available.</li>
     </ul>
     <p>In Free-For-All games, eliminated players respawn after 10 beats in the 
       center hex of the island with 0 damage and a full hand.
-      For the first 5 beats after respawning, They cannot be knocked back, stunned, or dealt damage. 
+      For the first 5 beats after respawning, they cannot be knocked back, stunned, or dealt damage. 
       The last player to hit someone that is eliminated gets a victory point. 
       First to 2 victory points wins.</p>
   </section>
@@ -390,23 +390,23 @@
         </tr>
         <tr>
           <td><img class="symbol-ref-icon" src="/public/images/m.png" alt="m symbol" /></td>
-          <td>Move action. Characters move straight forward and stop if obstacles are in the way. They move as far as possible before the obstacle.</td>
+          <td>Move action. Characters move straight forward and stop if obstacles are in the way. They move as far as possible before the obstacle. Other geometries of this type can include: <code>2m</code>, <code>Bm</code>, and <code>[m]</code>.</td>
         </tr>
         <tr>
           <td><img class="symbol-ref-icon" src="/public/images/2j.png" alt="j symbol" /></td>
-          <td>Jump action. Unlike move, jump does not stop if obstacles are in the way. However, the jump fails if the target location is occupied.</td>
+          <td>Jump action. Unlike move, jump does not stop if obstacles are in the way. However, the jump fails if the target location is occupied. Other geometries of this type can include: <code>3j</code> and <code>[2j]</code>.</td>
         </tr>
         <tr>
           <td><img class="symbol-ref-icon" src="/public/images/a.png" alt="a symbol" /></td>
-          <td>Attack action. Deal damage and knockback to any targets on all red hexes.</td>
+          <td>Attack action. Deal damage and knockback to any targets on all red hexes. Other geometries of this type can include: <code>a-2a</code>, <code>a-La-Ra</code>, and <code>[a-La-Ra]</code>.</td>
         </tr>
         <tr>
           <td><img class="symbol-ref-icon" src="/public/images/b.png" alt="b symbol" /></td>
-          <td>Block action. Block attacks from the hex directions with the gold lines.</td>
+          <td>Block action. Block attacks from the hex directions with the gold lines. Other geometries of this type can include: <code>b-Lb-Rb</code>, <code>[b-Lb-Rb]</code>, and <code>[b-Lb-Rb-BLb-BRb-Bb]</code>.</td>
         </tr>
         <tr>
           <td><img class="symbol-ref-icon" src="/public/images/c.png" alt="c symbol" /></td>
-          <td>Charge action (attack + movement behavior). First attempts an attack, then attempts a move.</td>
+          <td>Charge action (attack + movement behavior). First attempts an attack, then attempts a move. Other geometries of this type can include: <code>[3c]</code> and <code>c-La-Ra-BLa-BRa-Ba</code>.</td>
         </tr>
         <tr>
           <td><img class="symbol-ref-icon" src="/public/images/F.png" alt="F symbol" /></td>
@@ -545,7 +545,8 @@
   <section id="tie-breakers" class="panel">
     <h2>13. Tie Breakers</h2>
 
-    <h3>Same Beat + Same Timing</h3>
+    <h3>Same Beat &amp; Same Timing</h3>
+    <p>Sometimes, actions on the same beat will also have the same &quot;timing&quot; symbol (<img class="inline-symbol" src="/public/images/earlyRules.png" alt="Early timing" /> <img class="inline-symbol" src="/public/images/midRules.png" alt="Mid timing" /> <img class="inline-symbol" src="/public/images/lateRules.png" alt="Late timing" />), or no timing symbol at all. If this is the case, use this order of operations to resolve any ties.</p>
     <ol>
       <li><img class="inline-symbol" src="/public/images/Co.png" alt="Co symbol" /> resolves first, then <img class="inline-symbol" src="/public/images/E.png" alt="E symbol" />.</li>
       <li>Throws resolve before blocks.</li>
@@ -560,7 +561,7 @@
     <ol>
       <li>If tied actions are from different points in each action set, the later step resolves first (for example, step 3 beats step 2).</li>
       <li>If two attacks still tie, higher KBF resolves first.</li>
-      <li>If two attacks still tie on KBF, both hit. IF they are striking a third target, apply damage from both hits first, then apply only one knockback chosen by the target from the available hit directions.</li>
+      <li>If two attacks still tie on KBF, both hit. If they are striking a third target, apply damage from both hits first, then apply only one knockback chosen by the target from the available hit directions.</li>
       <li>If two moves still tie and both try to enter the same hex, both moves fail (treated as blocked movement).</li>
       <li>If two <img class="inline-symbol" src="/public/images/X1.png" alt="X1 symbol" /> / <img class="inline-symbol" src="/public/images/X2.png" alt="X2 symbol" /> choices still tie, those choices are made simultaneously.</li>
     </ol>
@@ -602,7 +603,7 @@
         <h3>Win Condition</h3>
         <ul>
           <li>Opponent is more than 4 hexes from nearest land, or</li>
-          <li>Opponent is on abyss at earliest open beat with no playable cards and no ledge grab.</li>
+          <li>Opponent is on abyss at earliest open beat with no cards to play and no ledge grab.</li>
           <li>FFA: 2 victory points wins: get victory points by "last hitting" opponents.</li>
         </ul>
       </div>
