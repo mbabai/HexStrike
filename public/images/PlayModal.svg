@@ -25,9 +25,9 @@
      borderopacity="1.0"
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
-     inkscape:zoom="0.7"
-     inkscape:cx="261.78033"
-     inkscape:cy="510.52731"
+     inkscape:zoom="0.49497475"
+     inkscape:cx="-295.03207"
+     inkscape:cy="530.08979"
      inkscape:document-units="mm"
      inkscape:current-layer="layer1"
      showgrid="false"
@@ -44,7 +44,7 @@
         <dc:format>image/svg+xml</dc:format>
         <dc:type
            rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title></dc:title>
+        <dc:title />
       </cc:Work>
     </rdf:RDF>
   </metadata>
@@ -69,44 +69,44 @@
        d="m 129.00223,108.34889 -48.004466,0 -24.002231,-41.57309 24.002236,-41.573086 48.004471,2e-6 24.00223,41.573089 z"
        transform="matrix(1.12448,0,0,1.1223042,-13.228841,-26.094975)" />
     <rect
-       style="opacity:1;fill:#e8d5b3;fill-opacity:1;fill-rule:nonzero;stroke:#000000;stroke-width:3.00000024;stroke-linecap:round;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;paint-order:fill markers stroke"
+       style="opacity:1;fill:#e8d5b3;fill-opacity:1;fill-rule:nonzero;stroke:#000000;stroke-width:3;stroke-linecap:round;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;paint-order:fill markers stroke"
        id="rect815"
-       width="114.01553"
-       height="165.07526"
-       x="48.042809"
-       y="96.501945"
-       ry="5.4582148" />
+       width="121.19707"
+       height="168.34761"
+       x="44.313618"
+       y="96.501953"
+       ry="5.5664153" />
     <rect
        style="opacity:1;fill:#272b34;fill-opacity:1;fill-rule:nonzero;stroke:#000000;stroke-width:3.00000024;stroke-linecap:round;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;paint-order:fill markers stroke"
        id="rect815-5"
-       width="114.01553"
-       height="31.983326"
-       x="47.941658"
-       y="261.23331"
-       ry="1.0575289" />
+       width="121.57506"
+       height="28.581539"
+       x="44.212471"
+       y="264.63507"
+       ry="0.94504881" />
     <text
        xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:32.73122025px;line-height:100%;font-family:'Yaahowu Bold';-inkscape-font-specification:'Yaahowu Bold, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:start;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
-       x="61.07021"
+       x="61.01968"
        y="190.73605"
        id="text853"
        transform="scale(1.0009688,0.99903213)"><tspan
          sodipodi:role="line"
          id="tspan851"
-         x="61.07021"
+         x="61.01968"
          y="190.73605"
          style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:Arial;-inkscape-font-specification:Arial;stroke-width:0.26458332">Active</tspan></text>
     <text
        xml:space="preserve"
-       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:28.785429px;line-height:100%;font-family:'Yaahowu Bold';-inkscape-font-specification:'Yaahowu Bold, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:start;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:0.26458332"
-       x="53.963928"
-       y="287.62747"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:21.50500488px;line-height:100%;font-family:'Yaahowu Bold';-inkscape-font-specification:'Yaahowu Bold, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:start;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:0.26458332"
+       x="67.028351"
+       y="286.76691"
        id="text853-0"
        transform="scale(1.0009688,0.99903213)"><tspan
          sodipodi:role="line"
          id="tspan851-8"
-         x="53.963928"
-         y="287.62747"
+         x="67.028351"
+         y="286.76691"
          style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:Arial;-inkscape-font-specification:Arial;fill:#ffffff;fill-opacity:1;stroke-width:0.26458332">Passive</tspan></text>
     <path
        sodipodi:type="star"

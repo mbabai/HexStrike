@@ -348,22 +348,21 @@
       <div id="actionHud" class="action-hud">
         <div id="movementHand" class="action-hand action-hand-movement" aria-label="Movement cards"></div>
         <div class="action-center">
-          <button id="actionSubmit" class="btn btn-primary action-submit" type="button" hidden>Submit</button>
-          <div class="action-slot-row">
-            <div class="action-slot">
-              <div id="activeSlot" class="action-slot-drop" data-slot="active" aria-label="Active card slot">
-                <span class="action-slot-label">Active</span>
-              </div>
-            </div>
-            <div class="action-slot">
-              <div id="passiveSlot" class="action-slot-drop" data-slot="passive" aria-label="Passive card slot">
-                <span class="action-slot-label">Passive</span>
-              </div>
-            </div>
-          </div>
-          <div class="rotation-selector">
+          <div class="play-modal-shell">
+            <div class="play-modal-art" aria-hidden="true"></div>
             <div id="rotationWheel" class="rotation-wheel"></div>
+            <div class="action-slot-row">
+              <div class="action-slot action-slot-active">
+                <div id="activeSlot" class="action-slot-drop" data-slot="active" aria-label="Active card slot">
+                </div>
+              </div>
+              <div class="action-slot action-slot-passive">
+                <div id="passiveSlot" class="action-slot-drop" data-slot="passive" aria-label="Passive card slot">
+                </div>
+              </div>
+            </div>
           </div>
+          <button id="actionSubmit" class="btn btn-primary action-submit" type="button" hidden>Submit</button>
         </div>
         <div id="abilityHand" class="action-hand action-hand-ability" aria-label="Ability cards"></div>
       </div>

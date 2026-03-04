@@ -120,13 +120,14 @@ export const createTutorialGuide = ({
   abilityHand,
   activeSlot,
   passiveSlot,
+  submitButton,
   rotationWheel,
   comboAccept,
   throwModal,
   localUserId,
   onReturnToLobby,
 } = {}) => {
-  if (!gameArea || !canvas || !movementHand || !abilityHand || !activeSlot || !passiveSlot || !rotationWheel) {
+  if (!gameArea || !canvas || !movementHand || !abilityHand || !activeSlot || !passiveSlot || !rotationWheel || !submitButton) {
     return createNoopGuide();
   }
 
@@ -193,7 +194,7 @@ export const createTutorialGuide = ({
   const getRotationWedge = (rotation) =>
     rotationWheel.querySelector(`.rotation-wedge[data-rotation="${rotation}"]`);
 
-  const getRotationCenter = () => rotationWheel.querySelector('.rotation-center');
+  const getSubmitButton = () => submitButton;
   const getSlotDrop = (slot) => slot?.querySelector?.('.action-slot-drop') ?? slot;
 
   const isCardInSlot = (slot, cardId) => Boolean(slot.querySelector(`.action-card[data-card-id="${cardId}"]`));
@@ -618,7 +619,7 @@ export const createTutorialGuide = ({
       position: 'rotation',
       textKey: 'selectRotationOpen',
       expectedAction: TUTORIAL_ACTIONS.open,
-      allow: () => [getRotationWedge('0'), getRotationCenter(), getHandCardById('step'), getHandCardById('fumikomi'), activeSlot, passiveSlot],
+      allow: () => [getRotationWedge('0'), getSubmitButton(), getHandCardById('step'), getHandCardById('fumikomi'), activeSlot, passiveSlot],
       highlightElements: () => [getRotationWedge('0')],
     },
     {
@@ -656,7 +657,7 @@ export const createTutorialGuide = ({
       position: 'rotation',
       textKey: 'selectRotationJab',
       expectedAction: TUTORIAL_ACTIONS.jab,
-      allow: () => [getRotationWedge('0'), getRotationCenter(), getHandCardById('jab'), getHandCardById('fleche'), activeSlot, passiveSlot],
+      allow: () => [getRotationWedge('0'), getSubmitButton(), getHandCardById('jab'), getHandCardById('fleche'), activeSlot, passiveSlot],
       highlightElements: () => [getRotationWedge('0')],
     },
     {
@@ -694,7 +695,7 @@ export const createTutorialGuide = ({
       position: 'rotation',
       textKey: 'selectRotationCrossSlash',
       expectedAction: TUTORIAL_ACTIONS.crossSlash,
-      allow: () => [getRotationWedge('0'), getRotationCenter(), getHandCardById('cross-slash'), getHandCardById('step'), activeSlot, passiveSlot],
+      allow: () => [getRotationWedge('0'), getSubmitButton(), getHandCardById('cross-slash'), getHandCardById('step'), activeSlot, passiveSlot],
       highlightElements: () => [getRotationWedge('0')],
     },
     {
@@ -724,7 +725,7 @@ export const createTutorialGuide = ({
       position: 'rotation',
       textKey: 'selectRotationDodge',
       expectedAction: TUTORIAL_ACTIONS.dodge,
-      allow: () => [getRotationWedge('L1'), getRotationCenter(), getHandCardById('backflip'), getHandCardById('guard'), activeSlot, passiveSlot],
+      allow: () => [getRotationWedge('L1'), getSubmitButton(), getHandCardById('backflip'), getHandCardById('guard'), activeSlot, passiveSlot],
       highlightElements: () => [getRotationWedge('L1')],
     },
     {
@@ -759,7 +760,7 @@ export const createTutorialGuide = ({
       position: 'rotation',
       textKey: 'selectRotationHipThrow',
       expectedAction: TUTORIAL_ACTIONS.hipThrow,
-      allow: () => [getRotationWedge('L1'), getRotationCenter(), getHandCardById('hip-throw'), getHandCardById('advance'), activeSlot, passiveSlot],
+      allow: () => [getRotationWedge('L1'), getSubmitButton(), getHandCardById('hip-throw'), getHandCardById('advance'), activeSlot, passiveSlot],
       highlightElements: () => [getRotationWedge('L1')],
     },
     {
@@ -806,7 +807,7 @@ export const createTutorialGuide = ({
       textKey: 'selectRotationFinish',
       expectedAction: TUTORIAL_ACTIONS.finish,
       allow: () =>
-        [getRotationWedge('3'), getRotationCenter(), getHandCardById('smash-attack'), activeSlot, passiveSlot].concat(
+        [getRotationWedge('3'), getSubmitButton(), getHandCardById('smash-attack'), activeSlot, passiveSlot].concat(
           MOVEMENT_PASSIVE_IDS.map((id) => getHandCardById(id)),
         ),
       highlightElements: () => [getRotationWedge('3')],

@@ -9,10 +9,12 @@ HexStrike uses a server-authoritative timeline. The server owns the canonical ga
 - Hand: `{ movementCards, abilityCards }` (up to 4 each)
 - Zones: `{ deck, hand, discard }` (movement cards discard, ability cards recycle)
 - Timeline: `{ beats, currentBeatIndex }`
-- Beat: `{ index, playerId, action, text?, rotation?, priority?, triggers?, requiresInput }`
+- Beat: `{ index, playerId, action, timing?, text?, rotation?, priority?, triggers?, requiresInput }`
 - Trigger: `{ type: 'require_input'|'reaction'|'interrupt', target: 'single_player'|'all_players' }`
 
 The public state exposed to clients uses `public.beats` (an array of per-player beat entries) and `public.characters` for roster information. The server maps between the abstract `Timeline` and `public.beats` when prompting inputs or resolving action sets.
+
+Beat execution order is timing-first (`early` -> `mid` -> `late`) with class/roster tie-breakers. Numeric `priority` is retained as compatibility metadata for legacy entries and UI affordances.
 
 ## Map and Terrain
 

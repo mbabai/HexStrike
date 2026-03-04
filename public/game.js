@@ -1681,6 +1681,7 @@ export const initGame = () => {
     abilityHand,
     activeSlot,
     passiveSlot,
+    submitButton,
     rotationWheel,
     comboAccept,
     throwModal,

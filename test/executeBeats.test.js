@@ -1087,6 +1087,23 @@ test('executeBeats resolves existing arrows before lower-priority movement actio
   assert.equal((result.boardTokens || []).length, 0);
 });
 
+test('executeBeats arrow phase uses timing over stale numeric priority', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+  ];
+  const beats = [[{ ...buildEntry('alpha', 'm', 100, characters[0].position, characters[0].facing), timing: ['mid'] }]];
+  const boardTokens = [{ id: 'arrow:0', type: 'arrow', position: { q: 1, r: 0 }, facing: 0, ownerUserId: 'beta' }];
+
+  const result = executeBeats(beats, characters, undefined, boardTokens);
+  const beat0 = result.beats[0] || [];
+  const alphaEntry = beat0.find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.action, 'DamageIcon');
+  assert.equal(alphaEntry.damage, 4);
+  assert.equal((result.boardTokens || []).length, 0);
+});
+
 test('executeBeats applies arrow hits when long movement passes through an arrow hex', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
@@ -1167,6 +1184,62 @@ test('executeBeats blocks bow shot arrows when the target blocks the incoming di
   const betaEntry = beat0.find((entry) => entry.username === 'beta');
 
   assert.ok(betaEntry);
+  assert.equal(betaEntry.damage, 0);
+  const hit = (betaEntry.consequences || []).find((item) => item?.type === 'hit');
+  assert.equal(Boolean(hit), false);
+});
+
+test('executeBeats does not block same-beat hits when block timing does not overlap', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 0, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      { ...buildEntry('alpha', 'a', 60, characters[0].position, characters[0].facing, '', 3, 2), timing: ['mid'] },
+      { ...buildEntry('beta', 'b', 100, characters[1].position, characters[1].facing), timing: ['early'] },
+    ],
+  ];
+  beats[0][0].cardId = 'double-daggers';
+  beats[0][0].passiveCardId = 'step';
+  beats[0][1].cardId = 'reflex-dodge';
+  beats[0][1].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters);
+  const beat0 = result.beats[0] || [];
+  const betaEntry = beat0.find((entry) => entry.username === 'beta');
+
+  assert.ok(betaEntry);
+  assert.equal(betaEntry.action, 'b');
+  assert.equal(betaEntry.damage, 3);
+  const hit = (betaEntry.consequences || []).find((item) => item?.type === 'hit' && item?.sourceUserId === 'alpha');
+  assert.ok(hit);
+});
+
+test('executeBeats blocks same-beat hits when any block timing overlaps', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 0, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      { ...buildEntry('alpha', 'a', 60, characters[0].position, characters[0].facing, '', 3, 2), timing: ['mid'] },
+      { ...buildEntry('beta', 'b', 100, characters[1].position, characters[1].facing), timing: ['early', 'mid'] },
+    ],
+  ];
+  beats[0][0].cardId = 'double-daggers';
+  beats[0][0].passiveCardId = 'step';
+  beats[0][1].cardId = 'reflex-dodge';
+  beats[0][1].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters);
+  const beat0 = result.beats[0] || [];
+  const betaEntry = beat0.find((entry) => entry.username === 'beta');
+
+  assert.ok(betaEntry);
+  assert.equal(betaEntry.action, 'b');
   assert.equal(betaEntry.damage, 0);
   const hit = (betaEntry.consequences || []).find((item) => item?.type === 'hit');
   assert.equal(Boolean(hit), false);
@@ -1818,6 +1891,7 @@ test('executeBeats swaps reflex dodge on incoming W-hit and ends the set on a su
   beats[0][1].cardId = 'dash';
   beats[0][1].passiveCardId = 'reflex-dodge';
   beats[0][1].rotationSource = 'selected';
+  beats[0][0].timing = ['early'];
 
   const result = executeBeats(beats, characters);
   const betaBeat0 = (result.beats[0] || []).find((entry) => entry.username === 'beta');
@@ -1876,6 +1950,7 @@ test('executeBeats reruns a frame when reflex dodge swaps during a later backfli
   beats[3][1].passiveCardId = 'reflex-dodge';
   beats[4][1].cardId = 'backflip';
   beats[4][1].passiveCardId = 'reflex-dodge';
+  beats[2][0].timing = ['early'];
 
   const result = executeBeats(beats, characters);
   const betaBeat2 = (result.beats[2] || []).find((entry) => entry.username === 'beta');
@@ -1936,6 +2011,7 @@ test('executeBeats reflex dodge swap does not reapply prior selected rotation on
   beats[3][1].passiveCardId = 'reflex-dodge';
   beats[4][1].cardId = 'step';
   beats[4][1].passiveCardId = 'reflex-dodge';
+  beats[2][0].timing = ['early'];
 
   const result = executeBeats(beats, characters);
   const betaBeat2 = (result.beats[2] || []).find((entry) => entry.username === 'beta');

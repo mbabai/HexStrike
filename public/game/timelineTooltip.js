@@ -204,14 +204,12 @@ const resolveInterruptedCardIds = (beats, character, beatIndex, entry) => {
   return { interrupted, activeCardId, passiveCardId };
 };
 
-const findCardForTimelineEntry = (beats, character, beatIndex, priority, cardMetadata) => {
+const findCardForTimelineEntry = (beats, character, beatIndex, cardMetadata) => {
   if (!Array.isArray(beats) || !character || !cardMetadata.length) return null;
   const clampedIndex = Math.min(Math.max(0, beatIndex), Math.max(0, beats.length - 1));
   const startIndex = findActionSetStartIndex(beats, character, clampedIndex);
   if (startIndex === null) return null;
-  const hasPriority = Number.isFinite(priority);
   for (const card of cardMetadata) {
-    if (hasPriority && card.priority !== priority) continue;
     const actions = Array.isArray(card.actions) ? card.actions : [];
     if (!actions.length) continue;
     let matches = true;
@@ -793,7 +791,6 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
         beats,
         target.character,
         target.beatIndex,
-        entry?.priority,
         cardMetadata.list,
       );
     }

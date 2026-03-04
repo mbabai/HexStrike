@@ -93,6 +93,7 @@ type BlockSource = {
   cardId?: string;
   passiveCardId?: string;
   action?: string;
+  timing?: ReturnType<typeof resolveActionTiming>;
 };
 
 const LOCAL_DIRECTIONS = {
@@ -118,11 +119,22 @@ const getEntryPriority = (entry: { priority?: number; timing?: string[] | null; 
   if (actionLabel === COMBO_ACTION) {
     return ARROW_PRIORITY + 10;
   }
-  if (Number.isFinite(entry.priority)) return Number(entry.priority);
-  return getTimingPriority(resolveActionTiming(entry.action, entry.timing));
+  const timing = resolveActionTiming(entry.action, entry.timing);
+  if (timing?.length) return getTimingPriority(timing);
+  if (actionLabel === DEFAULT_ACTION || actionLabel === WAIT_ACTION) return 0;
+  return Number.isFinite(entry.priority) ? Number(entry.priority) : 0;
 };
 
-const partitionEntriesByArrowPriority = <T extends { priority?: number }>(entries: T[]) => {
+const getEffectiveEntryPriority = (
+  entry: { priority?: number; timing?: string[] | null; action?: string } | null | undefined,
+) => {
+  if (!entry) return 0;
+  return Math.round(getEntryPriority(entry));
+};
+
+const partitionEntriesByArrowPriority = <T extends { action?: string; timing?: string[] | null; priority?: number }>(
+  entries: T[],
+) => {
   const highPriorityEntries: T[] = [];
   const lowPriorityEntries: T[] = [];
   entries.forEach((entry) => {
@@ -403,6 +415,22 @@ const getEntryTimingRank = (entry: BeatEntry | null | undefined): number => {
     }
   });
   return best;
+};
+
+const hasTimingOverlap = (
+  leftTiming: ReturnType<typeof resolveActionTiming>,
+  rightTiming: ReturnType<typeof resolveActionTiming>,
+): boolean => {
+  if (!leftTiming?.length || !rightTiming?.length) return true;
+  return leftTiming.some((phase) => rightTiming.includes(phase));
+};
+
+const resolveTimedBlockSource = (
+  blockSource: BlockSource | undefined,
+  attackTiming: ReturnType<typeof resolveActionTiming>,
+): BlockSource | undefined => {
+  if (!blockSource) return undefined;
+  return hasTimingOverlap(attackTiming, blockSource.timing) ? blockSource : undefined;
 };
 
 const getEntryClassRank = (entry: BeatEntry | null | undefined): number => {
@@ -3029,7 +3057,7 @@ export const executeBeatsWithInteractions = (
         return [
           actorEntry.action ?? DEFAULT_ACTION,
           actorEntry.rotation ?? '',
-          Number.isFinite(actorEntry.priority) ? actorEntry.priority : 0,
+          getEffectiveEntryPriority(actorEntry),
           timingSignature,
           Number.isFinite(actorEntry.actionSetStep) ? actorEntry.actionSetStep : 1,
           actorEntry.cardId ?? '',
@@ -3047,9 +3075,9 @@ export const executeBeatsWithInteractions = (
         if (Number.isFinite(explicitPriority)) {
           return Math.round(explicitPriority as number);
         }
-        const causePriority = entriesByUser.get(causeActorId)?.priority;
-        if (Number.isFinite(causePriority)) {
-          return Math.round(causePriority as number);
+        const causeEntry = entriesByUser.get(causeActorId);
+        if (causeEntry) {
+          return getEffectiveEntryPriority(causeEntry);
         }
         return Math.round(fallbackPriority);
       };
@@ -3069,8 +3097,7 @@ export const executeBeatsWithInteractions = (
         options: { causeActorId?: string; causePriority?: number } = {},
       ) => {
         if (!changedActorId) return;
-        const changedPriority = entriesByUser.get(changedActorId)?.priority;
-        const fallbackPriority = Number.isFinite(changedPriority) ? (changedPriority as number) : 0;
+        const fallbackPriority = getEffectiveEntryPriority(entriesByUser.get(changedActorId));
         const causeActorId = options.causeActorId ?? changedActorId;
         const causePriority = getCausePriority(causeActorId, fallbackPriority, options.causePriority);
         const causeOrder =
@@ -3136,6 +3163,7 @@ export const executeBeatsWithInteractions = (
     ): Set<number> => {
       const directions = new Set<number>();
       if (!entry || !actorState) return directions;
+      const entryTiming = resolveActionTiming(entry.action, entry.timing);
       const tokens = parseActionTokens(entry.action ?? '');
       tokens.forEach((token) => {
         if (token.type !== 'b') return;
@@ -3150,6 +3178,7 @@ export const executeBeatsWithInteractions = (
           cardId: entry.cardId ?? undefined,
           passiveCardId: entry.passiveCardId ?? undefined,
           action: entry.action ?? undefined,
+          timing: entryTiming,
         });
         blockMap.set(blockKey, existing);
         directions.add(blockDirectionIndex);
@@ -3163,6 +3192,7 @@ export const executeBeatsWithInteractions = (
       blockDirection: number | null,
     ): BlockSource | undefined => {
       if (!entry || !actorState || blockDirection == null) return undefined;
+      const entryTiming = resolveActionTiming(entry.action, entry.timing);
       const tokens = parseActionTokens(entry.action ?? '');
       for (const token of tokens) {
         if (token.type !== 'b') continue;
@@ -3175,6 +3205,7 @@ export const executeBeatsWithInteractions = (
           cardId: entry.cardId ?? undefined,
           passiveCardId: entry.passiveCardId ?? undefined,
           action: entry.action ?? undefined,
+          timing: entryTiming,
         };
       }
       return undefined;
@@ -4265,6 +4296,7 @@ export const executeBeatsWithInteractions = (
             entry.action = nextAction;
           }
         }
+      const entryTiming = resolveActionTiming(entry.action, entry.timing);
       const tokens = parseActionTokens(entry.action ?? '');
       let interruptedByArrow = false;
 
@@ -4292,13 +4324,17 @@ export const executeBeatsWithInteractions = (
               cardId: entry.cardId ?? undefined,
               passiveCardId: entry.passiveCardId ?? undefined,
               action: entry.action ?? undefined,
+              timing: entryTiming,
             });
             blockMap.set(blockKey, existing);
           }
           return;
         }
 
-        const blockSource = directionIndex != null ? blockMap.get(targetKey)?.get(directionIndex) : undefined;
+        const blockSource = resolveTimedBlockSource(
+          directionIndex != null ? blockMap.get(targetKey)?.get(directionIndex) : undefined,
+          entryTiming,
+        );
         const targetCharacter = targetId ? characterById.get(targetId) : null;
         const targetEntry = targetCharacter ? findEntryForCharacter(beat, targetCharacter) : null;
         const targetState = targetId ? state.get(targetId) : null;
@@ -4340,7 +4376,10 @@ export const executeBeatsWithInteractions = (
                   actionSetRotationByUser.set(targetId, refreshedRotation);
                 }
                 registerBlockActions(targetId, swappedEntry, targetState);
-                resolvedBlockSource = directionIndex != null ? blockMap.get(targetKey)?.get(directionIndex) : undefined;
+                resolvedBlockSource = resolveTimedBlockSource(
+                  directionIndex != null ? blockMap.get(targetKey)?.get(directionIndex) : undefined,
+                  entryTiming,
+                );
                 blockedByBlock = Boolean(resolvedBlockSource) && !isThrow && !isUnblockable;
                 rerunIfCurrentFrameChanged(targetId, beforeSignature, { causeActorId: targetId });
               }
@@ -4417,7 +4456,7 @@ export const executeBeatsWithInteractions = (
                   }
                   rerunIfCurrentFrameChanged(targetId, beforeSignature, {
                     causeActorId: actorId,
-                    causePriority: entry.priority,
+                    causePriority: getEffectiveEntryPriority(entry),
                   });
                   recordHitConsequence(targetId, index, targetState, adjustedDamage, 0, actorId);
                   if (hasHammerPassive && actorId !== targetId) {
@@ -4475,7 +4514,7 @@ export const executeBeatsWithInteractions = (
                     applyHitTimeline(targetId, index, targetState, knockedSteps, preserveAction);
                     rerunIfCurrentFrameChanged(targetId, beforeSignature, {
                       causeActorId: actorId,
-                      causePriority: entry.priority,
+                      causePriority: getEffectiveEntryPriority(entry),
                     });
                     recordHitConsequence(targetId, index, targetState, adjustedDamage, knockedSteps, actorId);
                     if (hasHammerPassive && actorId !== targetId) {
@@ -4613,7 +4652,7 @@ export const executeBeatsWithInteractions = (
                       effectiveKbf,
                       fromPosition,
                       directionIndex: tieDirectionIndex,
-                      causePriority: Number.isFinite(entry.priority) ? entry.priority : 0,
+                      causePriority: getEffectiveEntryPriority(entry),
                     },
                     tieDirectionIndex,
                   );
@@ -4665,7 +4704,7 @@ export const executeBeatsWithInteractions = (
                   applyHitTimeline(targetId, index, targetState, knockedSteps, preserveAction);
                   rerunIfCurrentFrameChanged(targetId, beforeSignature, {
                     causeActorId: actorId,
-                    causePriority: entry.priority,
+                    causePriority: getEffectiveEntryPriority(entry),
                   });
                 }
                 recordHitConsequence(targetId, index, targetState, adjustedDamage, knockedSteps, actorId);

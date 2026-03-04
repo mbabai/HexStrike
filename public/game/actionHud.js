@@ -37,6 +37,38 @@ const buildAllowedRotationSet = (restriction) => {
   return allowed;
 };
 
+const getElementQuad = (element) => {
+  if (!element) return null;
+  if (typeof element.getBoxQuads === 'function') {
+    const quads = element.getBoxQuads({ box: 'border' });
+    if (quads && quads.length) return quads[0];
+  }
+  const rect = element.getBoundingClientRect();
+  if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+  return {
+    p1: { x: rect.left, y: rect.top },
+    p2: { x: rect.right, y: rect.top },
+    p3: { x: rect.right, y: rect.bottom },
+    p4: { x: rect.left, y: rect.bottom },
+  };
+};
+
+const resolveQuadAxes = (quad) => {
+  const p1 = quad.p1;
+  const vWidth = { x: quad.p2.x - quad.p1.x, y: quad.p2.y - quad.p1.y };
+  const vHeight = { x: quad.p4.x - quad.p1.x, y: quad.p4.y - quad.p1.y };
+  const det = vWidth.x * vHeight.y - vWidth.y * vHeight.x;
+  if (!det) return null;
+  return {
+    origin: p1,
+    vWidth,
+    vHeight,
+    widthLen: Math.hypot(vWidth.x, vWidth.y),
+    heightLen: Math.hypot(vHeight.x, vHeight.y),
+    det,
+  };
+};
+
 export const createActionHud = ({
   root,
   movementHand,
@@ -87,7 +119,8 @@ export const createActionHud = ({
 
   const debugOverlay = (() => {
     if (typeof document === 'undefined' || typeof window === 'undefined') return null;
-    if (!DEBUG_HOVER) return null;
+    const isDevHost = ['localhost', '127.0.0.1'].includes(window.location?.hostname ?? '');
+    if (!DEBUG_HOVER && !isDevHost) return null;
     const SVG_NS = 'http://www.w3.org/2000/svg';
     const overlay = document.createElementNS(SVG_NS, 'svg');
     overlay.setAttribute('class', 'action-hover-debug');
@@ -99,23 +132,8 @@ export const createActionHud = ({
     overlay.style.height = '100%';
     overlay.style.pointerEvents = 'none';
     overlay.style.zIndex = '50';
-    overlay.style.display = 'block';
+    overlay.style.display = DEBUG_HOVER ? 'block' : 'none';
     document.body.appendChild(overlay);
-
-    const quadForElement = (element) => {
-      if (typeof element.getBoxQuads === 'function') {
-        const quads = element.getBoxQuads({ box: 'border' });
-        if (quads && quads.length) return quads[0];
-      }
-      const rect = element.getBoundingClientRect();
-      if (!rect || rect.width <= 0 || rect.height <= 0) return null;
-      return {
-        p1: { x: rect.left, y: rect.top },
-        p2: { x: rect.right, y: rect.top },
-        p3: { x: rect.right, y: rect.bottom },
-        p4: { x: rect.left, y: rect.bottom },
-      };
-    };
 
     const halfQuadPoints = (quad) => {
       const midTop = {
@@ -169,7 +187,7 @@ export const createActionHud = ({
       elements.forEach((element) => {
         const cardId = element?.dataset?.cardId;
         if (!cardId) return;
-        const quad = quadForElement(element);
+        const quad = getElementQuad(element);
         if (!quad) return;
         const maxX = Math.max(quad.p1.x, quad.p2.x, quad.p3.x, quad.p4.x);
         const index = cards.length;
@@ -240,8 +258,39 @@ export const createActionHud = ({
       if (!enabled) clear();
     };
 
-    return { render, clear, setEnabled };
+    return { render, clear, setEnabled, isDevHost };
   })();
+
+  if (debugOverlay?.isDevHost) {
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.textContent = 'Debug';
+    toggle.style.position = 'fixed';
+    toggle.style.left = '0';
+    toggle.style.top = '0';
+    toggle.style.padding = '6px 10px';
+    toggle.style.fontSize = '12px';
+    toggle.style.fontWeight = '600';
+    toggle.style.letterSpacing = '0.08em';
+    toggle.style.textTransform = 'uppercase';
+    toggle.style.border = '1px solid rgba(255,255,255,0.25)';
+    toggle.style.borderTop = 'none';
+    toggle.style.borderLeft = 'none';
+    toggle.style.borderRadius = '0 0 6px 0';
+    toggle.style.background = 'rgba(10, 18, 22, 0.85)';
+    toggle.style.color = '#f5f0e6';
+    toggle.style.zIndex = '60';
+    toggle.style.cursor = 'pointer';
+    let enabled = false;
+    debugOverlay.setEnabled(enabled);
+    toggle.addEventListener('click', () => {
+      enabled = !enabled;
+      toggle.textContent = enabled ? 'Debug On' : 'Debug Off';
+      debugOverlay.setEnabled(enabled);
+    });
+    toggle.textContent = 'Debug Off';
+    document.body.appendChild(toggle);
+  }
 
   const wheel = buildRotationWheel(rotationWheel, (rotation) => {
     if (state.locked) return;
@@ -251,17 +300,11 @@ export const createActionHud = ({
     updateSubmitState();
   });
 
-  const rotationCenter = rotationWheel?.querySelector?.('.rotation-center') ?? null;
-  const rotationCenterLabel = rotationCenter ? rotationCenter.querySelector('text') : null;
-  if (rotationCenter) {
-    rotationCenter.setAttribute('role', 'button');
-    rotationCenter.setAttribute('tabindex', '0');
-    rotationCenter.setAttribute('focusable', 'true');
-    rotationCenter.setAttribute('aria-label', 'Submit action');
-    rotationCenter.setAttribute('aria-disabled', 'true');
-  }
-
   const getCard = (cardId) => state.cardsById.get(cardId) || null;
+  const setDraggingCardId = (cardId) => {
+    state.draggingCardId = cardId || null;
+    root.classList.toggle('is-card-dragging', Boolean(state.draggingCardId));
+  };
 
   const getActiveCard = () => getCard(state.slots.active);
   const getPassiveCard = () => getCard(state.slots.passive);
@@ -271,10 +314,13 @@ export const createActionHud = ({
       ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
       : false;
   const LERP_DURATION_MS = 220;
+  const PASSIVE_SLOT_LERP_DURATION_MS = 420;
   const DEAL_DURATION_MS = 520;
   const actionCenter = rotationWheel?.closest?.('.action-center') ?? null;
+  const modalShell = actionCenter?.querySelector?.('.play-modal-shell') ?? actionCenter;
   const MIN_ACTION_CARD_SCALE = 0.3;
   const SCALE_SAFETY = 1.06;
+  const PASSIVE_STAGE_OFFSET = 12;
 
   const getHandCardsInOrder = () => {
     const movementCards = Array.from(movementHand.querySelectorAll('.action-card'));
@@ -283,6 +329,31 @@ export const createActionHud = ({
   };
 
   const isRectValid = (rect) => rect && rect.width > 0 && rect.height > 0;
+
+  const createGhostLayer = (selectorClass, className) => {
+    const existing = root.querySelector(`.${selectorClass}`);
+    if (existing) return existing;
+    const layer = document.createElement('div');
+    layer.className = className;
+    return layer;
+  };
+
+  const ghostLayerUnder = createGhostLayer(
+    'action-hud-ghost-layer-under',
+    'action-hud-ghost-layer action-hud-ghost-layer-under',
+  );
+  const ghostLayerOver = createGhostLayer(
+    'action-hud-ghost-layer-over',
+    'action-hud-ghost-layer action-hud-ghost-layer-over',
+  );
+  if (actionCenter) {
+    if (!ghostLayerUnder.parentElement) {
+      root.insertBefore(ghostLayerUnder, actionCenter);
+    }
+    if (!ghostLayerOver.parentElement) {
+      actionCenter.appendChild(ghostLayerOver);
+    }
+  }
 
   const getCssNumber = (styles, name, fallback) => {
     const raw = styles.getPropertyValue(name);
@@ -316,7 +387,7 @@ export const createActionHud = ({
     const baseCardWidth = getCssNumber(styles, '--action-card-base-width', 240);
     const gap = getCssNumber(styles, '--action-hand-modal-gap', 18);
     const actionCenterRect = actionCenter?.getBoundingClientRect?.();
-    const modalRect = rotationWheel?.getBoundingClientRect?.();
+    const modalRect = modalShell?.getBoundingClientRect?.();
     const boundaryRect = isRectValid(modalRect) ? modalRect : actionCenterRect;
     const rightEdge = boundaryRect ? boundaryRect.left - gap : rootRect.right - gap;
     const maxHandWidth = Math.max(0, rightEdge - rootRect.left);
@@ -437,9 +508,12 @@ export const createActionHud = ({
     animation.oncancel = finish;
   };
 
-  const createCardGhost = (cardElement) => {
+  const createCardGhost = (cardElement, extraClasses = []) => {
     const ghost = cardElement.cloneNode(true);
     ghost.classList.add('action-card-ghost');
+    if (Array.isArray(extraClasses) && extraClasses.length) {
+      ghost.classList.add(...extraClasses);
+    }
     ghost.classList.remove('is-hovered', 'is-dragging', 'is-animating', 'is-drawn');
     ghost.style.zIndex = '30';
     ghost.removeAttribute('id');
@@ -452,7 +526,131 @@ export const createActionHud = ({
     return ghost;
   };
 
-  const animateCardTravel = (cardElement, fromRect, toRect) => {
+  const toLocalRect = (rect, layerRect) => ({
+    left: rect.left - layerRect.left,
+    top: rect.top - layerRect.top,
+    width: rect.width,
+    height: rect.height,
+  });
+
+  const getTransformToRect = (fromRect, toRect) => {
+    const fromCenter = {
+      x: fromRect.left + fromRect.width / 2,
+      y: fromRect.top + fromRect.height / 2,
+    };
+    const toCenter = {
+      x: toRect.left + toRect.width / 2,
+      y: toRect.top + toRect.height / 2,
+    };
+    const dx = toCenter.x - fromCenter.x;
+    const dy = toCenter.y - fromCenter.y;
+    const scaleX = toRect.width / fromRect.width;
+    const scaleY = toRect.height / fromRect.height;
+    return `translate3d(${dx}px, ${dy}px, 0) scale(${scaleX}, ${scaleY})`;
+  };
+
+  const animateGhostPathInLayer = (ghost, layer, fromRect, stageRect, toRect, options = {}) => {
+    const { duration = PASSIVE_SLOT_LERP_DURATION_MS, easing = 'cubic-bezier(0.25, 0.9, 0.2, 1)', onComplete } = options;
+    if (!ghost || !layer || !isRectValid(fromRect) || !isRectValid(toRect) || prefersReducedMotion) {
+      if (ghost && ghost.remove) ghost.remove();
+      if (onComplete) onComplete();
+      return;
+    }
+    const layerRect = layer.getBoundingClientRect();
+    if (!isRectValid(layerRect)) {
+      ghost.remove();
+      if (onComplete) onComplete();
+      return;
+    }
+    const fromLocal = toLocalRect(fromRect, layerRect);
+    const toLocal = toLocalRect(toRect, layerRect);
+    const stageLocal =
+      stageRect && isRectValid(stageRect)
+        ? toLocalRect(stageRect, layerRect)
+        : {
+            left: fromLocal.left + (toLocal.left - fromLocal.left) * 0.45,
+            top: fromLocal.top + (toLocal.top - fromLocal.top) * 0.45,
+            width: fromLocal.width,
+            height: fromLocal.height,
+          };
+    ghost.style.left = `${fromLocal.left}px`;
+    ghost.style.top = `${fromLocal.top}px`;
+    ghost.style.width = `${fromLocal.width}px`;
+    ghost.style.height = `${fromLocal.height}px`;
+    ghost.style.position = 'absolute';
+    ghost.style.transformOrigin = 'center center';
+    layer.appendChild(ghost);
+    const animation = ghost.animate(
+      [
+        { transform: 'translate3d(0, 0, 0) scale(1, 1)', offset: 0 },
+        { transform: getTransformToRect(fromLocal, stageLocal), offset: 0.42 },
+        { transform: getTransformToRect(fromLocal, toLocal), offset: 1 },
+      ],
+      { duration, easing, fill: 'forwards' },
+    );
+    const finish = () => {
+      ghost.remove();
+      if (onComplete) onComplete();
+    };
+    animation.onfinish = finish;
+    animation.oncancel = finish;
+  };
+
+  const animatePassiveCardTravel = (cardElement, fromRect, toRect) => {
+    const modalRect = modalShell?.getBoundingClientRect?.();
+    if (!isRectValid(modalRect) || !ghostLayerUnder || !ghostLayerOver) {
+      animateCardTravel(cardElement, fromRect, toRect);
+      return;
+    }
+    const stageRect = {
+      left: modalRect.right + PASSIVE_STAGE_OFFSET,
+      top: modalRect.bottom - fromRect.height,
+      width: fromRect.width,
+      height: fromRect.height,
+    };
+    const passiveWindowRect = passiveSlot.getBoundingClientRect();
+    const overRect = ghostLayerOver.getBoundingClientRect();
+    if (!isRectValid(passiveWindowRect) || !isRectValid(overRect)) {
+      animateCardTravel(cardElement, fromRect, toRect);
+      return;
+    }
+    const passiveWindow = document.createElement('div');
+    passiveWindow.className = 'action-passive-window-mask';
+    passiveWindow.style.left = `${passiveWindowRect.left - overRect.left}px`;
+    passiveWindow.style.top = `${passiveWindowRect.top - overRect.top}px`;
+    passiveWindow.style.width = `${passiveWindowRect.width}px`;
+    passiveWindow.style.height = `${passiveWindowRect.height}px`;
+    ghostLayerOver.appendChild(passiveWindow);
+
+    const underGhost = createCardGhost(cardElement, ['is-passive-under']);
+    underGhost.style.zIndex = 'auto';
+    const revealGhost = createCardGhost(cardElement, ['is-passive-reveal']);
+    revealGhost.style.zIndex = 'auto';
+
+    let finishedCount = 0;
+    const handleFinish = () => {
+      finishedCount += 1;
+      if (finishedCount < 2) return;
+      passiveWindow.remove();
+      cardElement.classList.remove('is-animating');
+    };
+
+    animateGhostPathInLayer(underGhost, ghostLayerUnder, fromRect, stageRect, toRect, {
+      duration: PASSIVE_SLOT_LERP_DURATION_MS,
+      onComplete: handleFinish,
+    });
+    animateGhostPathInLayer(revealGhost, passiveWindow, fromRect, stageRect, toRect, {
+      duration: PASSIVE_SLOT_LERP_DURATION_MS,
+      onComplete: handleFinish,
+    });
+  };
+
+  const animateCardTravel = (cardElement, fromRect, toRect, options = {}) => {
+    const { mode = 'default' } = options;
+    if (mode === 'passive-slotting') {
+      animatePassiveCardTravel(cardElement, fromRect, toRect);
+      return;
+    }
     const ghost = createCardGhost(cardElement);
     animateGhostBetween(ghost, fromRect, toRect, {
       duration: LERP_DURATION_MS,
@@ -559,17 +757,6 @@ export const createActionHud = ({
     slot.classList.toggle('is-occupied', isOccupied);
   };
 
-  const ensureSlotLabel = (slot, text) => {
-    if (!slot) return;
-    let label = slot.querySelector('.action-slot-label');
-    if (!label) {
-      label = document.createElement('span');
-      label.className = 'action-slot-label';
-      slot.appendChild(label);
-    }
-    label.textContent = text;
-  };
-
   const updateComboEligibility = () => {
     state.cardsById.forEach((card) => {
       if (!card?.element) return;
@@ -645,16 +832,9 @@ export const createActionHud = ({
       hasActionList &&
       comboValid &&
       isRotationAllowed(state.selectedRotation);
-    submitButton.hidden = true;
+    submitButton.hidden = !state.turnActive;
     submitButton.disabled = !canSubmit;
     rotationWheel?.classList?.toggle('is-submit-ready', canSubmit);
-    if (rotationCenter) {
-      rotationCenter.setAttribute('aria-disabled', canSubmit ? 'false' : 'true');
-      rotationCenter.setAttribute('tabindex', canSubmit ? '0' : '-1');
-    }
-    if (rotationCenterLabel) {
-      rotationCenterLabel.textContent = canSubmit ? 'submit' : 'rotation';
-    }
   };
 
   const shakeCard = (card) => {
@@ -697,12 +877,14 @@ export const createActionHud = ({
     const slot = slotName === 'active' ? activeSlot : passiveSlot;
     const fromRect = card.element?.getBoundingClientRect?.();
     clearHoverForCard(cardId);
-    const toRect = slot.getBoundingClientRect();
     card.element?.classList.add('is-animating');
     slot.appendChild(card.element);
     refreshHandLayouts();
+    const toRect = card.element?.getBoundingClientRect?.() ?? slot.getBoundingClientRect();
     if (isRectValid(fromRect) && isRectValid(toRect)) {
-      animateCardTravel(card.element, fromRect, toRect);
+      animateCardTravel(card.element, fromRect, toRect, {
+        mode: slotName === 'passive' ? 'passive-slotting' : 'default',
+      });
     } else if (card.element) {
       card.element.classList.remove('is-animating');
     }
@@ -779,7 +961,7 @@ export const createActionHud = ({
       event.preventDefault();
       slot.classList.remove('is-hover');
       assignCardToSlot(slotName, state.draggingCardId);
-      state.draggingCardId = null;
+      setDraggingCardId(null);
     });
     slot.addEventListener('click', () => {
       if (state.locked) return;
@@ -802,40 +984,11 @@ export const createActionHud = ({
       const cards = getHandCardsInOrder();
       if (!cards.length) return null;
       const hoverPadding = getHoverPadding();
-      const getQuad = (element) => {
-        if (typeof element.getBoxQuads === 'function') {
-          const quads = element.getBoxQuads({ box: 'border' });
-          if (quads && quads.length) return quads[0];
-        }
-        const rect = element.getBoundingClientRect();
-        if (!isRectValid(rect)) return null;
-        return {
-          p1: { x: rect.left, y: rect.top },
-          p2: { x: rect.right, y: rect.top },
-          p3: { x: rect.right, y: rect.bottom },
-          p4: { x: rect.left, y: rect.bottom },
-        };
-      };
-      const resolveAxes = (quad) => {
-        const p1 = quad.p1;
-        const vWidth = { x: quad.p2.x - quad.p1.x, y: quad.p2.y - quad.p1.y };
-        const vHeight = { x: quad.p4.x - quad.p1.x, y: quad.p4.y - quad.p1.y };
-        const det = vWidth.x * vHeight.y - vWidth.y * vHeight.x;
-        if (!det) return null;
-        return {
-          origin: p1,
-          vWidth,
-          vHeight,
-          widthLen: Math.hypot(vWidth.x, vWidth.y),
-          heightLen: Math.hypot(vHeight.x, vHeight.y),
-          det,
-        };
-      };
       const cardData = [];
       let rightmostIndex = -1;
       let rightmostX = -Infinity;
       cards.forEach((element) => {
-        const quad = getQuad(element);
+        const quad = getElementQuad(element);
         if (!quad) return;
         const maxX = Math.max(quad.p1.x, quad.p2.x, quad.p3.x, quad.p4.x);
         const index = cardData.length;
@@ -852,7 +1005,7 @@ export const createActionHud = ({
       const padPixels = Math.min(hoverPadding, 4);
       const candidates = [];
       cardData.forEach((card) => {
-        const axes = resolveAxes(card.quad);
+        const axes = resolveQuadAxes(card.quad);
         if (!axes) return;
         const dx = event.clientX - axes.origin.x;
         const dy = event.clientY - axes.origin.y;
@@ -862,15 +1015,10 @@ export const createActionHud = ({
         const padV = axes.heightLen ? padPixels / axes.heightLen : 0;
         const inFull = card.isRightmost && u >= -padU && u <= 1 + padU && v >= -padV && v <= 1 + padV;
         const inLeftHalf = u >= -padU && u <= 0.5 + padU && v >= -padV && v <= 1 + padV;
-        const inRightTop =
-          !card.isRightmost &&
-          card.element?.dataset?.cardId === state.hoveredCardId &&
-          u >= 0.5 - padU &&
-          u <= 1 + padU &&
-          v >= -padV &&
-          v <= 0.6 + padV;
-        if (!inFull && !inLeftHalf && !inRightTop) return;
-        const uCenter = inFull ? 0.5 : inRightTop ? 0.75 : 0.25;
+        const isHoveredCard = card.element?.dataset?.cardId === state.hoveredCardId;
+        const inHoveredBounds = isHoveredCard && u >= -padU && u <= 1 + padU && v >= -padV && v <= 1 + padV;
+        if (!inFull && !inLeftHalf && !inHoveredBounds) return;
+        const uCenter = inFull || inHoveredBounds ? 0.5 : 0.25;
         const center = {
           x: axes.origin.x + axes.vWidth.x * uCenter + axes.vHeight.x * 0.5,
           y: axes.origin.y + axes.vWidth.y * uCenter + axes.vHeight.y * 0.5,
@@ -917,7 +1065,7 @@ export const createActionHud = ({
         if (state.locked || !state.draggingCardId) return;
         event.preventDefault();
         returnCardToHand(state.draggingCardId);
-        state.draggingCardId = null;
+        setDraggingCardId(null);
       });
     };
 
@@ -943,9 +1091,8 @@ export const createActionHud = ({
     abilityHand.innerHTML = '';
     activeSlot.querySelectorAll('.action-card').forEach((card) => card.remove());
     passiveSlot.querySelectorAll('.action-card').forEach((card) => card.remove());
-    ensureSlotLabel(activeSlot, 'Active');
-    ensureSlotLabel(passiveSlot, 'Passive');
     state.hoveredCardId = null;
+    setDraggingCardId(null);
     state.slots.active = null;
     state.slots.passive = null;
     updateSlotState('active');
@@ -966,13 +1113,13 @@ export const createActionHud = ({
           event.preventDefault();
           return;
         }
-        state.draggingCardId = card.id;
+        setDraggingCardId(card.id);
         element.classList.add('is-dragging');
         event.dataTransfer.setData('text/plain', card.id);
         event.dataTransfer.effectAllowed = 'move';
       });
       element.addEventListener('dragend', () => {
-        state.draggingCardId = null;
+        setDraggingCardId(null);
         element.classList.remove('is-dragging');
       });
       element.addEventListener('click', () => {
@@ -1099,7 +1246,7 @@ export const createActionHud = ({
     clearSlot('active');
     clearSlot('passive');
     state.selectedRotation = null;
-    state.draggingCardId = null;
+    setDraggingCardId(null);
     wheel.clear();
     if (state.locked) {
       emitRotationChange();
@@ -1133,19 +1280,6 @@ export const createActionHud = ({
 
   submitButton.addEventListener('click', attemptSubmit);
 
-  if (rotationCenter) {
-    rotationCenter.addEventListener('click', () => {
-      if (rotationCenter.getAttribute('aria-disabled') === 'true') return;
-      attemptSubmit();
-    });
-    rotationCenter.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      event.preventDefault();
-      if (rotationCenter.getAttribute('aria-disabled') === 'true') return;
-      attemptSubmit();
-    });
-  }
-
   bindSlot(activeSlot, 'active');
   bindSlot(passiveSlot, 'passive');
   bindHands();
@@ -1160,8 +1294,8 @@ export const createActionHud = ({
     if (actionCenter) {
       resizeObserver.observe(actionCenter);
     }
-    if (rotationWheel) {
-      resizeObserver.observe(rotationWheel);
+    if (modalShell) {
+      resizeObserver.observe(modalShell);
     }
   }
   updateRotationRestriction();

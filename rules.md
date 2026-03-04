@@ -12,7 +12,7 @@ Time is structured as repeating **beats** on a shared timeline. Each player has 
 
 Players submit an **active card** and a **passive card** together. The active card provides the action list and base combat stats; the passive card modifies behavior.
 
-When actions resolve in a beat, **priority** determines order (higher priority first; ties use fixed player order).
+When actions resolve in a beat, **timing** determines order (`early` before `mid` before `late`). If actions share timing, class tie-breakers apply, then fixed player order if still tied.
 
 Play repeats beat by beat until a win condition is met.
 
@@ -76,7 +76,7 @@ The game runs in repeating beats. Each beat follows this order:
 
 ### 4.3 Beat Resolution
 
-- Resolution order is priority descending; ties use fixed roster order.
+- Resolution order is timing-first (`early` -> `mid` -> `late`), then class tie-breakers, then fixed roster order.
 - Rotation resolves before action token execution.
 - Pre-existing projectile/token phases resolve before standard player action tokens when applicable.
 - Multi-token actions resolve left-to-right within the action string.
@@ -111,8 +111,8 @@ The game runs in repeating beats. Each beat follows this order:
 
 ### Interruptions / Overrides
 
-- Priority order is the primary conflict resolver.
-- If two effects still conflict after priority (same timing bucket), fixed roster order resolves ties.
+- Timing order is the primary conflict resolver (`early` -> `mid` -> `late`).
+- If two effects still conflict inside the same timing bucket, class tie-breakers apply, then fixed roster order resolves any remaining ties.
 - Throw resolution overrides normal knockback formula.
 - Explicit card/effect text overrides generic timing defaults where the rule text states replacement behavior.
 
@@ -191,9 +191,9 @@ The game runs in repeating beats. Each beat follows this order:
   3. Beat Resolution
   4. End of Beat
   5. Next beat
-- Priority reminder:
-  1. Higher priority first
-  2. Ties resolve by fixed roster order
+- Timing reminder:
+  1. `early` before `mid` before `late`
+  2. Same timing uses class tie-breakers, then fixed roster order
 - Damage/knockback:
   1. Add damage on hit first
   2. Apply KBF rule (`0`, `1`, or `max(1, floor((damage * KBF)/10))` for `KBF > 1`)

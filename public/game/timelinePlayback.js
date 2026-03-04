@@ -9,7 +9,7 @@ import {
 } from './cardText/actionListTransforms.js';
 import { getInterpolatedFacing, getStepProgressByChannel } from './playbackSpeed.mjs';
 import { getDebugBeatFilter, isDebugLoggingEnabled } from './debugFlags.mjs';
-import { getTimingOrder, hasTimingPhase, resolveActionTiming } from '../shared/timing.js';
+import { getTimingOrder, getTimingPriority, hasTimingPhase, resolveActionTiming } from '../shared/timing.js';
 
 const DEFAULT_ACTION = 'E';
 const FOCUS_ACTION = 'F';
@@ -56,15 +56,10 @@ const GRAPPLING_HOOK_CARD_ID = 'grappling-hook';
 const getEntryPriority = (entry) => {
   const actionLabel = normalizeActionLabel(entry?.action ?? '').toUpperCase();
   if (actionLabel === COMBO_ACTION) return ARROW_PRIORITY + 10;
-  if (Number.isFinite(entry?.priority)) return Number(entry.priority);
   const timing = resolveActionTiming(entry?.action, entry?.timing);
-  if (!Array.isArray(timing) || !timing.length) return 0;
-  return timing.reduce((highest, phase) => {
-    if (phase === 'early') return Math.max(highest, 100);
-    if (phase === 'mid') return Math.max(highest, 60);
-    if (phase === 'late') return Math.max(highest, 20);
-    return highest;
-  }, 0);
+  if (Array.isArray(timing) && timing.length) return getTimingPriority(timing);
+  if (actionLabel === DEFAULT_ACTION || actionLabel === WAIT_ACTION) return 0;
+  return Number.isFinite(entry?.priority) ? Number(entry.priority) : 0;
 };
 
 const partitionEntriesByArrowPriority = (entries) => {
@@ -590,6 +585,12 @@ const getEntryTimingRank = (entry) => {
     }
   });
   return best;
+};
+
+const hasTimingOverlap = (leftTiming, rightTiming) => {
+  if (!Array.isArray(leftTiming) || !leftTiming.length) return true;
+  if (!Array.isArray(rightTiming) || !rightTiming.length) return true;
+  return leftTiming.some((phase) => rightTiming.includes(phase));
 };
 
 const compareBeatEntriesForExecutionBase = (left, right) => {
@@ -1506,6 +1507,7 @@ const buildActionSteps = (
         }
       }
 
+      const entryTiming = resolveActionTiming(action, entry?.timing);
       const tokens = parseActionTokens(action);
     tokens.forEach((token) => {
       const isGrapplingHookCharge =
@@ -1522,12 +1524,12 @@ const buildActionSteps = (
       if (token.type === 'b') {
         const blockVector = lastStep ?? applyFacingToVector(LOCAL_DIRECTIONS.F, actorState.facing);
         const blockDirectionIndex = getDirectionIndex(blockVector);
-        const blockEffect = { type: 'block', coord: origin, directionIndex: blockDirectionIndex };
+        const blockEffect = { type: 'block', coord: origin, directionIndex: blockDirectionIndex, timing: entryTiming };
         effects.push(blockEffect);
         persistentEffects.push(blockEffect);
         if (blockDirectionIndex != null) {
-          const existing = blockMap.get(coordKey(origin)) ?? new Set();
-          existing.add(blockDirectionIndex);
+          const existing = blockMap.get(coordKey(origin)) ?? new Map();
+          existing.set(blockDirectionIndex, entryTiming);
           blockMap.set(coordKey(origin), existing);
         }
         return;
@@ -1557,9 +1559,8 @@ const buildActionSteps = (
         });
       }
 
-      const isBlocked =
-        directionIndex != null &&
-        blockMap.get(targetKey)?.has(directionIndex);
+      const blockTiming = directionIndex != null ? blockMap.get(targetKey)?.get(directionIndex) : null;
+      const isBlocked = Boolean(blockTiming) && hasTimingOverlap(entryTiming, blockTiming);
       const targetCharacter = targetId ? characterById.get(targetId) : null;
       const targetEntry = targetCharacter ? getBeatEntryForCharacter(beat, targetCharacter) : null;
       const targetState = targetId ? state.get(targetId) : null;
