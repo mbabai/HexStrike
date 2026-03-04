@@ -347,6 +347,14 @@ test('tutorial queue uses scripted flow, forced loadout, and strict tutorial cho
       await resolveInteraction(throwInteraction.id, { directionIndex: expectedBehindDirection }, 200);
     }
 
+    const preScoutSnapshot = await waitFor(
+      getSnapshot,
+      (snapshot) => isUserAtBat(snapshot, playerUserId) && !getPendingInteractionForUser(snapshot, playerUserId),
+      { timeoutMs: 12000 },
+    );
+    void preScoutSnapshot;
+    await submitAction({ activeCardId: 'feint', passiveCardId: 'step', rotation: '0' });
+
     await waitFor(
       getSnapshot,
       (snapshot) => {

@@ -350,6 +350,7 @@
         <div class="action-center">
           <div class="play-modal-shell">
             <div class="play-modal-art" aria-hidden="true"></div>
+            <div id="playModalBeatPointer" class="play-modal-beat-pointer" aria-hidden="true" hidden></div>
             <div id="rotationWheel" class="rotation-wheel"></div>
             <div class="action-slot-row">
               <div class="action-slot action-slot-active">
@@ -368,6 +369,7 @@
       </div>
       <div id="gameFrame" class="game-frame">
         <canvas id="gameCanvas" class="game-canvas"></canvas>
+        <div id="cornerPlayHud" class="corner-play-hud" aria-hidden="true"></div>
       </div>
       <div id="interactionOverlay" class="interaction-overlay" hidden>
         <div id="throwModal" class="throw-modal" role="dialog" aria-modal="true" aria-label="Choose throw direction">

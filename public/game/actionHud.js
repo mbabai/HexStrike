@@ -7,6 +7,43 @@ const log = createDebugLogger(LOG_PREFIX);
 const DEBUG_HOVER = false;
 const WHIRLWIND_CARD_ID = 'whirlwind';
 const WHIRLWIND_MIN_DAMAGE = 12;
+const ACTION_CARD_BASE_WIDTH = 240;
+const ACTION_CARD_BASE_HEIGHT = 336;
+const ACTION_CARD_ACTIONS_LEFT = 6;
+const ACTION_CARD_ACTION_WIDTH = 44.7678;
+const ACTION_CARD_ACTIONS_TOP = 7;
+const ACTION_CARD_ACTION_HEIGHT = 39.501;
+const PLAY_BEAT_POINTER_ICON_CENTER_Y = 0.65;
+const PLAY_MODAL_WIDTH = 210;
+const PLAY_MODAL_HEIGHT = 297;
+const PLAY_ACTIVE_LEFT_RATIO = 0.2288;
+const PLAY_ACTIVE_TOP_RATIO = 0.3249;
+const PLAY_ACTIVE_WIDTH_RATIO = 0.5429;
+const PLAY_ACTIVE_HEIGHT_RATIO = 0.5558;
+const PLAY_CARD_SCALE_MULTIPLIER = 1.1;
+const PLAY_BEAT_SLOT_COUNT = 6;
+
+const buildPlayBeatPointers = () => {
+  const activeLeft = PLAY_MODAL_WIDTH * PLAY_ACTIVE_LEFT_RATIO;
+  const activeTop = PLAY_MODAL_HEIGHT * PLAY_ACTIVE_TOP_RATIO;
+  const activeWidth = PLAY_MODAL_WIDTH * PLAY_ACTIVE_WIDTH_RATIO;
+  const activeHeight = PLAY_MODAL_HEIGHT * PLAY_ACTIVE_HEIGHT_RATIO;
+  const cardScale = (activeWidth / ACTION_CARD_BASE_WIDTH) * PLAY_CARD_SCALE_MULTIPLIER;
+  const cardWidth = ACTION_CARD_BASE_WIDTH * cardScale;
+  const cardHeight = ACTION_CARD_BASE_HEIGHT * cardScale;
+  const cardLeft = activeLeft + (activeWidth - cardWidth) / 2;
+  const cardTop = activeTop + activeHeight - cardHeight;
+  const iconColumnXRatio = (ACTION_CARD_ACTIONS_LEFT + ACTION_CARD_ACTION_WIDTH * 0.32) / ACTION_CARD_BASE_WIDTH;
+  const iconTopRatio =
+    (ACTION_CARD_ACTIONS_TOP + ACTION_CARD_ACTION_HEIGHT * PLAY_BEAT_POINTER_ICON_CENTER_Y) / ACTION_CARD_BASE_HEIGHT;
+  const iconStepRatio = ACTION_CARD_ACTION_HEIGHT / ACTION_CARD_BASE_HEIGHT;
+  return Array.from({ length: PLAY_BEAT_SLOT_COUNT }, (_, index) => ({
+    x: (cardLeft + cardWidth * iconColumnXRatio) / PLAY_MODAL_WIDTH,
+    y: (cardTop + cardHeight * (iconTopRatio + iconStepRatio * index)) / PLAY_MODAL_HEIGHT,
+  }));
+};
+
+const PLAY_BEAT_POINTERS = buildPlayBeatPointers();
 
 const getRotationMagnitude = (label) => {
   const value = `${label ?? ''}`.trim().toUpperCase();
@@ -90,6 +127,9 @@ export const createActionHud = ({
       setComboMode: () => {},
       clearSelection: () => {},
       setPlayerDamage: () => {},
+      setPlayModalBeatPointer: () => {},
+      setPlayedPreviewCards: () => {},
+      setPlayedPreviewRotation: () => {},
     };
   }
 
@@ -110,12 +150,18 @@ export const createActionHud = ({
     lastLocked: null,
     hasDealtCards: false,
     playerDamage: 0,
+    playedPreviewCards: { active: null, passive: null },
+    playedPreviewElements: { active: null, passive: null },
+    playedPreviewIds: { active: null, passive: null },
   };
+  const activeSlotContainer = activeSlot?.closest?.('.action-slot-active') ?? null;
+  const passiveSlotContainer = passiveSlot?.closest?.('.action-slot-passive') ?? null;
   const emitRotationChange = () => {
     if (typeof onRotationChange === 'function') {
       onRotationChange(state.selectedRotation);
     }
   };
+  let suppressProgrammaticRotation = false;
 
   const debugOverlay = (() => {
     if (typeof document === 'undefined' || typeof window === 'undefined') return null;
@@ -293,6 +339,7 @@ export const createActionHud = ({
   }
 
   const wheel = buildRotationWheel(rotationWheel, (rotation) => {
+    if (suppressProgrammaticRotation) return;
     if (state.locked) return;
     state.selectedRotation = rotation;
     emitRotationChange();
@@ -318,6 +365,7 @@ export const createActionHud = ({
   const DEAL_DURATION_MS = 520;
   const actionCenter = rotationWheel?.closest?.('.action-center') ?? null;
   const modalShell = actionCenter?.querySelector?.('.play-modal-shell') ?? actionCenter;
+  const playModalBeatPointer = modalShell?.querySelector?.('.play-modal-beat-pointer') ?? null;
   const MIN_ACTION_CARD_SCALE = 0.3;
   const SCALE_SAFETY = 1.06;
   const PASSIVE_STAGE_OFFSET = 12;
@@ -751,10 +799,68 @@ export const createActionHud = ({
     }
   };
 
-  const updateSlotState = (slotName) => {
+  const clearPlayedPreviewElement = (slotName) => {
+    const element = state.playedPreviewElements[slotName];
+    if (element?.parentElement) {
+      element.remove();
+    }
+    state.playedPreviewElements[slotName] = null;
+    state.playedPreviewIds[slotName] = null;
+  };
+
+  const ensurePlayedPreviewElement = (slotName) => {
+    const card = state.playedPreviewCards[slotName];
+    if (!card) {
+      clearPlayedPreviewElement(slotName);
+      return null;
+    }
+    const previewClassName = `${card?.previewClassName ?? ''}`.trim();
+    const previewKey = `${card.id}|${previewClassName}`;
+    if (state.playedPreviewIds[slotName] === previewKey && state.playedPreviewElements[slotName]) {
+      return state.playedPreviewElements[slotName];
+    }
+    clearPlayedPreviewElement(slotName);
+    const className = `is-played-preview${previewClassName ? ` ${previewClassName}` : ''}`;
+    const element = buildCardElement(card, { className });
+    state.playedPreviewElements[slotName] = element;
+    state.playedPreviewIds[slotName] = previewKey;
+    fitAllCardText(element);
+    return element;
+  };
+
+  const renderPlayedPreviewSlot = (slotName) => {
     const slot = slotName === 'active' ? activeSlot : passiveSlot;
-    const isOccupied = Boolean(state.slots[slotName]);
-    slot.classList.toggle('is-occupied', isOccupied);
+    const hasSelection = Boolean(state.slots[slotName]);
+    const shouldShow = !state.turnActive && !hasSelection && Boolean(state.playedPreviewCards[slotName]);
+    if (!shouldShow) {
+      clearPlayedPreviewElement(slotName);
+      slot.classList.remove('is-played-preview');
+      return false;
+    }
+    const preview = ensurePlayedPreviewElement(slotName);
+    if (!preview) {
+      slot.classList.remove('is-played-preview');
+      return false;
+    }
+    if (preview.parentElement !== slot) {
+      slot.appendChild(preview);
+    }
+    slot.classList.add('is-played-preview');
+    return true;
+  };
+
+  const updateSlotState = () => {
+    const activePreview = renderPlayedPreviewSlot('active');
+    const passivePreview = renderPlayedPreviewSlot('passive');
+    const isStunnedPreview =
+      activePreview && `${state.playedPreviewCards.active?.previewClassName ?? ''}`.split(' ').includes('is-stun-card');
+    const activeOccupied = Boolean(state.slots.active) || activePreview;
+    const passiveOccupied = Boolean(state.slots.passive) || passivePreview;
+    activeSlot.classList.toggle('is-occupied', activeOccupied);
+    passiveSlot.classList.toggle('is-occupied', passiveOccupied);
+    activeSlot.classList.toggle('is-stunned', isStunnedPreview);
+    activeSlotContainer?.classList?.toggle('is-stunned', isStunnedPreview);
+    passiveSlotContainer?.classList?.toggle('is-stunned', false);
   };
 
   const updateComboEligibility = () => {
@@ -804,7 +910,7 @@ export const createActionHud = ({
       }
     }
     state.slots[slotName] = null;
-    updateSlotState(slotName);
+    updateSlotState();
     log('slot-clear', { slotName, cardId });
   };
 
@@ -889,7 +995,7 @@ export const createActionHud = ({
       card.element.classList.remove('is-animating');
     }
     state.slots[slotName] = cardId;
-    updateSlotState(slotName);
+    updateSlotState();
     updateRotationRestriction();
     updateSubmitState();
     log('slot-assign', { slotName, cardId });
@@ -1017,29 +1123,46 @@ export const createActionHud = ({
         const inLeftHalf = u >= -padU && u <= 0.5 + padU && v >= -padV && v <= 1 + padV;
         const isHoveredCard = card.element?.dataset?.cardId === state.hoveredCardId;
         const inHoveredBounds = isHoveredCard && u >= -padU && u <= 1 + padU && v >= -padV && v <= 1 + padV;
-        if (!inFull && !inLeftHalf && !inHoveredBounds) return;
+        const inPrimaryBounds = inFull || inLeftHalf;
+        const inHoverExtension = !inPrimaryBounds && inHoveredBounds;
+        if (!inPrimaryBounds && !inHoverExtension) return;
         const uCenter = inFull || inHoveredBounds ? 0.5 : 0.25;
         const center = {
           x: axes.origin.x + axes.vWidth.x * uCenter + axes.vHeight.x * 0.5,
           y: axes.origin.y + axes.vWidth.y * uCenter + axes.vHeight.y * 0.5,
         };
-        candidates.push({ element: card.element, center });
+        candidates.push({ element: card.element, center, inPrimaryBounds });
       });
       if (!candidates.length) return null;
+      const primaryCandidates = candidates.filter((candidate) => candidate.inPrimaryBounds);
+      const activeCandidates = primaryCandidates.length ? primaryCandidates : candidates;
       const currentId = state.hoveredCardId;
-      if (currentId) {
-        const match = candidates.find((candidate) => candidate.element.dataset.cardId === currentId);
-        if (match) return match.element;
+      const currentCandidate = currentId
+        ? activeCandidates.find((candidate) => candidate.element.dataset.cardId === currentId)
+        : null;
+      if (!primaryCandidates.length && currentCandidate) {
+        return currentCandidate.element;
       }
+      const getDistance = (candidate) =>
+        Math.abs(event.clientX - candidate.center.x) + Math.abs(event.clientY - candidate.center.y) * 0.2;
       let closest = null;
       let minDistance = Number.POSITIVE_INFINITY;
-      candidates.forEach(({ element, center }) => {
-        const distance = Math.abs(event.clientX - center.x) + Math.abs(event.clientY - center.y) * 0.2;
+      activeCandidates.forEach((candidate) => {
+        const distance = getDistance(candidate);
         if (distance >= minDistance) return;
         minDistance = distance;
-        closest = element;
+        closest = candidate;
       });
-      return closest;
+      if (currentId) {
+        if (currentCandidate && closest && currentCandidate !== closest) {
+          const currentDistance = getDistance(currentCandidate);
+          const hysteresis = 8;
+          if (currentDistance <= minDistance + hysteresis) {
+            return currentCandidate.element;
+          }
+        }
+      }
+      return closest?.element ?? null;
     };
 
     window.addEventListener('pointermove', (event) => {
@@ -1091,12 +1214,15 @@ export const createActionHud = ({
     abilityHand.innerHTML = '';
     activeSlot.querySelectorAll('.action-card').forEach((card) => card.remove());
     passiveSlot.querySelectorAll('.action-card').forEach((card) => card.remove());
+    state.playedPreviewElements.active = null;
+    state.playedPreviewElements.passive = null;
+    state.playedPreviewIds.active = null;
+    state.playedPreviewIds.passive = null;
     state.hoveredCardId = null;
     setDraggingCardId(null);
     state.slots.active = null;
     state.slots.passive = null;
-    updateSlotState('active');
-    updateSlotState('passive');
+    updateSlotState();
     state.selectedRotation = null;
     wheel.clear();
     if (state.locked) {
@@ -1190,10 +1316,19 @@ export const createActionHud = ({
   };
 
   const setVisible = (visible) => {
+    const wasTurnActive = state.turnActive;
     state.turnActive = Boolean(visible);
     root.classList.toggle('is-turn', state.turnActive);
     root.hidden = state.hidden;
+    if (state.turnActive && !wasTurnActive) {
+      suppressProgrammaticRotation = true;
+      wheel.clear();
+      suppressProgrammaticRotation = false;
+      state.selectedRotation = null;
+      emitRotationChange();
+    }
     state.cardsById.forEach((card) => setCardDraggable(card, !state.locked && state.turnActive));
+    updateSlotState();
     updateSubmitState();
     if (state.turnActive) {
       scheduleLayoutRefresh();
@@ -1306,6 +1441,60 @@ export const createActionHud = ({
     state.playerDamage = next;
   };
 
+  const setPlayedPreviewCards = (activeCard, passiveCard) => {
+    const nextActive = activeCard && typeof activeCard === 'object' ? activeCard : null;
+    const nextPassive = passiveCard && typeof passiveCard === 'object' ? passiveCard : null;
+    const activeChanged =
+      `${state.playedPreviewCards.active?.id ?? ''}|${state.playedPreviewCards.active?.previewClassName ?? ''}` !==
+      `${nextActive?.id ?? ''}|${nextActive?.previewClassName ?? ''}`;
+    const passiveChanged =
+      `${state.playedPreviewCards.passive?.id ?? ''}|${state.playedPreviewCards.passive?.previewClassName ?? ''}` !==
+      `${nextPassive?.id ?? ''}|${nextPassive?.previewClassName ?? ''}`;
+    if (!activeChanged && !passiveChanged) return;
+    state.playedPreviewCards.active = nextActive;
+    state.playedPreviewCards.passive = nextPassive;
+    updateSlotState();
+  };
+
+  const setPlayedPreviewRotation = (rotation) => {
+    if (state.turnActive) return;
+    const nextRotation =
+      typeof rotation === 'string' && rotation.trim()
+        ? rotation.trim().toUpperCase()
+        : null;
+    const currentRotation = wheel.getValue?.() ?? null;
+    if ((currentRotation ?? null) === (nextRotation ?? null)) return;
+    suppressProgrammaticRotation = true;
+    if (nextRotation) {
+      wheel.setValue(nextRotation);
+    } else {
+      wheel.clear();
+    }
+    suppressProgrammaticRotation = false;
+  };
+
+  const setPlayModalBeatPointer = (slotIndex) => {
+    if (!playModalBeatPointer) return;
+    const hasVisibleActiveCard = !state.turnActive && Boolean(state.playedPreviewCards.active);
+    if (!hasVisibleActiveCard) {
+      playModalBeatPointer.hidden = true;
+      return;
+    }
+    if (!Number.isFinite(slotIndex)) {
+      playModalBeatPointer.hidden = true;
+      return;
+    }
+    const clamped = Math.max(0, Math.min(PLAY_BEAT_POINTERS.length - 1, Math.round(slotIndex)));
+    const marker = PLAY_BEAT_POINTERS[clamped];
+    if (!marker) {
+      playModalBeatPointer.hidden = true;
+      return;
+    }
+    playModalBeatPointer.style.setProperty('--play-beat-x', `${(marker.x * 100).toFixed(3)}%`);
+    playModalBeatPointer.style.setProperty('--play-beat-y', `${(marker.y * 100).toFixed(3)}%`);
+    playModalBeatPointer.hidden = false;
+  };
+
   return {
     setCards,
     setExhaustedCards,
@@ -1315,5 +1504,8 @@ export const createActionHud = ({
     setComboMode,
     clearSelection,
     setPlayerDamage,
+    setPlayModalBeatPointer,
+    setPlayedPreviewCards,
+    setPlayedPreviewRotation,
   };
 };

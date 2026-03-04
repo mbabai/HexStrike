@@ -291,7 +291,14 @@ const getCharacterTokenTarget = ({ event, canvas, viewState, sceneCharacters }) 
   return best ? { kind: 'character', character: best.character, center: best.center } : null;
 };
 
-export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicatorViewModel, getScene } = {}) => {
+export const createTimelineTooltip = ({
+  gameArea,
+  canvas,
+  viewState,
+  timeIndicatorViewModel,
+  getScene,
+  localUserId = null,
+} = {}) => {
   if (!gameArea || !canvas) {
     return {
       setCardCatalog: () => {},
@@ -549,6 +556,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
       gameState,
       event.clientX - rect.left,
       event.clientY - rect.top,
+      { viewport: { width: rect.width, height: rect.height }, canvasRect: rect },
     );
     if (!target) {
       const sceneTokens = getScene?.()?.boardTokens ?? gameState?.state?.public?.boardTokens ?? [];
@@ -612,13 +620,27 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
         hide();
         return;
       }
+      const activeCardId = target.activeCardId ? `${target.activeCardId}`.trim() : '';
+      const passiveCardId = target.passiveCardId ? `${target.passiveCardId}`.trim() : '';
+      const activeCard = activeCardId ? cardMetadata.byId.get(activeCardId) : null;
+      const passiveCard = passiveCardId ? cardMetadata.byId.get(passiveCardId) : null;
+      const isLocalCharacter = Boolean(
+        localUserId &&
+          (target.character?.userId === localUserId || target.character?.username === localUserId),
+      );
       const roleLabel = target.cardRole === 'passive' ? 'Passive' : 'Active';
       const titleText = `${roleLabel}: ${card.name ?? cardId}`.trim();
       const attackStatsLine = buildAttackStatsLine(card);
       const previewScale = getHandCardPreviewScale();
+      const previewCards = isLocalCharacter
+        ? [card, target.cardRole === 'passive' ? activeCard : passiveCard].filter(Boolean)
+        : [card];
       const key = [
         'played-card',
         cardId,
+        activeCardId || 'none',
+        passiveCardId || 'none',
+        isLocalCharacter ? 'local' : 'other',
         target.cardRole ?? '',
         target.beatIndex,
         attackStatsLine,
@@ -632,7 +654,7 @@ export const createTimelineTooltip = ({ gameArea, canvas, viewState, timeIndicat
         instruction.hidden = true;
         instruction.textContent = '';
         clearSupplementalSections({ hideDivider: true });
-        renderCardPreview([card], { scale: previewScale });
+        renderCardPreview(previewCards, { scale: previewScale });
         lastTooltipKey = key;
       }
       tooltip.hidden = false;

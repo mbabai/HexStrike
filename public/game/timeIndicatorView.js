@@ -1,9 +1,11 @@
 import { CHARACTER_IMAGE_SOURCES, CHARACTER_TOKEN_STYLE } from './characterTokens.mjs';
 import { getEarliestPendingInteractionIndex, getTimelineStopIndex } from './beatTimeline.js';
-import { getActiveHandTriggerId } from './handTriggerOrder.mjs';
 import { drawNameCapsule } from './portraitBadges.js';
 import { getFfaScoreMapAtBeat, isFfaEnabled, isFfaPlayerInvulnerableAtBeat } from './ffaState.js';
 import { resolveActionTiming } from '../shared/timing.js';
+import { buildCardElement, fitAllCardText } from '../shared/cardRenderer.js';
+import { buildRotationWheel } from './rotationWheel.js';
+import { getActionPhaseUserIds, getWaitingForInputUserIds, isCharacterInUserSet } from './inputWaiting.js';
 
 const DEFAULT_BORDER_SIZE = { width: 640, height: 64 };
 const DEFAULT_ACTION = 'E';
@@ -22,9 +24,16 @@ const actionArt = new Map();
 const characterArt = new Map();
 const cardArt = new Map();
 const playedCardBackImage = new Image();
-  playedCardBackImage.src = '/public/images/CardBack.png';
+playedCardBackImage.src = '/public/images/CardBack.png';
+const playModalImage = new Image();
+playModalImage.src = '/public/images/PlayModal.svg';
+const playModalBackImage = new Image();
+playModalBackImage.src = '/public/images/PlayModalBack.svg';
+const damageCardImage = new Image();
+damageCardImage.src = '/public/images/DamageCard.png';
 const playedCardRevealByActor = new Map();
-const PENDING_BLINK_MS = 700;
+const cornerPlayRevealByActor = new Map();
+const WAITING_PULSE_MS = 1700;
 const PREVIEW_PULSE_MS = 1400;
 const PREVIEW_ALPHA = 0.5;
 const PREVIEW_SCALE_AMPLITUDE = 0.06;
@@ -57,7 +66,58 @@ const PLAYED_CARD_PORTRAIT_GAP_FACTOR = 0.2;
 const PLAYED_CARD_HOVER_SCALE = 1;
 const PLAYED_CARD_FACE_DOWN_MS = 180;
 const PLAYED_CARD_FLIP_MS = 260;
+const SHOW_TIMELINE_MINI_CARDS = false;
+const PLAY_MODAL_WIDTH = 210;
+const PLAY_MODAL_HEIGHT = 297;
+const PLAY_MODAL_ASPECT = PLAY_MODAL_WIDTH / PLAY_MODAL_HEIGHT;
+const PLAY_ACTIVE_LEFT_RATIO = 0.2288;
+const PLAY_ACTIVE_TOP_RATIO = 0.3249;
+const PLAY_ACTIVE_WIDTH_RATIO = 0.5429;
+const PLAY_ACTIVE_HEIGHT_RATIO = 0.5558;
+const PLAY_PASSIVE_LEFT_RATIO = 0.2283;
+const PLAY_PASSIVE_TOP_RATIO = 0.8796;
+const PLAY_PASSIVE_WIDTH_RATIO = 0.5429;
+const PLAY_PASSIVE_HEIGHT_RATIO = 0.1077;
+const OPPONENT_PLAY_MODAL_SCALE = 0.65;
+const OPPONENT_PLAY_MODAL_MIN_WIDTH = 98;
+const OPPONENT_PLAY_MODAL_MAX_WIDTH = 250;
+const OPPONENT_PLAY_MODAL_MARGIN = 12;
+const OPPONENT_PLAY_MODAL_GAP = 10;
+const OPPONENT_PLAY_PORTRAIT_GAP = 8;
+const OPPONENT_PLAY_PORTRAIT_RADIUS_FACTOR = 0.14;
+const PLAY_ACTIVE_PASSIVE_MASK_COLOR = '#f0c126';
+const PLAY_ROTATION_MARKERS = [
+  { x: 104.81828 / 210, y: 24.026304 / 297 },
+  { x: 77.204193 / 210, y: 38.801598 / 297 },
+  { x: 134.02715 / 210, y: 38.801598 / 297 },
+  { x: 76.081497 / 210, y: 71.993599 / 297 },
+  { x: 132.90443 / 210, y: 71.693336 / 297 },
+  { x: 104.78636 / 210, y: 89.211716 / 297 },
+];
+const ACTION_CARD_BASE_WIDTH = 240;
+const ACTION_CARD_BASE_HEIGHT = 336;
+const ACTION_CARD_ACTIONS_LEFT = 6;
+const ACTION_CARD_ACTION_WIDTH = 44.7678;
+const ACTION_CARD_ACTIONS_TOP = 7;
+const ACTION_CARD_ACTION_HEIGHT = 39.501;
+const PLAY_BEAT_POINTER_ICON_CENTER_Y = 0.65;
+const PLAY_CARD_SCALE_MULTIPLIER = 1.1;
+const PLAY_BEAT_SLOT_COUNT = 6;
+const DAMAGE_ICON_ACTION = 'DamageIcon';
+const STUN_CARD_BASE_ID = '__stun-damage-card__';
+const STUN_CARD_PREVIEW_CLASS = 'is-stun-card';
+const CORNER_PLAY_LAYOUT_DEFAULT = 'default';
+const CORNER_PLAY_LAYOUT_REPLAY_CORNERS = 'replay-corners';
+const cornerPlayHudNodesByActor = new Map();
 let timeIndicatorPlayerCount = 2;
+let timeIndicatorLocalUserId = null;
+let timeIndicatorCornerLayoutMode = CORNER_PLAY_LAYOUT_DEFAULT;
+
+const getWaitingPulse = (now) => {
+  const current = Number.isFinite(now) ? now : performance.now();
+  const phase = (current % WAITING_PULSE_MS) / WAITING_PULSE_MS;
+  return (Math.sin(phase * Math.PI * 2 - Math.PI / 2) + 1) / 2;
+};
 
 export const setTimeIndicatorPlayerCount = (playerCount) => {
   const parsed = Number(playerCount);
@@ -420,6 +480,26 @@ const buildDrawLookup = (interactions, characters) => {
 
 const readCardId = (value) => `${value ?? ''}`.trim();
 
+const isDamagePreviewEntry = (entry) => {
+  if (!entry || typeof entry !== 'object') return false;
+  const action = `${entry.action ?? ''}`.trim();
+  return action === DAMAGE_ICON_ACTION;
+};
+
+const buildStunPreviewCard = (stunCount) => {
+  const clampedCount = Math.max(1, Math.min(PLAY_BEAT_SLOT_COUNT - 1, Math.round(stunCount || 1)));
+  return {
+    id: `${STUN_CARD_BASE_ID}:${clampedCount}`,
+    type: 'ability',
+    name: 'Stunned',
+    rotations: '*',
+    actions: [...Array.from({ length: clampedCount }, () => DAMAGE_ICON_ACTION), 'E'],
+    activeText: '',
+    passiveText: '',
+    previewClassName: STUN_CARD_PREVIEW_CLASS,
+  };
+};
+
 const getBeatLookupEntry = (beatLookup, beatIndex, lookupKey) => {
   if (!Array.isArray(beatLookup) || !lookupKey) return null;
   if (!Number.isFinite(beatIndex) || beatIndex < 0 || beatIndex >= beatLookup.length) return null;
@@ -453,10 +533,17 @@ const resolvePlayedCardPairForBeat = (beatLookup, lookupKey, beatIndex) => {
   if (!currentEntry) return null;
   const currentAction = `${currentEntry.action ?? ''}`.trim();
   if (!currentAction || currentAction === ACTION_ICON_FALLBACK) return null;
+  if (currentAction === DEFAULT_ACTION) {
+    const currentCardId = readCardId(currentEntry.cardId);
+    const currentPassiveCardId = readCardId(currentEntry.passiveCardId);
+    if (!currentCardId && !currentPassiveCardId) {
+      return null;
+    }
+  }
 
   let activeCardId = readCardId(currentEntry.cardId);
   let passiveCardId = readCardId(currentEntry.passiveCardId);
-  if ((!activeCardId || !passiveCardId) && currentAction !== DEFAULT_ACTION) {
+  if (!activeCardId || !passiveCardId) {
     for (let index = beatIndex - 1; index >= 0; index -= 1) {
       const previousEntry = getBeatLookupEntry(beatLookup, index, lookupKey);
       if (!previousEntry) continue;
@@ -471,11 +558,46 @@ const resolvePlayedCardPairForBeat = (beatLookup, lookupKey, beatIndex) => {
   if (!activeCardId || !passiveCardId) return null;
   const startIndex = findPlayedCardSetStartIndex(beatLookup, lookupKey, beatIndex, activeCardId, passiveCardId);
   return {
+    kind: 'normal',
     activeCardId,
     passiveCardId,
     startIndex,
     pairKey: `${activeCardId}:${passiveCardId}:${startIndex}`,
   };
+};
+
+const resolveStunModalStateForBeat = (beatLookup, lookupKey, beatIndex) => {
+  const currentEntry = getBeatLookupEntry(beatLookup, beatIndex, lookupKey);
+  // DamageIcon runs (stun or knockback-hit rewrites) use the damage preview card modal.
+  if (!isDamagePreviewEntry(currentEntry)) return null;
+  let startIndex = beatIndex;
+  for (let index = beatIndex - 1; index >= 0; index -= 1) {
+    const previous = getBeatLookupEntry(beatLookup, index, lookupKey);
+    if (!isDamagePreviewEntry(previous)) break;
+    startIndex = index;
+  }
+  let runCount = 0;
+  for (let index = startIndex; index < beatLookup.length; index += 1) {
+    const entry = getBeatLookupEntry(beatLookup, index, lookupKey);
+    if (!isDamagePreviewEntry(entry)) break;
+    runCount += 1;
+  }
+  const clampedCount = Math.max(1, Math.min(PLAY_BEAT_SLOT_COUNT - 1, runCount));
+  return {
+    kind: 'stun',
+    activeCardId: `${STUN_CARD_BASE_ID}:${lookupKey}:${startIndex}`,
+    passiveCardId: null,
+    startIndex,
+    pairKey: `stun:${lookupKey}:${startIndex}`,
+    stunCount: clampedCount,
+    previewCard: buildStunPreviewCard(clampedCount),
+  };
+};
+
+const resolvePlayModalStateForBeat = (beatLookup, lookupKey, beatIndex) => {
+  const stunned = resolveStunModalStateForBeat(beatLookup, lookupKey, beatIndex);
+  if (stunned) return stunned;
+  return resolvePlayedCardPairForBeat(beatLookup, lookupKey, beatIndex);
 };
 
 const buildPlayedCardPairLayout = ({ rowCenterY, rowHeight, portraitX, portraitRadius }) => {
@@ -569,6 +691,288 @@ const getPlayedCardRevealState = (actorKey, pairKey, now) => {
     return { phase: 'front', flipScaleX: Math.max(0.06, localT) };
   }
   return { phase: 'front', flipScaleX: 1 };
+};
+
+const pruneCornerPlayRevealState = (activeActorKeys) => {
+  const keep = activeActorKeys instanceof Set ? activeActorKeys : new Set();
+  cornerPlayRevealByActor.forEach((_, key) => {
+    if (!keep.has(key)) {
+      cornerPlayRevealByActor.delete(key);
+    }
+  });
+};
+
+const clearCornerPlayRevealState = (actorKey) => {
+  if (!actorKey) return;
+  cornerPlayRevealByActor.delete(actorKey);
+};
+
+const getCornerPlayRevealState = (actorKey, pairKey, now) => {
+  if (!actorKey || !pairKey) return null;
+  const currentTime = Number.isFinite(now) ? now : performance.now();
+  const existing = cornerPlayRevealByActor.get(actorKey);
+  if (!existing || existing.pairKey !== pairKey) {
+    const created = { pairKey, startTime: currentTime };
+    cornerPlayRevealByActor.set(actorKey, created);
+    return { phase: 'back', flipScaleX: 1 };
+  }
+  const elapsed = Math.max(0, currentTime - existing.startTime);
+  if (elapsed < PLAYED_CARD_FACE_DOWN_MS) {
+    return { phase: 'back', flipScaleX: 1 };
+  }
+  const flipElapsed = elapsed - PLAYED_CARD_FACE_DOWN_MS;
+  if (flipElapsed < PLAYED_CARD_FLIP_MS) {
+    const t = flipElapsed / PLAYED_CARD_FLIP_MS;
+    if (t < 0.5) {
+      const localT = t / 0.5;
+      return { phase: 'back', flipScaleX: Math.max(0.06, 1 - localT) };
+    }
+    const localT = (t - 0.5) / 0.5;
+    return { phase: 'front', flipScaleX: Math.max(0.06, localT) };
+  }
+  return { phase: 'front', flipScaleX: 1 };
+};
+
+const getOpponentCharacters = (characters, localUserId, options = {}) => {
+  const includeLocalPlayer = Boolean(options?.includeLocalPlayer);
+  const localKey = `${localUserId ?? ''}`.trim();
+  if (!Array.isArray(characters) || !characters.length) return [];
+  const everyone = characters.filter((character) => Boolean(character));
+  if (includeLocalPlayer) return everyone;
+  if (!localKey) return everyone;
+  return everyone.filter((character) => {
+    if (!character) return false;
+    const userId = `${character.userId ?? ''}`.trim();
+    const username = `${character.username ?? ''}`.trim();
+    return userId !== localKey && username !== localKey;
+  });
+};
+
+const getReferencePlayModalWidth = (viewport) => {
+  const width = Number.isFinite(viewport?.width) ? viewport.width : 0;
+  if (!Number.isFinite(width) || width <= 0) return 266;
+  return Math.max(266, Math.min(342, width * 0.228));
+};
+
+const getPlayModalSlotBounds = (modal) => {
+  if (!modal) return null;
+  const activeBounds = {
+    x: modal.x + modal.width * PLAY_ACTIVE_LEFT_RATIO,
+    y: modal.y + modal.height * PLAY_ACTIVE_TOP_RATIO,
+    width: modal.width * PLAY_ACTIVE_WIDTH_RATIO,
+    height: modal.height * PLAY_ACTIVE_HEIGHT_RATIO,
+  };
+  const passiveBounds = {
+    x: modal.x + modal.width * PLAY_PASSIVE_LEFT_RATIO,
+    y: modal.y + modal.height * PLAY_PASSIVE_TOP_RATIO,
+    width: modal.width * PLAY_PASSIVE_WIDTH_RATIO,
+    height: modal.height * PLAY_PASSIVE_HEIGHT_RATIO,
+  };
+  return { activeBounds, passiveBounds };
+};
+
+const buildLinearOpponentPlayHudLayout = (viewport, opponentCharacters = []) => {
+  const opponents = Array.isArray(opponentCharacters) ? opponentCharacters : [];
+  if (!opponents.length) return [];
+  const margin = OPPONENT_PLAY_MODAL_MARGIN;
+  const gap = OPPONENT_PLAY_MODAL_GAP;
+  const desiredWidth = Math.max(
+    OPPONENT_PLAY_MODAL_MIN_WIDTH,
+    Math.min(OPPONENT_PLAY_MODAL_MAX_WIDTH, getReferencePlayModalWidth(viewport) * OPPONENT_PLAY_MODAL_SCALE),
+  );
+  const availableWidth = Math.max(0, viewport.width - margin * 2 - gap * Math.max(0, opponents.length - 1));
+  const fitWidth = opponents.length ? availableWidth / opponents.length : desiredWidth;
+  const width = Math.max(56, Math.min(desiredWidth, fitWidth || desiredWidth));
+  const height = width / PLAY_MODAL_ASPECT;
+  const portraitRadius = Math.max(10, width * OPPONENT_PLAY_PORTRAIT_RADIUS_FACTOR);
+  const portraitY = margin + portraitRadius;
+  const modalY = portraitY + portraitRadius + OPPONENT_PLAY_PORTRAIT_GAP;
+  return opponents.map((character, index) => {
+    const x = margin + index * (width + gap);
+    const modal = { x, y: modalY, width, height };
+    const slots = getPlayModalSlotBounds(modal);
+    return {
+      character,
+      modal,
+      portrait: { x: x + width / 2, y: portraitY, radius: portraitRadius },
+      activeBounds: slots.activeBounds,
+      passiveBounds: slots.passiveBounds,
+    };
+  });
+};
+
+const buildReplayCornerOpponentPlayHudLayout = (viewport, opponentCharacters = []) => {
+  const opponents = Array.isArray(opponentCharacters) ? opponentCharacters : [];
+  if (!opponents.length) return [];
+  const margin = OPPONENT_PLAY_MODAL_MARGIN;
+  const gap = OPPONENT_PLAY_MODAL_GAP;
+  const desiredWidth = Math.max(
+    OPPONENT_PLAY_MODAL_MIN_WIDTH,
+    Math.min(OPPONENT_PLAY_MODAL_MAX_WIDTH, getReferencePlayModalWidth(viewport) * OPPONENT_PLAY_MODAL_SCALE),
+  );
+  const columns = Math.min(2, opponents.length);
+  const availableWidth = Math.max(0, viewport.width - margin * 2 - gap * Math.max(0, columns - 1));
+  const fitWidth = columns ? availableWidth / columns : desiredWidth;
+  let widthLimit = fitWidth || desiredWidth;
+  if (opponents.length > 2) {
+    const rowGap = gap + OPPONENT_PLAY_PORTRAIT_GAP;
+    const availableHeight = Math.max(0, viewport.height - margin * 2 - rowGap);
+    const blockHeight = availableHeight / 2;
+    const widthByHeight =
+      (blockHeight - OPPONENT_PLAY_PORTRAIT_GAP) /
+      (1 / PLAY_MODAL_ASPECT + OPPONENT_PLAY_PORTRAIT_RADIUS_FACTOR * 2);
+    if (Number.isFinite(widthByHeight) && widthByHeight > 0) {
+      widthLimit = Math.min(widthLimit, widthByHeight);
+    }
+  }
+  const width = Math.max(56, Math.min(desiredWidth, widthLimit || desiredWidth));
+  const height = width / PLAY_MODAL_ASPECT;
+  const portraitRadius = Math.max(10, width * OPPONENT_PLAY_PORTRAIT_RADIUS_FACTOR);
+  const leftX = margin;
+  const rightX = Math.max(margin, viewport.width - margin - width);
+  const topPortraitY = margin + portraitRadius;
+  const topModalY = topPortraitY + portraitRadius + OPPONENT_PLAY_PORTRAIT_GAP;
+  const bottomModalY = Math.max(margin, viewport.height - margin - height);
+  const bottomPortraitY = Math.max(portraitRadius, bottomModalY - OPPONENT_PLAY_PORTRAIT_GAP - portraitRadius);
+  const corners = [
+    { x: leftX, modalY: topModalY, portraitY: topPortraitY },
+    { x: rightX, modalY: topModalY, portraitY: topPortraitY },
+    { x: leftX, modalY: bottomModalY, portraitY: bottomPortraitY },
+    { x: rightX, modalY: bottomModalY, portraitY: bottomPortraitY },
+  ];
+  return opponents.map((character, index) => {
+    const corner = corners[index];
+    if (!corner) return null;
+    const modal = { x: corner.x, y: corner.modalY, width, height };
+    const slots = getPlayModalSlotBounds(modal);
+    return {
+      character,
+      modal,
+      portrait: { x: corner.x + width / 2, y: corner.portraitY, radius: portraitRadius },
+      activeBounds: slots.activeBounds,
+      passiveBounds: slots.passiveBounds,
+    };
+  }).filter(Boolean);
+};
+
+const buildOpponentPlayHudLayout = (viewport, opponentCharacters = [], layoutMode = CORNER_PLAY_LAYOUT_DEFAULT) => {
+  if (layoutMode === CORNER_PLAY_LAYOUT_REPLAY_CORNERS && Array.isArray(opponentCharacters) && opponentCharacters.length <= 4) {
+    return buildReplayCornerOpponentPlayHudLayout(viewport, opponentCharacters);
+  }
+  return buildLinearOpponentPlayHudLayout(viewport, opponentCharacters);
+};
+
+const getRotationMarkerPoint = (modal, slotIndex) => {
+  if (!modal || !Number.isFinite(slotIndex)) return null;
+  const rounded = Math.max(0, Math.min(PLAY_ROTATION_MARKERS.length - 1, Math.round(slotIndex)));
+  const marker = PLAY_ROTATION_MARKERS[rounded];
+  if (!marker) return null;
+  return {
+    x: modal.x + modal.width * marker.x,
+    y: modal.y + modal.height * marker.y,
+  };
+};
+
+const getPlayCardBoundsInModal = (modal) => {
+  if (!modal) return null;
+  const activeBounds = {
+    x: modal.x + modal.width * PLAY_ACTIVE_LEFT_RATIO,
+    y: modal.y + modal.height * PLAY_ACTIVE_TOP_RATIO,
+    width: modal.width * PLAY_ACTIVE_WIDTH_RATIO,
+    height: modal.height * PLAY_ACTIVE_HEIGHT_RATIO,
+  };
+  const cardScale = (activeBounds.width / ACTION_CARD_BASE_WIDTH) * PLAY_CARD_SCALE_MULTIPLIER;
+  const cardWidth = ACTION_CARD_BASE_WIDTH * cardScale;
+  const cardHeight = ACTION_CARD_BASE_HEIGHT * cardScale;
+  return {
+    x: activeBounds.x + (activeBounds.width - cardWidth) / 2,
+    y: activeBounds.y + activeBounds.height - cardHeight,
+    width: cardWidth,
+    height: cardHeight,
+  };
+};
+
+const getPlayBeatRailPoint = (modal, slotIndex) => {
+  if (!modal || !Number.isFinite(slotIndex)) return null;
+  const cardBounds = getPlayCardBoundsInModal(modal);
+  if (!cardBounds) return null;
+  const rounded = Math.max(0, Math.min(PLAY_BEAT_SLOT_COUNT - 1, Math.round(slotIndex)));
+  const iconXRatio = (ACTION_CARD_ACTIONS_LEFT + ACTION_CARD_ACTION_WIDTH * 0.32) / ACTION_CARD_BASE_WIDTH;
+  const iconTopRatio =
+    (ACTION_CARD_ACTIONS_TOP + ACTION_CARD_ACTION_HEIGHT * PLAY_BEAT_POINTER_ICON_CENTER_Y) / ACTION_CARD_BASE_HEIGHT;
+  const iconStepRatio = ACTION_CARD_ACTION_HEIGHT / ACTION_CARD_BASE_HEIGHT;
+  return {
+    x: cardBounds.x + cardBounds.width * iconXRatio,
+    y: cardBounds.y + cardBounds.height * (iconTopRatio + iconStepRatio * rounded),
+  };
+};
+
+const toRotationSlotIndex = (rotationLabel) => {
+  const value = `${rotationLabel ?? ''}`.trim().toUpperCase();
+  if (!value) return null;
+  if (value === '0') return 0;
+  if (value === 'L1') return 1;
+  if (value === 'R1') return 2;
+  if (value === 'L2') return 3;
+  if (value === 'R2') return 4;
+  if (value === '3') return 5;
+  return null;
+};
+
+const resolveSelectedRotationForPair = (beatLookup, lookupKey, playedPair, beatIndex) => {
+  if (!Array.isArray(beatLookup) || !lookupKey || !playedPair) return '';
+  const startIndex = Number.isFinite(playedPair.startIndex) ? Math.max(0, Math.round(playedPair.startIndex)) : null;
+  if (startIndex == null) return '';
+  const maxIndex = Number.isFinite(beatIndex) ? Math.max(startIndex, Math.round(beatIndex)) : startIndex;
+  for (let index = startIndex; index <= maxIndex; index += 1) {
+    const entry = getBeatLookupEntry(beatLookup, index, lookupKey);
+    if (!entry) continue;
+    const action = `${entry.action ?? ''}`.trim();
+    if (action === DEFAULT_ACTION && index > startIndex) break;
+    const rotation = `${entry.rotation ?? ''}`.trim();
+    const rotationSource = `${entry.rotationSource ?? ''}`.trim();
+    if (rotationSource === 'selected') return rotation;
+    if (!rotationSource && rotation) return rotation;
+  }
+  return '';
+};
+
+const resolvePlayBeatSlotForValue = (playedPair, value) => {
+  if (!playedPair || !Number.isFinite(value)) return null;
+  const startIndex = Number.isFinite(playedPair.startIndex) ? playedPair.startIndex : null;
+  if (startIndex == null) return null;
+  const offset = Math.max(0, Math.round(value) - Math.round(startIndex));
+  return Math.max(0, Math.min(PLAY_BEAT_SLOT_COUNT - 1, offset));
+};
+
+export const getPlayBeatSlotForCharacter = (beats, character, beatIndex) => {
+  if (!Array.isArray(beats) || !beats.length || !character || !Number.isFinite(beatIndex)) return null;
+  const lookupKey = character.username ?? character.userId;
+  if (!lookupKey) return null;
+  const safeBeat = Math.max(0, Math.min(beats.length - 1, Math.round(beatIndex)));
+  const beatLookup = buildBeatLookup(beats);
+  const playedPair = resolvePlayModalStateForBeat(beatLookup, lookupKey, safeBeat);
+  return resolvePlayBeatSlotForValue(playedPair, safeBeat);
+};
+
+export const getPlayedCardPairForCharacterAtBeat = (beats, character, beatIndex) => {
+  if (!Array.isArray(beats) || !beats.length || !character || !Number.isFinite(beatIndex)) return null;
+  const lookupKey = character.username ?? character.userId;
+  if (!lookupKey) return null;
+  const safeBeat = Math.max(0, Math.min(beats.length - 1, Math.round(beatIndex)));
+  const beatLookup = buildBeatLookup(beats);
+  return resolvePlayModalStateForBeat(beatLookup, lookupKey, safeBeat);
+};
+
+export const getPlayedRotationForCharacterAtBeat = (beats, character, beatIndex) => {
+  if (!Array.isArray(beats) || !beats.length || !character || !Number.isFinite(beatIndex)) return '';
+  const lookupKey = character.username ?? character.userId;
+  if (!lookupKey) return '';
+  const safeBeat = Math.max(0, Math.min(beats.length - 1, Math.round(beatIndex)));
+  const beatLookup = buildBeatLookup(beats);
+  const playedPair = resolvePlayModalStateForBeat(beatLookup, lookupKey, safeBeat);
+  if (playedPair?.kind === 'stun') return '';
+  return resolveSelectedRotationForPair(beatLookup, lookupKey, playedPair, safeBeat);
 };
 
 export const getTimeIndicatorLayout = (viewport, options = {}) => {
@@ -767,35 +1171,89 @@ export const getTimeIndicatorHit = (layout, x, y) => {
   return null;
 };
 
-export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y) => {
+export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y, options = {}) => {
   if (!layout) return null;
-  if (layout.isExpanded === false) return null;
+  const viewport = {
+    width: Number.isFinite(options?.viewport?.width)
+      ? Math.max(0, options.viewport.width)
+      : Math.max(0, layout.x * 2 + layout.width),
+    height: Number.isFinite(options?.viewport?.height) ? Math.max(0, options.viewport.height) : 0,
+  };
+  const publicState = gameState?.state?.public ?? null;
   const characters = gameState?.state?.public?.characters ?? [];
   setTimeIndicatorPlayerCount(characters.length || 2);
   const beats = gameState?.state?.public?.beats ?? [];
   const interactions = gameState?.state?.public?.customInteractions ?? [];
   const matchOutcome = gameState?.state?.public?.matchOutcome ?? null;
-  const highlightIndex = getTimelineStopIndex(beats, characters, interactions);
+  const canvasRect = options?.canvasRect ?? null;
   if (!characters.length || !beats.length) return null;
-  const offsets = TIMELINE_OFFSETS;
+  const highlightIndex = getTimelineStopIndex(beats, characters, interactions);
+  const beatLookup = buildBeatLookup(beats);
+  const actionPhaseUserIds = getActionPhaseUserIds(publicState);
   const value = viewModel?.value ?? 0;
+  const localCharacter =
+    characters.find(
+      (character) => character?.userId === timeIndicatorLocalUserId || character?.username === timeIndicatorLocalUserId,
+    ) ?? null;
+  const localLookupKey = localCharacter ? localCharacter.username ?? localCharacter.userId : '';
+  const localPlayedPair = localLookupKey ? resolvePlayModalStateForBeat(beatLookup, localLookupKey, value) : null;
+  const includeLocalInCornerHud = timeIndicatorCornerLayoutMode === CORNER_PLAY_LAYOUT_REPLAY_CORNERS;
+  const hidePlayedCardsWhileSelecting = !includeLocalInCornerHud;
+  const opponentItems = buildOpponentPlayHudItems({
+    viewport,
+    characters,
+    localUserId: timeIndicatorLocalUserId,
+    value,
+    beatLookup,
+    actionSelectionUserIds: actionPhaseUserIds,
+    includeLocalPlayer: includeLocalInCornerHud,
+    cornerLayoutMode: timeIndicatorCornerLayoutMode,
+    hidePlayedCardsWhileSelecting,
+  });
+  for (let i = 0; i < opponentItems.length; i += 1) {
+    const item = opponentItems[i];
+    if (!item.playedPair || !item.lookupKey) continue;
+    const reveal = getCornerPlayRevealState(`corner:${item.lookupKey}`, item.playedPair.pairKey, performance.now());
+    if (reveal?.phase !== 'front') continue;
+    const slot = getOpponentPlayHoverSlot(item, { x, y });
+    if (!slot) continue;
+    const bounds = slot === 'active' ? item.activeBounds : item.passiveBounds;
+    return {
+      kind: 'played-card',
+      beatIndex: value,
+      character: item.character,
+      cardRole: slot,
+      cardId: slot === 'active' ? item.playedPair.activeCardId : item.playedPair.passiveCardId,
+      activeCardId: item.playedPair.activeCardId,
+      passiveCardId: item.playedPair.passiveCardId,
+      center: {
+        x: bounds.x + bounds.width / 2,
+        y: bounds.y + bounds.height / 2,
+      },
+      size: Math.max(bounds.width, bounds.height),
+    };
+  }
+  const localPlayedHoverTarget = getLocalPlayedPreviewHoverTarget({
+    x,
+    y,
+    beatIndex: value,
+    canvasRect,
+    character: localCharacter,
+    playedPair: localPlayedPair,
+  });
+  if (localPlayedHoverTarget) {
+    return localPlayedHoverTarget;
+  }
+  if (layout.isExpanded === false) return null;
+  const offsets = TIMELINE_OFFSETS;
   const topRow = getRowLayout(layout, 0);
   const spacingTarget = Math.max(26, layout.actionHeight * 0.72);
   const spacing = Math.min(spacingTarget, topRow.numberArea.width / (offsets.length - 1));
-  const beatLookup = beats.map((beat) => {
-    const map = new Map();
-    if (!Array.isArray(beat)) return map;
-    beat.forEach((entry) => {
-      if (!entry || typeof entry !== 'object') return;
-      const username = entry.username ?? entry.userId ?? entry.userID;
-      if (!username) return;
-      map.set(username, entry);
-    });
-    return map;
-  });
-  const handTriggerLookup = buildHandTriggerLookup(interactions, characters);
-  const movementPickupLookup = buildMovementPickupLookup(interactions, characters);
-  const rewindReturnLookup = buildRewindReturnLookup(interactions, characters);
+  const handTriggerLookup = SHOW_TIMELINE_MINI_CARDS ? buildHandTriggerLookup(interactions, characters) : new Map();
+  const movementPickupLookup = SHOW_TIMELINE_MINI_CARDS
+    ? buildMovementPickupLookup(interactions, characters)
+    : new Map();
+  const rewindReturnLookup = SHOW_TIMELINE_MINI_CARDS ? buildRewindReturnLookup(interactions, characters) : new Map();
 
   for (let rowIndex = 0; rowIndex < characters.length; rowIndex += 1) {
     const character = characters[rowIndex];
@@ -853,102 +1311,104 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y)
           ? { action }
           : null;
       const xPos = rowCenterX + offset * spacing;
-      const movementPickupKey = `${lookupKey}:${beatIndex}`;
-      const movementPickup = movementPickupLookup.get(movementPickupKey) ?? null;
-      const movementPickupIds = Array.isArray(movementPickup?.movementCardIds)
-        ? movementPickup.movementCardIds
-        : [];
-      const movementPickupLayout = buildMiniCardStackLayout({
-        row,
-        xPos,
-        rowSpacing: spacing,
-        iconSize,
-        count: movementPickupIds.length,
-        heightFactor: MOVEMENT_PICKUP_CARD_HEIGHT,
-        aspect: MOVEMENT_PICKUP_CARD_ASPECT,
-        stackOffsetFactor: MOVEMENT_PICKUP_STACK_OFFSET,
-        side: 'left',
-        slotIndex: 0,
-      });
-      if (movementPickupLayout) {
-        for (let i = 0; i < movementPickupLayout.count; i += 1) {
-          const geometry = getMiniCardStackItemGeometry(movementPickupLayout, rowCenterY, i);
-          if (!geometry || !isPointInRect(x, y, geometry.bounds)) continue;
-          return {
-            kind: 'movement-pickup',
-            beatIndex,
-            character,
-            interactions: movementPickup.interactions,
-            movementCardIds: [...movementPickupIds],
-            center: { x: movementPickupLayout.centerX, y: geometry.centerY },
-            size: Math.max(movementPickupLayout.cardWidth, movementPickupLayout.cardHeight),
-          };
+      if (SHOW_TIMELINE_MINI_CARDS) {
+        const movementPickupKey = `${lookupKey}:${beatIndex}`;
+        const movementPickup = movementPickupLookup.get(movementPickupKey) ?? null;
+        const movementPickupIds = Array.isArray(movementPickup?.movementCardIds)
+          ? movementPickup.movementCardIds
+          : [];
+        const movementPickupLayout = buildMiniCardStackLayout({
+          row,
+          xPos,
+          rowSpacing: spacing,
+          iconSize,
+          count: movementPickupIds.length,
+          heightFactor: MOVEMENT_PICKUP_CARD_HEIGHT,
+          aspect: MOVEMENT_PICKUP_CARD_ASPECT,
+          stackOffsetFactor: MOVEMENT_PICKUP_STACK_OFFSET,
+          side: 'left',
+          slotIndex: 0,
+        });
+        if (movementPickupLayout) {
+          for (let i = 0; i < movementPickupLayout.count; i += 1) {
+            const geometry = getMiniCardStackItemGeometry(movementPickupLayout, rowCenterY, i);
+            if (!geometry || !isPointInRect(x, y, geometry.bounds)) continue;
+            return {
+              kind: 'movement-pickup',
+              beatIndex,
+              character,
+              interactions: movementPickup.interactions,
+              movementCardIds: [...movementPickupIds],
+              center: { x: movementPickupLayout.centerX, y: geometry.centerY },
+              size: Math.max(movementPickupLayout.cardWidth, movementPickupLayout.cardHeight),
+            };
+          }
         }
-      }
-      const rewindReturnKey = `${lookupKey}:${beatIndex}`;
-      const rewindReturns = rewindReturnLookup.get(rewindReturnKey) ?? [];
-      const rewindSlotIndex = movementPickupIds.length ? 1 : 0;
-      const rewindReturnLayout = buildMiniCardStackLayout({
-        row,
-        xPos,
-        rowSpacing: spacing,
-        iconSize,
-        count: rewindReturns.length,
-        heightFactor: REWIND_RETURN_CARD_HEIGHT,
-        aspect: REWIND_RETURN_CARD_ASPECT,
-        stackOffsetFactor: REWIND_RETURN_STACK_OFFSET,
-        side: 'left',
-        slotIndex: rewindSlotIndex,
-      });
-      if (rewindReturnLayout) {
-        for (let i = 0; i < rewindReturnLayout.count; i += 1) {
-          const geometry = getMiniCardStackItemGeometry(rewindReturnLayout, rowCenterY, i);
-          if (!geometry || !isPointInRect(x, y, geometry.bounds)) continue;
-          const interaction = rewindReturns[i];
-          const cardId =
-            interaction?.cardId ?? interaction?.abilityCardId ?? interaction?.movementCardId ?? 'rewind';
-          return {
-            kind: 'rewind-return',
-            beatIndex,
-            character,
-            interaction,
-            cardId,
-            cardType: interaction?.cardType ?? null,
-            center: { x: rewindReturnLayout.centerX, y: geometry.centerY },
-            size: Math.max(rewindReturnLayout.cardWidth, rewindReturnLayout.cardHeight),
-          };
+        const rewindReturnKey = `${lookupKey}:${beatIndex}`;
+        const rewindReturns = rewindReturnLookup.get(rewindReturnKey) ?? [];
+        const rewindSlotIndex = movementPickupIds.length ? 1 : 0;
+        const rewindReturnLayout = buildMiniCardStackLayout({
+          row,
+          xPos,
+          rowSpacing: spacing,
+          iconSize,
+          count: rewindReturns.length,
+          heightFactor: REWIND_RETURN_CARD_HEIGHT,
+          aspect: REWIND_RETURN_CARD_ASPECT,
+          stackOffsetFactor: REWIND_RETURN_STACK_OFFSET,
+          side: 'left',
+          slotIndex: rewindSlotIndex,
+        });
+        if (rewindReturnLayout) {
+          for (let i = 0; i < rewindReturnLayout.count; i += 1) {
+            const geometry = getMiniCardStackItemGeometry(rewindReturnLayout, rowCenterY, i);
+            if (!geometry || !isPointInRect(x, y, geometry.bounds)) continue;
+            const interaction = rewindReturns[i];
+            const cardId =
+              interaction?.cardId ?? interaction?.abilityCardId ?? interaction?.movementCardId ?? 'rewind';
+            return {
+              kind: 'rewind-return',
+              beatIndex,
+              character,
+              interaction,
+              cardId,
+              cardType: interaction?.cardType ?? null,
+              center: { x: rewindReturnLayout.centerX, y: geometry.centerY },
+              size: Math.max(rewindReturnLayout.cardWidth, rewindReturnLayout.cardHeight),
+            };
+          }
         }
-      }
-      const handTriggerKey = `${lookupKey}:${beatIndex}`;
-      const handTriggers = handTriggerLookup.get(handTriggerKey) ?? [];
-      const handTriggerLayout = buildMiniCardStackLayout({
-        row,
-        xPos,
-        rowSpacing: spacing,
-        iconSize,
-        count: handTriggers.length,
-        heightFactor: HAND_TRIGGER_CARD_HEIGHT,
-        aspect: HAND_TRIGGER_CARD_ASPECT,
-        stackOffsetFactor: HAND_TRIGGER_STACK_OFFSET,
-        side: 'right',
-      });
-      if (handTriggerLayout) {
-        for (let i = 0; i < handTriggerLayout.count; i += 1) {
-          const geometry = getMiniCardStackItemGeometry(handTriggerLayout, rowCenterY, i);
-          if (!geometry || !isPointInRect(x, y, geometry.bounds)) continue;
-          const interaction = handTriggers[i];
-          const cardId =
-            interaction?.cardId ?? interaction?.abilityCardId ?? interaction?.movementCardId ?? '';
-          return {
-            kind: 'hand-trigger',
-            beatIndex,
-            character,
-            interaction,
-            cardId,
-            cardType: interaction?.cardType ?? null,
-            center: { x: handTriggerLayout.centerX, y: geometry.centerY },
-            size: Math.max(handTriggerLayout.cardWidth, handTriggerLayout.cardHeight),
-          };
+        const handTriggerKey = `${lookupKey}:${beatIndex}`;
+        const handTriggers = handTriggerLookup.get(handTriggerKey) ?? [];
+        const handTriggerLayout = buildMiniCardStackLayout({
+          row,
+          xPos,
+          rowSpacing: spacing,
+          iconSize,
+          count: handTriggers.length,
+          heightFactor: HAND_TRIGGER_CARD_HEIGHT,
+          aspect: HAND_TRIGGER_CARD_ASPECT,
+          stackOffsetFactor: HAND_TRIGGER_STACK_OFFSET,
+          side: 'right',
+        });
+        if (handTriggerLayout) {
+          for (let i = 0; i < handTriggerLayout.count; i += 1) {
+            const geometry = getMiniCardStackItemGeometry(handTriggerLayout, rowCenterY, i);
+            if (!geometry || !isPointInRect(x, y, geometry.bounds)) continue;
+            const interaction = handTriggers[i];
+            const cardId =
+              interaction?.cardId ?? interaction?.abilityCardId ?? interaction?.movementCardId ?? '';
+            return {
+              kind: 'hand-trigger',
+              beatIndex,
+              character,
+              interaction,
+              cardId,
+              cardType: interaction?.cardType ?? null,
+              center: { x: handTriggerLayout.centerX, y: geometry.centerY },
+              size: Math.max(handTriggerLayout.cardWidth, handTriggerLayout.cardHeight),
+            };
+          }
         }
       }
       if (!entry) continue;
@@ -987,7 +1447,13 @@ export const drawTimeIndicator = (
   pendingPreview,
   cardLookup = null,
   timelinePointer = null,
+  options = {},
 ) => {
+  const replayMode = Boolean(options?.replayMode);
+  const includeLocalInCornerHud = replayMode;
+  const hidePlayedCardsWhileSelecting = !replayMode;
+  timeIndicatorCornerLayoutMode = replayMode ? CORNER_PLAY_LAYOUT_REPLAY_CORNERS : CORNER_PLAY_LAYOUT_DEFAULT;
+  timeIndicatorLocalUserId = `${localUserId ?? ''}`.trim() || null;
   const publicState = gameState?.state?.public ?? null;
   const characters = gameState?.state?.public?.characters ?? [];
   setTimeIndicatorPlayerCount(characters.length || 2);
@@ -995,7 +1461,10 @@ export const drawTimeIndicator = (
     isExpanded: viewModel?.isTimelineExpanded !== false,
     playerCount: characters.length || 2,
   });
-  if (!layout) return;
+  if (!layout) {
+    clearCornerPlayHudDom();
+    return;
+  }
   const isExpanded = layout.isExpanded !== false;
 
   ctx.setTransform(viewport.dpr, 0, 0, viewport.dpr, 0, 0);
@@ -1013,38 +1482,23 @@ export const drawTimeIndicator = (
   const ffaEnabled = isFfaEnabled(publicState);
   const ffaScoreByUserId = ffaEnabled ? getFfaScoreMapAtBeat(publicState, beats, characters, value) : null;
   const highlightIndex = getTimelineStopIndex(beats, characters, interactions);
-  const handTriggerLookup = buildHandTriggerLookup(interactions, characters);
-  const movementPickupLookup = buildMovementPickupLookup(interactions, characters);
-  const rewindReturnLookup = buildRewindReturnLookup(interactions, characters);
+  const handTriggerLookup = SHOW_TIMELINE_MINI_CARDS ? buildHandTriggerLookup(interactions, characters) : new Map();
+  const movementPickupLookup = SHOW_TIMELINE_MINI_CARDS
+    ? buildMovementPickupLookup(interactions, characters)
+    : new Map();
+  const rewindReturnLookup = SHOW_TIMELINE_MINI_CARDS ? buildRewindReturnLookup(interactions, characters) : new Map();
   const discardLookup = buildDiscardLookup(interactions, characters);
   const drawLookup = buildDrawLookup(interactions, characters);
   const interactionStopIndex = getEarliestPendingInteractionIndex(interactions);
   const fadeAfterIndex =
     interactionStopIndex !== null && interactionStopIndex <= highlightIndex ? interactionStopIndex : null;
-  const pending = gameState?.state?.public?.pendingActions ?? null;
-  const waitingUserIds = new Set();
-  if (pending && pending.beatIndex === highlightIndex && Array.isArray(pending.requiredUserIds)) {
-    const submitted = new Set(Array.isArray(pending.submittedUserIds) ? pending.submittedUserIds : []);
-    pending.requiredUserIds.forEach((userId) => {
-      if (!submitted.has(userId)) {
-        waitingUserIds.add(userId);
-      }
-    });
-  }
-  const activeHandTriggerId = getActiveHandTriggerId(interactions);
-  interactions.forEach((interaction) => {
-    if (!interaction || interaction.status !== 'pending') return;
-    if (interaction.type === 'hand-trigger' && activeHandTriggerId && interaction.id !== activeHandTriggerId) {
-      return;
-    }
-    if (interaction.actorUserId) {
-      waitingUserIds.add(interaction.actorUserId);
-    }
-  });
-  const blinkPhase = (performance.now() % PENDING_BLINK_MS) / PENDING_BLINK_MS;
-  const blinkAlpha = 0.4 + 0.6 * Math.sin(blinkPhase * Math.PI * 2) ** 2;
+  const waitingUserIds = getWaitingForInputUserIds(publicState);
+  const actionPhaseUserIds = getActionPhaseUserIds(publicState);
+  const waitingPulse = getWaitingPulse(renderNow);
+  const waitingRingAlpha = 0.62 + waitingPulse * 0.38;
   const previewPhase = (performance.now() % PREVIEW_PULSE_MS) / PREVIEW_PULSE_MS;
   const previewScale = 1 + PREVIEW_SCALE_AMPLITUDE * Math.sin(previewPhase * Math.PI * 2);
+  const beatLookup = buildBeatLookup(beats);
   const topRow = getRowLayout(layout, 0);
   if (isExpanded) {
     drawNumberWell(ctx, topRow.numberArea, theme.queueLavender || theme.panel);
@@ -1101,11 +1555,31 @@ export const drawTimeIndicator = (
 
   if (!isExpanded) {
     playedCardRevealByActor.clear();
+    drawOpponentPlayHud({
+      ctx,
+      viewport,
+      theme,
+      characters,
+      localUserId,
+      value,
+      beatLookup,
+      waitingUserIds,
+      actionSelectionUserIds: actionPhaseUserIds,
+      timelinePointer,
+      cardLookup,
+      now: renderNow,
+      waitingRingAlpha,
+      includeLocalPlayer: includeLocalInCornerHud,
+      cornerLayoutMode: timeIndicatorCornerLayoutMode,
+      hidePlayedCardsWhileSelecting,
+    });
     return;
   }
 
   if (!characters.length) {
     playedCardRevealByActor.clear();
+    pruneCornerPlayRevealState(new Set());
+    clearCornerPlayHudDom();
     return;
   }
   prunePlayedCardRevealState(
@@ -1115,17 +1589,6 @@ export const drawTimeIndicator = (
         .filter((key) => typeof key === 'string' && key.trim()),
     ),
   );
-  const beatLookup = beats.map((beat) => {
-    const map = new Map();
-    if (!Array.isArray(beat)) return map;
-    beat.forEach((entry) => {
-      if (!entry || typeof entry !== 'object') return;
-      const username = entry.username ?? entry.userId ?? entry.userID;
-      if (!username) return;
-      map.set(username, entry);
-    });
-    return map;
-  });
 
   let previousSeparator = { numberArea: topRow.numberArea, y: topRow.y + topRow.rowHeight };
 
@@ -1176,22 +1639,21 @@ export const drawTimeIndicator = (
       const shouldFade = fadeAfterIndex !== null && beatIndex > fadeAfterIndex;
       const movementPickupKey = `${lookupKey}:${beatIndex}`;
       const movementPickup = movementPickupLookup.get(movementPickupKey) ?? null;
-      const movementPickupIds = Array.isArray(movementPickup?.movementCardIds)
-        ? movementPickup.movementCardIds
-        : [];
-      if (movementPickupIds.length) {
+      const movementPickupIds =
+        SHOW_TIMELINE_MINI_CARDS && Array.isArray(movementPickup?.movementCardIds) ? movementPickup.movementCardIds : [];
+      if (SHOW_TIMELINE_MINI_CARDS && movementPickupIds.length) {
         const cardAlpha = shouldFade ? 0.28 : 1;
         drawMovementPickupCards(ctx, row, xPos, rowCenterY, rowSpacing, iconSize, movementPickupIds, theme, cardAlpha);
       }
       const handTriggerKey = `${lookupKey}:${beatIndex}`;
       const handTriggers = handTriggerLookup.get(handTriggerKey) ?? [];
-      if (handTriggers.length) {
+      if (SHOW_TIMELINE_MINI_CARDS && handTriggers.length) {
         const cardAlpha = shouldFade ? 0.28 : 1;
         drawHandTriggerCards(ctx, row, xPos, rowCenterY, rowSpacing, iconSize, handTriggers, theme, cardAlpha);
       }
       const rewindReturnKey = `${lookupKey}:${beatIndex}`;
       const rewindReturns = rewindReturnLookup.get(rewindReturnKey) ?? [];
-      if (rewindReturns.length) {
+      if (SHOW_TIMELINE_MINI_CARDS && rewindReturns.length) {
         const cardAlpha = shouldFade ? 0.28 : 1;
         const rewindSlotIndex = movementPickupIds.length ? 1 : 0;
         drawRewindReturnCards(
@@ -1311,13 +1773,8 @@ export const drawTimeIndicator = (
 
     const portraitImage = getCharacterArt(character.characterId);
     const isLocalPlayer = localUserId && character.userId === localUserId;
-    const isWaiting =
-      waitingUserIds.has(character.userId) || waitingUserIds.has(character.username);
-    const ringColor = isWaiting
-      ? theme.actionAttack || theme.damage
-      : isLocalPlayer
-        ? theme.playerAccent || '#7dcfff'
-        : theme.accentStrong;
+    const isWaiting = isCharacterInUserSet(waitingUserIds, character);
+    const ringColor = isLocalPlayer ? theme.playerAccent || '#7dcfff' : theme.accentStrong;
     drawCharacterPortrait(ctx, portraitImage, portraitX, portraitY, portraitRadius, theme.panelStrong);
     drawCharacterRing(
       ctx,
@@ -1326,7 +1783,7 @@ export const drawTimeIndicator = (
       portraitRadius,
       layout.portraitBorderWidth,
       ringColor,
-      isWaiting ? blinkAlpha : 1,
+      isWaiting ? waitingRingAlpha : 1,
     );
     drawNameCapsule(ctx, portraitX, portraitY, portraitRadius, character.username || character.userId, theme);
     if (ffaEnabled) {
@@ -1348,6 +1805,24 @@ export const drawTimeIndicator = (
   ctx.moveTo(nowRight, topRow.numberArea.y);
   ctx.lineTo(nowRight, lastRow.numberArea.y + lastRow.rowHeight);
   ctx.stroke();
+  drawOpponentPlayHud({
+    ctx,
+    viewport,
+    theme,
+    characters,
+    localUserId,
+    value,
+    beatLookup,
+    waitingUserIds,
+    actionSelectionUserIds: actionPhaseUserIds,
+    timelinePointer,
+    cardLookup,
+    now: renderNow,
+    waitingRingAlpha,
+    includeLocalPlayer: includeLocalInCornerHud,
+    cornerLayoutMode: timeIndicatorCornerLayoutMode,
+    hidePlayedCardsWhileSelecting,
+  });
 };
 
 const drawCharacterPortrait = (ctx, image, x, y, radius, fillColor) => {
@@ -1663,6 +2138,7 @@ const drawPlayedCardArt = (ctx, x, y, width, height, card, cardId, theme, isHove
   const borderColor = isHovered
     ? theme.accentStrong || theme.accent || '#d5a34a'
     : theme.panelStrong || theme.textDark || '#000000';
+  const isStunPreview = `${card?.previewClassName ?? ''}`.split(' ').includes(STUN_CARD_PREVIEW_CLASS);
   const cardName = `${card?.name ?? cardId ?? ''}`.trim();
   const artImage = getCardArt(cardName);
 
@@ -1671,7 +2147,13 @@ const drawPlayedCardArt = (ctx, x, y, width, height, card, cardId, theme, isHove
   drawRoundedRect(ctx, x, y, width, height, radius);
   ctx.fill();
   ctx.clip();
-  const drewArt = drawImageCover(ctx, artImage, x, y, width, height);
+  let drewArt = false;
+  if (isStunPreview && damageCardImage.complete && damageCardImage.naturalWidth > 0 && damageCardImage.naturalHeight > 0) {
+    ctx.drawImage(damageCardImage, x, y, width, height);
+    drewArt = true;
+  } else {
+    drewArt = drawImageCover(ctx, artImage, x, y, width, height);
+  }
   if (!drewArt) {
     ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
     drawRoundedRect(ctx, x + width * 0.08, y + height * 0.08, width * 0.84, height * 0.18, radius * 0.7);
@@ -1737,6 +2219,522 @@ const drawPlayedCardPair = (
   }
   drawSlot(pairLayout.activeBounds, activeCard, playedPair.activeCardId);
   drawSlot(pairLayout.passiveBounds, passiveCard, playedPair.passiveCardId);
+};
+
+const buildBeatLookup = (beats) =>
+  (Array.isArray(beats) ? beats : []).map((beat) => {
+    const map = new Map();
+    if (!Array.isArray(beat)) return map;
+    beat.forEach((entry) => {
+      if (!entry || typeof entry !== 'object') return;
+      const username = entry.username ?? entry.userId ?? entry.userID;
+      if (!username) return;
+      map.set(username, entry);
+    });
+    return map;
+  });
+
+const getOpponentPlayHoverSlot = (item, pointer) => {
+  if (!item || !pointer) return null;
+  const activeHit = isPointInRect(pointer.x, pointer.y, item.activeBounds);
+  const passiveEnabled = item.hasPassiveCard !== false;
+  const passiveHit = passiveEnabled && isPointInRect(pointer.x, pointer.y, item.passiveBounds);
+  if (activeHit && passiveHit) {
+    const activeCenterX = item.activeBounds.x + item.activeBounds.width / 2;
+    const passiveCenterX = item.passiveBounds.x + item.passiveBounds.width / 2;
+    return Math.abs(pointer.x - activeCenterX) <= Math.abs(pointer.x - passiveCenterX) ? 'active' : 'passive';
+  }
+  if (activeHit) return 'active';
+  if (passiveHit) return 'passive';
+  return null;
+};
+
+const getRectInCanvasSpace = (element, canvasRect) => {
+  if (!(element instanceof HTMLElement) || !canvasRect) return null;
+  const rect = element.getBoundingClientRect();
+  if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+  return {
+    x: rect.left - canvasRect.left,
+    y: rect.top - canvasRect.top,
+    width: rect.width,
+    height: rect.height,
+  };
+};
+
+const getLocalPlayedPreviewHoverTarget = ({ x, y, beatIndex, canvasRect, character, playedPair }) => {
+  if (typeof document === 'undefined') return null;
+  if (!character || !playedPair) return null;
+  const actionHud = document.getElementById('actionHud');
+  if (!(actionHud instanceof HTMLElement)) return null;
+  if (actionHud.hidden || actionHud.classList.contains('is-turn')) return null;
+
+  const activeSlot = document.getElementById('activeSlot');
+  const passiveSlot = document.getElementById('passiveSlot');
+  if (!(activeSlot instanceof HTMLElement) || !(passiveSlot instanceof HTMLElement)) return null;
+  const activePreview = activeSlot.querySelector('.action-card.is-played-preview');
+  if (!(activePreview instanceof HTMLElement)) return null;
+  const passivePreview = passiveSlot.querySelector('.action-card.is-played-preview');
+
+  const activeBounds = getRectInCanvasSpace(activeSlot, canvasRect);
+  const passiveBounds =
+    passivePreview instanceof HTMLElement ? getRectInCanvasSpace(passiveSlot, canvasRect) : null;
+  if (!activeBounds) return null;
+
+  const activeHit = isPointInRect(x, y, activeBounds);
+  const passiveHit = passiveBounds ? isPointInRect(x, y, passiveBounds) : false;
+  let cardRole = null;
+  if (activeHit && passiveHit && passiveBounds) {
+    const activeCenterX = activeBounds.x + activeBounds.width / 2;
+    const passiveCenterX = passiveBounds.x + passiveBounds.width / 2;
+    cardRole = Math.abs(x - activeCenterX) <= Math.abs(x - passiveCenterX) ? 'active' : 'passive';
+  } else if (activeHit) {
+    cardRole = 'active';
+  } else if (passiveHit) {
+    cardRole = 'passive';
+  }
+  if (!cardRole) return null;
+
+  const activeCardId = readCardId(playedPair.activeCardId) || readCardId(activePreview.dataset.cardId);
+  const passiveCardId =
+    readCardId(playedPair.passiveCardId) ||
+    (passivePreview instanceof HTMLElement ? readCardId(passivePreview.dataset.cardId) : '');
+  const cardId = cardRole === 'passive' ? passiveCardId : activeCardId;
+  if (!cardId) return null;
+  const bounds = cardRole === 'passive' && passiveBounds ? passiveBounds : activeBounds;
+  return {
+    kind: 'played-card',
+    beatIndex,
+    character,
+    cardRole,
+    cardId,
+    activeCardId,
+    passiveCardId: passiveCardId || null,
+    center: {
+      x: bounds.x + bounds.width / 2,
+      y: bounds.y + bounds.height / 2,
+    },
+    size: Math.max(bounds.width, bounds.height),
+  };
+};
+
+const buildOpponentPlayHudItems = ({
+  viewport,
+  characters,
+  localUserId,
+  value,
+  beatLookup,
+  actionSelectionUserIds,
+  includeLocalPlayer = false,
+  cornerLayoutMode = CORNER_PLAY_LAYOUT_DEFAULT,
+  hidePlayedCardsWhileSelecting = true,
+}) => {
+  const opponents = getOpponentCharacters(characters, localUserId, { includeLocalPlayer });
+  const layoutItems = buildOpponentPlayHudLayout(viewport, opponents, cornerLayoutMode);
+  return layoutItems.map((item) => {
+    const lookupKey = item.character?.username ?? item.character?.userId ?? '';
+    const isSelecting = isCharacterInUserSet(actionSelectionUserIds, item.character);
+    const resolvedPair = resolvePlayModalStateForBeat(beatLookup, lookupKey, value);
+    const isStunPair = resolvedPair?.kind === 'stun';
+    const playedPair = hidePlayedCardsWhileSelecting && isSelecting && !isStunPair ? null : resolvedPair;
+    const rotation =
+      playedPair?.kind === 'stun' ? '' : resolveSelectedRotationForPair(beatLookup, lookupKey, playedPair, value);
+    const beatSlot = resolvePlayBeatSlotForValue(playedPair, value);
+    return {
+      ...item,
+      lookupKey,
+      playedPair,
+      hasPassiveCard: playedPair?.kind !== 'stun',
+      rotation,
+      beatSlot,
+      isSelecting,
+    };
+  });
+};
+
+const getCornerPlayHudRoot = () => {
+  if (typeof document === 'undefined') return null;
+  const element = document.getElementById('cornerPlayHud');
+  return element instanceof HTMLElement ? element : null;
+};
+
+const createCornerPlayHudNode = () => {
+  if (typeof document === 'undefined') return null;
+  const root = document.createElement('div');
+  root.className = 'corner-play-item is-back';
+
+  const shell = document.createElement('div');
+  shell.className = 'play-modal-shell corner-play-modal-shell';
+
+  const art = document.createElement('div');
+  art.className = 'play-modal-art';
+  art.setAttribute('aria-hidden', 'true');
+
+  const beatPointer = document.createElement('div');
+  beatPointer.className = 'play-modal-beat-pointer corner-play-beat-pointer';
+  beatPointer.setAttribute('aria-hidden', 'true');
+  beatPointer.hidden = true;
+
+  const rotationWheel = document.createElement('div');
+  rotationWheel.className = 'rotation-wheel corner-play-rotation-wheel';
+  rotationWheel.setAttribute('aria-hidden', 'true');
+  const rotationController = buildRotationWheel(rotationWheel, null);
+  rotationController.setAllowedRotations(null);
+
+  const slotRow = document.createElement('div');
+  slotRow.className = 'action-slot-row';
+
+  const activeSlot = document.createElement('div');
+  activeSlot.className = 'action-slot action-slot-active';
+  const activeDrop = document.createElement('div');
+  activeDrop.className = 'action-slot-drop';
+  activeSlot.appendChild(activeDrop);
+
+  const passiveSlot = document.createElement('div');
+  passiveSlot.className = 'action-slot action-slot-passive';
+  const passiveDrop = document.createElement('div');
+  passiveDrop.className = 'action-slot-drop';
+  passiveSlot.appendChild(passiveDrop);
+
+  slotRow.appendChild(activeSlot);
+  slotRow.appendChild(passiveSlot);
+
+  shell.appendChild(art);
+  shell.appendChild(rotationWheel);
+  shell.appendChild(slotRow);
+  shell.appendChild(beatPointer);
+  root.appendChild(shell);
+
+  return {
+    root,
+    shell,
+    activeSlot,
+    passiveSlot,
+    activeDrop,
+    passiveDrop,
+    beatPointer,
+    rotationController,
+    currentRotation: null,
+    activeCardId: null,
+    passiveCardId: null,
+    activeCardElement: null,
+    passiveCardElement: null,
+  };
+};
+
+const clearCornerPlayHudSlotCard = (node, slotName) => {
+  if (!node) return;
+  if (slotName === 'active') {
+    if (node.activeCardElement?.parentElement) {
+      node.activeCardElement.remove();
+    }
+    node.activeCardElement = null;
+    node.activeCardId = null;
+    node.activeDrop?.classList?.remove('is-occupied');
+    return;
+  }
+  if (node.passiveCardElement?.parentElement) {
+    node.passiveCardElement.remove();
+  }
+  node.passiveCardElement = null;
+  node.passiveCardId = null;
+  node.passiveDrop?.classList?.remove('is-occupied');
+};
+
+const setCornerPlayHudSlotCard = (node, slotName, card, fallbackCardId = '') => {
+  if (!node) return;
+  const nextCardId = `${card?.id ?? fallbackCardId ?? ''}`.trim();
+  const previewClassName = `${card?.previewClassName ?? ''}`.trim();
+  const nextCardKey = `${nextCardId}|${previewClassName}`;
+  if (!nextCardId || !card) {
+    clearCornerPlayHudSlotCard(node, slotName);
+    return;
+  }
+  if (slotName === 'active') {
+    if (node.activeCardId !== nextCardKey || !node.activeCardElement) {
+      clearCornerPlayHudSlotCard(node, 'active');
+      const className = previewClassName || undefined;
+      const element = buildCardElement(card, className ? { className } : undefined);
+      node.activeCardElement = element;
+      node.activeCardId = nextCardKey;
+      node.activeDrop.appendChild(element);
+      fitAllCardText(element);
+    } else if (node.activeCardElement.parentElement !== node.activeDrop) {
+      node.activeDrop.appendChild(node.activeCardElement);
+    }
+    node.activeDrop.classList.add('is-occupied');
+    return;
+  }
+  if (node.passiveCardId !== nextCardKey || !node.passiveCardElement) {
+    clearCornerPlayHudSlotCard(node, 'passive');
+    const className = previewClassName || undefined;
+    const element = buildCardElement(card, className ? { className } : undefined);
+    node.passiveCardElement = element;
+    node.passiveCardId = nextCardKey;
+    node.passiveDrop.appendChild(element);
+    fitAllCardText(element);
+  } else if (node.passiveCardElement.parentElement !== node.passiveDrop) {
+    node.passiveDrop.appendChild(node.passiveCardElement);
+  }
+  node.passiveDrop.classList.add('is-occupied');
+};
+
+const getOrCreateCornerPlayHudNode = (actorKey) => {
+  if (!actorKey) return null;
+  const existing = cornerPlayHudNodesByActor.get(actorKey);
+  if (existing) return existing;
+  const created = createCornerPlayHudNode();
+  if (!created) return null;
+  cornerPlayHudNodesByActor.set(actorKey, created);
+  return created;
+};
+
+const pruneCornerPlayHudNodes = (activeKeys = new Set()) => {
+  const root = getCornerPlayHudRoot();
+  cornerPlayHudNodesByActor.forEach((node, actorKey) => {
+    if (activeKeys.has(actorKey)) return;
+    node.root?.remove?.();
+    cornerPlayHudNodesByActor.delete(actorKey);
+  });
+  if (root) {
+    root.hidden = activeKeys.size === 0;
+  }
+};
+
+const syncCornerPlayHudDomItem = ({ root, actorKey, item, phase, flipScale, hoveredSlot, cardLookup }) => {
+  if (!root || !actorKey || !item) return;
+  const node = getOrCreateCornerPlayHudNode(actorKey);
+  if (!node) return;
+  if (node.root.parentElement !== root) {
+    root.appendChild(node.root);
+  }
+
+  node.root.style.left = `${item.modal.x}px`;
+  node.root.style.top = `${item.modal.y}px`;
+  node.root.style.width = `${item.modal.width}px`;
+  node.root.style.height = `${item.modal.height}px`;
+  node.root.style.setProperty('--play-modal-width', `${item.modal.width}px`);
+  node.root.style.setProperty('--play-modal-height', `${item.modal.height}px`);
+  node.root.classList.toggle('is-front', phase === 'front');
+  node.root.classList.toggle('is-back', phase !== 'front');
+  node.shell.style.transform = `scaleX(${Math.max(0.06, flipScale)})`;
+  const isStunned = item.playedPair?.kind === 'stun';
+  const passiveEnabled = item.hasPassiveCard !== false;
+  node.root.classList.toggle('is-stunned', isStunned);
+  node.activeSlot.classList.toggle('is-stunned', isStunned);
+  node.activeSlot.classList.toggle('is-hovered', hoveredSlot === 'active');
+  node.passiveSlot.classList.toggle('is-hovered', passiveEnabled && hoveredSlot === 'passive');
+
+  if (phase === 'front' && item.playedPair) {
+    const activeCard =
+      isStunned ? item.playedPair.previewCard ?? null : cardLookup?.get?.(item.playedPair.activeCardId) ?? null;
+    const passiveCard =
+      passiveEnabled && !isStunned ? cardLookup?.get?.(item.playedPair.passiveCardId) ?? null : null;
+    setCornerPlayHudSlotCard(node, 'active', activeCard, item.playedPair.activeCardId);
+    if (passiveEnabled && passiveCard) {
+      setCornerPlayHudSlotCard(node, 'passive', passiveCard, item.playedPair.passiveCardId);
+    } else {
+      clearCornerPlayHudSlotCard(node, 'passive');
+    }
+
+    const beatPoint = item.beatSlot !== null ? getPlayBeatRailPoint(item.modal, item.beatSlot) : null;
+    if (beatPoint) {
+      const localBeatX = ((beatPoint.x - item.modal.x) / item.modal.width) * 100;
+      const localBeatY = ((beatPoint.y - item.modal.y) / item.modal.height) * 100;
+      node.beatPointer.style.setProperty('--play-beat-x', `${localBeatX.toFixed(3)}%`);
+      node.beatPointer.style.setProperty('--play-beat-y', `${localBeatY.toFixed(3)}%`);
+      node.beatPointer.hidden = false;
+    } else {
+      node.beatPointer.hidden = true;
+    }
+
+    const nextRotation = isStunned ? '' : `${item.rotation ?? ''}`.trim();
+    if (nextRotation !== node.currentRotation) {
+      if (nextRotation) {
+        node.rotationController?.setValue?.(nextRotation);
+      } else {
+        node.rotationController?.clear?.();
+      }
+      node.currentRotation = nextRotation;
+    }
+    return;
+  }
+
+  clearCornerPlayHudSlotCard(node, 'active');
+  clearCornerPlayHudSlotCard(node, 'passive');
+  node.root.classList.remove('is-stunned');
+  node.activeSlot.classList.remove('is-stunned');
+  node.beatPointer.hidden = true;
+  node.rotationController?.clear?.();
+  node.currentRotation = null;
+};
+
+export const clearCornerPlayHudDom = () => {
+  pruneCornerPlayHudNodes(new Set());
+};
+
+const drawOpponentPlayHud = ({
+  ctx,
+  viewport,
+  theme,
+  characters,
+  localUserId,
+  value,
+  beatLookup,
+  waitingUserIds,
+  actionSelectionUserIds,
+  timelinePointer,
+  cardLookup,
+  now,
+  waitingRingAlpha,
+  includeLocalPlayer = false,
+  cornerLayoutMode = CORNER_PLAY_LAYOUT_DEFAULT,
+  hidePlayedCardsWhileSelecting = true,
+}) => {
+  const items = buildOpponentPlayHudItems({
+    viewport,
+    characters,
+    localUserId,
+    value,
+    beatLookup,
+    actionSelectionUserIds,
+    includeLocalPlayer,
+    cornerLayoutMode,
+    hidePlayedCardsWhileSelecting,
+  });
+  const cornerHudRoot = getCornerPlayHudRoot();
+  const activeDomKeys = new Set();
+  const activeRevealKeys = new Set();
+  items.forEach((item) => {
+    const revealKey = item.lookupKey ? `corner:${item.lookupKey}` : '';
+    const actorKey = `${item.lookupKey ?? ''}`.trim();
+    const isWaiting = isCharacterInUserSet(waitingUserIds, item.character);
+    const portraitImage = getCharacterArt(item.character?.characterId);
+    drawCharacterPortrait(ctx, portraitImage, item.portrait.x, item.portrait.y, item.portrait.radius, theme.panelStrong);
+    drawCharacterRing(
+      ctx,
+      item.portrait.x,
+      item.portrait.y,
+      item.portrait.radius,
+      Math.max(1.5, item.portrait.radius * CHARACTER_TOKEN_STYLE.borderFactor),
+      theme.accentStrong,
+      isWaiting ? waitingRingAlpha : 1,
+    );
+    drawNameCapsule(
+      ctx,
+      item.portrait.x,
+      item.portrait.y,
+      item.portrait.radius,
+      item.character?.username || item.character?.userId,
+      theme,
+    );
+    const hoveredSlot = timelinePointer ? getOpponentPlayHoverSlot(item, timelinePointer) : null;
+
+    if (!item.playedPair && !item.isSelecting) {
+      if (revealKey) clearCornerPlayRevealState(revealKey);
+      return;
+    }
+
+    const centerX = item.modal.x + item.modal.width / 2;
+    const centerY = item.modal.y + item.modal.height / 2;
+    let phase = 'back';
+    let flipScale = 1;
+    const shouldHideForSelection = hidePlayedCardsWhileSelecting && item.isSelecting && item.playedPair?.kind !== 'stun';
+    if (item.playedPair && revealKey && !shouldHideForSelection) {
+      activeRevealKeys.add(revealKey);
+      const reveal = getCornerPlayRevealState(revealKey, item.playedPair.pairKey, now);
+      phase = reveal?.phase ?? 'front';
+      flipScale = reveal?.flipScaleX ?? 1;
+    }
+    if (shouldHideForSelection) {
+      if (item.playedPair?.kind === 'stun') {
+        phase = 'front';
+        flipScale = 1;
+      } else {
+        phase = 'back';
+        flipScale = 1;
+      }
+    }
+
+    if (cornerHudRoot && actorKey) {
+      activeDomKeys.add(actorKey);
+      syncCornerPlayHudDomItem({
+        root: cornerHudRoot,
+        actorKey,
+        item,
+        phase,
+        flipScale,
+        hoveredSlot,
+        cardLookup,
+      });
+    } else {
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.scale(Math.max(0.06, flipScale), 1);
+      const localModal = {
+        x: -item.modal.width / 2,
+        y: -item.modal.height / 2,
+        width: item.modal.width,
+        height: item.modal.height,
+      };
+      drawPlayModalBase(ctx, localModal, theme, phase);
+      if (phase === 'front' && item.playedPair) {
+        const isStunned = item.playedPair.kind === 'stun';
+        const activeCard =
+          isStunned ? item.playedPair.previewCard ?? null : cardLookup?.get?.(item.playedPair.activeCardId) ?? null;
+        const passiveCard =
+          !isStunned && item.hasPassiveCard !== false ? cardLookup?.get?.(item.playedPair.passiveCardId) ?? null : null;
+        const activeBounds = {
+          x: item.activeBounds.x - item.modal.x - item.modal.width / 2,
+          y: item.activeBounds.y - item.modal.y - item.modal.height / 2,
+          width: item.activeBounds.width,
+          height: item.activeBounds.height,
+        };
+        const passiveBounds = {
+          x: item.passiveBounds.x - item.modal.x - item.modal.width / 2,
+          y: item.passiveBounds.y - item.modal.y - item.modal.height / 2,
+          width: item.passiveBounds.width,
+          height: item.passiveBounds.height,
+        };
+        drawPlayedCardArt(
+          ctx,
+          activeBounds.x,
+          activeBounds.y,
+          activeBounds.width,
+          activeBounds.height,
+          activeCard,
+          item.playedPair.activeCardId,
+          theme,
+          hoveredSlot === 'active',
+        );
+        if (passiveCard) {
+          drawPlayedCardArt(
+            ctx,
+            passiveBounds.x,
+            passiveBounds.y,
+            passiveBounds.width,
+            passiveBounds.height,
+            passiveCard,
+            item.playedPair.passiveCardId,
+            theme,
+            hoveredSlot === 'passive',
+          );
+          drawActivePassiveMask(ctx, activeBounds);
+        }
+        const rotationSlot = toRotationSlotIndex(item.rotation);
+        if (rotationSlot !== null) {
+          const rotationPoint = getRotationMarkerPoint(localModal, rotationSlot);
+          drawPlayModalRotationMarker(ctx, rotationPoint, item.modal.width);
+        }
+        if (item.beatSlot !== null) {
+          const beatPoint = getPlayBeatRailPoint(localModal, item.beatSlot);
+          drawPlayModalBeatPointer(ctx, beatPoint, item.modal.width);
+        }
+      }
+      ctx.restore();
+    }
+  });
+  pruneCornerPlayRevealState(activeRevealKeys);
+  pruneCornerPlayHudNodes(activeDomKeys);
 };
 
 const drawRotationBadge = (ctx, x, y, size, rotation, theme) => {
@@ -1977,6 +2975,60 @@ const drawPlayButton = (ctx, playButton, theme, isPlaying) => {
     ctx.closePath();
     ctx.fill();
   }
+  ctx.restore();
+};
+
+const drawPlayModalBase = (ctx, modal, theme, phase = 'front') => {
+  const image = phase === 'back' ? playModalBackImage : playModalImage;
+  if (image && image.complete && image.naturalWidth > 0) {
+    ctx.drawImage(image, modal.x, modal.y, modal.width, modal.height);
+    return;
+  }
+  ctx.save();
+  ctx.fillStyle = theme.panelStrong || '#1f232b';
+  drawRoundedRect(ctx, modal.x, modal.y, modal.width, modal.height, Math.max(4, modal.width * 0.03));
+  ctx.fill();
+  ctx.restore();
+};
+
+const drawPlayModalBeatPointer = (ctx, point, modalWidth) => {
+  if (!point) return;
+  const size = Math.max(14, modalWidth * 0.09);
+  const tipX = point.x - size * 0.12;
+  const leftX = point.x - size;
+  ctx.save();
+  ctx.fillStyle = '#f7cd2a';
+  ctx.beginPath();
+  ctx.moveTo(tipX, point.y);
+  ctx.lineTo(leftX, point.y - size * 0.56);
+  ctx.lineTo(leftX, point.y + size * 0.56);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+};
+
+const drawPlayModalRotationMarker = (ctx, point, modalWidth) => {
+  if (!point) return;
+  const radius = Math.max(6, modalWidth * 0.043);
+  ctx.save();
+  ctx.fillStyle = 'rgba(240, 193, 38, 0.34)';
+  ctx.strokeStyle = '#f0c126';
+  ctx.lineWidth = Math.max(1.2, modalWidth * 0.01);
+  ctx.beginPath();
+  ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+};
+
+const drawActivePassiveMask = (ctx, bounds) => {
+  if (!bounds) return;
+  const maskHeight = Math.max(5, bounds.height * 0.16);
+  const maskY = bounds.y + bounds.height - maskHeight;
+  const maskInset = bounds.width * 0.06;
+  ctx.save();
+  ctx.fillStyle = PLAY_ACTIVE_PASSIVE_MASK_COLOR;
+  ctx.fillRect(bounds.x - maskInset, maskY, Math.max(0, bounds.width + maskInset * 2), maskHeight);
   ctx.restore();
 };
 

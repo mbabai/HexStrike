@@ -5,6 +5,7 @@ import { AXIAL_DIRECTIONS, LAND_HEXES, axialToPixel, getHexSize, getWorldBounds 
 import { drawNameCapsule } from './portraitBadges.js';
 import { buildAbyssPathLabels, drawAbyssGrid, drawAbyssPathLabels } from './abyssRendering.mjs';
 import { isFfaPlayerOutAtBeat } from './ffaState.js';
+import { getWaitingForInputUserIds, isCharacterInUserSet } from './inputWaiting.js';
 
 const getTheme = () => {
   const css = getComputedStyle(document.documentElement);
@@ -46,6 +47,13 @@ const TOKEN_IMAGE_SOURCES = {
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const coordKey = (coord) => `${coord?.q},${coord?.r}`;
+const WAITING_PULSE_MS = 1700;
+
+const getWaitingPulse = (now) => {
+  const current = Number.isFinite(now) ? now : performance.now();
+  const phase = (current % WAITING_PULSE_MS) / WAITING_PULSE_MS;
+  return (Math.sin(phase * Math.PI * 2 - Math.PI / 2) + 1) / 2;
+};
 
 const normalizeActionTag = (action) =>
   typeof action === 'string' ? action.trim().toLowerCase() : '';
@@ -825,6 +833,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     cardLookup = null,
     timelinePointer = null,
     rotationPreviewSelection = null,
+    timeIndicatorOptions = null,
   ) => {
     if (!viewport.width || !viewport.height) return;
     const size = getHexSize(viewport.width, config.hexSizeFactor);
@@ -875,6 +884,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
         pendingPreview,
         cardLookup,
         timelinePointer,
+        timeIndicatorOptions,
       );
       return;
     }
@@ -902,6 +912,8 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     const renderCharacters = scene?.characters ?? publicState?.characters ?? [];
     const beatsForFilter = publicState?.beats ?? [];
     const timelineBeatIndex = beatsForFilter.length ? Math.min(timeIndicatorViewModel?.value ?? 0, beatsForFilter.length - 1) : 0;
+    const waitingUserIds = getWaitingForInputUserIds(publicState);
+    const waitingPulse = getWaitingPulse(performance.now());
     const boardCharacters = renderCharacters.filter(
       (character) => !isFfaPlayerOutAtBeat(publicState, character?.userId, timelineBeatIndex),
     );
@@ -959,6 +971,19 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
           ctx.restore();
         }
         drawCharacterRing(ctx, drawX, drawY, metrics.radius, metrics.borderWidth, ringColor);
+        if (isCharacterInUserSet(waitingUserIds, character)) {
+          ctx.save();
+          ctx.globalAlpha = 0.3 + waitingPulse * 0.32;
+          drawCharacterRing(
+            ctx,
+            drawX,
+            drawY,
+            metrics.radius * 1.08,
+            Math.max(1.5, metrics.borderWidth * 0.72),
+            theme.accentStrong || ringColor,
+          );
+          ctx.restore();
+        }
         if (character.healPulseAlpha) {
           const pulseScale = typeof character.healPulseScale === 'number' ? character.healPulseScale : 1;
           const pulseRadius = metrics.radius * (1.05 + Math.max(0, pulseScale - 1) * 0.9);
@@ -1028,6 +1053,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
       pendingPreview,
       cardLookup,
       timelinePointer,
+      timeIndicatorOptions,
     );
   };
 

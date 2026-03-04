@@ -316,6 +316,7 @@ const TUTORIAL_PLAYER_ACTION_SEQUENCE: TutorialActionStep[] = [
   { activeCardId: 'cross-slash', passiveCardIds: ['step'], rotation: '0' },
   { activeCardId: 'backflip', passiveCardIds: ['guard'], rotation: 'L1' },
   { activeCardId: 'hip-throw', passiveCardIds: ['advance'], rotation: 'L1' },
+  { activeCardId: 'feint', passiveCardIds: ['step'], rotation: '0' },
   { activeCardId: 'smash-attack', passiveCardIds: ['step', 'advance', 'fleche', 'backflip'], rotation: '3' },
 ];
 
@@ -332,7 +333,7 @@ const TUTORIAL_BOT_ACTION_SEQUENCE: TutorialActionStep[] = [
     activeCardId: 'parry',
     passiveCardIds: ['step'],
     rotation: 'R1',
-    minPlayerActionIndex: 4,
+    minPlayerActionIndex: 6,
     minInteractionIndex: 2,
   },
 ];
@@ -1149,6 +1150,13 @@ const maybeSkipTutorialThrowInteractionStep = (
     return true;
   };
 
+  const isTutorialPlayerFeintScoutAction = (
+    activeCardId: string,
+    passiveCardId: string,
+    rotation: string,
+  ): boolean =>
+    activeCardId === 'feint' && passiveCardId === 'step' && rotation === '0';
+
   const canRunTutorialBotStep = (session: TutorialSession, step: TutorialActionStep): boolean => {
     if (Number.isFinite(step.minPlayerActionIndex) && session.playerActionIndex < Number(step.minPlayerActionIndex)) {
       return false;
@@ -1197,6 +1205,27 @@ const maybeSkipTutorialThrowInteractionStep = (
       const expectedStep = TUTORIAL_PLAYER_ACTION_SEQUENCE[session.playerActionIndex] ?? null;
       if (!expectedStep) {
         return { ok: false, error: 'Tutorial action rejected: tutorial sequence is already complete.' };
+      }
+      // Compatibility: if a running server/session is already on the final smash step,
+      // still allow the restored feint-scout action before requiring smash.
+      const feintIndex = TUTORIAL_PLAYER_ACTION_SEQUENCE.findIndex(
+        (step) =>
+          normalizeCardId(step.activeCardId) === 'feint' &&
+          step.passiveCardIds.map((id) => normalizeCardId(id)).includes('step') &&
+          normalizeRotationLabel(step.rotation) === '0',
+      );
+      const smashIndex = TUTORIAL_PLAYER_ACTION_SEQUENCE.findIndex(
+        (step) =>
+          normalizeCardId(step.activeCardId) === 'smash-attack' &&
+          normalizeRotationLabel(step.rotation) === '3',
+      );
+      const allowLegacyFeintBridge =
+        isTutorialPlayerFeintScoutAction(normalizedActive, normalizedPassive, normalizedRotation) &&
+        feintIndex >= 0 &&
+        smashIndex === feintIndex + 1 &&
+        session.playerActionIndex === smashIndex;
+      if (allowLegacyFeintBridge) {
+        return { ok: true, session, consumeRole: null, consumeIndex: null };
       }
       if (normalizedActive !== normalizeCardId(expectedStep.activeCardId)) {
         return { ok: false, error: 'Tutorial action rejected: incorrect active card for this step.' };

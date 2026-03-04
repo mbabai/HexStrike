@@ -1471,6 +1471,13 @@ body.menu-body .deck-builder-overlay {
   animation: tutorialRotationPulse 1.1s ease-in-out infinite;
 }
 
+.rotation-wedge.tutorial-highlight-target:not(.is-selected) .rotation-wedge-frame-shape {
+  fill: rgba(170, 32, 20, 0.14);
+  stroke: rgba(255, 168, 158, 0.96);
+  stroke-width: 12;
+  filter: drop-shadow(0 0 7px rgba(255, 167, 145, 0.92)) drop-shadow(0 0 20px rgba(211, 75, 66, 0.75));
+}
+
 .throw-arrow.tutorial-highlight-target,
 #comboAccept.tutorial-highlight-target {
   box-shadow: 0 0 0 1px rgba(211, 75, 66, 0.4), 0 0 14px rgba(211, 75, 66, 0.7) !important;
@@ -2942,6 +2949,8 @@ img[src$='Death.png'] {
   --play-passive-window-height: calc(
     var(--action-card-surface-passive-height) * var(--play-slot-card-scale) + var(--action-card-border-width) * var(--play-slot-card-scale)
   );
+  --play-active-passive-mask-height: calc(var(--play-passive-window-height) * 0.84);
+  --play-active-passive-mask-overhang: calc(var(--play-modal-width) * 0.02);
   --action-panel-width: var(--play-modal-width);
   --action-center-right: 18px;
   --action-center-bottom: calc(var(--action-hand-height) * 0.32);
@@ -2958,15 +2967,11 @@ img[src$='Death.png'] {
 }
 
 .action-hud .play-modal-shell {
-  display: none;
+  display: block;
 }
 
 .action-hud:not(.is-turn) .action-submit {
   display: none;
-}
-
-.action-hud.is-turn .play-modal-shell {
-  display: block;
 }
 
 .action-hud:not(.is-turn) .action-center {
@@ -3216,6 +3221,20 @@ img[src$='Death.png'] {
   height: var(--action-card-header-height);
   background: transparent;
   z-index: 3;
+}
+
+.action-card.is-stun-card {
+  --action-card-inner-bg: transparent;
+}
+
+.action-card.is-stun-card::before {
+  background: url('/public/images/DamageCard.png') center / 100% 100% no-repeat;
+}
+
+.action-card.is-stun-card .action-card-header,
+.action-card.is-stun-card .action-card-surface,
+.action-card.is-stun-card .action-card-stats {
+  display: none;
 }
 
 .action-card-title {
@@ -3633,9 +3652,12 @@ img[src$='Death.png'] {
   position: absolute;
   right: var(--action-center-right);
   bottom: var(--action-center-bottom);
+  --action-center-row-gap: 14px;
+  --action-submit-row-height: 54px;
   display: grid;
+  grid-template-rows: var(--play-modal-height) minmax(var(--action-submit-row-height), auto);
+  row-gap: var(--action-center-row-gap);
   justify-items: center;
-  gap: 14px;
   width: var(--action-panel-width);
   pointer-events: auto;
   z-index: 3;
@@ -3656,6 +3678,24 @@ img[src$='Death.png'] {
   background-repeat: no-repeat;
   background-size: contain;
   pointer-events: none;
+}
+
+.play-modal-beat-pointer {
+  position: absolute;
+  left: var(--play-beat-x, 50%);
+  top: var(--play-beat-y, 8%);
+  width: calc(var(--play-modal-width) * 0.11);
+  height: calc(var(--play-modal-width) * 0.12);
+  transform: translate(-108%, -50%);
+  clip-path: polygon(100% 50%, 0% 0%, 0% 100%);
+  background: #f7cd2a;
+  filter: drop-shadow(0 0 8px rgba(247, 205, 42, 0.7));
+  z-index: 10;
+  pointer-events: none;
+}
+
+.play-modal-beat-pointer[hidden] {
+  display: none;
 }
 
 .action-hud-ghost-layer {
@@ -3681,7 +3721,7 @@ img[src$='Death.png'] {
 
 .action-submit {
   width: min(61.6%, 224px);
-  min-height: 54px;
+  min-height: var(--action-submit-row-height);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   font-size: 1rem;
@@ -3750,6 +3790,23 @@ img[src$='Death.png'] {
 .action-slot-drop.is-occupied {
   border: none;
   box-shadow: none;
+}
+
+.action-slot-active .action-slot-drop.is-occupied::after {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--play-active-passive-mask-overhang));
+  right: calc(-1 * var(--play-active-passive-mask-overhang));
+  bottom: 0;
+  height: var(--play-active-passive-mask-height);
+  background: #f0c126;
+  pointer-events: none;
+  z-index: 9;
+}
+
+.action-slot-active.is-stunned .action-slot-drop.is-occupied::after,
+.action-slot-active .action-slot-drop.is-stunned.is-occupied::after {
+  display: none;
 }
 
 .action-slot-passive .action-slot-drop.is-occupied {
@@ -3951,6 +4008,88 @@ img[src$='Death.png'] {
 
 .game-canvas.is-dragging {
   cursor: grabbing;
+}
+
+.corner-play-hud {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.corner-play-item {
+  position: absolute;
+  pointer-events: none;
+  --action-card-scale-base: var(--action-card-game-scale);
+  --action-card-scale: var(--action-card-scale-base);
+  --play-modal-width: 160px;
+  --play-modal-height: calc(var(--play-modal-width) * 297 / 210);
+  --play-active-left-ratio: 0.2288;
+  --play-active-top-ratio: 0.3249;
+  --play-active-width-ratio: 0.5429;
+  --play-active-height-ratio: 0.5558;
+  --play-passive-left-ratio: 0.2283;
+  --play-passive-top-ratio: 0.8796;
+  --play-passive-width-ratio: 0.5429;
+  --play-passive-height-ratio: 0.1077;
+  --play-slot-card-scale: calc(((var(--play-modal-width) * var(--play-active-width-ratio)) / var(--action-card-width)) * 1.1);
+  --play-passive-window-height: calc(
+    var(--action-card-surface-passive-height) * var(--play-slot-card-scale) +
+      var(--action-card-border-width) * var(--play-slot-card-scale)
+  );
+  --play-active-passive-mask-height: calc(var(--play-passive-window-height) * 0.84);
+  --play-active-passive-mask-overhang: calc(var(--play-modal-width) * 0.02);
+}
+
+.corner-play-item .play-modal-shell {
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 50%;
+}
+
+.corner-play-item .play-modal-art {
+  background-image: url('/public/images/PlayModalBack.svg');
+}
+
+.corner-play-item.is-front .play-modal-art {
+  background-image: url('/public/images/PlayModal.svg');
+}
+
+.corner-play-item.is-back .action-slot-row {
+  opacity: 0;
+}
+
+.corner-play-item .action-slot-drop {
+  pointer-events: none;
+}
+
+.corner-play-item .action-slot-drop .action-card {
+  cursor: default;
+}
+
+.corner-play-item .action-slot-active.is-hovered {
+  z-index: 12;
+}
+
+.corner-play-item .action-slot-passive.is-hovered {
+  z-index: 4;
+}
+
+.corner-play-item .action-slot-passive.is-hovered .action-slot-drop {
+  overflow: hidden;
+}
+
+.corner-play-item .action-slot-passive.is-hovered .action-slot-drop .action-card {
+  bottom: 0;
+}
+
+.corner-play-item .rotation-wheel {
+  pointer-events: none;
+}
+
+.corner-play-item .rotation-wheel .rotation-wedge {
+  pointer-events: none;
+  cursor: default;
 }
 
 .timeline-tooltip {

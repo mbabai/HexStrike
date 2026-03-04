@@ -44,6 +44,7 @@ const TUTORIAL_ACTIONS = {
   crossSlash: { activeCardId: 'cross-slash', passiveCardIds: ['step'], rotation: '0' },
   dodge: { activeCardId: 'backflip', passiveCardIds: ['guard'], rotation: 'L1' },
   hipThrow: { activeCardId: 'hip-throw', passiveCardIds: ['advance'], rotation: 'L1' },
+  feintScout: { activeCardId: 'feint', passiveCardIds: ['step'], rotation: '0' },
   finish: { activeCardId: 'smash-attack', passiveCardIds: MOVEMENT_PASSIVE_IDS, rotation: '3' },
 };
 
@@ -778,6 +779,30 @@ export const createTutorialGuide = ({
         if (!Number.isFinite(index)) return [];
         return [throwModal?.querySelector(`.throw-arrow[data-dir="${index}"]`)];
       },
+    },
+    {
+      kind: 'condition',
+      position: 'hand',
+      textKey: 'selectFeintScoutActive',
+      allow: () => [getHandCardById('feint'), activeSlot],
+      highlightElements: () => [getHandCardById('feint')],
+      when: () => isCardInSlot(activeSlot, 'feint'),
+    },
+    {
+      kind: 'condition',
+      position: 'hand',
+      textKey: 'selectStepPassiveScout',
+      allow: () => [getHandCardById('step'), passiveSlot],
+      highlightElements: () => [getHandCardById('step')],
+      when: () => isCardInSlot(passiveSlot, 'step'),
+    },
+    {
+      kind: 'await-action',
+      position: 'rotation',
+      textKey: 'selectRotationScoutFeint',
+      expectedAction: TUTORIAL_ACTIONS.feintScout,
+      allow: () => [getRotationWedge('0'), getSubmitButton(), getHandCardById('feint'), getHandCardById('step'), activeSlot, passiveSlot],
+      highlightElements: () => [getRotationWedge('0')],
     },
     {
       kind: 'info',

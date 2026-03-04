@@ -4,7 +4,13 @@ import { createViewState, createPointerState, centerView, applyMomentum } from '
 import { bindControls } from './game/controls.js';
 import { ACTION_DURATION_MS, createTimelinePlayback } from './game/timelinePlayback.js';
 import { createTimelineTooltip } from './game/timelineTooltip.js';
-import { getTimeIndicatorLayout, setTimeIndicatorPlayerCount } from './game/timeIndicatorView.js';
+import {
+  getPlayBeatSlotForCharacter,
+  getPlayedCardPairForCharacterAtBeat,
+  getPlayedRotationForCharacterAtBeat,
+  getTimeIndicatorLayout,
+  setTimeIndicatorPlayerCount,
+} from './game/timeIndicatorView.js';
 import { GAME_CONFIG } from './game/config.js';
 import { createGameOverView } from './game/gameOverView.js';
 import { getMatchOutcome } from './game/matchEndRules.js';
@@ -183,7 +189,7 @@ const createTimeIndicatorViewModel = ({ getMaxIndex, initialAutoplayEnabled = fa
     isPlaying: Boolean(initialAutoplayEnabled),
     autoPlayEnabled: Boolean(initialAutoplayEnabled),
     isHolding: false,
-    isTimelineExpanded: true,
+    isTimelineExpanded: false,
     speedMultiplier: TIMELINE_SPEED_MIN,
     canStep(direction) {
       const maxIndex = getMaxIndex();
@@ -358,6 +364,7 @@ export const initGame = () => {
   let gameOverInFlight = false;
   let shareLinkInFlight = false;
   let didInitTimelinePosition = false;
+  let tutorialTimelineAutoExpandedGameId = null;
   let lastComboKey = null;
   let lastComboRequired = false;
   let discardPrompt = null;
@@ -837,6 +844,9 @@ export const initGame = () => {
       actionHud.setVisible(false);
       actionHud.setLocked(true);
       actionHud.setHidden(true);
+      actionHud.setPlayModalBeatPointer?.(null);
+      actionHud.setPlayedPreviewCards?.(null, null);
+      actionHud.setPlayedPreviewRotation?.(null);
       return;
     }
     const outcome = getMatchOutcome(gameState?.state?.public);
@@ -844,6 +854,9 @@ export const initGame = () => {
       actionHud.setVisible(false);
       actionHud.setLocked(true);
       actionHud.setHidden(true);
+      actionHud.setPlayModalBeatPointer?.(null);
+      actionHud.setPlayedPreviewCards?.(null, null);
+      actionHud.setPlayedPreviewRotation?.(null);
       return;
     }
     if (!gameState || !cardCatalog) {
@@ -857,6 +870,9 @@ export const initGame = () => {
       }
       actionHud.setVisible(false);
       actionHud.setLocked(true);
+      actionHud.setPlayModalBeatPointer?.(null);
+      actionHud.setPlayedPreviewCards?.(null, null);
+      actionHud.setPlayedPreviewRotation?.(null);
       return;
     }
 
@@ -872,6 +888,9 @@ export const initGame = () => {
       }
       actionHud.setVisible(false);
       actionHud.setLocked(true);
+      actionHud.setPlayModalBeatPointer?.(null);
+      actionHud.setPlayedPreviewCards?.(null, null);
+      actionHud.setPlayedPreviewRotation?.(null);
       return;
     }
 
@@ -922,6 +941,28 @@ export const initGame = () => {
         ? Math.round(localEntry.damage)
         : localCharacter?.damage ?? 0;
       actionHud.setPlayerDamage?.(localDamage);
+      const localPlayBeatSlot =
+        localCharacter && beats.length
+          ? getPlayBeatSlotForCharacter(beats, localCharacter, timeIndicatorViewModel.value)
+          : null;
+      const localPlayedPair =
+        localCharacter && beats.length
+          ? getPlayedCardPairForCharacterAtBeat(beats, localCharacter, timeIndicatorViewModel.value)
+          : null;
+      const localPreviewActiveCard = localPlayedPair
+        ? localPlayedPair.kind === 'stun'
+          ? localPlayedPair.previewCard ?? null
+          : cardLookup.get(localPlayedPair.activeCardId) ?? null
+        : null;
+      const localPreviewPassiveCard = localPlayedPair
+        ? localPlayedPair.kind === 'stun'
+          ? null
+          : cardLookup.get(localPlayedPair.passiveCardId) ?? null
+        : null;
+      const localPreviewRotation =
+        localCharacter && beats.length
+          ? getPlayedRotationForCharacterAtBeat(beats, localCharacter, timeIndicatorViewModel.value)
+          : '';
       const localFirstE = localCharacter ? getCharacterFirstEIndex(beats, localCharacter) : null;
       const comboInteraction =
         localFirstE !== null
@@ -949,6 +990,9 @@ export const initGame = () => {
     }
     actionHud.setVisible(isTurn);
     actionHud.setLocked(locked);
+    actionHud.setPlayModalBeatPointer?.(localPlayBeatSlot);
+    actionHud.setPlayedPreviewCards?.(localPreviewActiveCard, localPreviewPassiveCard);
+    actionHud.setPlayedPreviewRotation?.(localPreviewRotation);
     const comboKey = comboRequired ? `on:${Array.from(comboEligibleIds).join(',')}` : 'off';
     if (comboKey !== lastComboKey) {
       if (comboRequired && !lastComboRequired) {
@@ -973,6 +1017,9 @@ export const initGame = () => {
     }
     if (lastTurnActive && !isTurn) {
       actionHud.clearSelection();
+      actionHud.setPlayModalBeatPointer?.(localPlayBeatSlot);
+      actionHud.setPlayedPreviewCards?.(localPreviewActiveCard, localPreviewPassiveCard);
+      actionHud.setPlayedPreviewRotation?.(localPreviewRotation);
     }
     lastTurnActive = isTurn;
   };
@@ -1745,6 +1792,7 @@ export const initGame = () => {
     viewState,
     timeIndicatorViewModel,
     getScene: () => timelinePlayback.getScene(),
+    localUserId,
   });
 
   applyThrowLayout(null);
@@ -1803,6 +1851,7 @@ export const initGame = () => {
     gameMenuUi?.closeAll();
     setGameMenuLabels();
     timeIndicatorViewModel.syncToAutoplay();
+    timeIndicatorViewModel.setTimelineExpanded(false);
     if (actionHud) actionHud.setHidden(mode !== VIEW_MODE_LIVE);
     if (mode === VIEW_MODE_LIVE) {
       viewState.scale = GAME_CONFIG.defaultScale;
@@ -1845,6 +1894,7 @@ export const initGame = () => {
     gameOverInFlight = false;
     shareLinkInFlight = false;
     didInitTimelinePosition = false;
+    tutorialTimelineAutoExpandedGameId = null;
     pendingActionPreview.clear();
     lastComboKey = null;
     lastComboRequired = false;
@@ -1908,6 +1958,12 @@ export const initGame = () => {
 
   const setGameState = (nextState) => {
     gameState = nextState;
+    const gameId = `${gameState?.id ?? ''}`.trim();
+    const tutorialEnabled = Boolean(gameState?.state?.public?.tutorial?.enabled);
+    if (!isReplayMode() && tutorialEnabled && gameId && tutorialTimelineAutoExpandedGameId !== gameId) {
+      timeIndicatorViewModel.setTimelineExpanded(true);
+      tutorialTimelineAutoExpandedGameId = gameId;
+    }
     setTimeIndicatorPlayerCount(gameState?.state?.public?.characters?.length ?? 2);
     setGameMenuLabels();
     tooltip.setGameState(nextState);
@@ -1921,6 +1977,7 @@ export const initGame = () => {
       clearHavenHover();
     }
     if (!didInitTimelinePosition && gameState) {
+      timeIndicatorViewModel.setTimelineExpanded(!isReplayMode() && tutorialEnabled);
       if (!isReplayMode()) {
         const playerCount = Array.isArray(gameState?.state?.public?.characters)
           ? gameState.state.public.characters.length
@@ -2138,6 +2195,7 @@ export const initGame = () => {
       cardLookup,
       timelinePointer,
       rotationPreview,
+      { replayMode: isReplayMode() },
     );
     requestAnimationFrame(renderFrame);
   };
