@@ -1206,6 +1206,7 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y,
     value,
     beatLookup,
     actionSelectionUserIds: actionPhaseUserIds,
+    selectionBeatIndex: highlightIndex,
     includeLocalPlayer: includeLocalInCornerHud,
     cornerLayoutMode: timeIndicatorCornerLayoutMode,
     hidePlayedCardsWhileSelecting,
@@ -1565,6 +1566,7 @@ export const drawTimeIndicator = (
       beatLookup,
       waitingUserIds,
       actionSelectionUserIds: actionPhaseUserIds,
+      selectionBeatIndex: highlightIndex,
       timelinePointer,
       cardLookup,
       now: renderNow,
@@ -1815,6 +1817,7 @@ export const drawTimeIndicator = (
     beatLookup,
     waitingUserIds,
     actionSelectionUserIds: actionPhaseUserIds,
+    selectionBeatIndex: highlightIndex,
     timelinePointer,
     cardLookup,
     now: renderNow,
@@ -2324,18 +2327,21 @@ const buildOpponentPlayHudItems = ({
   value,
   beatLookup,
   actionSelectionUserIds,
+  selectionBeatIndex = null,
   includeLocalPlayer = false,
   cornerLayoutMode = CORNER_PLAY_LAYOUT_DEFAULT,
   hidePlayedCardsWhileSelecting = true,
 }) => {
   const opponents = getOpponentCharacters(characters, localUserId, { includeLocalPlayer });
   const layoutItems = buildOpponentPlayHudLayout(viewport, opponents, cornerLayoutMode);
+  const isSelectionBeat = Number.isFinite(selectionBeatIndex) && value === selectionBeatIndex;
   return layoutItems.map((item) => {
     const lookupKey = item.character?.username ?? item.character?.userId ?? '';
     const isSelecting = isCharacterInUserSet(actionSelectionUserIds, item.character);
     const resolvedPair = resolvePlayModalStateForBeat(beatLookup, lookupKey, value);
     const isStunPair = resolvedPair?.kind === 'stun';
-    const playedPair = hidePlayedCardsWhileSelecting && isSelecting && !isStunPair ? null : resolvedPair;
+    const shouldHideForSelection = hidePlayedCardsWhileSelecting && isSelectionBeat && isSelecting && !isStunPair;
+    const playedPair = shouldHideForSelection ? null : resolvedPair;
     const rotation =
       playedPair?.kind === 'stun' ? '' : resolveSelectedRotationForPair(beatLookup, lookupKey, playedPair, value);
     const beatSlot = resolvePlayBeatSlotForValue(playedPair, value);
@@ -2347,6 +2353,7 @@ const buildOpponentPlayHudItems = ({
       rotation,
       beatSlot,
       isSelecting,
+      shouldHideForSelection,
     };
   });
 };
@@ -2582,6 +2589,7 @@ const drawOpponentPlayHud = ({
   beatLookup,
   waitingUserIds,
   actionSelectionUserIds,
+  selectionBeatIndex = null,
   timelinePointer,
   cardLookup,
   now,
@@ -2597,6 +2605,7 @@ const drawOpponentPlayHud = ({
     value,
     beatLookup,
     actionSelectionUserIds,
+    selectionBeatIndex,
     includeLocalPlayer,
     cornerLayoutMode,
     hidePlayedCardsWhileSelecting,
@@ -2638,14 +2647,13 @@ const drawOpponentPlayHud = ({
     const centerY = item.modal.y + item.modal.height / 2;
     let phase = 'back';
     let flipScale = 1;
-    const shouldHideForSelection = hidePlayedCardsWhileSelecting && item.isSelecting && item.playedPair?.kind !== 'stun';
-    if (item.playedPair && revealKey && !shouldHideForSelection) {
+    if (item.playedPair && revealKey && !item.shouldHideForSelection) {
       activeRevealKeys.add(revealKey);
       const reveal = getCornerPlayRevealState(revealKey, item.playedPair.pairKey, now);
       phase = reveal?.phase ?? 'front';
       flipScale = reveal?.flipScaleX ?? 1;
     }
-    if (shouldHideForSelection) {
+    if (item.shouldHideForSelection) {
       if (item.playedPair?.kind === 'stun') {
         phase = 'front';
         flipScale = 1;
