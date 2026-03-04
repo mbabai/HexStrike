@@ -3026,6 +3026,11 @@ img[src$='Death.png'] {
   display: block;
   isolation: isolate;
   transform: none;
+  -webkit-user-drag: none;
+}
+
+.action-card img {
+  -webkit-user-drag: none;
 }
 
 .action-card::before {
@@ -3095,6 +3100,12 @@ img[src$='Death.png'] {
 
 .action-card.is-dragging {
   opacity: 0.7;
+}
+
+.action-card.is-pointer-dragging {
+  cursor: grabbing;
+  opacity: 1;
+  transition: none;
 }
 
 .action-card.is-shaking {

@@ -22,6 +22,7 @@ const PLAY_ACTIVE_WIDTH_RATIO = 0.5429;
 const PLAY_ACTIVE_HEIGHT_RATIO = 0.5558;
 const PLAY_CARD_SCALE_MULTIPLIER = 1.1;
 const PLAY_BEAT_SLOT_COUNT = 6;
+const POINTER_DRAG_START_DISTANCE = 6;
 
 const buildPlayBeatPointers = () => {
   const activeLeft = PLAY_MODAL_WIDTH * PLAY_ACTIVE_LEFT_RATIO;
@@ -141,6 +142,9 @@ export const createActionHud = ({
     locked: false,
     turnActive: false,
     draggingCardId: null,
+    dragSourceSlot: null,
+    lastDragClientX: null,
+    lastDragClientY: null,
     comboMode: false,
     comboEligibleIds: new Set(),
     exhaustedCards: new Set(),
@@ -153,6 +157,7 @@ export const createActionHud = ({
     playedPreviewCards: { active: null, passive: null },
     playedPreviewElements: { active: null, passive: null },
     playedPreviewIds: { active: null, passive: null },
+    suppressClickCardId: null,
   };
   const activeSlotContainer = activeSlot?.closest?.('.action-slot-active') ?? null;
   const passiveSlotContainer = passiveSlot?.closest?.('.action-slot-passive') ?? null;
@@ -162,6 +167,17 @@ export const createActionHud = ({
     }
   };
   let suppressProgrammaticRotation = false;
+  const pointerDrag = {
+    active: false,
+    cardId: null,
+    pointerId: null,
+    offsetX: 0,
+    offsetY: 0,
+    pendingCardId: null,
+    pendingPointerId: null,
+    pendingStartX: 0,
+    pendingStartY: 0,
+  };
 
   const debugOverlay = (() => {
     if (typeof document === 'undefined' || typeof window === 'undefined') return null;
@@ -377,6 +393,236 @@ export const createActionHud = ({
   };
 
   const isRectValid = (rect) => rect && rect.width > 0 && rect.height > 0;
+
+  const clearSlotHoverState = () => {
+    activeSlot.classList.remove('is-hover');
+    passiveSlot.classList.remove('is-hover');
+  };
+
+  const getSlotForCardId = (cardId) => {
+    if (!cardId) return null;
+    if (state.slots.active === cardId) return 'active';
+    if (state.slots.passive === cardId) return 'passive';
+    return null;
+  };
+
+  const getSlotNameAtPoint = (clientX, clientY) => {
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return null;
+    const isPointInside = (element) => {
+      const rect = element?.getBoundingClientRect?.();
+      if (!isRectValid(rect)) return false;
+      return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+    };
+    if (isPointInside(activeSlot)) return 'active';
+    if (isPointInside(passiveSlot)) return 'passive';
+    return null;
+  };
+
+  const isPointInsideElement = (element, clientX, clientY) => {
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return false;
+    const rect = element?.getBoundingClientRect?.();
+    if (!isRectValid(rect)) return false;
+    return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+  };
+
+  const beginCardDrag = (cardId) => {
+    state.dragSourceSlot = getSlotForCardId(cardId);
+    state.lastDragClientX = null;
+    state.lastDragClientY = null;
+    setDraggingCardId(cardId);
+  };
+
+  const endCardDrag = () => {
+    setDraggingCardId(null);
+    state.dragSourceSlot = null;
+    state.lastDragClientX = null;
+    state.lastDragClientY = null;
+    clearSlotHoverState();
+  };
+
+  const updateLastDragPoint = (event) => {
+    if (!event) return;
+    const nextX = Number(event.clientX);
+    const nextY = Number(event.clientY);
+    if (Number.isFinite(nextX)) state.lastDragClientX = nextX;
+    if (Number.isFinite(nextY)) state.lastDragClientY = nextY;
+  };
+
+  const clearPendingPointerDrag = () => {
+    pointerDrag.pendingCardId = null;
+    pointerDrag.pendingPointerId = null;
+    pointerDrag.pendingStartX = 0;
+    pointerDrag.pendingStartY = 0;
+  };
+
+  const resetPointerDrag = () => {
+    pointerDrag.active = false;
+    pointerDrag.cardId = null;
+    pointerDrag.pointerId = null;
+    pointerDrag.offsetX = 0;
+    pointerDrag.offsetY = 0;
+    clearPendingPointerDrag();
+  };
+
+  const clearPointerDragStyles = (element) => {
+    if (!element) return;
+    element.style.position = '';
+    element.style.left = '';
+    element.style.top = '';
+    element.style.right = '';
+    element.style.bottom = '';
+    element.style.width = '';
+    element.style.height = '';
+    element.style.margin = '';
+    element.style.transform = '';
+    element.style.transition = '';
+    element.style.zIndex = '';
+    element.style.pointerEvents = '';
+  };
+
+  const updateSlotHoverFromPoint = (clientX, clientY) => {
+    const slotName = getSlotNameAtPoint(clientX, clientY);
+    activeSlot.classList.toggle('is-hover', slotName === 'active');
+    passiveSlot.classList.toggle('is-hover', slotName === 'passive');
+    return slotName;
+  };
+
+  const positionPointerDraggedCard = (clientX, clientY) => {
+    if (!pointerDrag.active || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
+    const card = getCard(pointerDrag.cardId);
+    if (!card?.element) return;
+    const left = clientX - pointerDrag.offsetX;
+    const top = clientY - pointerDrag.offsetY;
+    card.element.style.left = `${left}px`;
+    card.element.style.top = `${top}px`;
+    updateSlotHoverFromPoint(clientX, clientY);
+  };
+
+  const restoreDraggedCardToHand = (cardId, fromRectOverride = null) => {
+    const card = getCard(cardId);
+    if (!card?.element) return;
+    const fromRect =
+      isRectValid(fromRectOverride) ? fromRectOverride : card.element?.getBoundingClientRect?.();
+    card.element.classList.add('is-animating');
+    insertCardIntoHand(card);
+    clearPointerDragStyles(card.element);
+    refreshHandLayouts();
+    const toRect = card.element?.getBoundingClientRect?.();
+    if (isRectValid(fromRect) && isRectValid(toRect)) {
+      animateCardTravel(card.element, fromRect, toRect);
+    } else {
+      card.element.classList.remove('is-animating');
+    }
+  };
+
+  const startPointerDrag = (cardId, pointerId, clientX, clientY) => {
+    const card = getCard(cardId);
+    if (!card?.element) return false;
+    const rect = card.element.getBoundingClientRect();
+    if (!isRectValid(rect)) return false;
+    beginCardDrag(cardId);
+    pointerDrag.active = true;
+    pointerDrag.cardId = cardId;
+    pointerDrag.pointerId = pointerId;
+    pointerDrag.offsetX = clientX - rect.left;
+    pointerDrag.offsetY = clientY - rect.top;
+    clearPendingPointerDrag();
+    clearHoverForCard(cardId);
+    card.element.classList.add('is-dragging', 'is-pointer-dragging');
+    card.element.style.position = 'fixed';
+    card.element.style.left = `${rect.left}px`;
+    card.element.style.top = `${rect.top}px`;
+    card.element.style.width = `${rect.width}px`;
+    card.element.style.height = `${rect.height}px`;
+    card.element.style.margin = '0';
+    card.element.style.transform = 'none';
+    card.element.style.transition = 'none';
+    card.element.style.zIndex = '120';
+    card.element.style.pointerEvents = 'none';
+    document.body.appendChild(card.element);
+    positionPointerDraggedCard(clientX, clientY);
+    return true;
+  };
+
+  const queuePointerDrag = (cardId, event) => {
+    pointerDrag.pendingCardId = cardId;
+    pointerDrag.pendingPointerId = event.pointerId;
+    pointerDrag.pendingStartX = Number(event.clientX);
+    pointerDrag.pendingStartY = Number(event.clientY);
+  };
+
+  const maybeStartPointerDrag = (event) => {
+    if (!pointerDrag.pendingCardId || pointerDrag.pendingPointerId !== event.pointerId) return false;
+    const deltaX = Number(event.clientX) - pointerDrag.pendingStartX;
+    const deltaY = Number(event.clientY) - pointerDrag.pendingStartY;
+    const distance = Math.hypot(deltaX, deltaY);
+    if (distance < POINTER_DRAG_START_DISTANCE) return false;
+    const card = getCard(pointerDrag.pendingCardId);
+    if (!card || card.exhausted || state.locked || !state.turnActive) {
+      clearPendingPointerDrag();
+      return false;
+    }
+    return startPointerDrag(pointerDrag.pendingCardId, event.pointerId, event.clientX, event.clientY);
+  };
+
+  const finishPointerDrag = (event = null, { cancelled = false } = {}) => {
+    if (!pointerDrag.active) {
+      clearPendingPointerDrag();
+      return false;
+    }
+    const cardId = pointerDrag.cardId;
+    const card = getCard(cardId);
+    const clientX = Number.isFinite(Number(event?.clientX)) ? Number(event.clientX) : state.lastDragClientX;
+    const clientY = Number.isFinite(Number(event?.clientY)) ? Number(event.clientY) : state.lastDragClientY;
+    const fromRect = card?.element?.getBoundingClientRect?.() ?? null;
+    if (!card?.element) {
+      resetPointerDrag();
+      endCardDrag();
+      return true;
+    }
+    card.element.classList.remove('is-dragging', 'is-pointer-dragging');
+    const slotName = !cancelled ? getSlotNameAtPoint(clientX, clientY) : null;
+    const overModal = !cancelled && isPointInsideElement(modalShell, clientX, clientY);
+    if (slotName) {
+      clearPointerDragStyles(card.element);
+      assignCardToSlot(slotName, cardId, { fromRectOverride: fromRect });
+    } else if (overModal) {
+      clearPointerDragStyles(card.element);
+      const fallbackSlot = chooseSlotForCard(card);
+      if (fallbackSlot) {
+        assignCardToSlot(fallbackSlot, cardId, { fromRectOverride: fromRect });
+      } else if (state.dragSourceSlot) {
+        clearPointerDragStyles(card.element);
+        returnCardToHand(cardId, { fromRectOverride: fromRect });
+      } else {
+        restoreDraggedCardToHand(cardId, fromRect);
+      }
+    } else if (state.dragSourceSlot) {
+      clearPointerDragStyles(card.element);
+      returnCardToHand(cardId, { fromRectOverride: fromRect });
+    } else {
+      restoreDraggedCardToHand(cardId, fromRect);
+    }
+    state.suppressClickCardId = cardId;
+    if (typeof window !== 'undefined') {
+      requestAnimationFrame(() => {
+        if (state.suppressClickCardId === cardId) {
+          state.suppressClickCardId = null;
+        }
+      });
+    }
+    resetPointerDrag();
+    endCardDrag();
+    return true;
+  };
+
+  const cancelPointerDrag = (event = null) => {
+    if (pointerDrag.active) {
+      return finishPointerDrag(event, { cancelled: true });
+    }
+    clearPendingPointerDrag();
+    return false;
+  };
 
   const createGhostLayer = (selectorClass, className) => {
     const existing = root.querySelector(`.${selectorClass}`);
@@ -767,8 +1013,8 @@ export const createActionHud = ({
   const setCardDraggable = (card, enabled) => {
     if (!card?.element) return;
     const isEnabled = Boolean(enabled) && !card.exhausted;
-    card.element.draggable = isEnabled;
-    card.element.classList.toggle('is-disabled', !enabled);
+    card.element.draggable = false;
+    card.element.classList.toggle('is-disabled', !isEnabled);
     card.element.classList.toggle('is-exhausted', Boolean(card.exhausted));
   };
 
@@ -892,13 +1138,15 @@ export const createActionHud = ({
     }
   };
 
-  const clearSlot = (slotName) => {
+  const clearSlot = (slotName, options = {}) => {
     const cardId = state.slots[slotName];
     if (!cardId) return;
     const card = getCard(cardId);
+    const fromRectOverride = options?.fromRectOverride ?? null;
     if (card) {
       clearHoverForCard(cardId);
-      const fromRect = card.element?.getBoundingClientRect?.();
+      const fromRect =
+        isRectValid(fromRectOverride) ? fromRectOverride : card.element?.getBoundingClientRect?.();
       card.element?.classList.add('is-animating');
       insertCardIntoHand(card);
       refreshHandLayouts();
@@ -957,9 +1205,10 @@ export const createActionHud = ({
     );
   };
 
-  const assignCardToSlot = (slotName, cardId) => {
+  const assignCardToSlot = (slotName, cardId, options = {}) => {
     if (state.locked) return;
     const card = getCard(cardId);
+    const fromRectOverride = options?.fromRectOverride ?? null;
     if (!card || card.exhausted) return;
     if (slotName === 'active' && card.id === WHIRLWIND_CARD_ID && state.playerDamage < WHIRLWIND_MIN_DAMAGE) {
       shakeCard(card);
@@ -981,7 +1230,8 @@ export const createActionHud = ({
       clearSlot(otherSlot);
     }
     const slot = slotName === 'active' ? activeSlot : passiveSlot;
-    const fromRect = card.element?.getBoundingClientRect?.();
+    const fromRect =
+      isRectValid(fromRectOverride) ? fromRectOverride : card.element?.getBoundingClientRect?.();
     clearHoverForCard(cardId);
     card.element?.classList.add('is-animating');
     slot.appendChild(card.element);
@@ -1001,17 +1251,18 @@ export const createActionHud = ({
     log('slot-assign', { slotName, cardId });
   };
 
-  const returnCardToHand = (cardId) => {
+  const returnCardToHand = (cardId, options = {}) => {
     if (state.locked) return;
     const card = getCard(cardId);
+    const fromRectOverride = options?.fromRectOverride ?? null;
     if (!card) return;
     clearHoverForCard(cardId);
     if (state.slots.active === cardId) {
-      clearSlot('active');
+      clearSlot('active', { fromRectOverride });
       updateRotationRestriction();
     }
     if (state.slots.passive === cardId) {
-      clearSlot('passive');
+      clearSlot('passive', { fromRectOverride });
     }
     updateSubmitState();
     log('return-to-hand', { cardId });
@@ -1052,23 +1303,6 @@ export const createActionHud = ({
   };
 
   const bindSlot = (slot, slotName) => {
-    slot.addEventListener('dragover', (event) => {
-      if (state.locked || !state.draggingCardId) return;
-      const card = getCard(state.draggingCardId);
-      if (!card) return;
-      event.preventDefault();
-      slot.classList.add('is-hover');
-    });
-    slot.addEventListener('dragleave', () => {
-      slot.classList.remove('is-hover');
-    });
-    slot.addEventListener('drop', (event) => {
-      if (state.locked || !state.draggingCardId) return;
-      event.preventDefault();
-      slot.classList.remove('is-hover');
-      assignCardToSlot(slotName, state.draggingCardId);
-      setDraggingCardId(null);
-    });
     slot.addEventListener('click', () => {
       if (state.locked) return;
       if (state.slots[slotName]) {
@@ -1080,6 +1314,8 @@ export const createActionHud = ({
   };
 
   const bindHands = () => {
+    const isPrimaryPointer = (event) => event.pointerType !== 'mouse' || event.button === 0;
+
     const getHoverPadding = () => {
       const raw = getComputedStyle(root).getPropertyValue('--action-hand-hover-padding');
       const parsed = Number.parseFloat(raw);
@@ -1165,7 +1401,52 @@ export const createActionHud = ({
       return closest?.element ?? null;
     };
 
+    const findCardFromPointerDown = (event) => {
+      const targetElement = event.target instanceof Element ? event.target.closest('.action-card') : null;
+      const targetCardId = `${targetElement?.dataset?.cardId ?? ''}`.trim();
+      const targetCard = targetCardId ? getCard(targetCardId) : null;
+      if (targetCard) {
+        return targetCard;
+      }
+      const inHands =
+        isPointInsideElement(movementHand, event.clientX, event.clientY) ||
+        isPointInsideElement(abilityHand, event.clientX, event.clientY);
+      if (inHands) {
+        const handCardId = `${findCardUnderPointer(event)?.dataset?.cardId ?? ''}`.trim();
+        const handCard = handCardId ? getCard(handCardId) : null;
+        if (handCard) {
+          return handCard;
+        }
+      }
+      const slotName = getSlotNameAtPoint(event.clientX, event.clientY);
+      if (slotName && state.slots[slotName]) {
+        return getCard(state.slots[slotName]);
+      }
+      return null;
+    };
+
+    window.addEventListener('pointerdown', (event) => {
+      updateLastDragPoint(event);
+      if (!isPrimaryPointer(event)) return;
+      if (pointerDrag.active || state.locked || !state.turnActive) return;
+      const card = findCardFromPointerDown(event);
+      if (!card || card.exhausted) return;
+      queuePointerDrag(card.id, event);
+    });
+
     window.addEventListener('pointermove', (event) => {
+      updateLastDragPoint(event);
+      const hasActiveDrag = pointerDrag.active;
+      if (hasActiveDrag) {
+        if (pointerDrag.pointerId === event.pointerId) {
+          positionPointerDraggedCard(event.clientX, event.clientY);
+        }
+        return;
+      }
+      maybeStartPointerDrag(event);
+      if (pointerDrag.active) {
+        return;
+      }
       const element = findCardUnderPointer(event);
       const cardId = element?.dataset.cardId ?? null;
       setHoveredCard(cardId);
@@ -1174,26 +1455,54 @@ export const createActionHud = ({
       }
     });
 
-    window.addEventListener('blur', () => {
-      setHoveredCard(null);
-      debugOverlay?.clear();
-    });
-
-    const bindHandDrop = (hand) => {
-      hand.addEventListener('dragover', (event) => {
-        if (state.locked || !state.draggingCardId) return;
-        event.preventDefault();
-      });
-      hand.addEventListener('drop', (event) => {
-        if (state.locked || !state.draggingCardId) return;
-        event.preventDefault();
-        returnCardToHand(state.draggingCardId);
-        setDraggingCardId(null);
-      });
+    const onPointerEnd = (event) => {
+      updateLastDragPoint(event);
+      if (pointerDrag.active) {
+        if (event?.pointerId === pointerDrag.pointerId) {
+          finishPointerDrag(event);
+        }
+        return;
+      }
+      if (pointerDrag.pendingPointerId === event?.pointerId) {
+        clearPendingPointerDrag();
+      }
     };
 
-    bindHandDrop(movementHand);
-    bindHandDrop(abilityHand);
+    window.addEventListener('pointerup', onPointerEnd);
+    window.addEventListener('pointercancel', onPointerEnd);
+
+    window.addEventListener('blur', () => {
+      setHoveredCard(null);
+      cancelPointerDrag();
+      debugOverlay?.clear();
+    });
+    window.addEventListener(
+      'dragstart',
+      (event) => {
+        if (!(event.target instanceof Element)) return;
+        if (event.target.closest('.action-card')) {
+          event.preventDefault();
+        }
+      },
+      true,
+    );
+    window.addEventListener(
+      'drop',
+      (event) => {
+        if (!(event.target instanceof Element)) return;
+        if (event.target.closest('.action-card')) {
+          event.preventDefault();
+        }
+      },
+      true,
+    );
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState !== 'visible') {
+          cancelPointerDrag();
+        }
+      });
+    }
   };
 
   const setCards = (movementCards, abilityCards, options = {}) => {
@@ -1219,7 +1528,7 @@ export const createActionHud = ({
     state.playedPreviewIds.active = null;
     state.playedPreviewIds.passive = null;
     state.hoveredCardId = null;
-    setDraggingCardId(null);
+    endCardDrag();
     state.slots.active = null;
     state.slots.passive = null;
     updateSlotState();
@@ -1232,23 +1541,19 @@ export const createActionHud = ({
 
     const attachCard = (card, index, container, type) => {
       const element = buildCardElement(card, { asButton: true });
-      element.draggable = !state.locked && state.turnActive;
+      element.draggable = false;
+      element.querySelectorAll('img').forEach((image) => {
+        image.draggable = false;
+      });
       element.addEventListener('dragstart', (event) => {
-        const record = state.cardsById.get(card.id);
-        if (state.locked || record?.exhausted) {
+        event.preventDefault();
+      });
+      element.addEventListener('click', (event) => {
+        if (state.suppressClickCardId === card.id) {
+          state.suppressClickCardId = null;
           event.preventDefault();
           return;
         }
-        setDraggingCardId(card.id);
-        element.classList.add('is-dragging');
-        event.dataTransfer.setData('text/plain', card.id);
-        event.dataTransfer.effectAllowed = 'move';
-      });
-      element.addEventListener('dragend', () => {
-        setDraggingCardId(null);
-        element.classList.remove('is-dragging');
-      });
-      element.addEventListener('click', () => {
         handleCardClick(card.id);
       });
 
@@ -1319,6 +1624,10 @@ export const createActionHud = ({
     const wasTurnActive = state.turnActive;
     state.turnActive = Boolean(visible);
     root.classList.toggle('is-turn', state.turnActive);
+    if (!state.turnActive) {
+      cancelPointerDrag();
+      endCardDrag();
+    }
     root.hidden = state.hidden;
     if (state.turnActive && !wasTurnActive) {
       suppressProgrammaticRotation = true;
@@ -1367,7 +1676,12 @@ export const createActionHud = ({
   };
 
   const setLocked = (locked) => {
-    state.locked = Boolean(locked);
+    const nextLocked = Boolean(locked);
+    if (nextLocked && !state.locked) {
+      cancelPointerDrag();
+      endCardDrag();
+    }
+    state.locked = nextLocked;
     root.classList.toggle('is-locked', state.locked);
     state.cardsById.forEach((card) => setCardDraggable(card, !state.locked && state.turnActive));
     updateSubmitState();
@@ -1381,7 +1695,8 @@ export const createActionHud = ({
     clearSlot('active');
     clearSlot('passive');
     state.selectedRotation = null;
-    setDraggingCardId(null);
+    cancelPointerDrag();
+    endCardDrag();
     wheel.clear();
     if (state.locked) {
       emitRotationChange();
