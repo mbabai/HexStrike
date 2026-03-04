@@ -52,6 +52,40 @@
       .term-movement-cards {
         color: #8adf8a;
       }
+      .term-color-purple {
+        color: #b58cff;
+        font-weight: 700;
+      }
+
+      .term-color-green {
+        color: #4fd37c;
+        font-weight: 700;
+      }
+
+      .term-color-blue {
+        color: #6eb8ff;
+        font-weight: 700;
+      }
+
+      .term-color-red {
+        color: #ff6b6b;
+        font-weight: 700;
+      }
+
+      .term-color-orange {
+        color: #ff9d4d;
+        font-weight: 700;
+      }
+
+      .term-color-yellow {
+        color: #f3d066;
+        font-weight: 700;
+      }
+
+      .term-color-gold {
+        color: #d9b24a;
+        font-weight: 700;
+      }
     </style>
   </head>
   <body class="rulebook-body">
@@ -76,6 +110,7 @@
       <li><a href="#setup">Setup</a></li>
       <li><a href="#game-flow">Game Flow</a></li>
       <li><a href="#beat-phase">Beat Phase - Detailed Explanation</a></li>
+      <li><a href="#card-anatomy">Anatomy of a Card</a></li>
       <li><a href="#play-details">Play Details</a></li>
       <li><a href="#combat-resolution">Combat &amp; Resolution Details</a></li>
       <li><a href="#hand-economy">Cards in Hand Economy</a></li>
@@ -90,7 +125,7 @@
 
   <section id="overview" class="panel">
     <h2>1. Overview</h2>
-       <p>HexStrike is a simultaneous, deterministic combat game played on a hex grid. Players simultaneously commit an action set by submitting two cards—one active and one passive—plus a legal rotation. That commitment locks in a sequence of actions that will resolve in order across upcoming "beats", units of game tempo. Your objective is to eliminate opponents by forcing them off the island: either knock them deep into the abyss or pressure them into a state where they cannot safely return to land.</p>
+       <p>HexStrike is a simultaneous, deterministic combat game played on a hex grid. Players simultaneously commit an action set by submitting two cards&mdash;one active and one passive&mdash;plus a legal rotation. That commitment locks in a sequence of actions that will resolve in order across upcoming "beats", units of game tempo. Your objective is to eliminate opponents by forcing them off the island: either knock them deep into the abyss or pressure them into a state where they cannot safely return to land.</p>
   </section>
 
   <section id="setup" class="panel">
@@ -154,63 +189,64 @@
         first, then <img class="inline-symbol" src="/public/images/midRules.png" alt="Mid timing" />, then
         <img class="inline-symbol" src="/public/images/lateRules.png" alt="Late timing" />.
       </li>
-      <li>When actions share the same timing on the same beat, use the tie-break rules in Section 12.</li>
+      <li>When actions share the same timing on the same beat, use the tie-break rules in Section 13.</li>
       <li>If a character is knocked back before their action resolves, their action is canceled and their cards are discarded.</li>
     </ul>
 
     <h3>4.4 End of Beat</h3>
     <p>Advance all in-play cards to the next beat on their timeline.</p>
   </section>
+  <section id="card-anatomy" class="panel">
+    <h2>5. Anatomy of a Card</h2>
+    <p>
+      Every card is built from the same parts. This map labels the key card regions once so later sections can focus on play
+      flow.
+    </p>
+    <figure class="card-anatomy-map" aria-label="Card anatomy map">
+      <div class="card-anatomy-stage">
+        <div class="card-anatomy-card-wrap">
+          <div id="cardAnatomySampleCard" class="card-anatomy-card"></div>
+          <canvas id="cardAnatomyOverlay" class="card-anatomy-overlay" aria-hidden="true"></canvas>
+        </div>
+        <ul class="card-anatomy-key" aria-label="Card anatomy key">
+          <li class="card-anatomy-key-item is-title" data-anatomy-key="title"><span class="anatomy-number">1</span><span class="anatomy-key-text"><strong>Card Name</strong><span class="anatomy-key-desc">The card's name and identity.</span></span></li>
+          <li class="card-anatomy-key-item is-rotation" data-anatomy-key="rotation"><span class="anatomy-number">2</span><span class="anatomy-key-text"><strong>Rotation Limit</strong><span class="anatomy-key-desc">Indicates the legal rotations for when you play this card.</span></span></li>
+          <li class="card-anatomy-key-item is-actions" data-anatomy-key="actions"><span class="anatomy-number">3</span><span class="anatomy-key-text"><strong>Action Timeline</strong><span class="anatomy-key-desc">Ordered action tokens that resolve beat by beat.</span></span></li>
+          <li class="card-anatomy-key-item is-trigger" data-anatomy-key="trigger"><span class="anatomy-number">5</span><span class="anatomy-key-text"><strong>Trigger Text (optional)</strong><span class="anatomy-key-desc">Optional in-hand reveal text and trigger condition.</span></span></li>
+          <li class="card-anatomy-key-item is-active" data-anatomy-key="active"><span class="anatomy-number">6</span><span class="anatomy-key-text"><strong>Active Text</strong><span class="anatomy-key-desc">These are specific rules that modify what actions in the action timeline do.</span></span></li>
+          <li class="card-anatomy-key-item is-passive" data-anatomy-key="passive"><span class="anatomy-number">7</span><span class="anatomy-key-text"><strong>Passive Text</strong><span class="anatomy-key-desc">Modifier text this card contributes when paired as passive.</span></span></li>
+          <li class="card-anatomy-key-item is-badges" data-anatomy-key="badges"><span class="anatomy-number">8</span><span class="anatomy-key-text"><strong>Damage/KBF Badges</strong><span class="anatomy-key-desc"><img class="anatomy-inline-icon" src="/public/images/DamageIcon.png" alt="Damage badge icon" /> and <img class="anatomy-inline-icon" src="/public/images/KnockBackIcon.png" alt="KBF badge icon" /> together show the base damage and knockback factor for this card.</span></span></li>
+        </ul>
+      </div>
+    </figure>
+  </section>
 
   <section id="play-details" class="panel">
-    <h2>5. Play Details</h2>
-
-    <p>
-      Every play commits exactly <strong>one active card</strong> and <strong>one passive card</strong> from opposite sides
-      (movement + ability). The active card provides the action timeline and rotation limit; the passive card adds its passive
-      text modifier while that action set is in play.
-    </p>
+    <h2>6. Play Details</h2>
 
     <div class="play-details-grid">
       <article class="text-panel">
-        <h3>5.1 Active and Passive Parts on Cards</h3>
-        <p>
-          The green-highlighted row is the card's <strong>Active</strong> text. The blue-highlighted row is the card's
-          <strong>Passive</strong> text.
-        </p>
-        <div class="play-sample-cards">
-          <div id="playDetailsSampleMovementCard" class="play-sample-card"></div>
-          <div id="playDetailsSampleAbilityCard" class="play-sample-card"></div>
-        </div>
-      </article>
-
-      <article class="text-panel">
-        <h3>5.2 How They Fit in Play Modal</h3>
-        <p>
-          In the play modal, your selected cards are combined into one action set: active text drives the sequence, passive text
-          modifies it, and rotation is locked at submission.
-        </p>
+        <p>During the simultaneous play phase, players who are up for a turn select 3 things: An active card, a passive card, and a rotation. The active and passive cards must be of opposite type; a movement (green) card, and an ability (purple) card. The rotation selected must be allowed by the rotation limit of the active card, where * means any rotation.</p>
+        <p>Once all players have simultaneously selected and revealed, this selection will first rotate the player's character in the chosen direction relative to their current facing direction, then beat-by-beat, along with all other players, enact the actions on the active card's timeline. The active card's passive text (on the bottom) is completely ignored during this time, whereas the passive text on the passive card will modify the active card based on the text. If there is no passive text, the active card plays out unchanged</p>
         <figure class="play-modal-map" aria-label="Play modal area mapping">
-          <img src="/public/images/PlayModal.svg" alt="Play modal with active area, passive area, and rotation control" />
-          <span class="play-modal-callout is-rotation">Rotation wheel</span>
-          <span class="play-modal-callout is-active">Active card slot</span>
-          <span class="play-modal-callout is-passive">Passive card slot</span>
+          <div class="play-modal-stage">
+            <div class="play-modal-image-wrap">
+              <img id="playModalDiagram" src="/public/images/PlayModal.svg" alt="Play modal with active area, passive area, and rotation control" />
+              <canvas id="playModalOverlay" class="play-modal-overlay" aria-hidden="true"></canvas>
+            </div>
+            <ul class="play-modal-key" aria-label="Play modal key">
+              <li class="card-anatomy-key-item is-play-rotation" data-play-modal-key="rotation"><span class="anatomy-number">1</span><span class="anatomy-key-text"><strong>Rotation Dial</strong><span class="anatomy-key-desc">Select which way (relative to your character's current rotation) your character will face before starting the action timeline. Legal options may be limited by the active card selected.</span></span></li>
+              <li class="card-anatomy-key-item is-play-active" data-play-modal-key="active"><span class="anatomy-number">2</span><span class="anatomy-key-text"><strong>Active Card Slot</strong><span class="anatomy-key-desc">The "Action Timeline" of the card placed here will be used to determine beat-by-beat actions for this character. Active text, damage, and KBF of the card also apply.</span></span></li>
+              <li class="card-anatomy-key-item is-play-passive" data-play-modal-key="passive"><span class="anatomy-number">3</span><span class="anatomy-key-text"><strong>Passive Card Slot</strong><span class="anatomy-key-desc">The "Passive Text" of the card placed here will modify the active card. NO OTHER PART of the passive card contributes to this play. Note: If the active card was of type "movement" (green background) then the passive card must be an "ability" card (purple background), and vice versa.</span></span></li>
+            </ul>
+          </div>
         </figure>
       </article>
-    </div>
-
-    <div class="text-panel">
-      <h3>5.3 Rotations</h3>
-      <ul>
-        <li>Choose one legal rotation when submitting: <code>0</code>, <code>R1</code>, <code>R2</code>, <code>3</code>, <code>L2</code>, or <code>L1</code>.</li>
-        <li>The active card's rotation badge (for example <img class="inline-symbol" src="/public/images/rot0-2.png" alt="Rotation limitation badge" />) limits which choices are legal.</li>
-        <li>The selected rotation applies before action resolution and only to the action-set start.</li>
-      </ul>
     </div>
   </section>
 
   <section id="combat-resolution" class="panel">
-    <h2>6. Combat &amp; Resolution Details</h2>
+    <h2>7. Combat &amp; Resolution Details</h2>
 
     <h3>Hit Resolution</h3>
     <ul>
@@ -220,14 +256,14 @@
     </ul>
 
     <h3>Damage</h3>
-    <p>Damage <img class="inline-symbol" src="/public/images/DamageIcon.png" alt="Damage icon" /> is added to the target’s accumulated damage. There is no upper limit.</p>
+    <p>Damage <img class="inline-symbol" src="/public/images/DamageIcon.png" alt="Damage icon" /> is added to the target's accumulated damage. There is no upper limit.</p>
 
     <h3>Knockback</h3>
     <p>After damage is applied, calculate knockback using the Knockback Factor <img class="inline-symbol" src="/public/images/KnockBackIcon.png" alt="KBF icon" />.</p>
     <ul>
       <li><code>KBF = 0</code>: 0 hexes.</li>
       <li><code>KBF = 1</code>: 1 hex.</li>
-      <li><code>KBF &gt; 1</code>: <code>floor((Damage × KBF) / 10)</code>, minimum 1.</li>
+      <li><code>KBF &gt; 1</code>: <code>floor((Damage * KBF) / 10)</code>, minimum 1.</li>
     </ul>
     <p>Knockback moves the defender directly away from the attacker. Obstacles stop movement early.</p>
     <p>The defender is stunned for the same number of beats as the knockback distance + 1.</p>
@@ -235,28 +271,28 @@
   </section>
 
   <section id="hand-economy" class="panel">
-    <h2>7. Cards in Hand Economy</h2>
-    <p>“Cards in hand” always refers to ability cards only.</p>
+    <h2>8. Cards in Hand Economy</h2>
+    <p>"Cards in hand" always refers to ability cards only.</p>
     <p>Movement cards must always mirror the number of ability cards in hand.</p>
     <ul>
       <li>If you discard ability cards, discard movement cards to match.</li>
       <li>If you draw ability cards while at 3 or fewer, recover movement cards from discard to match.</li>
       <li>If an active card expires while holding 4 or more ability cards, recover all movement cards.</li>
-      <li>Active and passive cards are always discarded together.</li>
+      <li>Both active and passive cards are always discarded together.</li>
     </ul>
   </section>
 
   <section id="trigger-text" class="panel">
-    <h2>8. Trigger Text</h2>
+    <h2>9. Trigger Text</h2>
     <p>Trigger text overrides standard resolution order when its condition is met.</p>
     <div class="text-panel">
-      <p><strong>Example – Burning Strike:</strong></p>
+      <p><strong>Example - Burning Strike:</strong></p>
       <p>"If Burning Strike is in your hand when you land an attack, you may reveal it and discard it along with a movement card to place a fire hex on all attacked hexes."</p>
     </div>
   </section>
 
   <section id="tokens" class="panel">
-    <h2>9. Hexes &amp; Tokens</h2>
+    <h2>10. Hexes &amp; Tokens</h2>
     <p>Hexes define terrain and tokens are board objects placed by card effects. Both persist and resolve by their rules.</p>
 
     <h3>Land Hex</h3>
@@ -318,13 +354,13 @@
   </section>
 
   <section id="end-of-game" class="panel">
-    <h2>10. End of Game</h2>
+    <h2>11. End of Game</h2>
     <p>In 1v1 play, the game ends immediately when one player loses.</p>
     <ul>
       <li>A character is 5 or more hexes from the island edge.</li>
       <li>A player is on the abyss at the earliest open beat with no playable cards and no ledge grab available.</li>
     </ul>
-    <p>In Free‑For‑All games, eliminated players respawn after 10 beats in the 
+    <p>In Free-For-All games, eliminated players respawn after 10 beats in the 
       center hex of the island with 0 damage and a full hand.
       For the first 5 beats after respawning, They cannot be knocked back, stunned, or dealt damage. 
       The last player to hit someone that is eliminated gets a victory point. 
@@ -332,9 +368,10 @@
   </section>
 
   <section id="symbols-glossary" class="panel">
-    <h2>11. Symbols &amp; Glossary</h2>
+    <h2>12. Symbols &amp; Glossary</h2>
 
-    <h3>Symbol Reference</h3>
+    <h3>Action Symbols</h3>
+    <p>On each beat of the game, every player will have an action they are performing. These actions move forward like clockwork, following the diagrams on those actions (where applicable). Those actions are depicted with symbols like those below. Some symbols are diagrams that show relative positions and actions. For those, the white hex represents your character's location at the time of that beat, the black triangle is the direction that character is facing, and all other hexes are shown relative to that location and direction.</p>
     <table class="parity-table">
       <thead>
         <tr>
@@ -353,15 +390,15 @@
         </tr>
         <tr>
           <td><img class="symbol-ref-icon" src="/public/images/m.png" alt="m symbol" /></td>
-          <td>Move action. Charaters move straight forward , and stop if there are obstacles in the way. They move as far as they can before the obstacle.</td>
+          <td>Move action. Characters move straight forward and stop if obstacles are in the way. They move as far as possible before the obstacle.</td>
         </tr>
         <tr>
           <td><img class="symbol-ref-icon" src="/public/images/2j.png" alt="j symbol" /></td>
-          <td>Jump action. Unlike move, jump does not stop if there are obstacles in the way. However, the jump fails if the target location is occupied.</td>
+          <td>Jump action. Unlike move, jump does not stop if obstacles are in the way. However, the jump fails if the target location is occupied.</td>
         </tr>
         <tr>
           <td><img class="symbol-ref-icon" src="/public/images/a.png" alt="a symbol" /></td>
-          <td>Attack action. Deal damage and knockback to any targets on ALL red hexes.</td>
+          <td>Attack action. Deal damage and knockback to any targets on all red hexes.</td>
         </tr>
         <tr>
           <td><img class="symbol-ref-icon" src="/public/images/b.png" alt="b symbol" /></td>
@@ -373,11 +410,11 @@
         </tr>
         <tr>
           <td><img class="symbol-ref-icon" src="/public/images/F.png" alt="F symbol" /></td>
-          <td>Focus marker/state reference. Puts the card in "focus" state. This places the card to the side, and implements the focus text until that card is removed from focus.</td>
+          <td>Focus marker/state reference. Puts the card in "focus" state. This places the card to the side and applies its focus text until that card is removed from focus.</td>
         </tr>
         <tr>
           <td><img class="symbol-ref-icon" src="/public/images/Co.png" alt="Co symbol" /></td>
-          <td>Combo window marker. If the attack before this Combo symbol was successful, the player has a choice to "continue" the combo. They discard their current active and passive card and can play another card with a <img class="inline-symbol" src="/public/images/Co.png" alt="Co symbol" />.</td>
+          <td>Combo window marker. If the attack before this combo symbol was successful, the player can choose to continue the combo. They discard their current active and passive cards and can play another card with a <img class="inline-symbol" src="/public/images/Co.png" alt="Co symbol" />.</td>
         </tr>
         <tr>
           <td>
@@ -393,45 +430,6 @@
         <tr>
           <td><img class="symbol-ref-icon" src="/public/images/i.png" alt="i symbol" /></td>
           <td>This marks a trigger point in addition to a regular action on a card's timeline.</td>
-        </tr>
-        <tr>
-          <td>
-            <span class="symbol-icon-wrap">
-              <img class="symbol-ref-icon" src="/public/images/DrawIcon.png" alt="Draw X icon" />
-              <span class="symbol-icon-badge is-on-icon">X</span>
-            </span>
-          </td>
-          <td>Draw X: draw X ability cards, then movement hand count syncs to match ability hand size (see hand economy above).</td>
-        </tr>
-        <tr>
-          <td>
-            <span class="symbol-icon-wrap">
-              <img class="symbol-ref-icon" src="/public/images/DiscardIcon.png" alt="Discard X icon" />
-              <span class="symbol-icon-badge is-on-icon">X</span>
-            </span>
-          </td>
-          <td>Discard X: discard X ability cards, then movement hand count syncs to match ability hand size (see hand economy above).</td>
-        </tr>
-        <tr>
-          <td><img class="symbol-ref-icon" src="/public/images/DamageIcon.png" alt="Damage marker icon" /></td>
-          <td>Damage Badge: indicated how much damage this attack deals.</td>
-        </tr>
-        <tr>
-          <td><img class="symbol-ref-icon" src="/public/images/KnockBackIcon.png" alt="KBF icon" /></td>
-          <td>Knockback factor (KBF) stat marker.</td>
-        </tr>
-        <tr>
-          <td>
-            <span class="symbol-icon-wrap">
-              <img class="symbol-ref-icon is-muted" src="/public/images/KnockBackIcon.png" alt="KBF throw icon" />
-              <span class="symbol-icon-badge is-on-icon">T</span>
-            </span>
-          </td>
-          <td>Throw knockback marker (KBF throw). Uses throw rules instead of normal knockback formula.</td>
-        </tr>
-        <tr>
-          <td><img class="symbol-ref-icon" src="/public/images/rot0-2.png" alt="Rotation limitation badge" /></td>
-          <td>Rotation limitation badge. Indicates allowed rotation choices for that active card.</td>
         </tr>
         <tr>
           <td>
@@ -452,6 +450,57 @@
       </tbody>
     </table>
 
+    <h3>Other Symbols</h3>
+    <p>In addition to timeline symbols, here are other symbols you will see on cards as shorthands for other words.</p>
+    <table class="parity-table">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Definition</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            <span class="symbol-icon-wrap">
+              <img class="symbol-ref-icon" src="/public/images/DrawIcon.png" alt="Draw X icon" />
+              <span class="symbol-icon-badge is-on-icon">X</span>
+            </span>
+          </td>
+          <td>Draw X: draw X ability cards, then movement hand count syncs to match ability hand size (see hand economy above).</td>
+        </tr>
+        <tr>
+          <td>
+            <span class="symbol-icon-wrap">
+              <img class="symbol-ref-icon" src="/public/images/DiscardIcon.png" alt="Discard X icon" />
+              <span class="symbol-icon-badge is-on-icon">X</span>
+            </span>
+          </td>
+          <td>Discard X: discard X ability cards, then movement hand count syncs to match ability hand size (see hand economy above).</td>
+        </tr>
+        <tr>
+          <td><img class="symbol-ref-icon" src="/public/images/DamageIcon.png" alt="Damage marker icon" /></td>
+          <td>Damage badge: indicates how much damage this attack deals.</td>
+        </tr>
+        <tr>
+          <td><img class="symbol-ref-icon" src="/public/images/KnockBackIcon.png" alt="KBF icon" /></td>
+          <td>Knockback factor (KBF) stat marker.</td>
+        </tr>
+        <tr>
+          <td>
+            <span class="symbol-icon-wrap">
+              <img class="symbol-ref-icon is-muted" src="/public/images/KnockBackIcon.png" alt="KBF throw icon" />
+              <span class="symbol-icon-badge is-on-icon">T</span>
+            </span>
+          </td>
+          <td>Throw knockback marker (KBF throw). Uses throw rules instead of normal knockback formula.</td>
+        </tr>
+        <tr>
+          <td><img class="symbol-ref-icon" src="/public/images/rot0-2.png" alt="Rotation limitation badge" /></td>
+          <td>Rotation limitation badge. Indicates allowed rotation choices for that active card.</td>
+        </tr>
+      </tbody>
+    </table>
     <h3>Glossary</h3>
     <dl class="glossary-list">
       <div class="glossary-item">
@@ -494,7 +543,7 @@
   </section>
 
   <section id="tie-breakers" class="panel">
-    <h2>12. Tie Breakers</h2>
+    <h2>13. Tie Breakers</h2>
 
     <h3>Same Beat + Same Timing</h3>
     <ol>
@@ -518,7 +567,7 @@
   </section>
 
   <section id="quick-reference" class="panel">
-    <h2>13. Quick Reference</h2>
+    <h2>14. Quick Reference</h2>
     <div class="quick-ref-grid">
       <div class="text-panel">
         <h3>Beat Order</h3>
@@ -564,53 +613,246 @@
   <script type="module">
     import { loadCardCatalog } from '/public/shared/cardCatalog.js';
     import { buildCardElement, fitAllCardText } from '/public/shared/cardRenderer.js';
+    const ANATOMY_PARTS = [
+      { key: 'title', selector: '.action-card-title', number: 1, color: '#f3d066', anchor: 'left-top', dx: -16, dy: -16 },
+      { key: 'rotation', selector: '.action-card-rotation', number: 2, color: '#7fd4ff', anchor: 'right-top', dx: 16, dy: -16 },
+      { key: 'actions', selector: '.action-card-actions', number: 3, color: '#b893ff', anchor: 'left-top', dx: -16, dy: -16 },
+      { key: 'trigger', selector: '.action-card-surface-row.is-trigger', number: 5, color: '#f3a7bb', anchor: 'left-center', dx: -16, dy: 0 },
+      { key: 'active', selector: '.action-card-surface-row.is-active', number: 6, color: '#64d68d', anchor: 'left-center', dx: -16, dy: 0 },
+      { key: 'passive', selector: '.action-card-surface-row.is-passive', number: 7, color: '#6eb8ff', anchor: 'left-center', dx: -16, dy: 0 },
+      {
+        key: 'badges',
+        selectors: ['.action-card-stat-damage', '.action-card-stat-kbf'],
+        number: 8,
+        color: '#f2a84b',
+        anchor: 'right-top',
+        dx: 16,
+        dy: -16,
+      },
+    ];
+    let anatomyOverlayParts = [];
+
+    const PLAY_MODAL_PARTS = [
+      { key: 'rotation', number: 1, color: '#f3d066', rect: { x: 0.27, y: 0.02, w: 0.46, h: 0.34 }, anchor: 'right-top', dx: 16, dy: -16 },
+      { key: 'active', number: 2, color: '#64d68d', rect: { x: 0.21, y: 0.34, w: 0.58, h: 0.41 }, anchor: 'left-center', dx: -16, dy: 0 },
+      { key: 'passive', number: 3, color: '#6eb8ff', rect: { x: 0.21, y: 0.88, w: 0.58, h: 0.1 }, anchor: 'left-center', dx: -16, dy: 0 },
+    ];
 
     const findCardById = (catalog, cardId, type) =>
       (Array.isArray(catalog?.[type]) ? catalog[type] : []).find((card) => card.id === cardId) || null;
 
-    const highlightCardRows = (cardElement) => {
-      const activeRow = cardElement.querySelector('.action-card-surface-row.is-active');
-      const passiveRow = cardElement.querySelector('.action-card-surface-row.is-passive');
-      if (activeRow) activeRow.classList.add('rulebook-row-highlight-active');
-      if (passiveRow) passiveRow.classList.add('rulebook-row-highlight-passive');
+    const findCardWithTrigger = (catalog) =>
+      (Array.isArray(catalog?.ability) ? catalog.ability : []).find(
+        (card) => typeof card?.triggerText === 'string' && card.triggerText.trim().length > 0,
+      ) || null;
+
+    const getBadgePoint = (x, y, width, height, anchor, dx, dy) => {
+      let bx = x;
+      let by = y;
+
+      if (anchor.startsWith('right')) bx = x + width;
+      if (anchor.startsWith('center')) bx = x + width / 2;
+
+      if (anchor.endsWith('bottom')) by = y + height;
+      if (anchor.endsWith('center')) by = y + height / 2;
+
+      return { x: bx + dx, y: by + dy };
     };
 
-    const renderPlayDetailsCards = async () => {
-      const movementRoot = document.getElementById('playDetailsSampleMovementCard');
-      const abilityRoot = document.getElementById('playDetailsSampleAbilityCard');
-      if (!movementRoot || !abilityRoot) return;
+    const drawAnatomyOverlay = () => {
+      const wrap = document.querySelector('.card-anatomy-card-wrap');
+      const canvas = document.getElementById('cardAnatomyOverlay');
+      if (!wrap || !canvas) return;
 
-      const catalog = await loadCardCatalog();
-      const movementCard =
-        findCardById(catalog, 'ninja-roll', 'movement') ||
-        findCardById(catalog, 'grappling-hook', 'movement') ||
-        (catalog.movement || [])[0];
-      const abilityCard =
-        findCardById(catalog, 'burning-strike', 'ability') ||
-        findCardById(catalog, 'jab', 'ability') ||
-        (catalog.ability || [])[0];
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
 
-      if (movementCard) {
-        const movementCardElement = buildCardElement(movementCard);
-        highlightCardRows(movementCardElement);
-        movementRoot.replaceChildren(movementCardElement);
-      }
-      if (abilityCard) {
-        const abilityCardElement = buildCardElement(abilityCard);
-        highlightCardRows(abilityCardElement);
-        abilityRoot.replaceChildren(abilityCardElement);
-      }
+      const wrapRect = wrap.getBoundingClientRect();
+      if (wrapRect.width <= 0 || wrapRect.height <= 0) return;
 
-      requestAnimationFrame(() => {
-        fitAllCardText();
-        if (document.fonts?.ready) {
-          document.fonts.ready.then(() => requestAnimationFrame(() => fitAllCardText()));
-        }
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.max(1, Math.round(wrapRect.width * dpr));
+      canvas.height = Math.max(1, Math.round(wrapRect.height * dpr));
+      canvas.style.width = `${wrapRect.width}px`;
+      canvas.style.height = `${wrapRect.height}px`;
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, wrapRect.width, wrapRect.height);
+      ctx.lineWidth = 2;
+
+      anatomyOverlayParts.forEach(({ part, elements }) => {
+        const rects = elements
+          .map((element) => element.getBoundingClientRect())
+          .filter((rect) => rect.width > 0 && rect.height > 0);
+        if (!rects.length) return;
+
+        const left = Math.min(...rects.map((rect) => rect.left));
+        const top = Math.min(...rects.map((rect) => rect.top));
+        const right = Math.max(...rects.map((rect) => rect.right));
+        const bottom = Math.max(...rects.map((rect) => rect.bottom));
+
+        const x = left - wrapRect.left;
+        const y = top - wrapRect.top;
+        const width = right - left;
+        const height = bottom - top;
+        if (width <= 0 || height <= 0) return;
+
+        ctx.strokeStyle = part.color;
+        ctx.fillStyle = part.color;
+        ctx.strokeRect(x, y, width, height);
+
+        const badgeRadius = 14;
+        const badge = getBadgePoint(x, y, width, height, part.anchor, part.dx, part.dy);
+        const badgeX = Math.min(Math.max(badge.x, badgeRadius + 2), wrapRect.width - badgeRadius - 2);
+        const badgeY = Math.min(Math.max(badge.y, badgeRadius + 2), wrapRect.height - badgeRadius - 2);
+
+        ctx.beginPath();
+        ctx.arc(badgeX, badgeY, badgeRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.62)';
+        ctx.stroke();
+        ctx.strokeStyle = part.color;
+
+        ctx.fillStyle = '#111111';
+        ctx.font = '900 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(part.number), badgeX, badgeY);
+        ctx.fillStyle = part.color;
       });
     };
 
-    void renderPlayDetailsCards().catch((error) => {
-      console.error('Failed to render play details cards', error);
+    const drawPlayModalOverlay = () => {
+      const wrap = document.querySelector('.play-modal-image-wrap');
+      const image = document.getElementById('playModalDiagram');
+      const canvas = document.getElementById('playModalOverlay');
+      if (!wrap || !image || !canvas) return;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const wrapRect = wrap.getBoundingClientRect();
+      const imageRect = image.getBoundingClientRect();
+      if (wrapRect.width <= 0 || wrapRect.height <= 0 || imageRect.width <= 0 || imageRect.height <= 0) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.max(1, Math.round(wrapRect.width * dpr));
+      canvas.height = Math.max(1, Math.round(wrapRect.height * dpr));
+      canvas.style.width = `${wrapRect.width}px`;
+      canvas.style.height = `${wrapRect.height}px`;
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, wrapRect.width, wrapRect.height);
+      ctx.lineWidth = 2;
+
+      const imageX = imageRect.left - wrapRect.left;
+      const imageY = imageRect.top - wrapRect.top;
+      const imageWidth = imageRect.width;
+      const imageHeight = imageRect.height;
+
+      PLAY_MODAL_PARTS.forEach((part) => {
+        const x = imageX + part.rect.x * imageWidth;
+        const y = imageY + part.rect.y * imageHeight;
+        const width = part.rect.w * imageWidth;
+        const height = part.rect.h * imageHeight;
+
+        ctx.strokeStyle = part.color;
+        ctx.fillStyle = part.color;
+        ctx.strokeRect(x, y, width, height);
+
+        const badgeRadius = 14;
+        const badge = getBadgePoint(x, y, width, height, part.anchor, part.dx, part.dy);
+        const badgeX = Math.min(Math.max(badge.x, badgeRadius + 2), wrapRect.width - badgeRadius - 2);
+        const badgeY = Math.min(Math.max(badge.y, badgeRadius + 2), wrapRect.height - badgeRadius - 2);
+
+        ctx.beginPath();
+        ctx.arc(badgeX, badgeY, badgeRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.62)';
+        ctx.stroke();
+        ctx.strokeStyle = part.color;
+
+        ctx.fillStyle = '#111111';
+        ctx.font = '900 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(part.number), badgeX, badgeY);
+      });
+    };
+
+    const renderAnatomyCard = (catalog) => {
+      const map = document.querySelector('.card-anatomy-map');
+      const anatomyRoot = document.getElementById('cardAnatomySampleCard');
+      if (!map || !anatomyRoot) return;
+
+      const anatomyCard =
+        findCardWithTrigger(catalog) ||
+        findCardById(catalog, 'burning-strike', 'ability') ||
+        (catalog.ability || [])[0] ||
+        (catalog.movement || [])[0];
+      if (!anatomyCard) return;
+
+      const cardElement = buildCardElement(anatomyCard);
+      const resolvedParts = [];
+
+      ANATOMY_PARTS.forEach((part) => {
+        const selectors = Array.isArray(part.selectors)
+          ? part.selectors
+          : part.selector
+            ? [part.selector]
+            : [];
+        const elements = selectors
+          .map((selector) => cardElement.querySelector(selector))
+          .filter((element) => Boolean(element));
+        const keyEl = map.querySelector(`[data-anatomy-key="${part.key}"]`);
+        if (!elements.length) {
+          if (keyEl) keyEl.hidden = true;
+          return;
+        }
+        if (keyEl) keyEl.hidden = false;
+        resolvedParts.push({ part, elements });
+      });
+
+      anatomyRoot.replaceChildren(cardElement);
+      anatomyOverlayParts = resolvedParts;
+      requestAnimationFrame(() => drawAnatomyOverlay());
+    };
+
+    const fitAndRedraw = () => {
+      fitAllCardText();
+      requestAnimationFrame(() => {
+        fitAllCardText();
+        drawAnatomyOverlay();
+        drawPlayModalOverlay();
+      });
+    };
+
+    const renderRulebookCards = async () => {
+      const catalog = await loadCardCatalog();
+      renderAnatomyCard(catalog);
+      requestAnimationFrame(() => {
+        fitAndRedraw();
+
+        if (document.fonts?.ready) {
+          document.fonts.ready.then(() => requestAnimationFrame(() => fitAndRedraw()));
+        }
+      });
+
+      const playModalImage = document.getElementById('playModalDiagram');
+      if (playModalImage) {
+        playModalImage.addEventListener('load', () => requestAnimationFrame(() => drawPlayModalOverlay()), { once: true });
+      }
+
+      window.addEventListener('resize', () => requestAnimationFrame(() => {
+        drawAnatomyOverlay();
+        drawPlayModalOverlay();
+      }));
+    };
+
+    void renderRulebookCards().catch((error) => {
+      console.error('Failed to render rulebook cards', error);
     });
   </script>
   <script>
@@ -628,7 +870,7 @@
         textNodes.push(node);
       }
 
-      const pattern = /\b(5 or more hexes|ability cards?|movement cards?|knockback factor|knockback|damage|refresh|abyss|land|beats?)\b/gi;
+      const pattern = /\b(5 or more hexes|ability cards?|movement cards?|knockback factor|knockback|damage|refresh|abyss|land|beats?|purple|green|blue|red|orange|yellow|gold)\b/gi;
       const classByTerm = {
         '5 or more hexes': 'term-five-or-more-hexes',
         'ability card': 'term-ability-cards',
@@ -643,6 +885,13 @@
         land: 'term-land',
         beat: 'term-beat',
         beats: 'term-beat',
+        purple: 'term-color-purple',
+        green: 'term-color-green',
+        blue: 'term-color-blue',
+        red: 'term-color-red',
+        orange: 'term-color-orange',
+        yellow: 'term-color-yellow',
+        gold: 'term-color-gold',
       };
 
       for (const node of textNodes) {
@@ -679,3 +928,24 @@
   </script>
   </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
