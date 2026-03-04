@@ -82,7 +82,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Keep pure logic (rules/engine) free of I/O; isolate side effects in adapters.
 - Small, focused modules; avoid monolithic files.
 - Prefer functional, deterministic code paths for the engine; inject randomness sources.
-- In browser UI copy/tooltips/docs that reference action symbols, prefer rendering token icons (`/public/images/{token}.png`, for example `E.png`, `W.png`) instead of plain text letters whenever an icon exists.
+- In browser UI copy/tooltips/docs, NEVER render raw action-symbol letters/tokens when a symbol image exists; always use token icons (`/public/images/{token}.png`, for example `E.png`, `W.png`).
 - When providing terminal commands to the user, always format each command as a single-line command (no line-continuation characters like `\`).
 
 ## Repository conventions
@@ -123,6 +123,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - When a hand card is enlarged/hovered, hit-testing must treat the hovered card as full-card bounds (not a partial right/top slice) so clickability matches the visible card footprint.
 - Action HUD and deck-builder card text both use `public/shared/cardRenderer.js`; keep trigger/active/passive row visuals unified there and call `fitAllCardText` after renders so those text rows fit their boxes.
 - Inline/tutorial text rendered through `appendInlineText` supports style tags (`<key>`, `<move>`, `<attack>`, `<guard>`, `<u>`, `<b>/<bold>`) plus `{token}` icons; keep parser tags and `public/theme.css` emphasis classes synchronized when adding new emphasis types.
+- App-facing symbol references (rulebook, tooltips, HUD copy, tutorials) must use rendered symbol images, not raw token text (`E`, `W`, `a`, `m`, etc.); if an image is missing, add/generate it in `public/images` instead of falling back to plain letters.
 - Action HUD click selection: empty slots -> active; active filled + same type -> replace active; active filled + different type -> fill passive; both filled -> replace matching type slot; clicking a slotted card returns it to hand.
 - Active/passive slots must be filled with cards from different sides (movement vs ability); only the active card drives the action list and rotation restrictions.
 - Slot assignment overwrites same-type cards in the opposite slot by returning them to the hand.
@@ -261,3 +262,4 @@ When the user says "let's wrap this up" or something along those lines, execute 
 - Update the AGENTS.md file with any other relevant information to better understand the codebase. 
 - Add any required tests (if needed).
 - Update the Documentation map files as needed. 
+
