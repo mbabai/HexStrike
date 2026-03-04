@@ -553,6 +553,18 @@ export const initGame = () => {
 
   const getPendingHavenInteraction = () => getPendingHavenInteractionType(getPendingInteractionForUser());
 
+  const hasPlayableComboContinuationInHand = () => {
+    const playerCards = gameState?.state?.player?.cards;
+    if (!playerCards) return false;
+    const movementDeckIds = Array.isArray(playerCards.movementDeck) ? playerCards.movementDeck : [];
+    const abilityIds = Array.isArray(playerCards.abilityHand) ? playerCards.abilityHand : [];
+    const exhaustedSet = new Set(Array.isArray(playerCards.discardPile) ? playerCards.discardPile : []);
+    const movementAvailableIds = movementDeckIds.filter((id) => id && !exhaustedSet.has(id));
+    const hasMovementCombo = movementAvailableIds.some((id) => cardHasCombo(cardLookup.get(id)));
+    const hasAbilityCombo = abilityIds.some((id) => cardHasCombo(cardLookup.get(id)));
+    return (hasMovementCombo && abilityIds.length > 0) || (hasAbilityCombo && movementAvailableIds.length > 0);
+  };
+
   const getSceneCharacters = () => timelinePlayback.getScene()?.characters ?? gameState?.state?.public?.characters ?? [];
 
   const buildHavenHighlightState = (now) => {
@@ -730,6 +742,30 @@ export const initGame = () => {
       pending.type === REWIND_RETURN_INTERACTION_TYPE ||
       pending.type === DRAW_OFFER_INTERACTION_TYPE
     ) {
+      if (pending.type === 'combo' && !hasPlayableComboContinuationInHand()) {
+        clearHavenHover();
+        setModalVisibility(comboModal, false);
+        setModalVisibility(throwModal, false);
+        setModalVisibility(handTriggerModal, false);
+        setModalVisibility(discardModal, false);
+        setModalVisibility(drawModal, false);
+        setComboButtonsEnabled(false);
+        setThrowButtonsEnabled(false);
+        discardPrompt?.sync();
+        drawPrompt?.sync();
+        handTriggerPrompt?.sync();
+        if (!interactionSubmitInFlight) {
+          debugLog(`${LOG_PREFIX} interaction:auto-decline`, {
+            userId: localUserId,
+            gameId: gameState?.id ?? null,
+            interactionId: pending.id,
+            interactionType: pending.type,
+            reason: 'no-playable-combo-card',
+          });
+          void handleChoiceSubmit(false);
+        }
+        return;
+      }
       clearHavenHover();
       setChoiceModalContent(pending.type);
       setModalVisibility(comboModal, true);
@@ -831,11 +867,12 @@ export const initGame = () => {
       gameOverView.hide();
       return;
     }
-    const outcome = getMatchOutcome(gameState?.state?.public);
+    const publicState = gameState?.state?.public ?? null;
+    const outcome = getMatchOutcome(publicState);
     gameOverView.update(outcome, localUserId, {
       continueInFlight: gameOverInFlight,
       shareInFlight: shareLinkInFlight,
-    });
+    }, publicState);
   };
 
   const refreshActionHud = () => {

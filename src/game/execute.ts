@@ -946,6 +946,19 @@ export const executeBeatsWithInteractions = (
     if (!raw) return '';
     return userLookup.get(raw) ?? raw;
   };
+  const getBeatEntryForActorAtIndex = (actorId: string, beatIndex: number): BeatEntry | null => {
+    if (!actorId || !Number.isFinite(beatIndex)) return null;
+    const safeIndex = Math.max(0, Math.round(beatIndex));
+    const beat = normalizedBeats[safeIndex];
+    if (!Array.isArray(beat)) return null;
+    return (
+      beat.find((entry) => {
+        const key = resolveEntryKey(entry);
+        const resolved = resolveUserId(key);
+        return resolved === actorId;
+      }) ?? null
+    );
+  };
   fireTokenOwnerByKey.clear();
   focusTokenByOwner.clear();
   boardTokens.forEach((token) => {
@@ -1084,6 +1097,22 @@ export const executeBeatsWithInteractions = (
     });
   };
   updatedInteractions.forEach((interaction) => {
+    if (interaction.type === 'combo' && interaction.status === 'pending') {
+      const actorId = resolveUserId(interaction.actorUserId);
+      const beatIndex = Number.isFinite(interaction.beatIndex) ? Math.round(interaction.beatIndex) : null;
+      const comboAvailable = actorId ? Boolean(comboAvailabilityByUser.get(actorId)) : false;
+      const entry =
+        actorId && beatIndex != null && beatIndex >= 0 ? getBeatEntryForActorAtIndex(actorId, beatIndex) : null;
+      const hasRunnableCo = Boolean(entry && isComboAction(entry.action ?? '') && !entry.comboSkipped);
+      if (!comboAvailable || !hasRunnableCo) {
+        interaction.status = 'resolved';
+        interaction.resolution = {
+          ...(interaction.resolution ?? {}),
+          continue: false,
+          invalidated: true,
+        };
+      }
+    }
     interactionById.set(interaction.id, interaction);
     if (interaction.status === 'pending' && Number.isFinite(interaction.beatIndex)) {
       pendingIndices.push(interaction.beatIndex);

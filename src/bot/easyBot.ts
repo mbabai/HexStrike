@@ -267,9 +267,12 @@ const buildCombinations = (items: string[], choose: number, limit = MAX_ENUM_CHO
 const buildComboAvailability = (deckStates: Map<string, DeckState>, catalog: CardCatalog) => {
   const availability = new Map<string, boolean>();
   deckStates.forEach((deckState, userId) => {
-    const movementAvailable = deckState.movement.filter((id) => !deckState.exhaustedMovementIds.has(id));
-    const abilityAvailable = deckState.abilityHand.slice();
-    const hasCombo = [...movementAvailable, ...abilityAvailable].some((id) => cardHasCombo(catalog.cardsById.get(id)));
+    const movementAvailable = getMovementHandIds(deckState);
+    const abilityAvailable = Array.isArray(deckState.abilityHand) ? deckState.abilityHand.slice() : [];
+    const hasMovementCombo = movementAvailable.some((id) => cardHasCombo(catalog.cardsById.get(id)));
+    const hasAbilityCombo = abilityAvailable.some((id) => cardHasCombo(catalog.cardsById.get(id)));
+    const hasCombo =
+      (hasMovementCombo && abilityAvailable.length > 0) || (hasAbilityCombo && movementAvailable.length > 0);
     availability.set(userId, hasCombo);
   });
   return availability;

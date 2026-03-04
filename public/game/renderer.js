@@ -6,6 +6,11 @@ import { drawNameCapsule } from './portraitBadges.js';
 import { buildAbyssPathLabels, drawAbyssGrid, drawAbyssPathLabels } from './abyssRendering.mjs';
 import { isFfaPlayerOutAtBeat } from './ffaState.js';
 import { getWaitingForInputUserIds, isCharacterInUserSet } from './inputWaiting.js';
+import {
+  buildBoardHandTriggerEntries,
+  buildBoardHandTriggerRevealKey,
+  getBoardHandTriggerTarget,
+} from './boardHandTriggerView.js';
 
 const getTheme = () => {
   const css = getComputedStyle(document.documentElement);
@@ -48,6 +53,8 @@ const TOKEN_IMAGE_SOURCES = {
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const coordKey = (coord) => `${coord?.q},${coord?.r}`;
 const WAITING_PULSE_MS = 1700;
+const BOARD_HAND_TRIGGER_FACE_DOWN_MS = 180;
+const BOARD_HAND_TRIGGER_FLIP_MS = 260;
 
 const getWaitingPulse = (now) => {
   const current = Number.isFinite(now) ? now : performance.now();
@@ -349,6 +356,166 @@ const drawRoundedRect = (ctx, x, y, width, height, radius) => {
   ctx.lineTo(x, y + r);
   ctx.quadraticCurveTo(x, y, x + r, y);
   ctx.closePath();
+};
+
+const drawImageCover = (ctx, image, x, y, width, height) => {
+  if (!image || !image.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) return false;
+  const imageRatio = image.naturalWidth / image.naturalHeight;
+  const boxRatio = width / height;
+  let drawWidth = width;
+  let drawHeight = height;
+  if (imageRatio > boxRatio) {
+    drawHeight = height;
+    drawWidth = drawHeight * imageRatio;
+  } else {
+    drawWidth = width;
+    drawHeight = drawWidth / imageRatio;
+  }
+  const drawX = x + (width - drawWidth) / 2;
+  const drawY = y + (height - drawHeight) / 2;
+  ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+  return true;
+};
+
+const getBoardHandTriggerRevealState = (revealStateByKey, revealKey, now) => {
+  if (!(revealStateByKey instanceof Map) || !revealKey) return { phase: 'front', flipScaleX: 1 };
+  const currentTime = Number.isFinite(now) ? now : performance.now();
+  const existing = revealStateByKey.get(revealKey);
+  if (!existing) {
+    revealStateByKey.set(revealKey, { startTime: currentTime });
+    return { phase: 'back', flipScaleX: 1 };
+  }
+  const elapsed = Math.max(0, currentTime - existing.startTime);
+  if (elapsed < BOARD_HAND_TRIGGER_FACE_DOWN_MS) {
+    return { phase: 'back', flipScaleX: 1 };
+  }
+  const flipElapsed = elapsed - BOARD_HAND_TRIGGER_FACE_DOWN_MS;
+  if (flipElapsed < BOARD_HAND_TRIGGER_FLIP_MS) {
+    const t = flipElapsed / BOARD_HAND_TRIGGER_FLIP_MS;
+    if (t < 0.5) {
+      const localT = t / 0.5;
+      return { phase: 'back', flipScaleX: Math.max(0.06, 1 - localT) };
+    }
+    const localT = (t - 0.5) / 0.5;
+    return { phase: 'front', flipScaleX: Math.max(0.06, localT) };
+  }
+  return { phase: 'front', flipScaleX: 1 };
+};
+
+const pruneBoardHandTriggerRevealState = (revealStateByKey, activeKeys) => {
+  if (!(revealStateByKey instanceof Map)) return;
+  const keep = activeKeys instanceof Set ? activeKeys : new Set();
+  revealStateByKey.forEach((_, key) => {
+    if (!keep.has(key)) {
+      revealStateByKey.delete(key);
+    }
+  });
+};
+
+const drawBoardHandTriggerCardBack = (ctx, x, y, width, height, theme, cardBackImage, borderColor) => {
+  const radius = Math.max(2, height * 0.12);
+  ctx.save();
+  ctx.fillStyle = theme.panelStrong || '#20303a';
+  drawRoundedRect(ctx, x, y, width, height, radius);
+  ctx.fill();
+  ctx.clip();
+  if (!drawImageCover(ctx, cardBackImage, x, y, width, height)) {
+    ctx.fillStyle = withAlpha(theme.queueLavender || theme.panel || '#5d4c34', 0.48);
+    drawRoundedRect(ctx, x + width * 0.08, y + height * 0.09, width * 0.84, height * 0.22, radius * 0.7);
+    ctx.fill();
+  }
+  ctx.restore();
+  ctx.save();
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = Math.max(1, height * 0.07);
+  drawRoundedRect(ctx, x, y, width, height, radius);
+  ctx.stroke();
+  ctx.restore();
+};
+
+const drawBoardHandTriggerCardFront = (ctx, x, y, width, height, theme, entry, card, cardArtImage, isHovered) => {
+  const radius = Math.max(2, height * 0.12);
+  const fallbackFill =
+    `${entry?.cardType ?? ''}`.toLowerCase() === 'movement'
+      ? theme.cardMovement || theme.actionMove || theme.accent
+      : theme.cardAbility || theme.actionAttack || theme.accentStrong;
+  const borderColor = isHovered
+    ? theme.accentStrong || theme.accent || '#d5a34a'
+    : theme.panelStrong || theme.textDark || '#000000';
+  ctx.save();
+  ctx.fillStyle = fallbackFill;
+  drawRoundedRect(ctx, x, y, width, height, radius);
+  ctx.fill();
+  ctx.clip();
+  const drewArt = drawImageCover(ctx, cardArtImage, x, y, width, height);
+  if (!drewArt) {
+    ctx.fillStyle = withAlpha('#ffffff', 0.16);
+    drawRoundedRect(ctx, x + width * 0.1, y + height * 0.11, width * 0.8, height * 0.24, radius * 0.7);
+    ctx.fill();
+    const label = `${card?.name ?? entry?.cardId ?? ''}`.trim();
+    if (label) {
+      ctx.fillStyle = withAlpha(theme.textDark || '#000000', 0.78);
+      ctx.font = `700 ${Math.max(7, height * 0.22)}px ${theme.fontBody}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label.slice(0, 12), x + width * 0.5, y + height * 0.56);
+    }
+  }
+  ctx.restore();
+  ctx.save();
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = Math.max(1, height * (isHovered ? 0.09 : 0.07));
+  drawRoundedRect(ctx, x, y, width, height, radius);
+  ctx.stroke();
+  ctx.restore();
+};
+
+const drawBoardHandTriggers = ({
+  ctx,
+  entries,
+  theme,
+  cardLookup,
+  getCardArt,
+  cardBackImage,
+  revealStateByKey,
+  now,
+  hoveredRevealKey = null,
+}) => {
+  if (!Array.isArray(entries) || !entries.length) {
+    pruneBoardHandTriggerRevealState(revealStateByKey, new Set());
+    return;
+  }
+  const activeRevealKeys = new Set();
+  entries.forEach((entry) => {
+    const revealKey = buildBoardHandTriggerRevealKey(entry);
+    if (!revealKey) return;
+    activeRevealKeys.add(revealKey);
+    const reveal = getBoardHandTriggerRevealState(revealStateByKey, revealKey, now);
+    const cardId = `${entry?.cardId ?? ''}`.trim();
+    const card = cardId ? cardLookup?.get?.(cardId) ?? null : null;
+    const cardName = `${card?.name ?? ''}`.trim();
+    const cardArtImage = cardName ? getCardArt(cardName) : null;
+    const isHovered = hoveredRevealKey === revealKey;
+    const flipScale = reveal?.flipScaleX ?? 1;
+    const width = Number(entry?.width) || 0;
+    const height = Number(entry?.height) || 0;
+    if (width <= 0 || height <= 0) return;
+    ctx.save();
+    ctx.translate(entry.centerX, entry.centerY);
+    ctx.scale(Math.max(0.06, flipScale), 1);
+    const drawX = -width / 2;
+    const drawY = -height / 2;
+    const borderColor = isHovered
+      ? theme.accentStrong || theme.accent || '#d5a34a'
+      : theme.panelStrong || theme.textDark || '#000000';
+    if (reveal?.phase === 'front') {
+      drawBoardHandTriggerCardFront(ctx, drawX, drawY, width, height, theme, entry, card, cardArtImage, isHovered);
+    } else {
+      drawBoardHandTriggerCardBack(ctx, drawX, drawY, width, height, theme, cardBackImage, borderColor);
+    }
+    ctx.restore();
+  });
+  pruneBoardHandTriggerRevealState(revealStateByKey, activeRevealKeys);
 };
 
 const drawHexEffect = (ctx, coord, size, color, alpha, scale = 1) => {
@@ -782,6 +949,10 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
   const viewport = { width: 0, height: 0, dpr: window.devicePixelRatio || 1 };
   const characterArt = new Map();
   const tokenArt = new Map();
+  const boardHandTriggerCardArt = new Map();
+  const boardHandTriggerRevealByKey = new Map();
+  const boardHandTriggerCardBackImage = new Image();
+  boardHandTriggerCardBackImage.src = '/public/images/CardBack.png';
 
   const getCharacterArt = (characterId) => {
     if (!characterId) return null;
@@ -802,6 +973,16 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     const image = new Image();
     image.src = src;
     tokenArt.set(tokenType, image);
+    return image;
+  };
+
+  const getBoardHandTriggerCardArt = (cardName) => {
+    const key = `${cardName ?? ''}`.trim();
+    if (!key) return null;
+    if (boardHandTriggerCardArt.has(key)) return boardHandTriggerCardArt.get(key);
+    const image = new Image();
+    image.src = `/public/images/cardart/${encodeURIComponent(key)}.jpg`;
+    boardHandTriggerCardArt.set(key, image);
     return image;
   };
 
@@ -874,6 +1055,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     });
 
     if (!land.length) {
+      pruneBoardHandTriggerRevealState(boardHandTriggerRevealByKey, new Set());
       drawTimeIndicator(
         ctx,
         viewport,
@@ -911,12 +1093,26 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     const publicState = gameState?.state?.public ?? null;
     const renderCharacters = scene?.characters ?? publicState?.characters ?? [];
     const beatsForFilter = publicState?.beats ?? [];
-    const timelineBeatIndex = beatsForFilter.length ? Math.min(timeIndicatorViewModel?.value ?? 0, beatsForFilter.length - 1) : 0;
+    const timelineBeatIndex = beatsForFilter.length
+      ? Math.min(timeIndicatorViewModel?.value ?? 0, beatsForFilter.length - 1)
+      : 0;
+    const interactions = publicState?.customInteractions ?? [];
+    const now = performance.now();
     const waitingUserIds = getWaitingForInputUserIds(publicState);
-    const waitingPulse = getWaitingPulse(performance.now());
+    const waitingPulse = getWaitingPulse(now);
     const boardCharacters = renderCharacters.filter(
       (character) => !isFfaPlayerOutAtBeat(publicState, character?.userId, timelineBeatIndex),
     );
+    const boardHandTriggerEntries = buildBoardHandTriggerEntries({
+      sceneCharacters: boardCharacters,
+      interactions,
+      beatIndex: timelineBeatIndex,
+      size,
+    });
+    const hoveredBoardHandTrigger = timelinePointer
+      ? getBoardHandTriggerTarget({ entries: boardHandTriggerEntries, pointer: timelinePointer, viewState })
+      : null;
+    const hoveredBoardHandTriggerRevealKey = hoveredBoardHandTrigger?.revealKey ?? null;
     const effects = scene?.effects ?? [];
     const boardTokens = scene?.boardTokens ?? publicState?.boardTokens ?? [];
     const abyssLabels = buildAbyssPathLabels(boardCharacters, land);
@@ -1042,6 +1238,18 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
         );
       });
     }
+
+    drawBoardHandTriggers({
+      ctx,
+      entries: boardHandTriggerEntries,
+      theme,
+      cardLookup,
+      getCardArt: getBoardHandTriggerCardArt,
+      cardBackImage: boardHandTriggerCardBackImage,
+      revealStateByKey: boardHandTriggerRevealByKey,
+      now,
+      hoveredRevealKey: hoveredBoardHandTriggerRevealKey,
+    });
 
     drawTimeIndicator(
       ctx,

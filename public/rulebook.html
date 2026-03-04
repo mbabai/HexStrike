@@ -76,6 +76,7 @@
       <li><a href="#setup">Setup</a></li>
       <li><a href="#game-flow">Game Flow</a></li>
       <li><a href="#beat-phase">Beat Phase - Detailed Explanation</a></li>
+      <li><a href="#play-details">Play Details</a></li>
       <li><a href="#combat-resolution">Combat &amp; Resolution Details</a></li>
       <li><a href="#hand-economy">Cards in Hand Economy</a></li>
       <li><a href="#trigger-text">Trigger Text</a></li>
@@ -153,7 +154,7 @@
         first, then <img class="inline-symbol" src="/public/images/midRules.png" alt="Mid timing" />, then
         <img class="inline-symbol" src="/public/images/lateRules.png" alt="Late timing" />.
       </li>
-      <li>When actions share the same timing on the same beat, use the tie-break rules in Section 11.</li>
+      <li>When actions share the same timing on the same beat, use the tie-break rules in Section 12.</li>
       <li>If a character is knocked back before their action resolves, their action is canceled and their cards are discarded.</li>
     </ul>
 
@@ -161,8 +162,55 @@
     <p>Advance all in-play cards to the next beat on their timeline.</p>
   </section>
 
+  <section id="play-details" class="panel">
+    <h2>5. Play Details</h2>
+
+    <p>
+      Every play commits exactly <strong>one active card</strong> and <strong>one passive card</strong> from opposite sides
+      (movement + ability). The active card provides the action timeline and rotation limit; the passive card adds its passive
+      text modifier while that action set is in play.
+    </p>
+
+    <div class="play-details-grid">
+      <article class="text-panel">
+        <h3>5.1 Active and Passive Parts on Cards</h3>
+        <p>
+          The green-highlighted row is the card's <strong>Active</strong> text. The blue-highlighted row is the card's
+          <strong>Passive</strong> text.
+        </p>
+        <div class="play-sample-cards">
+          <div id="playDetailsSampleMovementCard" class="play-sample-card"></div>
+          <div id="playDetailsSampleAbilityCard" class="play-sample-card"></div>
+        </div>
+      </article>
+
+      <article class="text-panel">
+        <h3>5.2 How They Fit in Play Modal</h3>
+        <p>
+          In the play modal, your selected cards are combined into one action set: active text drives the sequence, passive text
+          modifies it, and rotation is locked at submission.
+        </p>
+        <figure class="play-modal-map" aria-label="Play modal area mapping">
+          <img src="/public/images/PlayModal.svg" alt="Play modal with active area, passive area, and rotation control" />
+          <span class="play-modal-callout is-rotation">Rotation wheel</span>
+          <span class="play-modal-callout is-active">Active card slot</span>
+          <span class="play-modal-callout is-passive">Passive card slot</span>
+        </figure>
+      </article>
+    </div>
+
+    <div class="text-panel">
+      <h3>5.3 Rotations</h3>
+      <ul>
+        <li>Choose one legal rotation when submitting: <code>0</code>, <code>R1</code>, <code>R2</code>, <code>3</code>, <code>L2</code>, or <code>L1</code>.</li>
+        <li>The active card's rotation badge (for example <img class="inline-symbol" src="/public/images/rot0-2.png" alt="Rotation limitation badge" />) limits which choices are legal.</li>
+        <li>The selected rotation applies before action resolution and only to the action-set start.</li>
+      </ul>
+    </div>
+  </section>
+
   <section id="combat-resolution" class="panel">
-    <h2>5. Combat &amp; Resolution Details</h2>
+    <h2>6. Combat &amp; Resolution Details</h2>
 
     <h3>Hit Resolution</h3>
     <ul>
@@ -187,7 +235,7 @@
   </section>
 
   <section id="hand-economy" class="panel">
-    <h2>6. Cards in Hand Economy</h2>
+    <h2>7. Cards in Hand Economy</h2>
     <p>“Cards in hand” always refers to ability cards only.</p>
     <p>Movement cards must always mirror the number of ability cards in hand.</p>
     <ul>
@@ -199,7 +247,7 @@
   </section>
 
   <section id="trigger-text" class="panel">
-    <h2>7. Trigger Text</h2>
+    <h2>8. Trigger Text</h2>
     <p>Trigger text overrides standard resolution order when its condition is met.</p>
     <div class="text-panel">
       <p><strong>Example – Burning Strike:</strong></p>
@@ -208,7 +256,7 @@
   </section>
 
   <section id="tokens" class="panel">
-    <h2>8. Hexes &amp; Tokens</h2>
+    <h2>9. Hexes &amp; Tokens</h2>
     <p>Hexes define terrain and tokens are board objects placed by card effects. Both persist and resolve by their rules.</p>
 
     <h3>Land Hex</h3>
@@ -270,7 +318,7 @@
   </section>
 
   <section id="end-of-game" class="panel">
-    <h2>9. End of Game</h2>
+    <h2>10. End of Game</h2>
     <p>In 1v1 play, the game ends immediately when one player loses.</p>
     <ul>
       <li>A character is 5 or more hexes from the island edge.</li>
@@ -284,7 +332,7 @@
   </section>
 
   <section id="symbols-glossary" class="panel">
-    <h2>10. Symbols &amp; Glossary</h2>
+    <h2>11. Symbols &amp; Glossary</h2>
 
     <h3>Symbol Reference</h3>
     <table class="parity-table">
@@ -446,7 +494,7 @@
   </section>
 
   <section id="tie-breakers" class="panel">
-    <h2>11. Tie Breakers</h2>
+    <h2>12. Tie Breakers</h2>
 
     <h3>Same Beat + Same Timing</h3>
     <ol>
@@ -470,7 +518,7 @@
   </section>
 
   <section id="quick-reference" class="panel">
-    <h2>12. Quick Reference</h2>
+    <h2>13. Quick Reference</h2>
     <div class="quick-ref-grid">
       <div class="text-panel">
         <h3>Beat Order</h3>
@@ -513,6 +561,58 @@
   </section>
 
 </main>
+  <script type="module">
+    import { loadCardCatalog } from '/public/shared/cardCatalog.js';
+    import { buildCardElement, fitAllCardText } from '/public/shared/cardRenderer.js';
+
+    const findCardById = (catalog, cardId, type) =>
+      (Array.isArray(catalog?.[type]) ? catalog[type] : []).find((card) => card.id === cardId) || null;
+
+    const highlightCardRows = (cardElement) => {
+      const activeRow = cardElement.querySelector('.action-card-surface-row.is-active');
+      const passiveRow = cardElement.querySelector('.action-card-surface-row.is-passive');
+      if (activeRow) activeRow.classList.add('rulebook-row-highlight-active');
+      if (passiveRow) passiveRow.classList.add('rulebook-row-highlight-passive');
+    };
+
+    const renderPlayDetailsCards = async () => {
+      const movementRoot = document.getElementById('playDetailsSampleMovementCard');
+      const abilityRoot = document.getElementById('playDetailsSampleAbilityCard');
+      if (!movementRoot || !abilityRoot) return;
+
+      const catalog = await loadCardCatalog();
+      const movementCard =
+        findCardById(catalog, 'ninja-roll', 'movement') ||
+        findCardById(catalog, 'grappling-hook', 'movement') ||
+        (catalog.movement || [])[0];
+      const abilityCard =
+        findCardById(catalog, 'burning-strike', 'ability') ||
+        findCardById(catalog, 'jab', 'ability') ||
+        (catalog.ability || [])[0];
+
+      if (movementCard) {
+        const movementCardElement = buildCardElement(movementCard);
+        highlightCardRows(movementCardElement);
+        movementRoot.replaceChildren(movementCardElement);
+      }
+      if (abilityCard) {
+        const abilityCardElement = buildCardElement(abilityCard);
+        highlightCardRows(abilityCardElement);
+        abilityRoot.replaceChildren(abilityCardElement);
+      }
+
+      requestAnimationFrame(() => {
+        fitAllCardText();
+        if (document.fonts?.ready) {
+          document.fonts.ready.then(() => requestAnimationFrame(() => fitAllCardText()));
+        }
+      });
+    };
+
+    void renderPlayDetailsCards().catch((error) => {
+      console.error('Failed to render play details cards', error);
+    });
+  </script>
   <script>
     (function highlightRuleTerms() {
       const root = document.querySelector('.rulebook-shell');

@@ -66,7 +66,7 @@ const PLAYED_CARD_PORTRAIT_GAP_FACTOR = 0.2;
 const PLAYED_CARD_HOVER_SCALE = 1;
 const PLAYED_CARD_FACE_DOWN_MS = 180;
 const PLAYED_CARD_FLIP_MS = 260;
-const SHOW_TIMELINE_MINI_CARDS = false;
+const SHOW_TIMELINE_MINI_CARDS = true;
 const PLAY_MODAL_WIDTH = 210;
 const PLAY_MODAL_HEIGHT = 297;
 const PLAY_MODAL_ASPECT = PLAY_MODAL_WIDTH / PLAY_MODAL_HEIGHT;
@@ -258,7 +258,6 @@ const buildHandTriggerLookup = (interactions, characters) => {
   const actorKeyMap = buildActorKeyMap(characters);
   interactions.forEach((interaction) => {
     if (!interaction || interaction.type !== 'hand-trigger') return;
-    if (interaction.status === 'resolved' && interaction.resolution?.use === false) return;
     const beatIndex = Number.isFinite(interaction.beatIndex) ? Math.round(interaction.beatIndex) : null;
     if (beatIndex == null || beatIndex < 0) return;
     const actorKey = actorKeyMap.get(interaction.actorUserId) ?? interaction.actorUserId;

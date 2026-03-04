@@ -331,6 +331,47 @@ test('executeBeats does not open combo on throw hits', () => {
   assert.equal(result.interactions.some((interaction) => interaction.type === 'combo'), false);
 });
 
+test('executeBeatsWithInteractions clears stale pending combo interactions when combo is no longer available', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 2, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+    [
+      buildEntry('alpha', 'Co', 0, characters[0].position, characters[0].facing),
+      buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+
+  const interactions = [
+    {
+      id: 'combo:1:alpha:alpha',
+      type: 'combo',
+      beatIndex: 1,
+      actorUserId: 'alpha',
+      targetUserId: 'alpha',
+      status: 'pending',
+    },
+  ];
+
+  const comboAvailability = new Map([['alpha', false]]);
+  const result = executeBeatsWithInteractions(beats, characters, interactions, undefined, comboAvailability);
+  const pendingCombos = result.interactions.filter(
+    (interaction) => interaction.type === 'combo' && interaction.status === 'pending',
+  );
+  const resolvedCombo = result.interactions.find((interaction) => interaction.id === 'combo:1:alpha:alpha');
+
+  assert.equal(pendingCombos.length, 0);
+  assert.ok(resolvedCombo);
+  assert.equal(resolvedCombo.status, 'resolved');
+  assert.equal(Boolean(resolvedCombo.resolution?.invalidated), true);
+});
+
 test('executeBeats opens a guard continue interaction on Guard bracket frames', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },

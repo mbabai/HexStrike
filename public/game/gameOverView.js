@@ -1,4 +1,4 @@
-import { getLocalOutcomeLabel } from './matchEndRules.js';
+import { getLocalOutcomeLabel, getMatchOutcomeReasonLabel } from './matchEndRules.js';
 
 export const createGameOverView = ({
   gameArea,
@@ -44,7 +44,7 @@ export const createGameOverView = ({
     };
   };
 
-  const update = (outcome, localUserId, status = false) => {
+  const update = (outcome, localUserId, status = false, publicState = null) => {
     const isGameOver = Boolean(outcome);
     if (gameArea) {
       gameArea.classList.toggle('is-game-over', isGameOver);
@@ -60,7 +60,7 @@ export const createGameOverView = ({
       return;
     }
     const localOutcome = getLocalOutcomeLabel(outcome, localUserId);
-    message.textContent =
+    const baseMessage =
       localOutcome === 'win'
         ? 'You win!'
         : localOutcome === 'lose'
@@ -68,6 +68,11 @@ export const createGameOverView = ({
           : localOutcome === 'draw'
             ? 'Draw.'
             : 'Game over.';
+    const reasonLabel = getMatchOutcomeReasonLabel(outcome, publicState);
+    message.textContent =
+      reasonLabel && localOutcome !== 'draw'
+        ? `${baseMessage} (${reasonLabel})`
+        : baseMessage;
     button.disabled = normalizedStatus.continueInFlight;
     if (secondaryButton) {
       secondaryButton.disabled = normalizedStatus.shareInFlight;

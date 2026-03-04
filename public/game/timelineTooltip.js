@@ -7,6 +7,7 @@ import { GAME_CONFIG } from './config.js';
 import { getCharacterTokenMetrics } from './characterTokens.mjs';
 import { actionHasAttackToken } from './cardText/actionListTransforms.js';
 import { isFfaPlayerInvulnerableAtBeat } from './ffaState.js';
+import { buildBoardHandTriggerEntries, getBoardHandTriggerTarget } from './boardHandTriggerView.js';
 
 const DAMAGE_ICON_ACTION = 'DamageIcon';
 const DEFAULT_ACTION = 'E';
@@ -563,6 +564,26 @@ export const createTimelineTooltip = ({
       target = getFocusAnchorTarget({ event, canvas, viewState, sceneTokens });
     }
     if (!target) {
+      const beats = Array.isArray(gameState?.state?.public?.beats) ? gameState.state.public.beats : [];
+      const interactions = Array.isArray(gameState?.state?.public?.customInteractions)
+        ? gameState.state.public.customInteractions
+        : [];
+      const beatIndex = beats.length ? Math.min(timeIndicatorViewModel?.value ?? 0, beats.length - 1) : 0;
+      const sceneCharacters = getScene?.()?.characters ?? gameState?.state?.public?.characters ?? [];
+      const size = getHexSize(rect.width || canvas.clientWidth || 1, GAME_CONFIG.hexSizeFactor);
+      const entries = buildBoardHandTriggerEntries({
+        sceneCharacters,
+        interactions,
+        beatIndex,
+        size,
+      });
+      target = getBoardHandTriggerTarget({
+        entries,
+        pointer: { x: event.clientX - rect.left, y: event.clientY - rect.top },
+        viewState,
+      });
+    }
+    if (!target) {
       const sceneCharacters = getScene?.()?.characters ?? gameState?.state?.public?.characters ?? [];
       target = getCharacterTokenTarget({ event, canvas, viewState, sceneCharacters });
     }
@@ -661,29 +682,53 @@ export const createTimelineTooltip = ({
       positionTooltip(target.center.x, target.center.y);
       return;
     }
+    if (target.kind === 'board-hand-trigger') {
+      const cardId = target.cardId ? `${target.cardId}`.trim() : '';
+      const card = cardId ? cardMetadata.byId.get(cardId) : null;
+      const previewScale = Math.min(getHandCardPreviewScale(), 0.46);
+      if (!card) {
+        hide();
+        return;
+      }
+      const key = [
+        'board-hand-trigger',
+        target.interaction?.id ?? '',
+        cardId,
+        target.beatIndex,
+        previewScale.toFixed(3),
+      ].join(':');
+      if (key !== lastTooltipKey) {
+        title.hidden = true;
+        title.textContent = '';
+        renderAttackStats('');
+        renderStatus('');
+        instruction.hidden = true;
+        instruction.textContent = '';
+        clearSupplementalSections({ hideDivider: true });
+        renderCardPreview([card], { scale: previewScale });
+        lastTooltipKey = key;
+      }
+      tooltip.hidden = false;
+      positionTooltip(target.center.x, target.center.y);
+      return;
+    }
     if (target.kind === 'hand-trigger') {
       const cardId = target.cardId ? `${target.cardId}` : '';
       const card = cardId ? cardMetadata.byId.get(cardId) : null;
       const titleText = card?.name ?? cardId;
       const attackStatsLine = buildAttackStatsLine(card);
-      const bodyText = card?.handTriggerText || card?.activeText || '';
-      if (!titleText && !bodyText && !attackStatsLine) {
+      if (!titleText && !attackStatsLine) {
         hide();
         return;
       }
-      const key = ['hand-trigger', cardId, target.beatIndex, attackStatsLine, bodyText].join(':');
+      const key = ['hand-trigger', cardId, target.beatIndex, attackStatsLine].join(':');
       if (key !== lastTooltipKey) {
         title.textContent = titleText;
         title.hidden = !titleText;
         renderAttackStats(attackStatsLine);
         renderStatus('');
-        if (bodyText) {
-          instruction.hidden = false;
-          appendInlineText(instruction, bodyText);
-        } else {
-          instruction.hidden = true;
-          instruction.textContent = '';
-        }
+        instruction.hidden = true;
+        instruction.textContent = '';
         clearSupplementalSections({ hideDivider: true });
         lastTooltipKey = key;
       }

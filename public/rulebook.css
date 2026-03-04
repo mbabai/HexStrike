@@ -104,6 +104,131 @@
   cursor: default;
 }
 
+.play-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.play-sample-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.55rem;
+}
+
+.play-sample-card {
+  min-height: calc(var(--action-card-height, 336px) + 8px);
+  display: flex;
+  justify-content: center;
+}
+
+.play-sample-card .action-card {
+  cursor: default;
+}
+
+.rulebook-row-highlight-active,
+.rulebook-row-highlight-passive {
+  position: relative;
+}
+
+.rulebook-row-highlight-active::after,
+.rulebook-row-highlight-passive::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 2px solid transparent;
+}
+
+.rulebook-row-highlight-active::after {
+  border-color: rgba(88, 203, 120, 0.95);
+  box-shadow: inset 0 0 0 1px rgba(23, 74, 31, 0.65);
+}
+
+.rulebook-row-highlight-passive::after {
+  border-color: rgba(108, 182, 255, 0.95);
+  box-shadow: inset 0 0 0 1px rgba(27, 52, 92, 0.65);
+}
+
+.play-modal-map {
+  margin: 0.65rem 0 0;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 0.75rem;
+  padding: 0.6rem;
+  background: rgba(0, 0, 0, 0.16);
+  position: relative;
+}
+
+.play-modal-map img {
+  width: 100%;
+  max-width: 390px;
+  margin: 0 auto;
+  display: block;
+}
+
+.play-modal-callout {
+  position: absolute;
+  right: 0.65rem;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.77rem;
+  line-height: 1;
+  color: var(--color-text-strong);
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.play-modal-callout::before {
+  content: '';
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  margin-right: 0.35rem;
+}
+
+.play-modal-callout.is-rotation {
+  top: 14%;
+}
+
+.play-modal-callout.is-rotation::before {
+  background: #f4cd63;
+}
+
+.play-modal-callout.is-active {
+  top: 48%;
+}
+
+.play-modal-callout.is-active::before {
+  background: #58cb78;
+}
+
+.play-modal-callout.is-passive {
+  top: 78%;
+}
+
+.play-modal-callout.is-passive::before {
+  background: #6cb6ff;
+}
+
+@media (max-width: 720px) {
+  .play-modal-callout {
+    position: static;
+    margin-top: 0.4rem;
+    margin-right: 0.35rem;
+  }
+
+  .play-modal-map {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    align-items: flex-start;
+  }
+}
+
 .timeline-example {
   margin-top: 0.85rem;
   border: 1px solid var(--color-border-subtle);

@@ -149,6 +149,21 @@ const hasPendingDrawInteraction = (
     }),
   );
 
+const hasPendingInteractionForUser = (
+  interactions: CustomInteraction[] | undefined,
+  actorId: string,
+  beatIndex: number,
+): boolean =>
+  Boolean(
+    interactions?.some((interaction) => {
+      if (!interaction || interaction.status !== 'pending') return false;
+      const involvesActor = interaction.actorUserId === actorId || interaction.targetUserId === actorId;
+      if (!involvesActor) return false;
+      if (!Number.isFinite(interaction.beatIndex)) return true;
+      return Math.round(interaction.beatIndex) <= beatIndex;
+    }),
+  );
+
 const getDistanceLossIndex = (
   beats: BeatEntry[][],
   character: PublicCharacter,
@@ -287,6 +302,7 @@ export const evaluateMatchOutcome = (
     if (!location) return;
     if (isCoordOnLand(location, landTiles)) return;
     if (hasPendingDrawInteraction(interactions, character.userId, beatIndex)) return;
+    if (hasPendingInteractionForUser(interactions, character.userId, beatIndex)) return;
     if (hasAnyCardsRemaining(deckStates.get(character.userId))) return;
     losses.push({ userId: character.userId, reason: 'no-cards-abyss', beatIndex });
   });

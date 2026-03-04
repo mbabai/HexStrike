@@ -529,9 +529,12 @@ const getFacingBehindDirectionIndex = (facing: number): number | null => {
 const buildComboAvailability = (deckStates: Map<string, DeckState>, catalog: CardCatalog) => {
   const availability = new Map<string, boolean>();
   deckStates.forEach((deckState, userId) => {
-    const movementAvailable = deckState.movement.filter((id) => !deckState.exhaustedMovementIds.has(id));
-    const abilityAvailable = deckState.abilityHand.slice();
-    const hasCombo = [...movementAvailable, ...abilityAvailable].some((id) => cardHasCombo(catalog.cardsById.get(id)));
+    const movementAvailable = getMovementHandIds(deckState);
+    const abilityAvailable = Array.isArray(deckState.abilityHand) ? deckState.abilityHand.slice() : [];
+    const hasMovementCombo = movementAvailable.some((id) => cardHasCombo(catalog.cardsById.get(id)));
+    const hasAbilityCombo = abilityAvailable.some((id) => cardHasCombo(catalog.cardsById.get(id)));
+    const hasCombo =
+      (hasMovementCombo && abilityAvailable.length > 0) || (hasAbilityCombo && movementAvailable.length > 0);
     availability.set(userId, hasCombo);
   });
   return availability;
@@ -4473,6 +4476,7 @@ const maybeSkipTutorialThrowInteractionStep = (
       return { ok: false, status: 400, error: 'Unsupported interaction type' };
     }
 
+    comboAvailability = buildComboAvailability(deckStates, catalog);
     comboAvailability = applyTutorialComboAvailability(comboAvailability, getTutorialSession(gameId));
     const tutorialSession = getTutorialSession(gameId);
     const handTriggerAvailability = buildHandTriggerAvailability(deckStates);

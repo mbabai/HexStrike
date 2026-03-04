@@ -189,6 +189,44 @@ test('ledge grab draw resolves before no-cards abyss loss when adjacent to land'
   assert.equal(outcome, null);
 });
 
+test('no-cards abyss loss waits while the player has pending interactions', () => {
+  const land = buildDefaultLandHexes();
+  const characters = [
+    { userId: 'stalled', username: 'stalled', position: { q: -1, r: 2 }, facing: 0, characterId: 'murelious' },
+    { userId: 'other', username: 'other', position: { q: 0, r: 0 }, facing: 0, characterId: 'murelious' },
+  ];
+  const beats = [
+    [
+      buildEntry('stalled', 'E', characters[0].position),
+      buildEntry('other', 'E', characters[1].position),
+    ],
+  ];
+  const deckStates = new Map();
+  deckStates.set(
+    'stalled',
+    buildDeckState({
+      movement: ['m1'],
+      abilityHand: [],
+      exhaustedMovementIds: ['m1'],
+    }),
+  );
+  deckStates.set('other', buildDeckState());
+  const interactions = [
+    {
+      id: 'discard:0:stalled:stalled',
+      type: 'discard',
+      beatIndex: 0,
+      actorUserId: 'stalled',
+      targetUserId: 'stalled',
+      status: 'pending',
+    },
+  ];
+
+  const outcome = evaluateMatchOutcome(beats, characters, deckStates, interactions, land);
+
+  assert.equal(outcome, null);
+});
+
 test('applyDeathToBeats inserts death and clears later entries for the loser', () => {
   const characters = [
     { userId: 'loser', username: 'loser', position: { q: 0, r: 0 }, facing: 0, characterId: 'murelious' },
