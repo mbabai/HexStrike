@@ -68,9 +68,11 @@ The game runs in repeating beats. Each beat follows this order:
 - Any player who is at an eligible open beat chooses exactly:
   - one active card,
   - one passive card of the opposite type,
-  - one legal rotation for the active card.
+  - one legal rotation for the active card,
+  - one adrenaline amount from 0 up to their current adrenaline pool.
 - The submission is locked when accepted by the server.
 - The action list is inserted at that player's first open slot; the selected rotation applies only to the first inserted action entry unless later effects force rotation.
+- Submitted adrenaline is spent when that committed play applies its selected rotation, even if the play is immediately interrupted and later action steps do not occur.
 - If multiple players must submit at the same earliest beat, submissions are collected and revealed/resolved together.
 - If a player cannot play at the earliest open beat, apply ledge grab first when eligible; otherwise resolve the no-cards abyss loss condition.
 

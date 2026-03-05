@@ -2176,6 +2176,46 @@ test('executeBeats applies smoke-bomb stun as grey hit frames without knockback 
   assert.equal(betaCharacter.damage ?? 0, 0);
 });
 
+test('executeBeats spends submitted adrenaline when a selected-rotation play is stunned immediately', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    {
+      userId: 'beta',
+      username: 'beta',
+      position: { q: 1, r: 0 },
+      facing: 180,
+      characterId: 'murelious',
+      characterName: 'Beta',
+      adrenaline: 5,
+    },
+  ];
+
+  const beats = [[
+    buildEntry('alpha', '[a-La-Ra]', 87, characters[0].position, characters[0].facing, '0', 0, 0),
+    buildEntry('beta', 'm', 10, characters[1].position, characters[1].facing, 'R1'),
+  ]];
+
+  beats[0][0].cardId = 'smoke-bomb';
+  beats[0][0].passiveCardId = 'step';
+  beats[0][0].rotationSource = 'selected';
+  beats[0][1].cardId = 'step';
+  beats[0][1].passiveCardId = 'jab';
+  beats[0][1].rotationSource = 'selected';
+  beats[0][1].submittedAdrenaline = 3;
+
+  const result = executeBeats(beats, characters);
+  const betaBeat0 = (result.beats[0] || []).find((entry) => entry.username === 'beta');
+  const betaBeat1 = (result.beats[1] || []).find((entry) => entry.username === 'beta');
+
+  assert.ok(betaBeat0);
+  assert.ok(betaBeat1);
+  assert.equal(betaBeat0.action, 'DamageIcon');
+  assert.equal(betaBeat0.stunOnly, true);
+  assert.equal(betaBeat0.facing, 240);
+  assert.equal(betaBeat0.adrenaline, 2);
+  assert.equal(betaBeat1.adrenaline, 2);
+});
+
 test('executeBeats applies smoke-bomb stun even when the attack entry is tagged as throw', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },

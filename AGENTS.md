@@ -96,6 +96,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Beat entries include `terrain` (`land`/`abyss`) derived from `location` + `public.land`; refresh/abyss logic should prefer this flag.
 - Action-set insertion is per player: replace that player's first open slot (missing entry or `E`), fill empty beats in place, and avoid shifting other players' beats.
 - Action-set rotations use the player-selected rotation only on the first action entry; later rotations are reserved for card-text injections and should set `rotationSource: 'forced'`.
+- Submitted adrenaline is consumed at the same commit point as the selected rotation (`rotationSource: 'selected'`), before later stun/hit rewrites; do not tie the spend to whether the first action still resolves.
 - Action-set submissions must include `activeCardId`, `passiveCardId`, and `rotation`; the server rebuilds the action list from the card catalog and rejects unavailable or exhausted cards.
 - Card-text symbol placeholders (`{a}`, `{m}`, `{W}`, etc.) should match exact action symbols by default; only broaden to type-wide matching when the text explicitly says general categories like "attacks", "movement", or "jumps."
 - Fleche passive skips the final `W` only when a prior token contains an exact `a` symbol (for example `a` or `2a-a`, but not `2a` alone); keep `src/game/cardText/passiveMovement.ts` and `public/game/cardText/passiveMovement.js` in sync.

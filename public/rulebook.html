@@ -185,7 +185,7 @@
       <li>1 legal rotation</li>
       <li>1 <span class="term-adrenaline">adrenaline</span> submission from 0 to your current <span class="term-adrenaline">adrenaline</span> (max 10).</li>
     </ul>
-    <p>The submitted <span class="term-adrenaline">adrenaline</span> is locked when you submit and is the first tie-breaker for actions within the same class. If you do not change it, the default submission is 0.</p>
+    <p>The submitted <span class="term-adrenaline">adrenaline</span> is locked when you submit, is the first tie-breaker for actions within the same class, and is spent when the committed play applies its chosen rotation. If you do not change it, the default submission is 0.</p>
     <p>If a player has no cards to play and is over the abyss during this phase, they lose immediately.</p>
 
     <h3>4.3 Beat Resolution</h3>
@@ -234,7 +234,7 @@
     <div class="play-details-grid">
       <article class="text-panel">
         <p>During the simultaneous play phase, players who are up for a turn select 4 things: an active card, a passive card, a rotation, and an <span class="term-adrenaline">adrenaline</span> submission. The active and passive cards must be of opposite type; a movement (green) card, and an ability (purple) card. The rotation selected must be allowed by the rotation limit of the active card, where * means any rotation. <span class="term-adrenaline">Adrenaline</span> submissions are integers from 0 to 10 and cannot exceed your current <span class="term-adrenaline">adrenaline</span> pool at that beat.</p>
-        <p>Once all players have simultaneously selected and revealed, this selection will first rotate the player's character in the chosen direction relative to their current facing direction, then beat-by-beat, along with all other players, enact the actions on the active card's timeline. The active card's passive text (on the bottom) is completely ignored during this time, whereas the passive text on the passive card will modify the active card based on the text. If there is no passive text, the active card plays out unchanged. <span class="term-adrenaline">Adrenaline</span> gain/loss effects modify your current pool, not the already submitted <span class="term-adrenaline">adrenaline</span> value for that action set.</p>
+        <p>Once all players have simultaneously selected and revealed, this selection will first rotate the player's character in the chosen direction relative to their current facing direction, then beat-by-beat, along with all other players, enact the actions on the active card's timeline. The active card's passive text (on the bottom) is completely ignored during this time, whereas the passive text on the passive card will modify the active card based on the text. If there is no passive text, the active card plays out unchanged. Submitted <span class="term-adrenaline">adrenaline</span> is spent at that rotation step even if the play is immediately interrupted afterward. <span class="term-adrenaline">Adrenaline</span> gain/loss effects modify your current pool, not the already submitted <span class="term-adrenaline">adrenaline</span> value for that action set.</p>
         <figure class="play-modal-map" aria-label="Play modal area mapping">
           <div class="play-modal-stage">
             <div class="play-modal-image-wrap">
@@ -552,7 +552,7 @@
       </div>
       <div class="glossary-item">
         <dt><span class="term-adrenaline">Adrenaline</span></dt>
-        <dd>A per-player pool from 0 to 10. You submit an <span class="term-adrenaline">adrenaline</span> value with each action set, and that submitted value is the first tie-breaker within the same action class.</dd>
+        <dd>A per-player pool from 0 to 10. You submit an <span class="term-adrenaline">adrenaline</span> value with each action set, and that submitted value is the first tie-breaker within the same action class. It is spent when that committed play applies its chosen rotation.</dd>
       </div>
       <div class="glossary-item">
         <dt>Signature Move</dt>

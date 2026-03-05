@@ -2596,10 +2596,21 @@ export const executeBeatsWithInteractions = (
   const applyRotationPhase = (entries: Map<string, BeatEntry>) => {
     const rotatedActors = new Set<string>();
     entries.forEach((entry, actorId) => {
-      const rotationDelta = parseRotationDegrees(entry.rotation ?? '');
-      if (!rotationDelta) return;
       const actorState = state.get(actorId);
       if (!actorState) return;
+      const rotationSource = `${entry.rotationSource ?? ''}`.trim();
+      if (rotationSource === 'selected') {
+        const submittedAdrenaline = toAdrenaline(entry.submittedAdrenaline) ?? MIN_ADRENALINE;
+        if (submittedAdrenaline > 0) {
+          const currentAdrenaline = toAdrenaline(actorState.adrenaline) ?? MIN_ADRENALINE;
+          actorState.adrenaline = Math.max(
+            MIN_ADRENALINE,
+            Math.min(MAX_ADRENALINE, currentAdrenaline - submittedAdrenaline),
+          );
+        }
+      }
+      const rotationDelta = parseRotationDegrees(entry.rotation ?? '');
+      if (!rotationDelta) return;
       actorState.facing = normalizeDegrees(actorState.facing + rotationDelta);
       rotatedActors.add(actorId);
     });
@@ -4391,14 +4402,6 @@ export const executeBeatsWithInteractions = (
         const nextAdrenaline = Math.max(MIN_ADRENALINE, Math.min(MAX_ADRENALINE, currentAdrenaline + Math.round(delta)));
         actorState.adrenaline = nextAdrenaline;
       };
-
-      const shouldSpendSubmittedAdrenaline = !isOpenBeatAction(entry.action) && isActionSetStart(entry);
-      if (shouldSpendSubmittedAdrenaline) {
-        const submittedAdrenaline = toAdrenaline(entry.submittedAdrenaline) ?? MIN_ADRENALINE;
-        if (submittedAdrenaline > 0) {
-          applyAdrenalineDelta(-submittedAdrenaline);
-        }
-      }
 
       const startDiscard = getPassiveStartDiscardCount(entry.passiveCardId);
       if (startDiscard && !isOpenBeatAction(entry.action) && isActionSetStart(entry)) {
