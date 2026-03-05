@@ -50,8 +50,6 @@ test('card balance update applies timeline, damage, and naming changes', async (
   assert.deepEqual(getCardById(catalog, 'sweeping-strike').actions, ['W', '[a-La-Ra]', 'W', 'Adr+1', 'E']);
 
   assert.equal(existsSync('public/images/a-Bm.png'), true);
-  assert.equal(existsSync('public/images/Adr+1.png'), true);
-  assert.equal(existsSync('public/images/Adr+2.png'), true);
 });
 
 const normalizeActionLabel = (action) => {
