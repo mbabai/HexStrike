@@ -71,6 +71,7 @@ const buildTargetEntry = (
   cardId: string | undefined,
   passiveCardId: string | undefined,
   abilityHandCount: number | undefined,
+  submittedAdrenaline: number | undefined,
   seed: { damage: number; location: { q: number; r: number }; facing: number },
 ): BeatEntry => {
   const entry: BeatEntry = {
@@ -105,6 +106,9 @@ const buildTargetEntry = (
   }
   if (Number.isFinite(abilityHandCount)) {
     entry.abilityHandCount = Math.max(0, Math.floor(abilityHandCount as number));
+  }
+  if (Number.isFinite(submittedAdrenaline)) {
+    entry.submittedAdrenaline = Math.min(10, Math.max(0, Math.floor(submittedAdrenaline as number)));
   }
   return entry;
 };
@@ -184,6 +188,7 @@ export const applyActionSetToBeats = (
     cardId: item.cardId,
     passiveCardId: item.passiveCardId,
     abilityHandCount: index === 0 ? item.abilityHandCount : undefined,
+    submittedAdrenaline: item.submittedAdrenaline,
   }));
   const lastIndex = startIndex + actions.length - 1;
 
@@ -239,6 +244,11 @@ export const applyActionSetToBeats = (
       } else if ('abilityHandCount' in entry) {
         delete entry.abilityHandCount;
       }
+      if (Number.isFinite(actionItem.submittedAdrenaline)) {
+        entry.submittedAdrenaline = Math.min(10, Math.max(0, Math.floor(actionItem.submittedAdrenaline as number)));
+      } else if ('submittedAdrenaline' in entry) {
+        delete entry.submittedAdrenaline;
+      }
       if ('havenPassiveSkipApplied' in entry) {
         delete entry.havenPassiveSkipApplied;
       }
@@ -268,6 +278,7 @@ export const applyActionSetToBeats = (
         actionItem.cardId,
         actionItem.passiveCardId,
         actionItem.abilityHandCount,
+        actionItem.submittedAdrenaline,
         seed,
       );
       if (actionItem.comboStarter) {

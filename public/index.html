@@ -361,6 +361,19 @@
                 <div id="passiveSlot" class="action-slot-drop" data-slot="passive" aria-label="Passive card slot">
                 </div>
               </div>
+              <div id="adrenalineMeter" class="adrenaline-meter" aria-label="Adrenaline meter">
+                <div id="adrenalineMeterTrack" class="adrenaline-meter-track">
+                  <div class="adrenaline-meter-glass" aria-hidden="true"></div>
+                  <div id="adrenalineMeterFill" class="adrenaline-meter-fill" aria-hidden="true"></div>
+                  <div class="adrenaline-meter-ticks" aria-hidden="true"></div>
+                  <button
+                    id="adrenalineMeterKnob"
+                    class="adrenaline-meter-knob"
+                    type="button"
+                    aria-label="Submitted adrenaline: 0"
+                  ><img src="/public/images/Adrenaline.png" alt="" /><span id="adrenalineMeterValue" class="adrenaline-meter-value">0</span></button>
+                </div>
+              </div>
             </div>
           </div>
           <button id="actionSubmit" class="btn btn-primary action-submit" type="button" hidden>Submit</button>

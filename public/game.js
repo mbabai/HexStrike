@@ -306,6 +306,10 @@ export const initGame = () => {
   const passiveSlot = document.getElementById('passiveSlot');
   const submitButton = document.getElementById('actionSubmit');
   const rotationWheel = document.getElementById('rotationWheel');
+  const adrenalineMeterTrack = document.getElementById('adrenalineMeterTrack');
+  const adrenalineMeterFill = document.getElementById('adrenalineMeterFill');
+  const adrenalineMeterKnob = document.getElementById('adrenalineMeterKnob');
+  const adrenalineMeterValue = document.getElementById('adrenalineMeterValue');
   const interactionOverlay = document.getElementById('interactionOverlay');
   const throwModal = document.getElementById('throwModal');
   const throwButtons = throwModal ? Array.from(throwModal.querySelectorAll('.throw-arrow')) : [];
@@ -884,6 +888,7 @@ export const initGame = () => {
       actionHud.setPlayModalBeatPointer?.(null);
       actionHud.setPlayedPreviewCards?.(null, null);
       actionHud.setPlayedPreviewRotation?.(null);
+      actionHud.setAdrenalinePool?.(0);
       return;
     }
     const outcome = getMatchOutcome(gameState?.state?.public);
@@ -894,6 +899,7 @@ export const initGame = () => {
       actionHud.setPlayModalBeatPointer?.(null);
       actionHud.setPlayedPreviewCards?.(null, null);
       actionHud.setPlayedPreviewRotation?.(null);
+      actionHud.setAdrenalinePool?.(0);
       return;
     }
     if (!gameState || !cardCatalog) {
@@ -910,6 +916,7 @@ export const initGame = () => {
       actionHud.setPlayModalBeatPointer?.(null);
       actionHud.setPlayedPreviewCards?.(null, null);
       actionHud.setPlayedPreviewRotation?.(null);
+      actionHud.setAdrenalinePool?.(0);
       return;
     }
 
@@ -928,6 +935,7 @@ export const initGame = () => {
       actionHud.setPlayModalBeatPointer?.(null);
       actionHud.setPlayedPreviewCards?.(null, null);
       actionHud.setPlayedPreviewRotation?.(null);
+      actionHud.setAdrenalinePool?.(0);
       return;
     }
 
@@ -977,7 +985,17 @@ export const initGame = () => {
       const localDamage = Number.isFinite(localEntry?.damage)
         ? Math.round(localEntry.damage)
         : localCharacter?.damage ?? 0;
+      const localTimelineEntry =
+        localCharacter && beats.length
+          ? getLastEntryForCharacter(beats, localCharacter, timeIndicatorViewModel.value)
+          : null;
+      const localAdrenaline = Number.isFinite(localTimelineEntry?.adrenaline)
+        ? Math.round(localTimelineEntry.adrenaline)
+        : Number.isFinite(localCharacter?.adrenaline)
+          ? Math.round(localCharacter.adrenaline)
+          : 0;
       actionHud.setPlayerDamage?.(localDamage);
+      actionHud.setAdrenalinePool?.(localAdrenaline);
       const localPlayBeatSlot =
         localCharacter && beats.length
           ? getPlayBeatSlotForCharacter(beats, localCharacter, timeIndicatorViewModel.value)
@@ -1061,7 +1079,7 @@ export const initGame = () => {
     lastTurnActive = isTurn;
   };
 
-  const handleActionSubmit = async ({ activeCardId, passiveCardId, rotation, activeCard }) => {
+  const handleActionSubmit = async ({ activeCardId, passiveCardId, rotation, adrenaline = 0, activeCard }) => {
     if (isReplayMode()) return;
     if (!gameState?.id || actionSubmitInFlight) return;
     if (getMatchOutcome(gameState?.state?.public)) return;
@@ -1078,6 +1096,7 @@ export const initGame = () => {
       activeCardId,
       passiveCardId,
       rotation,
+      adrenaline,
       earliestIndex: getTimelineEarliestEIndex(beats, characters),
       timelineIndex: timeIndicatorViewModel.value,
     });
@@ -1091,6 +1110,7 @@ export const initGame = () => {
           activeCardId,
           passiveCardId,
           rotation,
+          adrenaline,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -1104,7 +1124,7 @@ export const initGame = () => {
         throw new Error(message);
       }
       debugLog(`${LOG_PREFIX} action:set ack`, { status: response.status, gameId: gameState.id });
-      tutorialGuide?.notifyActionSubmitted?.({ activeCardId, passiveCardId, rotation });
+      tutorialGuide?.notifyActionSubmitted?.({ activeCardId, passiveCardId, rotation, adrenaline });
       if (actionHud) actionHud.clearSelection();
     } catch (err) {
       console.error('Failed to submit action set', err);
@@ -1783,6 +1803,10 @@ export const initGame = () => {
     passiveSlot,
     submitButton,
     rotationWheel,
+    adrenalineMeterTrack,
+    adrenalineMeterFill,
+    adrenalineMeterKnob,
+    adrenalineMeterValue,
     onSubmit: handleActionSubmit,
     onRotationChange: (rotation) => {
       selectedRotationPreview = normalizeRotationLabel(rotation);
@@ -2044,12 +2068,14 @@ export const initGame = () => {
     .then((catalog) => {
       cardCatalog = catalog;
       cardLookup = buildCardLookup(catalog);
+      timelinePlayback.setCardLookup(cardLookup);
       tooltip.setCardCatalog(catalog);
       refreshActionHud();
       refreshInteractionOverlay();
     })
     .catch((err) => {
       console.warn('Failed to load card catalog for timeline tooltips', err);
+      timelinePlayback.setCardLookup(new Map());
     });
   loadCharacterCatalog()
     .then((catalog) => {

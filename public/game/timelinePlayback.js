@@ -33,6 +33,9 @@ const ARROW_DAMAGE = 4;
 const ARROW_KBF = 1;
 const ARROW_LAND_DISTANCE_LIMIT = 5;
 const ARROW_PRIORITY = 95;
+const MIN_ADRENALINE = 0;
+const MAX_ADRENALINE = 10;
+const SUBMITTED_ADRENALINE_DAMAGE_PATTERN = /damage\s*\+\s*\{?\s*adrx\s*\}?/i;
 const HAVEN_PLATFORM_INTERACTION_TYPE = 'haven-platform';
 const REWIND_FOCUS_INTERACTION_TYPE = 'rewind-focus';
 const REWIND_RETURN_INTERACTION_TYPE = 'rewind-return';
@@ -52,6 +55,8 @@ const SMOKE_BOMB_CARD_ID = 'smoke-bomb';
 const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
 const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
 const GRAPPLING_HOOK_CARD_ID = 'grappling-hook';
+let cardLookupById = new Map();
+const submittedAdrenalineDamageByCardId = new Map();
 
 const getEntryPriority = (entry) => {
   const actionLabel = normalizeActionLabel(entry?.action ?? '').toUpperCase();
@@ -593,6 +598,32 @@ const hasTimingOverlap = (leftTiming, rightTiming) => {
   return leftTiming.some((phase) => rightTiming.includes(phase));
 };
 
+const getEntrySubmittedAdrenaline = (entry) => {
+  const parsed = Number(entry?.submittedAdrenaline);
+  if (!Number.isFinite(parsed)) return MIN_ADRENALINE;
+  const rounded = Math.round(parsed);
+  if (rounded < MIN_ADRENALINE || rounded > MAX_ADRENALINE) return MIN_ADRENALINE;
+  return rounded;
+};
+
+const cardUsesSubmittedAdrenalineDamage = (cardId) => {
+  const id = `${cardId ?? ''}`.trim();
+  if (!id) return false;
+  if (submittedAdrenalineDamageByCardId.has(id)) {
+    return submittedAdrenalineDamageByCardId.get(id) ?? false;
+  }
+  const activeText = `${cardLookupById.get(id)?.activeText ?? ''}`;
+  const usesBonus = activeText.includes('{i}') && SUBMITTED_ADRENALINE_DAMAGE_PATTERN.test(activeText);
+  submittedAdrenalineDamageByCardId.set(id, usesBonus);
+  return usesBonus;
+};
+
+const getEntrySubmittedAdrenalineDamageBonus = (entry) => {
+  if (!entry || !isBracketedTokenAction(entry.action ?? '')) return 0;
+  if (!cardUsesSubmittedAdrenalineDamage(entry.cardId)) return 0;
+  return getEntrySubmittedAdrenaline(entry);
+};
+
 const compareBeatEntriesForExecutionBase = (left, right) => {
   const timingDelta = getEntryTimingRank(left) - getEntryTimingRank(right);
   if (timingDelta) return timingDelta;
@@ -601,6 +632,9 @@ const compareBeatEntriesForExecutionBase = (left, right) => {
   const classRankRight = ACTION_CLASS_RANK.get(getEntryActionClass(right)) ?? Number.MAX_SAFE_INTEGER;
   const classDelta = classRankLeft - classRankRight;
   if (classDelta) return classDelta;
+
+  const adrenalineDelta = getEntrySubmittedAdrenaline(right) - getEntrySubmittedAdrenaline(left);
+  if (adrenalineDelta) return adrenalineDelta;
 
   const stepDelta = getEntryActionSetStep(right) - getEntryActionSetStep(left);
   if (stepDelta) return stepDelta;
@@ -619,7 +653,13 @@ const buildExecutionTieBucketKey = (entry) => {
   const actionClass = getEntryActionClass(entry);
   const attackKey = actionClass === 'attack' ? getEntryAttackKbf(entry) : 'x';
   const classRank = ACTION_CLASS_RANK.get(actionClass) ?? Number.MAX_SAFE_INTEGER;
-  return [getEntryTimingRank(entry), classRank, getEntryActionSetStep(entry), attackKey].join('|');
+  return [
+    getEntryTimingRank(entry),
+    classRank,
+    getEntrySubmittedAdrenaline(entry),
+    getEntryActionSetStep(entry),
+    attackKey,
+  ].join('|');
 };
 
 const isClassicAttackSweep = (attackTokens) =>
@@ -1585,9 +1625,10 @@ const buildActionSteps = (
               const interaction = interactionById.get(interactionId);
               const resolvedDirection = getResolvedDirectionIndex(interaction);
               const knockbackPath = [{ q: targetState.position.q, r: targetState.position.r }];
+              const submittedAdrenalineDamageBonus = getEntrySubmittedAdrenalineDamageBonus(entry);
               if (interaction?.status === 'resolved' && resolvedDirection != null) {
                 const damageReduction = getHealingHarmonyReduction(targetEntry);
-                const throwDamage = entryDamage + attackDamageBonus;
+                const throwDamage = entryDamage + attackDamageBonus + submittedAdrenalineDamageBonus;
                 const adjustedDamage = applyDamageToUser(targetId, Math.max(0, throwDamage - damageReduction));
                 damageChanges.push({ targetId, delta: adjustedDamage });
                 const knockbackDirection = AXIAL_DIRECTIONS[resolvedDirection];
@@ -1655,7 +1696,8 @@ const buildActionSteps = (
               isBracketedAction(entry.action ?? '') &&
               isBehindTarget(origin, targetState);
             const stabBonus = isStabHit ? 3 : 0;
-            const rawDamage = entryDamage + stabBonus + attackDamageBonus;
+            const submittedAdrenalineDamageBonus = getEntrySubmittedAdrenalineDamageBonus(entry);
+            const rawDamage = entryDamage + stabBonus + attackDamageBonus + submittedAdrenalineDamageBonus;
             const rawKbf = entryKbf + stabBonus;
             const damageReduction = getHealingHarmonyReduction(targetEntry);
             const adjustedDamage = applyDamageToUser(targetId, Math.max(0, rawDamage - damageReduction));
@@ -3412,6 +3454,15 @@ export const createTimelinePlayback = () => {
     setSpeedMultiplier(nextSpeed) {
       const parsed = Number(nextSpeed);
       speedMultiplier = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+    },
+    setCardLookup(nextMap) {
+      cardLookupById = nextMap instanceof Map ? nextMap : new Map();
+      submittedAdrenalineDamageByCardId.clear();
+      lastGameStamp = null;
+      lastBeatIndex = null;
+      lastBuildTriggerHash = null;
+      lastBuildVisualHash = null;
+      lastBuildBeatHash = null;
     },
     setCharacterPowers(nextMap) {
       characterPowersById = nextMap instanceof Map ? nextMap : new Map();

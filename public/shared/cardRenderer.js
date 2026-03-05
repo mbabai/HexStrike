@@ -12,6 +12,7 @@ const TIMING_ICON_URLS = {
 };
 const DRAW_ICON_URL = '/public/images/DrawIcon.png';
 const DISCARD_ICON_URL = '/public/images/DiscardIcon.png';
+const ADRENALINE_ICON_URL = '/public/images/Adrenaline.png';
 const CARD_ART_BASE_URL = '/public/images/cardart';
 const UNIQUE_MOVEMENT_CARD_IDS = new Set(['grappling-hook', 'fleche', 'leap']);
 const MANDATORY_MOVEMENT_CARD_IDS = new Set(['step']);
@@ -170,6 +171,37 @@ const buildInlineCardFlowIcon = ({ type, amountLabel, token }) => {
   return icon;
 };
 
+
+const buildAdrenalineValueContent = ({ sign = '', amount }) => {
+  const value = document.createElement('span');
+  value.className = 'card-inline-adrenaline-value';
+  if (sign) {
+    const signNode = document.createElement('span');
+    signNode.className = 'card-inline-adrenaline-sign';
+    signNode.textContent = sign;
+    value.appendChild(signNode);
+  }
+  const amountNode = document.createElement('span');
+  amountNode.className = 'card-inline-adrenaline-amount';
+  amountNode.textContent = amount;
+  value.appendChild(amountNode);
+  return value;
+};
+
+const buildInlineAdrenalineIcon = ({ sign = '', amountLabel, token }) => {
+  const normalizedSign = sign === '-' ? '-' : sign === '+' ? '+' : '';
+  const normalizedAmount = `${amountLabel ?? ''}`.trim().toUpperCase();
+  if (!normalizedAmount) return null;
+  const isNumeric = /^[0-9]+$/.test(normalizedAmount);
+  if (!isNumeric && normalizedAmount !== 'X') return null;
+  const icon = document.createElement('span');
+  icon.className = 'card-inline-adrenaline-icon';
+  icon.style.backgroundImage = `url('${ADRENALINE_ICON_URL}')`;
+  icon.setAttribute('role', 'img');
+  icon.setAttribute('aria-label', token);
+  icon.appendChild(buildAdrenalineValueContent({ sign: normalizedSign, amount: normalizedAmount }));
+  return icon;
+};
 const appendInlineIconToken = (parent, part) => {
   const token = part.slice(1, -1).trim();
   if (!token) return;
@@ -178,6 +210,30 @@ const appendInlineIconToken = (parent, part) => {
     const icon = buildInlineCardFlowIcon({
       type: cardFlowMatch[1],
       amountLabel: cardFlowMatch[2],
+      token,
+    });
+    if (icon) {
+      parent.appendChild(icon);
+      return;
+    }
+  }
+  const adrenalineMatch = token.match(/^adr([+-])\s*([0-9]+|x)$/i);
+  if (adrenalineMatch) {
+    const icon = buildInlineAdrenalineIcon({
+      sign: adrenalineMatch[1],
+      amountLabel: adrenalineMatch[2],
+      token,
+    });
+    if (icon) {
+      parent.appendChild(icon);
+      return;
+    }
+  }
+  const submittedAdrenalineMatch = token.match(/^adr\s*x$/i);
+  if (submittedAdrenalineMatch) {
+    const icon = buildInlineAdrenalineIcon({
+      sign: '',
+      amountLabel: 'X',
       token,
     });
     if (icon) {

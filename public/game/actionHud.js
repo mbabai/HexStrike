@@ -23,6 +23,8 @@ const PLAY_ACTIVE_HEIGHT_RATIO = 0.5558;
 const PLAY_CARD_SCALE_MULTIPLIER = 1.1;
 const PLAY_BEAT_SLOT_COUNT = 6;
 const POINTER_DRAG_START_DISTANCE = 6;
+const MIN_ADRENALINE = 0;
+const MAX_ADRENALINE = 10;
 
 const buildPlayBeatPointers = () => {
   const activeLeft = PLAY_MODAL_WIDTH * PLAY_ACTIVE_LEFT_RATIO;
@@ -115,6 +117,10 @@ export const createActionHud = ({
   passiveSlot,
   submitButton,
   rotationWheel,
+  adrenalineMeterTrack,
+  adrenalineMeterFill,
+  adrenalineMeterKnob,
+  adrenalineMeterValue,
   onSubmit,
   onRotationChange,
 } = {}) => {
@@ -131,6 +137,7 @@ export const createActionHud = ({
       setPlayModalBeatPointer: () => {},
       setPlayedPreviewCards: () => {},
       setPlayedPreviewRotation: () => {},
+      setAdrenalinePool: () => {},
     };
   }
 
@@ -158,6 +165,8 @@ export const createActionHud = ({
     playedPreviewElements: { active: null, passive: null },
     playedPreviewIds: { active: null, passive: null },
     suppressClickCardId: null,
+    adrenalinePool: MIN_ADRENALINE,
+    submittedAdrenaline: MIN_ADRENALINE,
   };
   const activeSlotContainer = activeSlot?.closest?.('.action-slot-active') ?? null;
   const passiveSlotContainer = passiveSlot?.closest?.('.action-slot-passive') ?? null;
@@ -382,6 +391,81 @@ export const createActionHud = ({
   const actionCenter = rotationWheel?.closest?.('.action-center') ?? null;
   const modalShell = actionCenter?.querySelector?.('.play-modal-shell') ?? actionCenter;
   const playModalBeatPointer = modalShell?.querySelector?.('.play-modal-beat-pointer') ?? null;
+  const resolvedAdrenalineTrack =
+    adrenalineMeterTrack ?? actionCenter?.querySelector?.('#adrenalineMeterTrack') ?? null;
+  const resolvedAdrenalineFill =
+    adrenalineMeterFill ?? actionCenter?.querySelector?.('#adrenalineMeterFill') ?? null;
+  const resolvedAdrenalineKnob =
+    adrenalineMeterKnob ?? actionCenter?.querySelector?.('#adrenalineMeterKnob') ?? null;
+  const resolvedAdrenalineValue =
+    adrenalineMeterValue ?? actionCenter?.querySelector?.('#adrenalineMeterValue') ?? null;
+  const adrenalineDrag = {
+    active: false,
+    pointerId: null,
+  };
+  const clampAdrenaline = (value) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return MIN_ADRENALINE;
+    const rounded = Math.round(parsed);
+    return Math.max(MIN_ADRENALINE, Math.min(MAX_ADRENALINE, rounded));
+  };
+  const getMaxSubmittedAdrenaline = () => clampAdrenaline(state.adrenalinePool);
+  const clampSubmittedAdrenaline = (value) =>
+    Math.max(MIN_ADRENALINE, Math.min(getMaxSubmittedAdrenaline(), clampAdrenaline(value)));
+  const canAdjustAdrenaline = () => state.turnActive && !state.locked;
+  const updateAdrenalineUi = () => {
+    const poolRatio = clampAdrenaline(state.adrenalinePool) / MAX_ADRENALINE;
+    const submittedRatio = clampSubmittedAdrenaline(state.submittedAdrenaline) / MAX_ADRENALINE;
+    if (resolvedAdrenalineFill) {
+      resolvedAdrenalineFill.style.setProperty('--adrenaline-fill-percent', `${(poolRatio * 100).toFixed(3)}%`);
+      resolvedAdrenalineFill.style.height = `${(poolRatio * 100).toFixed(3)}%`;
+    }
+    if (resolvedAdrenalineKnob) {
+      resolvedAdrenalineKnob.style.setProperty('--adrenaline-submit-ratio', submittedRatio.toString());
+      resolvedAdrenalineKnob.setAttribute('aria-label', `Submitted adrenaline: ${state.submittedAdrenaline}`);
+      resolvedAdrenalineKnob.disabled = !canAdjustAdrenaline();
+    }
+    if (resolvedAdrenalineValue) {
+      resolvedAdrenalineValue.textContent = `${state.submittedAdrenaline}`;
+    }
+  };
+  const setSubmittedAdrenaline = (value) => {
+    state.submittedAdrenaline = clampSubmittedAdrenaline(value);
+    updateAdrenalineUi();
+  };
+  const setAdrenalinePool = (value) => {
+    state.adrenalinePool = clampAdrenaline(value);
+    state.submittedAdrenaline = clampSubmittedAdrenaline(state.submittedAdrenaline);
+    updateAdrenalineUi();
+  };
+  const getAdrenalineFromClientY = (clientY) => {
+    if (!resolvedAdrenalineTrack || !Number.isFinite(clientY)) return MIN_ADRENALINE;
+    const rect = resolvedAdrenalineTrack.getBoundingClientRect();
+    if (!rect || rect.height <= 0) return MIN_ADRENALINE;
+    const ratio = (rect.bottom - clientY) / rect.height;
+    return clampSubmittedAdrenaline(ratio * MAX_ADRENALINE);
+  };
+  const beginAdrenalineDrag = (event) => {
+    if (!canAdjustAdrenaline()) return;
+    if (typeof PointerEvent !== 'undefined' && !(event instanceof PointerEvent)) return;
+    adrenalineDrag.active = true;
+    adrenalineDrag.pointerId = event.pointerId;
+    setSubmittedAdrenaline(getAdrenalineFromClientY(event.clientY));
+    const target = event.currentTarget;
+    if (target && typeof target.setPointerCapture === 'function') {
+      target.setPointerCapture(event.pointerId);
+    }
+    event.preventDefault();
+  };
+  const updateAdrenalineDrag = (event) => {
+    if (!adrenalineDrag.active || adrenalineDrag.pointerId !== event.pointerId) return;
+    setSubmittedAdrenaline(getAdrenalineFromClientY(event.clientY));
+  };
+  const endAdrenalineDrag = (event) => {
+    if (!adrenalineDrag.active || adrenalineDrag.pointerId !== event.pointerId) return;
+    adrenalineDrag.active = false;
+    adrenalineDrag.pointerId = null;
+  };
   const MIN_ACTION_CARD_SCALE = 0.3;
   const SCALE_SAFETY = 1.06;
   const PASSIVE_STAGE_OFFSET = 12;
@@ -1627,6 +1711,8 @@ export const createActionHud = ({
     if (!state.turnActive) {
       cancelPointerDrag();
       endCardDrag();
+      adrenalineDrag.active = false;
+      adrenalineDrag.pointerId = null;
     }
     root.hidden = state.hidden;
     if (state.turnActive && !wasTurnActive) {
@@ -1635,10 +1721,12 @@ export const createActionHud = ({
       suppressProgrammaticRotation = false;
       state.selectedRotation = null;
       emitRotationChange();
+      setSubmittedAdrenaline(MIN_ADRENALINE);
     }
     state.cardsById.forEach((card) => setCardDraggable(card, !state.locked && state.turnActive));
     updateSlotState();
     updateSubmitState();
+    updateAdrenalineUi();
     if (state.turnActive) {
       scheduleLayoutRefresh();
     }
@@ -1680,11 +1768,14 @@ export const createActionHud = ({
     if (nextLocked && !state.locked) {
       cancelPointerDrag();
       endCardDrag();
+      adrenalineDrag.active = false;
+      adrenalineDrag.pointerId = null;
     }
     state.locked = nextLocked;
     root.classList.toggle('is-locked', state.locked);
     state.cardsById.forEach((card) => setCardDraggable(card, !state.locked && state.turnActive));
     updateSubmitState();
+    updateAdrenalineUi();
     if (state.lastLocked !== state.locked) {
       log('locked', state.locked);
       state.lastLocked = state.locked;
@@ -1709,12 +1800,14 @@ export const createActionHud = ({
     const activeCard = getActiveCard();
     const passiveCard = getPassiveCard();
     const rotation = state.selectedRotation;
+    const adrenaline = clampSubmittedAdrenaline(state.submittedAdrenaline);
     const hasActionList = Array.isArray(activeCard?.actions) && activeCard.actions.length > 0;
     if (!activeCard || !passiveCard || !hasActionList || !isRotationAllowed(rotation)) return;
     log('submit', {
       activeCardId: activeCard.id,
       passiveCardId: passiveCard.id,
       rotation,
+      adrenaline,
       activeActions: activeCard.actions?.length ?? 0,
     });
     if (onSubmit) {
@@ -1722,13 +1815,45 @@ export const createActionHud = ({
         activeCardId: activeCard.id,
         passiveCardId: passiveCard.id,
         rotation,
+        adrenaline,
         activeCard,
         passiveCard,
       });
     }
+    setSubmittedAdrenaline(MIN_ADRENALINE);
   };
 
   submitButton.addEventListener('click', attemptSubmit);
+
+  if (resolvedAdrenalineTrack && resolvedAdrenalineKnob) {
+    resolvedAdrenalineTrack.addEventListener('pointerdown', beginAdrenalineDrag);
+    resolvedAdrenalineKnob.addEventListener('pointerdown', beginAdrenalineDrag);
+    resolvedAdrenalineKnob.addEventListener('keydown', (event) => {
+      if (!canAdjustAdrenaline()) return;
+      if (event.key === 'ArrowUp' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        setSubmittedAdrenaline(state.submittedAdrenaline + 1);
+        return;
+      }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') {
+        event.preventDefault();
+        setSubmittedAdrenaline(state.submittedAdrenaline - 1);
+        return;
+      }
+      if (event.key === 'Home') {
+        event.preventDefault();
+        setSubmittedAdrenaline(MIN_ADRENALINE);
+        return;
+      }
+      if (event.key === 'End') {
+        event.preventDefault();
+        setSubmittedAdrenaline(MAX_ADRENALINE);
+      }
+    });
+    window.addEventListener('pointermove', updateAdrenalineDrag);
+    window.addEventListener('pointerup', endAdrenalineDrag);
+    window.addEventListener('pointercancel', endAdrenalineDrag);
+  }
 
   bindSlot(activeSlot, 'active');
   bindSlot(passiveSlot, 'passive');
@@ -1750,6 +1875,7 @@ export const createActionHud = ({
   }
   updateRotationRestriction();
   updateSubmitState();
+  updateAdrenalineUi();
 
   const setPlayerDamage = (damage) => {
     const next = Number.isFinite(damage) ? Math.max(0, Math.floor(damage)) : 0;
@@ -1822,5 +1948,6 @@ export const createActionHud = ({
     setPlayModalBeatPointer,
     setPlayedPreviewCards,
     setPlayedPreviewRotation,
+    setAdrenalinePool,
   };
 };

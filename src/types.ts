@@ -186,12 +186,14 @@ export interface ActionListItem {
   cardId?: string;
   passiveCardId?: string;
   abilityHandCount?: number;
+  submittedAdrenaline?: number;
 }
 
 export interface ActionSubmission {
   activeCardId: string | null;
   passiveCardId: string | null;
   rotation: string;
+  adrenaline?: number;
 }
 
 export interface CardUse {
@@ -247,6 +249,8 @@ export interface BeatEntry {
   passiveCardId?: string;
   respawn?: boolean;
   abilityHandCount?: number;
+  adrenaline?: number;
+  submittedAdrenaline?: number;
   havenPassiveSkipApplied?: boolean;
   stunOnly?: boolean;
   consequences?: Array<{
@@ -332,6 +336,7 @@ export interface PublicCharacter {
   facing: number;
   damage?: number;
   abilityHandCount?: number;
+  adrenaline?: number;
 }
 
 export interface GamePublicState {

@@ -2,6 +2,9 @@
 
 ## Action-symbol anchors
 - `{i}`: bracketed action token(s) in the action list (e.g., `[m]`, `[2a]`). Effects that reference `{i}` should target the bracketed action index.
+- `{adr+X}` / `{adr-X}`: adrenaline pool modifiers. `+` adds to the actor's current adrenaline pool, `-` subtracts from that pool (clamped to 0..10).
+- `{adrX}`: submitted-adrenaline scalar. In damage text (`Damage + {adrX}`), add the action set's submitted adrenaline value to that `{i}` action's damage.
+- Adrenaline submitted with the action set is a separate locked value used for tie-breaking within the same action class; pool changes do not retroactively change that submitted value.
 - In code: `getSymbolActionIndices` in `src/game/cardText/activeMovement.ts` and `public/game/cardText/activeMovement.js`.
 
 ## Symbol matching rule

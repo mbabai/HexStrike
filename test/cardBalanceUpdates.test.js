@@ -23,8 +23,8 @@ test('card balance update applies timeline, damage, and naming changes', async (
   assert.deepEqual(getCardById(catalog, 'push-kick').actions, ['a-Bm', 'W', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'parry').actions, ['W', '[b]', '[b]', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'aerial-strike').actions, ['W', '[2j]', 'a', 'W', 'W', 'E']);
-  assert.deepEqual(getCardById(catalog, 'hammer').actions, ['W', 'W', 'a-La-Ra', 'W', 'W', 'E']);
-  assert.deepEqual(getCardById(catalog, 'smash-attack').actions, ['W', 'W', 'a', 'W', 'W', 'E']);
+  assert.deepEqual(getCardById(catalog, 'hammer').actions, ['W', 'W', '[a-La-Ra]', 'W', 'W', 'E']);
+  assert.deepEqual(getCardById(catalog, 'smash-attack').actions, ['W', 'W', '[a]', 'W', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'whirlwind').actions, ['W', 'c-La-Ra-BLa-BRa-Ba', 'c-La-Ra-BLa-BRa-Ba', '[c-La-Ra-BLa-BRa-Ba]', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'hip-throw').actions, ['W', '[a]', 'W', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'spike').actions, ['W', 'W', '[a]', 'W', 'E']);

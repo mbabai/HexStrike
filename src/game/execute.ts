@@ -59,6 +59,8 @@ const ARROW_DAMAGE = 4;
 const ARROW_KBF = 1;
 const ARROW_LAND_DISTANCE_LIMIT = 5;
 const ARROW_PRIORITY = 95;
+const MIN_ADRENALINE = 0;
+const MAX_ADRENALINE = 10;
 const HAVEN_PLATFORM_INTERACTION_TYPE = 'haven-platform';
 const TIE_KNOCKBACK_INTERACTION_TYPE = 'tie-knockback';
 const GUARD_CONTINUE_INTERACTION_TYPE = 'guard-continue';
@@ -441,6 +443,14 @@ const getEntryClassRank = (entry: BeatEntry | null | undefined): number => {
 const getEntryAttackKbf = (entry: BeatEntry | null | undefined): number =>
   Number.isFinite(entry?.attackKbf) ? Math.max(0, Math.floor(entry?.attackKbf as number)) : 0;
 
+const getEntrySubmittedAdrenaline = (entry: BeatEntry | null | undefined): number => {
+  const parsed = Number(entry?.submittedAdrenaline);
+  if (!Number.isFinite(parsed)) return MIN_ADRENALINE;
+  const rounded = Math.round(parsed);
+  if (rounded < MIN_ADRENALINE || rounded > MAX_ADRENALINE) return MIN_ADRENALINE;
+  return rounded;
+};
+
 const compareBeatEntriesForExecutionBase = (
   left: BeatEntry | null | undefined,
   right: BeatEntry | null | undefined,
@@ -450,6 +460,9 @@ const compareBeatEntriesForExecutionBase = (
 
   const classDelta = getEntryClassRank(left) - getEntryClassRank(right);
   if (classDelta) return classDelta;
+
+  const adrenalineDelta = getEntrySubmittedAdrenaline(right) - getEntrySubmittedAdrenaline(left);
+  if (adrenalineDelta) return adrenalineDelta;
 
   const stepDelta = getEntryActionSetStep(right) - getEntryActionSetStep(left);
   if (stepDelta) return stepDelta;
@@ -470,6 +483,7 @@ const buildExecutionTieBucketKey = (entry: BeatEntry | null | undefined): string
   return [
     getEntryTimingRank(entry),
     getEntryClassRank(entry),
+    getEntrySubmittedAdrenaline(entry),
     getEntryActionSetStep(entry),
     attackKey,
   ].join('|');
@@ -702,6 +716,44 @@ const getRuntimeCardLookup = (): Map<string, CardDefinition> => {
   return runtimeCardLookup;
 };
 
+
+const ADRENALINE_TOKEN_PATTERN = /\{?adr([+-])\s*([0-9]+)\}?/gi;
+const SUBMITTED_ADRENALINE_DAMAGE_PATTERN = /damage\s*\+\s*\{?\s*adrx\s*\}?/i;
+const passiveStartAdrenalineByCardId = new Map<string, number>();
+const submittedAdrenalineDamageByCardId = new Map<string, boolean>();
+
+const parseAdrenalineDeltaFromText = (value: unknown): number => {
+  const text = `${value ?? ''}`;
+  if (!text) return 0;
+  let delta = 0;
+  let match: RegExpExecArray | null = null;
+  ADRENALINE_TOKEN_PATTERN.lastIndex = 0;
+  while ((match = ADRENALINE_TOKEN_PATTERN.exec(text)) !== null) {
+    const sign = match[1] === '-' ? -1 : 1;
+    const amount = Number(match[2]);
+    if (!Number.isFinite(amount)) continue;
+    delta += sign * Math.max(0, Math.floor(amount));
+  }
+  ADRENALINE_TOKEN_PATTERN.lastIndex = 0;
+  return delta;
+};
+
+const getPassiveStartAdrenalineDelta = (passiveCardId: string | null | undefined): number => {
+  const id = `${passiveCardId ?? ''}`.trim();
+  if (!id) return 0;
+  if (passiveStartAdrenalineByCardId.has(id)) {
+    return passiveStartAdrenalineByCardId.get(id) ?? 0;
+  }
+  const passiveText = `${getRuntimeCardLookup().get(id)?.passiveText ?? ''}`;
+  const appliesAtStart = passiveText.toLowerCase().includes('at the start of this action');
+  const delta = appliesAtStart ? parseAdrenalineDeltaFromText(passiveText) : 0;
+  passiveStartAdrenalineByCardId.set(id, delta);
+  return delta;
+};
+
+const getActionAdrenalineDelta = (action: string | undefined): number =>
+  parseAdrenalineDeltaFromText(action ?? '');
+
 const getRewindReturnActionList = (): ActionListItem[] => {
   const rewindCard = getRuntimeCardLookup().get(REWIND_CARD_ID);
   const actions = Array.isArray(rewindCard?.actions) ? rewindCard.actions : [];
@@ -782,10 +834,36 @@ const isEntryUnblockable = (
   return isBracketedAction(entry.action ?? '');
 };
 
+const cardUsesSubmittedAdrenalineDamage = (cardId: string | null | undefined): boolean => {
+  const id = `${cardId ?? ''}`.trim();
+  if (!id) return false;
+  if (submittedAdrenalineDamageByCardId.has(id)) {
+    return submittedAdrenalineDamageByCardId.get(id) ?? false;
+  }
+  const activeText = `${getRuntimeCardLookup().get(id)?.activeText ?? ''}`;
+  const usesBonus = activeText.includes('{i}') && SUBMITTED_ADRENALINE_DAMAGE_PATTERN.test(activeText);
+  submittedAdrenalineDamageByCardId.set(id, usesBonus);
+  return usesBonus;
+};
+
+const getEntrySubmittedAdrenalineDamageBonus = (entry: BeatEntry | null | undefined): number => {
+  if (!entry || !isBracketedAction(entry.action ?? '')) return 0;
+  if (!cardUsesSubmittedAdrenalineDamage(entry.cardId)) return 0;
+  return getEntrySubmittedAdrenaline(entry);
+};
+
 const toAbilityHandCount = (value: unknown): number | undefined => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return undefined;
   return Math.max(0, Math.floor(parsed));
+};
+
+const toAdrenaline = (value: unknown): number | undefined => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return undefined;
+  const rounded = Math.round(parsed);
+  if (rounded < MIN_ADRENALINE || rounded > MAX_ADRENALINE) return undefined;
+  return rounded;
 };
 
 const matchesEntryForCharacter = (entry: BeatEntry, character: PublicCharacter) => {
@@ -808,7 +886,13 @@ const pruneDuplicateEntries = (beat: BeatEntry[], character: PublicCharacter, pr
 
 const buildEntryForCharacter = (
   character: PublicCharacter,
-  state: { position: { q: number; r: number }; damage: number; facing: number; abilityHandCount?: number },
+  state: {
+    position: { q: number; r: number };
+    damage: number;
+    facing: number;
+    abilityHandCount?: number;
+    adrenaline?: number;
+  },
   entry?: BeatEntry,
   calculated = false,
   terrain?: 'land' | 'abyss',
@@ -840,9 +924,16 @@ const buildEntryForCharacter = (
   if (Number.isFinite(entry?.attackKbf)) {
     next.attackKbf = entry.attackKbf;
   }
+  if (Number.isFinite(entry?.submittedAdrenaline)) {
+    next.submittedAdrenaline = toAdrenaline(entry.submittedAdrenaline);
+  }
   const abilityHandCount = toAbilityHandCount(state.abilityHandCount);
   if (Number.isFinite(abilityHandCount)) {
     next.abilityHandCount = abilityHandCount;
+  }
+  const adrenaline = toAdrenaline(state.adrenaline);
+  if (Number.isFinite(adrenaline)) {
+    next.adrenaline = adrenaline;
   }
   return next;
 };
@@ -989,26 +1080,41 @@ export const executeBeatsWithInteractions = (
   );
   const state = new Map<
     string,
-    { position: { q: number; r: number }; damage: number; facing: number; abilityHandCount?: number }
+    {
+      position: { q: number; r: number };
+      damage: number;
+      facing: number;
+      abilityHandCount?: number;
+      adrenaline?: number;
+    }
   >();
   const baselineStateByUser = new Map<
     string,
-    { position: { q: number; r: number }; damage: number; facing: number; abilityHandCount?: number }
+    {
+      position: { q: number; r: number };
+      damage: number;
+      facing: number;
+      abilityHandCount?: number;
+      adrenaline?: number;
+    }
   >();
   characters.forEach((character) => {
     const baselineDamage = Number.isFinite(character.damage) ? Math.max(0, Math.floor(character.damage)) : 0;
     const baselineAbilityHandCount = toAbilityHandCount(character.abilityHandCount);
+    const baselineAdrenaline = toAdrenaline(character.adrenaline) ?? MIN_ADRENALINE;
     const baselineState = {
       position: { q: character.position.q, r: character.position.r },
       damage: baselineDamage,
       facing: normalizeDegrees(character.facing ?? 0),
       abilityHandCount: baselineAbilityHandCount,
+      adrenaline: baselineAdrenaline,
     };
     baselineStateByUser.set(character.userId, {
       position: { q: baselineState.position.q, r: baselineState.position.r },
       damage: baselineState.damage,
       facing: baselineState.facing,
       abilityHandCount: baselineState.abilityHandCount,
+      adrenaline: baselineState.adrenaline,
     });
     state.set(character.userId, baselineState);
   });
@@ -1355,6 +1461,10 @@ export const executeBeatsWithInteractions = (
         if (Number.isFinite(respawnAbilityHandCount)) {
           current.abilityHandCount = respawnAbilityHandCount;
         }
+        const respawnAdrenaline = toAdrenaline(entry?.adrenaline);
+        if (Number.isFinite(respawnAdrenaline)) {
+          current.adrenaline = respawnAdrenaline;
+        }
       }
       if (character) {
         entry.username = entry.username ?? character.username ?? character.userId;
@@ -1377,6 +1487,11 @@ export const executeBeatsWithInteractions = (
           entry.abilityHandCount = toAbilityHandCount(current.abilityHandCount);
         } else if ('abilityHandCount' in entry) {
           delete entry.abilityHandCount;
+        }
+        if (Number.isFinite(current.adrenaline)) {
+          entry.adrenaline = toAdrenaline(current.adrenaline);
+        } else if ('adrenaline' in entry) {
+          delete entry.adrenaline;
         }
       } else if (entry.location) {
         entry.terrain = resolveTerrain(entry.location);
@@ -1469,6 +1584,7 @@ export const executeBeatsWithInteractions = (
         damage: Number.isFinite(character.damage) ? Math.max(0, Math.floor(character.damage)) : 0,
         facing: normalizeDegrees(character.facing ?? 0),
         abilityHandCount: toAbilityHandCount(character.abilityHandCount),
+        adrenaline: toAdrenaline(character.adrenaline) ?? MIN_ADRENALINE,
       };
       const calculatedEntry = getLastCalculatedEntryForCharacter(character, uptoIndex);
       const source = calculatedEntry
@@ -1485,6 +1601,9 @@ export const executeBeatsWithInteractions = (
             abilityHandCount: Number.isFinite(calculatedEntry.abilityHandCount)
               ? toAbilityHandCount(calculatedEntry.abilityHandCount)
               : fallback.abilityHandCount,
+            adrenaline: Number.isFinite(calculatedEntry.adrenaline)
+              ? toAdrenaline(calculatedEntry.adrenaline)
+              : fallback.adrenaline,
           }
         : fallback;
       state.set(character.userId, {
@@ -1492,6 +1611,7 @@ export const executeBeatsWithInteractions = (
         damage: source.damage,
         facing: source.facing,
         abilityHandCount: source.abilityHandCount,
+        adrenaline: source.adrenaline,
       });
     });
   };
@@ -1548,6 +1668,11 @@ export const executeBeatsWithInteractions = (
     } else if ('passiveCardId' in target) {
       delete target.passiveCardId;
     }
+    if (Number.isFinite(source.submittedAdrenaline)) {
+      target.submittedAdrenaline = toAdrenaline(source.submittedAdrenaline);
+    } else if ('submittedAdrenaline' in target) {
+      delete target.submittedAdrenaline;
+    }
     if ('havenPassiveSkipApplied' in target) {
       delete target.havenPassiveSkipApplied;
     }
@@ -1596,7 +1721,13 @@ export const executeBeatsWithInteractions = (
 
   const applyStateSnapshotToEntry = (
     entry: BeatEntry,
-    stateSnapshot: { position: { q: number; r: number }; damage: number; facing: number; abilityHandCount?: number },
+    stateSnapshot: {
+      position: { q: number; r: number };
+      damage: number;
+      facing: number;
+      abilityHandCount?: number;
+      adrenaline?: number;
+    },
     calculated: boolean,
   ) => {
     entry.damage = stateSnapshot.damage;
@@ -1607,6 +1738,11 @@ export const executeBeatsWithInteractions = (
       entry.abilityHandCount = toAbilityHandCount(stateSnapshot.abilityHandCount);
     } else if ('abilityHandCount' in entry) {
       delete entry.abilityHandCount;
+    }
+    if (Number.isFinite(stateSnapshot.adrenaline)) {
+      entry.adrenaline = toAdrenaline(stateSnapshot.adrenaline);
+    } else if ('adrenaline' in entry) {
+      delete entry.adrenaline;
     }
     entry.calculated = calculated;
   };
@@ -2562,8 +2698,13 @@ export const executeBeatsWithInteractions = (
         }
       }
       const markedCount = toAbilityHandCount(entry?.abilityHandCount);
-      if (!Number.isFinite(markedCount)) return;
-      actorState.abilityHandCount = markedCount;
+      if (Number.isFinite(markedCount)) {
+        actorState.abilityHandCount = markedCount;
+      }
+      const markedAdrenaline = toAdrenaline(entry?.adrenaline);
+      if (Number.isFinite(markedAdrenaline)) {
+        actorState.adrenaline = markedAdrenaline;
+      }
     });
     updatedInteractions.forEach((interaction) => {
       if (interaction.type !== REWIND_RETURN_INTERACTION_TYPE) return;
@@ -2851,7 +2992,13 @@ export const executeBeatsWithInteractions = (
       haltAtCurrentBeat(getBeatReadiness({ useCurrentBeatEntries: true }));
       break;
     }
-    type ActionPhaseActorState = { position: { q: number; r: number }; damage: number; facing: number };
+    type ActionPhaseActorState = {
+      position: { q: number; r: number };
+      damage: number;
+      facing: number;
+      abilityHandCount?: number;
+      adrenaline?: number;
+    };
     type ComboState = { coIndex: number; hit: boolean; cardId: string; throwInteraction: boolean };
     type ActionPhaseSnapshot = {
       state: Map<string, ActionPhaseActorState>;
@@ -2917,6 +3064,8 @@ export const executeBeatsWithInteractions = (
             position: { q: value.position.q, r: value.position.r },
             damage: value.damage,
             facing: value.facing,
+            abilityHandCount: value.abilityHandCount,
+            adrenaline: value.adrenaline,
           },
         ]),
       ),
@@ -2965,6 +3114,8 @@ export const executeBeatsWithInteractions = (
           position: { q: value.position.q, r: value.position.r },
           damage: value.damage,
           facing: value.facing,
+          abilityHandCount: value.abilityHandCount,
+          adrenaline: value.adrenaline,
         });
       });
       boardTokens.splice(
@@ -4234,9 +4385,34 @@ export const executeBeatsWithInteractions = (
         }
       }
 
+      const applyAdrenalineDelta = (delta: number) => {
+        if (!Number.isFinite(delta) || !delta) return;
+        const currentAdrenaline = toAdrenaline(actorState.adrenaline) ?? MIN_ADRENALINE;
+        const nextAdrenaline = Math.max(MIN_ADRENALINE, Math.min(MAX_ADRENALINE, currentAdrenaline + Math.round(delta)));
+        actorState.adrenaline = nextAdrenaline;
+      };
+
+      const shouldSpendSubmittedAdrenaline = !isOpenBeatAction(entry.action) && isActionSetStart(entry);
+      if (shouldSpendSubmittedAdrenaline) {
+        const submittedAdrenaline = toAdrenaline(entry.submittedAdrenaline) ?? MIN_ADRENALINE;
+        if (submittedAdrenaline > 0) {
+          applyAdrenalineDelta(-submittedAdrenaline);
+        }
+      }
+
       const startDiscard = getPassiveStartDiscardCount(entry.passiveCardId);
       if (startDiscard && !isOpenBeatAction(entry.action) && isActionSetStart(entry)) {
         queueDiscard(actorId, startDiscard, 'self');
+      }
+
+      const passiveStartAdrenalineDelta = getPassiveStartAdrenalineDelta(entry.passiveCardId);
+      if (passiveStartAdrenalineDelta && !isOpenBeatAction(entry.action) && isActionSetStart(entry)) {
+        applyAdrenalineDelta(passiveStartAdrenalineDelta);
+      }
+
+      const actionAdrenalineDelta = getActionAdrenalineDelta(entry.action);
+      if (actionAdrenalineDelta) {
+        applyAdrenalineDelta(actionAdrenalineDelta);
       }
 
       const isGuardReturnBeat = Boolean(scheduledForcedGuardDiscard?.has(actorId));
@@ -4434,7 +4610,8 @@ export const executeBeatsWithInteractions = (
             targetState &&
             isBehindTarget(origin, targetState);
           const stabBonus = isStabHit ? 3 : 0;
-          const attackDamage = entryDamage + stabBonus + attackDamageBonus;
+          const submittedAdrenalineDamageBonus = getEntrySubmittedAdrenalineDamageBonus(entry);
+          const attackDamage = entryDamage + stabBonus + attackDamageBonus + submittedAdrenalineDamageBonus;
           const attackKbf = entryKbf + stabBonus;
           if (targetId && blockedByBlock && resolvedTargetEntry?.cardId === REFLEX_DODGE_CARD_ID) {
             reflexDodgeAvoidedByUser.add(targetId);

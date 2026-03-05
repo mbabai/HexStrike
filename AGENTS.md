@@ -83,6 +83,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Small, focused modules; avoid monolithic files.
 - Prefer functional, deterministic code paths for the engine; inject randomness sources.
 - In browser UI copy/tooltips/docs, NEVER render raw action-symbol letters/tokens when a symbol image exists; always use token icons (`/public/images/{token}.png`, for example `E.png`, `W.png`).
+- CRITICAL: NEVER show raw symbol "code" in player-facing UI/docs/rulebook/tutorials/tooltips (examples: `{adr+X}`, `{adr-X}`, `{AdrX}`, `{X1}`, `{i}`). Always render icon/symbol visuals and plain-language descriptions instead.
 - When providing terminal commands to the user, always format each command as a single-line command (no line-continuation characters like `\`).
 
 ## Repository conventions

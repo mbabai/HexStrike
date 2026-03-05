@@ -28,6 +28,8 @@ import {
 import { buildCardActionList } from './cardText/actionListBuilder';
 
 const ROTATION_LABELS = ['0', 'R1', 'R2', '3', 'L2', 'L1'];
+export const MIN_ADRENALINE = 0;
+export const MAX_ADRENALINE = 10;
 const REWIND_CARD_ID = 'rewind';
 const REWIND_FOCUS_INTERACTION_TYPE = 'rewind-focus';
 const DRAW_SELECTION_MAX_MOVEMENT = 3;
@@ -74,6 +76,14 @@ const normalizeRotationLabel = (value: unknown): string => {
     return `${value}`.trim();
   }
   return '';
+};
+
+const normalizeSubmittedAdrenaline = (value: unknown): number | null => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  const rounded = Math.round(parsed);
+  if (parsed !== rounded) return null;
+  return rounded;
 };
 
 const getRotationMagnitude = (label: string): number | null => {
@@ -369,6 +379,15 @@ export const validateActionSubmission = (
   }
   if (!isRotationAllowed(rotation, activeCard)) {
     return { ok: false, error: { code: 'rotation-invalid', message: 'Rotation is not allowed for this card.' } };
+  }
+
+  const submittedAdrenaline = submission.adrenaline ?? 0;
+  const adrenaline = normalizeSubmittedAdrenaline(submittedAdrenaline);
+  if (adrenaline === null) {
+    return { ok: false, error: { code: 'adrenaline-invalid', message: 'Adrenaline must be an integer from 0 to 10.' } };
+  }
+  if (adrenaline < MIN_ADRENALINE || adrenaline > MAX_ADRENALINE) {
+    return { ok: false, error: { code: 'adrenaline-out-of-range', message: 'Adrenaline must be an integer from 0 to 10.' } };
   }
   if (!activeCard.actions.length) {
     return { ok: false, error: { code: 'no-action-list', message: 'Active card has no actions.' } };

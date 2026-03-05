@@ -48,6 +48,8 @@ import {
   parseDeckDefinition,
   resolveLandRefreshes,
   validateActionSubmission,
+  MIN_ADRENALINE,
+  MAX_ADRENALINE,
 } from './game/cardRules';
 import { getBaseAbilityHandSize, getDrawRestoreRequirement, getMaxAbilityHandSize, getTargetMovementHandSize } from './game/handRules';
 import { HAND_TRIGGER_BY_ID, HAND_TRIGGER_DEFINITIONS } from './game/handTriggers';
@@ -116,8 +118,10 @@ const cloneBaselineCharacter = (character: PublicCharacter): PublicCharacter => 
   abilityHandCount: Number.isFinite(character.abilityHandCount)
     ? Math.max(0, Math.floor(character.abilityHandCount as number))
     : undefined,
+  adrenaline: Number.isFinite(character.adrenaline)
+    ? Math.max(MIN_ADRENALINE, Math.min(MAX_ADRENALINE, Math.round(character.adrenaline as number)))
+    : undefined,
 });
-
 const ensureBaselineCharacters = (publicState: GameStateDoc['public']): PublicCharacter[] => {
   const existing = publicState.startingCharacters;
   if (Array.isArray(existing) && existing.length) {
@@ -139,15 +143,32 @@ const toAbilityHandCount = (value: unknown): number | undefined => {
   return Math.max(0, Math.floor(parsed));
 };
 
-const withAbilityHandCountAtActionStart = (
+const toAdrenalineValue = (value: unknown): number | undefined => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return undefined;
+  const rounded = Math.round(parsed);
+  if (rounded < MIN_ADRENALINE || rounded > MAX_ADRENALINE) return undefined;
+  return rounded;
+};
+
+const withSubmissionMarkersOnActionList = (
   actionList: ActionListItem[],
   abilityHandCount: number,
+  submittedAdrenaline: unknown,
 ): ActionListItem[] => {
+  if (!actionList.length) return actionList;
   const safeCount = toAbilityHandCount(abilityHandCount);
-  if (!actionList.length || !Number.isFinite(safeCount)) return actionList;
-  return actionList.map((item, index) =>
-    index === 0 ? { ...item, abilityHandCount: safeCount } : item,
-  );
+  const safeAdrenaline = toAdrenalineValue(submittedAdrenaline);
+  return actionList.map((item, index) => {
+    const nextItem: ActionListItem = { ...item };
+    if (index === 0 && Number.isFinite(safeCount)) {
+      nextItem.abilityHandCount = safeCount;
+    }
+    if (Number.isFinite(safeAdrenaline)) {
+      nextItem.submittedAdrenaline = safeAdrenaline;
+    }
+    return nextItem;
+  });
 };
 
 const findCharacterBeatEntry = (beat: BeatEntry[] | undefined, character: PublicCharacter): BeatEntry | null => {
@@ -654,6 +675,15 @@ const getLandCenter = (land: HexCoord[] | undefined): { q: number; r: number } =
 const getCharacterDamageAtIndex = (beats: BeatEntry[][], character: PublicCharacter, index: number): number => {
   const entry = getLastEntryForCharacter(beats, character, index);
   return Number.isFinite(entry?.damage) ? Math.round(entry.damage as number) : 0;
+};
+
+const getCharacterAdrenalineAtIndex = (beats: BeatEntry[][], character: PublicCharacter, index: number): number => {
+  const entry = getLastEntryForCharacter(beats, character, index);
+  const fromEntry = toAdrenalineValue(entry?.adrenaline);
+  if (Number.isFinite(fromEntry)) return fromEntry;
+  const fromCharacter = toAdrenalineValue(character.adrenaline);
+  if (Number.isFinite(fromCharacter)) return fromCharacter;
+  return MIN_ADRENALINE;
 };
 
 const buildHandTriggerOrder = (
@@ -3238,6 +3268,7 @@ const maybeSkipTutorialThrowInteractionStep = (
     const activeCardId = (body.activeCardId as string) || (body.activeCardID as string);
     const passiveCardId = (body.passiveCardId as string) || (body.passiveCardID as string);
     const rotation = (body.rotation as string) ?? (body.rotationLabel as string);
+    const adrenaline = Number(body.adrenaline ?? body.adrenalineValue ?? 0);
     console.log(`${LOG_PREFIX} action:set request`, {
       userId,
       gameId,
@@ -3265,6 +3296,7 @@ const maybeSkipTutorialThrowInteractionStep = (
           activeCardId: activeCardId ?? null,
           passiveCardId: passiveCardId ?? null,
           rotation: rotation ?? '',
+          adrenaline,
         },
         ...extra,
         publicState: buildPublicStateSnapshotForLog(game.state?.public),
@@ -3394,8 +3426,28 @@ const maybeSkipTutorialThrowInteractionStep = (
       logActionSetEvent('rejected', { reason: 'missing-deck-state' }, deckStates);
       return { ok: false, status: 500, error: 'Missing deck state for player' };
     }
+    const availableAdrenaline = character
+      ? getCharacterAdrenalineAtIndex(beats, character, earliestIndex)
+      : MIN_ADRENALINE;
+    const submittedAdrenaline = toAdrenalineValue(adrenaline);
+    if (Number.isFinite(submittedAdrenaline) && submittedAdrenaline > availableAdrenaline) {
+      console.log(`${LOG_PREFIX} action:set rejected`, {
+        userId,
+        gameId,
+        reason: 'adrenaline-insufficient',
+        submittedAdrenaline,
+        availableAdrenaline,
+      });
+      return {
+        ok: false,
+        status: 400,
+        error: `Not enough adrenaline. Submitted ${submittedAdrenaline}, available ${availableAdrenaline}.`,
+        code: 'adrenaline-insufficient',
+      };
+    }
+    const safeSubmittedAdrenaline = submittedAdrenaline ?? MIN_ADRENALINE;
     if (atBatUserIds.length <= 1) {
-      const validation = validateActionSubmission({ activeCardId, passiveCardId, rotation }, deckState, catalog);
+      const validation = validateActionSubmission({ activeCardId, passiveCardId, rotation, adrenaline }, deckState, catalog);
       if (isActionValidationFailure(validation)) {
         console.log(`${LOG_PREFIX} action:set validation-failed`, {
           userId,
@@ -3459,7 +3511,11 @@ const maybeSkipTutorialThrowInteractionStep = (
         interactions = interactions.filter((item) => item.id !== comboInteraction.id);
         game.state.public.customInteractions = interactions;
       }
-      const actionListWithHandCount = withAbilityHandCountAtActionStart(actionList, deckState.abilityHand.length);
+      const actionListWithHandCount = withSubmissionMarkersOnActionList(
+        actionList,
+        deckState.abilityHand.length,
+        safeSubmittedAdrenaline,
+      );
       pendingActionSets.delete(game.id);
       game.state.public.pendingActions = undefined;
       const actionPlay = {
@@ -3467,6 +3523,7 @@ const maybeSkipTutorialThrowInteractionStep = (
         activeCardId: activeCardId ?? null,
         passiveCardId: passiveCardId ?? null,
         rotation: rotation ?? '',
+        adrenaline: safeSubmittedAdrenaline,
       };
       const updatedBeats = applyActionSetToBeats(beats, characters, userId, actionListWithHandCount, [actionPlay]);
       const comboAvailability = applyTutorialComboAvailability(
@@ -3541,7 +3598,7 @@ const maybeSkipTutorialThrowInteractionStep = (
       console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'already-submitted' });
       return { ok: false, status: 409, error: 'Action set already submitted for this beat' };
     }
-    const validation = validateActionSubmission({ activeCardId, passiveCardId, rotation }, deckState, catalog);
+    const validation = validateActionSubmission({ activeCardId, passiveCardId, rotation, adrenaline }, deckState, catalog);
     if (isActionValidationFailure(validation)) {
       console.log(`${LOG_PREFIX} action:set validation-failed`, {
         userId,
@@ -3589,12 +3646,17 @@ const maybeSkipTutorialThrowInteractionStep = (
       interactions = interactions.filter((item) => item.id !== comboInteraction.id);
       game.state.public.customInteractions = interactions;
     }
-    const actionListWithHandCount = withAbilityHandCountAtActionStart(actionList, deckState.abilityHand.length);
+    const actionListWithHandCount = withSubmissionMarkersOnActionList(
+      actionList,
+      deckState.abilityHand.length,
+      safeSubmittedAdrenaline,
+    );
     const actionPlay = {
       type: 'action-set',
       activeCardId: activeCardId ?? null,
       passiveCardId: passiveCardId ?? null,
       rotation: rotation ?? '',
+      adrenaline: safeSubmittedAdrenaline,
     };
     batch.submitted.set(userId, { actionList: actionListWithHandCount, play: [actionPlay] });
     game.state.public.pendingActions = {

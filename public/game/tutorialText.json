@@ -26,7 +26,7 @@
     "selectRotationDodge": "Rotate <key>L1</key> to move out of the way. Now we're dancin'.",
     "hipThrowIntro": "He flew right past you. Let's punish it with <attack>Hip Throw</attack>. Throw attacks with {throw kbf icon} always launch a fixed distance, are <guard>unblockable</guard>, and let you choose which direction to throw them.",
     "selectHipThrowActive": "Select <attack>Hip Throw</attack> as <key>ACTIVE</key>.",
-    "selectStepPassiveHipThrow": "Use <move>Advance</move> as passive so we still have simple movement coverage. We're close to the edge, so we want to keep our biggest movement cards to get back, but also the quick steps in case we need those.",
+    "selectStepPassiveHipThrow": "Use <move>Advance</move> as passive. This passive gives us adrenaline. As we build adrenaline, we are able to spend it using more powerful attacks.",
     "selectRotationHipThrow": "Set rotation to <key>L1</key>, since we want to grab not where he is NOW, but where he will be when our hip throw lands.",
     "throwDirection": "Great grab! Now let's throw him over your shoulder, into the <key>abyss</key> to keep them close, but off the <move>land</move>. Click the arrow that is pointed at your character.",
     "selectFeintScoutActive": "Hmm, you and the opponent are again in a <u>simultaneous move</u>. They probably expect you to <attack>attack</attack>, and will move out of the way or <guard>block</guard>. We can <key>Feint</key> to see what they do before choosing our own significant action. Go ahead and select <key>Feint</key>.",

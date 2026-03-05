@@ -2951,7 +2951,9 @@ img[src$='Death.png'] {
   );
   --play-active-passive-mask-height: calc(var(--play-passive-window-height) * 0.84);
   --play-active-passive-mask-overhang: calc(var(--play-modal-width) * 0.02);
-  --action-panel-width: var(--play-modal-width);
+  --adrenaline-meter-width: clamp(48px, 3.8vw, 58px);
+  --adrenaline-meter-gap: clamp(8px, 1vw, 12px);
+  --action-panel-width: calc(var(--play-modal-width) + var(--adrenaline-meter-gap) + var(--adrenaline-meter-width));
   --action-center-right: 18px;
   --action-center-bottom: calc(var(--action-hand-height) * 0.32);
   --action-hand-modal-gap: 18px;
@@ -3561,6 +3563,52 @@ img[src$='Death.png'] {
   object-fit: contain;
 }
 
+.card-inline-adrenaline-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.32em;
+  height: 1.32em;
+  margin: 0 1px;
+  vertical-align: -0.02em;
+  background-image: url('/public/images/Adrenaline.png');
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.card-inline-adrenaline-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.02em;
+  color: #000000;
+  font-size: 1.05em;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0;
+  -webkit-text-stroke: 1px #ffffff;
+  paint-order: stroke fill;
+  text-shadow:
+    -1px 0 #ffffff,
+    1px 0 #ffffff,
+    0 -1px #ffffff,
+    0 1px #ffffff,
+    -1px -1px #ffffff,
+    1px -1px #ffffff,
+    -1px 1px #ffffff,
+    1px 1px #ffffff;
+}
+
+.card-inline-adrenaline-sign {
+  transform: translateX(-0.08em);
+}
+
+.card-inline-adrenaline-amount {
+  display: inline-block;
+  transform: translateX(-0.03em);
+}
+
 .card-inline-flow-icon {
   display: inline-grid;
   place-items: center;
@@ -3668,7 +3716,7 @@ img[src$='Death.png'] {
   display: grid;
   grid-template-rows: var(--play-modal-height) minmax(var(--action-submit-row-height), auto);
   row-gap: var(--action-center-row-gap);
-  justify-items: center;
+  justify-items: start;
   width: var(--action-panel-width);
   pointer-events: auto;
   z-index: 3;
@@ -3730,6 +3778,103 @@ img[src$='Death.png'] {
   pointer-events: none;
 }
 
+.adrenaline-meter {
+  position: absolute;
+  left: calc(100% + var(--adrenaline-meter-gap));
+  top: 0;
+  width: var(--adrenaline-meter-width);
+  height: 100%;
+  pointer-events: auto;
+}
+
+.adrenaline-meter-track {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  border: 1px solid rgba(206, 223, 241, 0.54);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 10px 18px rgba(4, 10, 18, 0.5);
+  overflow: visible;
+}
+
+.adrenaline-meter-glass {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(238, 248, 255, 0.18), rgba(167, 192, 224, 0.06) 35%, rgba(8, 16, 26, 0.62));
+  backdrop-filter: blur(1px);
+}
+
+.adrenaline-meter-fill {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: 2px;
+  height: var(--adrenaline-fill-percent, 0%);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 239, 146, 0.98), rgba(255, 189, 69, 0.96) 42%, rgba(255, 126, 24, 0.95));
+  box-shadow: inset 0 0 8px rgba(255, 246, 198, 0.45), 0 0 12px rgba(255, 183, 38, 0.55);
+  transition: height 180ms ease;
+}
+
+.adrenaline-meter-ticks {
+  position: absolute;
+  inset: 2px;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: linear-gradient(to top, rgba(236, 240, 248, 0.45) 0 1px, transparent 1px 100%);
+  background-size: 100% 10%;
+  background-repeat: repeat-y;
+}
+
+.adrenaline-meter-knob {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--adrenaline-submit-ratio, 0) * 100%);
+  width: calc(var(--adrenaline-meter-width) * 0.98);
+  height: calc(var(--adrenaline-meter-width) * 0.98);
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  transform: translate(-50%, 50%);
+  cursor: ns-resize;
+  pointer-events: auto;
+}
+
+.adrenaline-meter-knob img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.adrenaline-meter-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.02em;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -44%);
+  color: #000000;
+  font-size: 1.29em;
+  font-weight: 900;
+  line-height: 1;
+  -webkit-text-stroke: 1px #ffffff;
+  paint-order: stroke fill;
+  text-shadow:
+    -1px 0 #ffffff,
+    1px 0 #ffffff,
+    0 -1px #ffffff,
+    0 1px #ffffff,
+    -1px -1px #ffffff,
+    1px -1px #ffffff,
+    -1px 1px #ffffff,
+    1px 1px #ffffff;
+}
+
 .action-submit {
   width: min(61.6%, 224px);
   min-height: var(--action-submit-row-height);
@@ -3737,6 +3882,7 @@ img[src$='Death.png'] {
   text-transform: uppercase;
   font-size: 1rem;
   pointer-events: auto;
+  justify-self: center;
   box-shadow: var(--shadow-cta);
 }
 
@@ -3966,6 +4112,15 @@ img[src$='Death.png'] {
 .action-hud.is-locked .rotation-wheel {
   pointer-events: none;
   opacity: 0.6;
+}
+
+.action-hud:not(.is-turn) .adrenaline-meter {
+  opacity: 0.86;
+}
+
+.action-hud.is-locked .adrenaline-meter-knob,
+.action-hud:not(.is-turn) .adrenaline-meter-knob {
+  cursor: default;
 }
 
 .action-card-ghost,
@@ -4584,7 +4739,7 @@ html.is-mobile .action-hud {
   --action-hand-fan-gap-factor: 0.24;
   --action-hand-card-scale: 0.74;
   --play-modal-width: min(238px, 47.6vw);
-  --action-panel-width: var(--play-modal-width);
+  --action-panel-width: calc(var(--play-modal-width) + var(--adrenaline-meter-gap) + var(--adrenaline-meter-width));
   --action-center-right: 10px;
   --action-center-bottom: calc(var(--action-hand-height) * 0.44);
   --action-hand-modal-gap: 12px;
@@ -4644,7 +4799,7 @@ html.is-mobile .app-toast {
     --action-hand-fan-gap-factor: 0.24;
     --action-hand-card-scale: 0.7;
     --play-modal-width: min(209px, 42.8vw);
-    --action-panel-width: var(--play-modal-width);
+    --action-panel-width: calc(var(--play-modal-width) + var(--adrenaline-meter-gap) + var(--adrenaline-meter-width));
     --action-center-right: 10px;
     --action-center-bottom: calc(var(--action-hand-height) * 0.42);
     --action-hand-modal-gap: 12px;
