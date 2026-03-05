@@ -2,11 +2,22 @@ import { GAME_CONFIG } from './config.js';
 import { getTimeIndicatorHit, getTimeIndicatorLayout } from './timeIndicatorView.js';
 import { clamp } from './utils.js';
 
+const PLAY_MODAL_WIDTH = 210;
+const PLAY_MODAL_HEIGHT = 297;
+const PLAY_MODAL_VISIBLE_BOUNDS = {
+  left: 44.212471 / PLAY_MODAL_WIDTH,
+  top: 2.2 / PLAY_MODAL_HEIGHT,
+  right: 165.787531 / PLAY_MODAL_WIDTH,
+  bottom: 293.216609 / PLAY_MODAL_HEIGHT,
+};
+
 const PAN_BLOCK_SELECTORS = [
   '.action-card',
   '.action-slot',
   '.action-slot-drop',
   '.action-submit',
+  '.adrenaline-meter-track',
+  '.adrenaline-meter-knob',
   '.rotation-wheel',
   '.rotation-selector',
   '.throw-arrow',
@@ -31,6 +42,36 @@ const shouldBlockPan = (target) => {
   return PAN_BLOCK_SELECTORS.some((selector) => target.closest(selector));
 };
 
+const isPointInRect = (x, y, rect) =>
+  Boolean(rect) && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+
+const getElementRect = (element) => {
+  const rect = element?.getBoundingClientRect?.();
+  return rect && rect.width > 0 && rect.height > 0 ? rect : null;
+};
+
+const getPlayModalVisibleRect = (root) => {
+  const shell = root?.querySelector?.('.play-modal-shell');
+  const rect = getElementRect(shell);
+  if (!rect) return null;
+  return {
+    left: rect.left + rect.width * PLAY_MODAL_VISIBLE_BOUNDS.left,
+    top: rect.top + rect.height * PLAY_MODAL_VISIBLE_BOUNDS.top,
+    right: rect.left + rect.width * PLAY_MODAL_VISIBLE_BOUNDS.right,
+    bottom: rect.top + rect.height * PLAY_MODAL_VISIBLE_BOUNDS.bottom,
+  };
+};
+
+const shouldBlockPanByRegion = (event, root) => {
+  if (!root || !Number.isFinite(event?.clientX) || !Number.isFinite(event?.clientY)) return false;
+  const playModalRect = getPlayModalVisibleRect(root);
+  if (isPointInRect(event.clientX, event.clientY, playModalRect)) return true;
+  const trackRect = getElementRect(root.querySelector('#adrenalineMeterTrack'));
+  if (isPointInRect(event.clientX, event.clientY, trackRect)) return true;
+  const knobRect = getElementRect(root.querySelector('#adrenalineMeterKnob'));
+  return isPointInRect(event.clientX, event.clientY, knobRect);
+};
+
 export const bindControls = (canvas, viewState, pointerState, config = GAME_CONFIG, timeIndicatorViewModel, root) => {
   const controlRoot = root || canvas;
   const setCapture = (pointerId) => {
@@ -47,6 +88,7 @@ export const bindControls = (canvas, viewState, pointerState, config = GAME_CONF
   const onPointerDown = (event) => {
     if (event.button !== 0) return;
     if (shouldBlockPan(event.target)) return;
+    if (shouldBlockPanByRegion(event, controlRoot)) return;
     if (timeIndicatorViewModel && event.target === canvas) {
       const rect = canvas.getBoundingClientRect();
       const layout = getTimeIndicatorLayout(

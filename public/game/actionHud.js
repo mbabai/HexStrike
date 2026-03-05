@@ -25,6 +25,12 @@ const PLAY_BEAT_SLOT_COUNT = 6;
 const POINTER_DRAG_START_DISTANCE = 6;
 const MIN_ADRENALINE = 0;
 const MAX_ADRENALINE = 10;
+const PLAY_MODAL_VISIBLE_BOUNDS = {
+  left: 44.212471 / PLAY_MODAL_WIDTH,
+  top: 2.2 / PLAY_MODAL_HEIGHT,
+  right: 165.787531 / PLAY_MODAL_WIDTH,
+  bottom: 293.216609 / PLAY_MODAL_HEIGHT,
+};
 
 const buildPlayBeatPointers = () => {
   const activeLeft = PLAY_MODAL_WIDTH * PLAY_ACTIVE_LEFT_RATIO;
@@ -106,6 +112,29 @@ const resolveQuadAxes = (quad) => {
     widthLen: Math.hypot(vWidth.x, vWidth.y),
     heightLen: Math.hypot(vHeight.x, vHeight.y),
     det,
+  };
+};
+
+const getRectBounds = (element) => {
+  const rect = element?.getBoundingClientRect?.();
+  if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+  return rect;
+};
+
+const getPlayModalVisibleRectBounds = (element) => {
+  const rect = getRectBounds(element);
+  if (!rect) return null;
+  const left = rect.left + rect.width * PLAY_MODAL_VISIBLE_BOUNDS.left;
+  const top = rect.top + rect.height * PLAY_MODAL_VISIBLE_BOUNDS.top;
+  const right = rect.left + rect.width * PLAY_MODAL_VISIBLE_BOUNDS.right;
+  const bottom = rect.top + rect.height * PLAY_MODAL_VISIBLE_BOUNDS.bottom;
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    width: right - left,
+    height: bottom - top,
   };
 };
 
@@ -246,11 +275,47 @@ export const createActionHud = ({
     mouse.setAttribute('stroke-width', '2');
     overlay.appendChild(mouse);
 
-    const render = (elements, hoveredId, pointer) => {
+    const upsertNode = (existing, id, factory) => {
+      let node = existing.get(id);
+      if (!node) {
+        node = factory();
+        node.dataset.debugId = id;
+        overlay.appendChild(node);
+      }
+      return node;
+    };
+
+    const renderRegion = (existing, keep, region) => {
+      if (!region?.rect) return;
+      const { rect, id, label, fill, stroke, strokeWidth = '1.5' } = region;
+      const box = upsertNode(existing, `${id}::box`, () => document.createElementNS(SVG_NS, 'rect'));
+      box.setAttribute('x', rect.left.toFixed(1));
+      box.setAttribute('y', rect.top.toFixed(1));
+      box.setAttribute('width', rect.width.toFixed(1));
+      box.setAttribute('height', rect.height.toFixed(1));
+      box.setAttribute('fill', fill);
+      box.setAttribute('stroke', stroke);
+      box.setAttribute('stroke-width', strokeWidth);
+      keep.add(`${id}::box`);
+
+      if (label) {
+        const text = upsertNode(existing, `${id}::label`, () => document.createElementNS(SVG_NS, 'text'));
+        text.textContent = label;
+        text.setAttribute('x', rect.left.toFixed(1));
+        text.setAttribute('y', Math.max(12, rect.top - 6).toFixed(1));
+        text.setAttribute('fill', stroke);
+        text.setAttribute('font-size', '11');
+        text.setAttribute('font-family', 'monospace');
+        text.setAttribute('font-weight', '700');
+        keep.add(`${id}::label`);
+      }
+    };
+
+    const render = (elements, hoveredId, pointer, regions = []) => {
       if (!elements) return;
       const existing = new Map();
-      overlay.querySelectorAll('polygon').forEach((poly) => {
-        existing.set(poly.dataset.cardId, poly);
+      overlay.querySelectorAll('[data-debug-id]').forEach((node) => {
+        existing.set(node.dataset.debugId, node);
       });
       const cards = [];
       let rightmostIndex = -1;
@@ -279,7 +344,7 @@ export const createActionHud = ({
         let poly = existing.get(card.cardId);
         if (!poly) {
           poly = document.createElementNS(SVG_NS, 'polygon');
-          poly.dataset.cardId = card.cardId;
+          poly.dataset.debugId = card.cardId;
           overlay.appendChild(poly);
         }
         poly.setAttribute('points', basePoints);
@@ -295,7 +360,7 @@ export const createActionHud = ({
           let extra = existing.get(`${card.cardId}::right`);
           if (!extra) {
             extra = document.createElementNS(SVG_NS, 'polygon');
-            extra.dataset.cardId = `${card.cardId}::right`;
+            extra.dataset.debugId = `${card.cardId}::right`;
             overlay.appendChild(extra);
           }
           extra.setAttribute('points', extraPoints);
@@ -305,9 +370,10 @@ export const createActionHud = ({
           keep.add(`${card.cardId}::right`);
         }
       });
-      existing.forEach((poly, cardId) => {
-        if (!keep.has(cardId)) {
-          poly.remove();
+      regions.forEach((region) => renderRegion(existing, keep, region));
+      existing.forEach((node, id) => {
+        if (!keep.has(id)) {
+          node.remove();
         }
       });
       if (pointer) {
@@ -320,7 +386,7 @@ export const createActionHud = ({
     };
 
     const clear = () => {
-      overlay.querySelectorAll('polygon').forEach((poly) => poly.remove());
+      overlay.querySelectorAll('[data-debug-id]').forEach((node) => node.remove());
       mouse.setAttribute('visibility', 'hidden');
     };
 
@@ -445,6 +511,31 @@ export const createActionHud = ({
     const ratio = (rect.bottom - clientY) / rect.height;
     return clampSubmittedAdrenaline(ratio * MAX_ADRENALINE);
   };
+  const getDebugRegions = () => [
+    {
+      id: 'no-pan-play-modal',
+      label: 'no pan 2',
+      rect: getPlayModalVisibleRectBounds(modalShell),
+      fill: 'rgba(255, 255, 255, 0.03)',
+      stroke: 'rgba(255, 255, 255, 0.95)',
+      strokeWidth: '3',
+    },
+    {
+      id: 'no-pan-track',
+      label: 'no pan 1',
+      rect: getRectBounds(resolvedAdrenalineTrack),
+      fill: 'rgba(0, 210, 140, 0.08)',
+      stroke: 'rgba(0, 210, 140, 0.95)',
+    },
+    {
+      id: 'no-pan-knob',
+      label: null,
+      rect: getRectBounds(resolvedAdrenalineKnob),
+      fill: 'rgba(255, 191, 71, 0.12)',
+      stroke: 'rgba(255, 191, 71, 0.98)',
+      strokeWidth: '2',
+    },
+  ];
   const beginAdrenalineDrag = (event) => {
     if (!canAdjustAdrenaline()) return;
     if (typeof PointerEvent !== 'undefined' && !(event instanceof PointerEvent)) return;
@@ -456,6 +547,7 @@ export const createActionHud = ({
       target.setPointerCapture(event.pointerId);
     }
     event.preventDefault();
+    event.stopPropagation();
   };
   const updateAdrenalineDrag = (event) => {
     if (!adrenalineDrag.active || adrenalineDrag.pointerId !== event.pointerId) return;
@@ -1535,7 +1627,7 @@ export const createActionHud = ({
       const cardId = element?.dataset.cardId ?? null;
       setHoveredCard(cardId);
       if (debugOverlay && debugOverlay.setEnabled) {
-        debugOverlay.render(getHandCardsInOrder(), cardId, { x: event.clientX, y: event.clientY });
+        debugOverlay.render(getHandCardsInOrder(), cardId, { x: event.clientX, y: event.clientY }, getDebugRegions());
       }
     });
 
@@ -1662,7 +1754,7 @@ export const createActionHud = ({
     updateRotationRestriction();
     updateSubmitState();
     if (debugOverlay && debugOverlay.setEnabled) {
-      debugOverlay.render(getHandCardsInOrder(), state.hoveredCardId);
+      debugOverlay.render(getHandCardsInOrder(), state.hoveredCardId, null, getDebugRegions());
     }
     if (options.exhaustedCardIds) {
       setExhaustedCards(options.exhaustedCardIds);
@@ -1679,7 +1771,7 @@ export const createActionHud = ({
       animatePendingDeals(pendingDeals);
       fitAllCardText(root);
       if (debugOverlay && debugOverlay.setEnabled) {
-        debugOverlay.render(getHandCardsInOrder(), state.hoveredCardId);
+        debugOverlay.render(getHandCardsInOrder(), state.hoveredCardId, null, getDebugRegions());
       }
     });
   };
