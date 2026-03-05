@@ -8,13 +8,14 @@ export const applyActiveCardTextEffects = (
   actionList: ActionListItem[],
   activeCard: CardDefinition | undefined,
   rotationLabel: string,
+  submittedAdrenaline = 0,
 ): ActionListItem[] => {
   if (!activeCard) return actionList;
   if (activeCard.type === 'movement') {
-    return applyActiveMovementCardText(actionList, activeCard, rotationLabel);
+    return applyActiveMovementCardText(actionList, activeCard, rotationLabel, submittedAdrenaline);
   }
   if (activeCard.type === 'ability') {
-    return applyActiveAbilityCardText(actionList, activeCard, rotationLabel);
+    return applyActiveAbilityCardText(actionList, activeCard, rotationLabel, submittedAdrenaline);
   }
   return actionList;
 };

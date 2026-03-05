@@ -1,8 +1,8 @@
 import { buildCardActionList } from './cardText/actionListBuilder.js';
 
-const buildPendingActionList = (activeCard, passiveCard, rotation) => {
+const buildPendingActionList = (activeCard, passiveCard, rotation, adrenaline = 0) => {
   const rotationLabel = `${rotation ?? ''}`.trim();
-  return buildCardActionList(activeCard, passiveCard, rotationLabel);
+  return buildCardActionList(activeCard, passiveCard, rotationLabel, { submittedAdrenaline: adrenaline });
 };
 
 const isUserSubmitted = (pending, userId) => {
@@ -15,8 +15,8 @@ const hasPendingBatch = (pending) => Boolean(pending && Array.isArray(pending.re
 export const createPendingActionPreview = () => {
   let actionList = null;
 
-  const setFromCard = (activeCard, passiveCard, rotation) => {
-    const nextList = buildPendingActionList(activeCard, passiveCard, rotation);
+  const setFromCard = (activeCard, passiveCard, rotation, adrenaline = 0) => {
+    const nextList = buildPendingActionList(activeCard, passiveCard, rotation, adrenaline);
     actionList = nextList.length ? nextList : null;
   };
 

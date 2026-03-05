@@ -3517,3 +3517,142 @@ test('executeBeats absorb draw from blocked arrows stays at 4 even when owner ha
   assert.equal(draw.drawCount, 4);
 });
 
+test('executeBeats applies sinking-shot pre-action damage and adrenaline after submitted spend', () => {
+  const characters = [
+    {
+      userId: 'alpha',
+      username: 'alpha',
+      position: { q: 0, r: 0 },
+      facing: 180,
+      adrenaline: 5,
+      characterId: 'murelious',
+      characterName: 'Alpha',
+    },
+  ];
+
+  const beats = [[
+    buildEntry('alpha', 'W', 20, characters[0].position, characters[0].facing, 'R1'),
+  ]];
+  beats[0][0].cardId = 'step';
+  beats[0][0].passiveCardId = 'sinking-shot';
+  beats[0][0].rotationSource = 'selected';
+  beats[0][0].submittedAdrenaline = 3;
+
+  const result = executeBeats(beats, characters);
+  const alphaEntry = (result.beats[0] || []).find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.damage, 2);
+  assert.equal(alphaEntry.adrenaline, 3);
+  assert.equal(alphaEntry.facing, 240);
+});
+
+test('executeBeats grants chase active adrenaline on a successful bracketed hit', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, adrenaline: 0, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [[
+    buildEntry('alpha', '[a]', 90, characters[0].position, characters[0].facing, '', 4, 0),
+    buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+  ]];
+  beats[0][0].cardId = 'chase';
+  beats[0][0].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters);
+  const alphaEntry = (result.beats[0] || []).find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.adrenaline, 1);
+});
+
+test('executeBeats grants vengeance active adrenaline on a successful bracketed hit', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, adrenaline: 0, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [[
+    buildEntry('alpha', '[c]', 90, characters[0].position, characters[0].facing, '', 3, 0),
+    buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+  ]];
+  beats[0][0].cardId = 'vengeance';
+  beats[0][0].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters);
+  const alphaEntry = (result.beats[0] || []).find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.adrenaline, 1);
+});
+
+test('executeBeats grants vengeance passive adrenaline when hit by a melee attack', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, adrenaline: 1, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [[
+    buildEntry('alpha', 'a', 90, characters[0].position, characters[0].facing, '', 2, 0),
+    buildEntry('beta', 'm', 10, characters[1].position, characters[1].facing),
+  ]];
+  beats[0][0].cardId = 'jab';
+  beats[0][0].passiveCardId = 'step';
+  beats[0][1].cardId = 'step';
+  beats[0][1].passiveCardId = 'vengeance';
+  beats[0][1].rotationSource = 'selected';
+
+  const result = executeBeats(beats, characters);
+  const betaEntry = (result.beats[0] || []).find((entry) => entry.username === 'beta');
+
+  assert.ok(betaEntry);
+  assert.equal(betaEntry.adrenaline, 3);
+});
+
+test('executeBeats grants vengeance passive adrenaline when hit by an arrow', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, adrenaline: 0, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 5, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [[
+    buildEntry('alpha', 'm', 10, characters[0].position, characters[0].facing),
+    buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+  ]];
+  beats[0][0].cardId = 'step';
+  beats[0][0].passiveCardId = 'vengeance';
+  beats[0][0].rotationSource = 'selected';
+
+  const boardTokens = [
+    { id: 'arrow:0', type: 'arrow', position: { q: 1, r: 0 }, facing: 0, ownerUserId: 'beta' },
+  ];
+
+  const result = executeBeats(beats, characters, undefined, boardTokens);
+  const alphaEntry = (result.beats[0] || []).find((entry) => entry.username === 'alpha');
+
+  assert.ok(alphaEntry);
+  assert.equal(alphaEntry.damage, 4);
+  assert.equal(alphaEntry.adrenaline, 2);
+});
+
+test('executeBeats rotates the target three steps on spinning-back-kick hits after the action becomes Bc', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: -1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [[
+    buildEntry('alpha', '[Bc]', 90, characters[0].position, characters[0].facing, '', 2, 0),
+    buildEntry('beta', 'W', 0, characters[1].position, characters[1].facing),
+  ]];
+  beats[0][0].cardId = 'spinning-back-kick';
+  beats[0][0].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters);
+  const betaEntry = (result.beats[0] || []).find((entry) => entry.username === 'beta');
+
+  assert.ok(betaEntry);
+  assert.equal(betaEntry.facing, 0);
+});
+

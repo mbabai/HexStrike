@@ -74,7 +74,7 @@
       "name": "Fleche",
       "type": "movement",
       "actions": [
-        "W",
+        "Adr+1",
         "m",
         "m",
         "m",
@@ -152,7 +152,7 @@
       "name": "Leap",
       "type": "movement",
       "actions": [
-        "W",
+        "Adr+1",
         "3j",
         "W",
         "W",
@@ -288,7 +288,7 @@
       "actions": [
         "m",
         "a",
-        "W",
+        "Adr+1",
         "W",
         "E"
       ],
@@ -362,8 +362,8 @@
       "type": "ability",
       "actions": [
         "m",
-        "c",
-        "a",
+        "[c]",
+        "[a]",
         "Co",
         "W",
         "E"
@@ -371,6 +371,7 @@
       "rotations": "0-1",
       "damage": 4,
       "kbf": 1,
+      "activeText": "{i}: If this attack lands: {Adr+1}.",
       "passiveText": "Add {W} at the start of your move, turn all {m} to {2m}.",
       "timings": [
         [
@@ -392,7 +393,7 @@
       "name": "Counter Attack",
       "type": "ability",
       "actions": [
-        "Bm",
+        "[Bm]",
         "a",
         "W",
         "E"
@@ -400,7 +401,7 @@
       "rotations": "*",
       "damage": 6,
       "kbf": 4,
-      "activeText": "",
+      "activeText": "{i}: If {Adr5}, timing: {midRules}. If {Adr10}, timing: {earlyRules}.",
       "passiveText": "Convert the first {m} to {m-Ba} with damage 2 and KBF 2.",
       "timings": [
         [
@@ -419,7 +420,7 @@
       "type": "ability",
       "actions": [
         "W",
-        "a-La-Ra",
+        "[a-La-Ra]",
         "Co",
         "W",
         "E"
@@ -427,6 +428,7 @@
       "rotations": "0-2",
       "damage": 4,
       "kbf": 2,
+      "activeText": "{i}: {Adr6}: KBF +1.",
       "passiveText": "Replace all {m} with {m-La-Ra} with damage 2, KBF 1. Take 1 damage.",
       "timings": [
         null,
@@ -444,7 +446,7 @@
       "type": "ability",
       "actions": [
         "m",
-        "La-Ra",
+        "[La-Ra]",
         "Co",
         "W",
         "E"
@@ -452,6 +454,7 @@
       "rotations": "0-2",
       "damage": 3,
       "kbf": 2,
+      "activeText": "{i}: Damage + {AdrX}.",
       "timings": [
         [
           "late"
@@ -510,8 +513,8 @@
       "name": "Flying Knee",
       "type": "ability",
       "actions": [
-        "W",
-        "c",
+        "Adr+1",
+        "[c]",
         "Co",
         "W",
         "E"
@@ -519,6 +522,7 @@
       "rotations": "0-1",
       "damage": 2,
       "kbf": 2,
+      "activeText": "{i}: If {Adr3}, reduce KBF by 1, and increase damage by 4.",
       "passiveText": "All movement (not jumps) become charges with 1 damage and 1 KBF.",
       "timings": [
         null,
@@ -536,7 +540,7 @@
       "type": "ability",
       "actions": [
         "m",
-        "a-La-Ra",
+        "[a-La-Ra]",
         "W",
         "W",
         "E"
@@ -544,6 +548,7 @@
       "rotations": "0-1",
       "damage": 3,
       "kbf": 1,
+      "activeText": "{i}: If {Adr6}, KBF +2.",
       "timings": [
         [
           "late"
@@ -707,6 +712,7 @@
       "rotations": "*",
       "damage": 3,
       "kbf": "T",
+      "activeText": "{i}: Damage + {AdrX} (maximum +4).",
       "passiveText": "You cannot be thrown.",
       "timings": [
         null,
@@ -752,6 +758,7 @@
       "actions": [
         "[a]",
         "Co",
+        "Adr+1",
         "E"
       ],
       "rotations": "*",
@@ -762,6 +769,7 @@
         [
           "early"
         ],
+        null,
         null,
         null
       ]
@@ -823,7 +831,7 @@
       "name": "Push Kick",
       "type": "ability",
       "actions": [
-        "a-Bm",
+        "[a-Bm]",
         "W",
         "W",
         "E"
@@ -831,6 +839,7 @@
       "rotations": "*",
       "damage": 0,
       "kbf": 2,
+      "activeText": "{i}: Damage + {AdrX} (maximum +5).",
       "timings": [
         [
           "late"
@@ -907,6 +916,7 @@
       "kbf": 2,
       "triggerText": "If Sinking Shot is in your hand when an enemy is hit by a projectile, you may reveal it to discard it and a movement card to force the target to {Discard 2}.",
       "activeText": "",
+      "passiveText": "Pre-action: Take 2 damage, {Adr+1}.",
       "timings": [
         null,
         null,
@@ -1002,7 +1012,7 @@
       "name": "Spinning Back Kick",
       "type": "ability",
       "actions": [
-        "Ba-BLa-BRa",
+        "[Ba-BLa-BRa]",
         "Co",
         "W",
         "E"
@@ -1010,6 +1020,7 @@
       "rotations": "*",
       "damage": 2,
       "kbf": 2,
+      "activeText": "{i}: If {Adr4}, change to [Bc], and the attack causes the target to rotate 3.",
       "timings": [
         [
           "early"
@@ -1024,7 +1035,7 @@
       "name": "Stab",
       "type": "ability",
       "actions": [
-        "W",
+        "Adr+1",
         "[a]",
         "Co",
         "W",
@@ -1082,6 +1093,7 @@
       "rotations": "0-1",
       "damage": 2,
       "kbf": "T",
+      "activeText": "{i}: Damage + {AdrX} (maximum +4).",
       "passiveText": "You cannot be thrown.",
       "timings": [
         [
@@ -1103,7 +1115,7 @@
         "W",
         "[a-La-Ra]",
         "W",
-        "W",
+        "Adr+1",
         "E"
       ],
       "rotations": "*",
@@ -1127,17 +1139,18 @@
       "type": "ability",
       "actions": [
         "W",
-        "c",
-        "c",
-        "c",
+        "[c]",
+        "[c]",
+        "[c]",
         "W",
         "E"
       ],
       "rotations": "*",
-      "damage": 4,
+      "damage": 3,
       "kbf": 2,
       "triggerText": "If Vengeance is in your hand when you are knocked into the abyss, you may reveal it to discard it and a movement card. If you do, draw as many cards as the total hexes knocked back.",
-      "activeText": "",
+      "activeText": "{i}: If this hits, {Adr+1}.",
+      "passiveText": "If you are hit, {Adr+2}.",
       "timings": [
         null,
         [

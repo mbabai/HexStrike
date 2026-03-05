@@ -10,6 +10,7 @@ const TIMING_ICON_URLS = {
   mid: '/public/images/mid.png',
   late: '/public/images/late.png',
 };
+const TIMING_PHASES = new Set(['early', 'mid', 'late']);
 const DRAW_ICON_URL = '/public/images/DrawIcon.png';
 const DISCARD_ICON_URL = '/public/images/DiscardIcon.png';
 const ADRENALINE_ICON_URL = '/public/images/Adrenaline.png';
@@ -24,7 +25,7 @@ const INLINE_STYLE_CLASS_BY_TAG = {
   attack: 'card-inline-emphasis card-inline-emphasis-attack',
   guard: 'card-inline-emphasis card-inline-emphasis-guard',
 };
-const INLINE_STYLE_TOKEN_PATTERN = /(\{[^}]+\}|<\/?(?:bold|b|u|key|move|attack|guard)>)/gi;
+const INLINE_STYLE_TOKEN_PATTERN = /(\{[^}]+\}|\[[^\]]+\]|<\/?(?:bold|b|u|key|move|attack|guard)>)/gi;
 const MIN_SURFACE_TEXT_PX = 7;
 const HARD_MIN_SURFACE_TEXT_PX = 6;
 const MAX_ROW_TEXT_GROWTH = 3;
@@ -45,6 +46,26 @@ const parseActionToken = (raw) => {
     return { label: label || ACTION_ICON_FALLBACK, emphasized: true };
   }
   return { label: trimmed, emphasized: false };
+};
+
+const parseAdrenalineToken = (raw) => {
+  const normalized = `${raw ?? ''}`.trim();
+  if (!normalized) return null;
+  const signedMatch = normalized.match(/^adr([+-])\s*([0-9]+|x)$/i);
+  if (signedMatch) {
+    return {
+      sign: signedMatch[1],
+      amount: `${signedMatch[2]}`.trim().toUpperCase(),
+    };
+  }
+  const plainMatch = normalized.match(/^adr\s*([0-9]+|x)$/i);
+  if (plainMatch) {
+    return {
+      sign: '',
+      amount: `${plainMatch[1]}`.trim().toUpperCase(),
+    };
+  }
+  return null;
 };
 
 const buildActionIconUrl = (action) => {
@@ -114,7 +135,8 @@ const buildActionIcon = (action, timing) => {
   const icon = document.createElement('span');
   icon.className = 'action-card-action';
   const { label, emphasized } = parseActionToken(action);
-  const iconUrl = buildActionIconUrl(label);
+  const adrenaline = parseAdrenalineToken(label);
+  const iconUrl = buildActionIconUrl(adrenaline ? 'Adrenaline' : label);
   if (emphasized) {
     icon.classList.add('is-emphasized');
     icon.style.backgroundImage = `url('${EMPHASIS_ICON_URL}'), url('${iconUrl}')`;
@@ -123,6 +145,22 @@ const buildActionIcon = (action, timing) => {
     icon.style.backgroundRepeat = 'no-repeat, no-repeat';
   } else {
     icon.style.backgroundImage = `url('${iconUrl}')`;
+  }
+  if (adrenaline) {
+    const value = document.createElement('span');
+    value.className = 'action-card-adrenaline-value';
+    if (adrenaline.sign) {
+      value.classList.add('is-signed');
+      const signNode = document.createElement('span');
+      signNode.className = 'action-card-adrenaline-sign';
+      signNode.textContent = adrenaline.sign;
+      value.appendChild(signNode);
+    }
+    const amountNode = document.createElement('span');
+    amountNode.className = 'action-card-adrenaline-amount';
+    amountNode.textContent = adrenaline.amount;
+    value.appendChild(amountNode);
+    icon.appendChild(value);
   }
   const resolvedTiming = resolveActionTiming(action, timing);
   if (Array.isArray(resolvedTiming) && resolvedTiming.length) {
@@ -196,12 +234,98 @@ const buildInlineAdrenalineIcon = ({ sign = '', amountLabel, token }) => {
   if (!isNumeric && normalizedAmount !== 'X') return null;
   const icon = document.createElement('span');
   icon.className = 'card-inline-adrenaline-icon';
+  if (normalizedSign) {
+    icon.classList.add('is-signed');
+  }
   icon.style.backgroundImage = `url('${ADRENALINE_ICON_URL}')`;
   icon.setAttribute('role', 'img');
   icon.setAttribute('aria-label', token);
   icon.appendChild(buildAdrenalineValueContent({ sign: normalizedSign, amount: normalizedAmount }));
   return icon;
 };
+
+const queueCardTextRefit = (parent) => {
+  const card = parent?.closest?.('.action-card');
+  if (!card || card.dataset.refitQueued === '1') return;
+  card.dataset.refitQueued = '1';
+  requestAnimationFrame(() => {
+    card.dataset.refitQueued = '0';
+    fitAllCardText(card);
+  });
+};
+
+const appendInlineImage = (parent, imageName, alt) => {
+  const image = document.createElement('img');
+  image.className = 'card-inline-icon';
+  image.src = `/public/images/${imageName}.png`;
+  image.alt = alt;
+  image.loading = 'eager';
+  image.decoding = 'async';
+  image.addEventListener('load', () => queueCardTextRefit(parent));
+  parent.appendChild(image);
+};
+
+const parseInlineIconToken = (part) => {
+  if (typeof part !== 'string' || part.length < 3) return null;
+  const isCurly = part.startsWith('{') && part.endsWith('}');
+  const isBracket = part.startsWith('[') && part.endsWith(']');
+  if (!isCurly && !isBracket) return null;
+  const token = part.slice(1, -1).trim();
+  if (!token) return null;
+  return token;
+};
+
+const getInlineTimingPhase = (part) => {
+  const token = parseInlineIconToken(part);
+  if (!token) return null;
+  const normalized = token.toLowerCase();
+  return TIMING_PHASES.has(normalized) ? normalized : null;
+};
+
+const isInlineActionToken = (token) => {
+  const normalized = `${token ?? ''}`.trim();
+  if (!normalized || /\s/.test(normalized)) return false;
+  return normalized.split('-').every((part) => {
+    const label = `${part ?? ''}`.trim();
+    if (!label) return false;
+    const upper = label.toUpperCase();
+    if (upper === 'W' || upper === 'E') return true;
+    const type = label[label.length - 1]?.toLowerCase();
+    return type === 'a' || type === 'm' || type === 'j' || type === 'c' || type === 'b';
+  });
+};
+
+const appendInlineActionWithTimingIcon = (parent, actionToken, timingPhase) => {
+  const timingUrl = TIMING_ICON_URLS[timingPhase];
+  if (!timingUrl) {
+    appendInlineImage(parent, actionToken, actionToken);
+    return;
+  }
+  const icon = document.createElement('span');
+  icon.className = 'card-inline-action-icon';
+  icon.setAttribute('role', 'img');
+  icon.setAttribute('aria-label', `${actionToken} (${timingPhase})`);
+
+  const base = document.createElement('img');
+  base.className = 'card-inline-action-base';
+  base.src = `/public/images/${actionToken}.png`;
+  base.alt = actionToken;
+  base.loading = 'eager';
+  base.decoding = 'async';
+  base.addEventListener('load', () => queueCardTextRefit(parent));
+
+  const timing = document.createElement('img');
+  timing.className = 'card-inline-action-timing-icon';
+  timing.src = timingUrl;
+  timing.alt = `${timingPhase} timing`;
+  timing.loading = 'eager';
+  timing.decoding = 'async';
+  timing.addEventListener('load', () => queueCardTextRefit(parent));
+
+  icon.append(base, timing);
+  parent.appendChild(icon);
+};
+
 const appendInlineIconToken = (parent, part) => {
   const token = part.slice(1, -1).trim();
   if (!token) return;
@@ -222,6 +346,18 @@ const appendInlineIconToken = (parent, part) => {
     const icon = buildInlineAdrenalineIcon({
       sign: adrenalineMatch[1],
       amountLabel: adrenalineMatch[2],
+      token,
+    });
+    if (icon) {
+      parent.appendChild(icon);
+      return;
+    }
+  }
+  const adrenalineThresholdMatch = token.match(/^adr\s*([0-9]+)$/i);
+  if (adrenalineThresholdMatch) {
+    const icon = buildInlineAdrenalineIcon({
+      sign: '',
+      amountLabel: adrenalineThresholdMatch[1],
       token,
     });
     if (icon) {
@@ -262,23 +398,13 @@ const appendInlineIconToken = (parent, part) => {
     parent.appendChild(throwKbf);
     return;
   }
-  const image = document.createElement('img');
-  image.className = 'card-inline-icon';
-  image.src = `/public/images/${token}.png`;
-  image.alt = token;
-  image.loading = 'eager';
-  image.decoding = 'async';
-  // Inline token image load can change line wraps; re-fit this card once loaded.
-  image.addEventListener('load', () => {
-    const card = parent?.closest?.('.action-card');
-    if (!card || card.dataset.refitQueued === '1') return;
-    card.dataset.refitQueued = '1';
-    requestAnimationFrame(() => {
-      card.dataset.refitQueued = '0';
-      fitAllCardText(card);
-    });
-  });
-  parent.appendChild(image);
+  appendInlineImage(parent, token, token);
+};
+
+const appendInlineActionIconToken = (parent, part) => {
+  const token = part.slice(1, -1).trim();
+  if (!token) return;
+  appendInlineImage(parent, token, token);
 };
 
 export const appendInlineText = (container, text) => {
@@ -295,14 +421,35 @@ export const appendInlineText = (container, text) => {
       if (!value) return;
       stack[stack.length - 1].appendChild(document.createTextNode(value));
     };
-    for (const match of line.matchAll(INLINE_STYLE_TOKEN_PATTERN)) {
+    const matches = Array.from(line.matchAll(INLINE_STYLE_TOKEN_PATTERN));
+    for (let matchIndex = 0; matchIndex < matches.length; matchIndex += 1) {
+      const match = matches[matchIndex];
       const token = match[0];
       const index = Number.isFinite(match.index) ? match.index : 0;
       if (index > cursor) {
         pushText(line.slice(cursor, index));
       }
+      const currentIconToken = parseInlineIconToken(token);
+      if (currentIconToken) {
+        const nextMatch = matches[matchIndex + 1];
+        const nextToken = nextMatch?.[0] ?? '';
+        const nextIndex = Number.isFinite(nextMatch?.index) ? nextMatch.index : -1;
+        const timingPhase = getInlineTimingPhase(nextToken);
+        const onlyWhitespaceBetween = nextIndex >= 0 ? !line.slice(index + token.length, nextIndex).trim() : false;
+        if (timingPhase && onlyWhitespaceBetween && isInlineActionToken(currentIconToken)) {
+          appendInlineActionWithTimingIcon(stack[stack.length - 1], currentIconToken, timingPhase);
+          cursor = nextIndex + nextToken.length;
+          matchIndex += 1;
+          continue;
+        }
+      }
       if (token.startsWith('{') && token.endsWith('}')) {
         appendInlineIconToken(stack[stack.length - 1], token);
+        cursor = index + token.length;
+        continue;
+      }
+      if (token.startsWith('[') && token.endsWith(']')) {
+        appendInlineActionIconToken(stack[stack.length - 1], token);
         cursor = index + token.length;
         continue;
       }

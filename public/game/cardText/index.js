@@ -3,13 +3,13 @@ import { applyActiveMovementCardText } from './activeMovement.js';
 import { applyPassiveAbilityCardText } from './passiveAbility.js';
 import { applyPassiveMovementCardText } from './passiveMovement.js';
 
-export const applyActiveCardTextEffects = (actionList, activeCard, rotationLabel) => {
+export const applyActiveCardTextEffects = (actionList, activeCard, rotationLabel, submittedAdrenaline = 0) => {
   if (!activeCard) return actionList;
   if (activeCard.type === 'movement') {
-    return applyActiveMovementCardText(actionList, activeCard, rotationLabel);
+    return applyActiveMovementCardText(actionList, activeCard, rotationLabel, submittedAdrenaline);
   }
   if (activeCard.type === 'ability') {
-    return applyActiveAbilityCardText(actionList, activeCard, rotationLabel);
+    return applyActiveAbilityCardText(actionList, activeCard, rotationLabel, submittedAdrenaline);
   }
   return actionList;
 };

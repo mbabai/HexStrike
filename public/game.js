@@ -1087,7 +1087,7 @@ export const initGame = () => {
     selectedRotationPreview = null;
     if (actionHud) actionHud.setLocked(true);
     const previewCard = activeCard ?? cardLookup.get(activeCardId);
-    pendingActionPreview.setFromCard(previewCard, cardLookup.get(passiveCardId), rotation);
+    pendingActionPreview.setFromCard(previewCard, cardLookup.get(passiveCardId), rotation, adrenaline);
     const beats = gameState?.state?.public?.beats ?? [];
     const characters = gameState?.state?.public?.characters ?? [];
     debugLog(`${LOG_PREFIX} action:set submit`, {

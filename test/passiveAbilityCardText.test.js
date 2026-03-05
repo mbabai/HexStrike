@@ -90,7 +90,7 @@ test('smash-attack passive inserts the follow-up attack after a jump', () => {
   const actionList = buildActionList('leap', 'smash-attack');
   assert.deepEqual(
     actionList.map((entry) => entry.action),
-    ['W', '3j', 'a-La-Ra-BLa-BRa-Ba', 'W', 'W', 'E'],
+    ['Adr+1', '3j', 'a-La-Ra-BLa-BRa-Ba', 'W', 'W', 'E'],
   );
   assert.equal(actionList[2].damage, 1);
   assert.equal(actionList[2].kbf, 1);
@@ -103,7 +103,7 @@ test('push-kick has no passive timeline override', () => {
   const dashActionList = buildActionList('dash', 'push-kick');
   assert.deepEqual(
     leapActionList.map((entry) => entry.action),
-    ['W', '3j', 'W', 'W', 'E'],
+    ['Adr+1', '3j', 'W', 'W', 'E'],
   );
   assert.deepEqual(
     dashActionList.map((entry) => entry.action),

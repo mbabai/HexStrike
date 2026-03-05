@@ -56,6 +56,9 @@ export const buildCardActionList = (activeCard, passiveCard, rotationLabel, opti
   const actions = Array.isArray(activeCard?.actions) ? activeCard.actions : [];
   const cardTimings = Array.isArray(activeCard?.timings) ? activeCard.timings : [];
   if (!actions.length) return [];
+  const submittedAdrenaline = Number.isFinite(options.submittedAdrenaline)
+    ? Math.max(0, Math.min(10, Math.round(options.submittedAdrenaline)))
+    : 0;
   const damage = Number.isFinite(activeCard?.damage) ? activeCard.damage : 0;
   const kbf = Number.isFinite(activeCard?.kbf) ? activeCard.kbf : 0;
   const supportsThrow = cardHasThrowKeyword(activeCard, 'active') || cardHasThrowKeyword(passiveCard, 'passive');
@@ -72,7 +75,7 @@ export const buildCardActionList = (activeCard, passiveCard, rotationLabel, opti
     cardId: activeCard?.id ?? null,
     passiveCardId: passiveCard?.id ?? null,
   }));
-  const activeTextList = applyActiveCardTextEffects(baseActionList, activeCard, rotationLabel);
+  const activeTextList = applyActiveCardTextEffects(baseActionList, activeCard, rotationLabel, submittedAdrenaline);
   const withPassiveText = applyPassiveCardTextEffects(activeTextList, activeCard, passiveCard, rotationLabel);
   const allowSmokeSwap = options.allowSmokeSwap !== false;
   if (!allowSmokeSwap || activeCard?.id !== SMOKE_BOMB_CARD_ID) {
@@ -90,7 +93,10 @@ export const buildCardActionList = (activeCard, passiveCard, rotationLabel, opti
     (entry) => normalizeActionLabel(entry.action).toUpperCase() === 'X1',
   );
   if (swapIndex < 0) return withPassiveText;
-  const swappedList = buildCardActionList(passiveCard, activeCard, rotationLabel, { allowSmokeSwap: false });
+  const swappedList = buildCardActionList(passiveCard, activeCard, rotationLabel, {
+    allowSmokeSwap: false,
+    submittedAdrenaline,
+  });
   if (!swappedList.length) return withPassiveText;
   return [...withPassiveText.slice(0, swapIndex), ...swappedList].map((entry, index) => {
     const timing = resolveActionTiming(entry.action, entry.timing);

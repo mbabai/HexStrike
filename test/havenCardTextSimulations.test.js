@@ -267,8 +267,9 @@ test('Haven passive skip is idempotent across reruns and does not swallow later 
   const firstActions = collectActorActions(firstRun.beats);
   const secondActions = collectActorActions(secondRun.beats);
   assert.deepEqual(secondActions, firstActions);
-  assert.equal(firstActions[0], '3j');
-  assert.equal(firstActions[1], 'W');
+  assert.equal(firstActions[0], 'Adr+1');
+  assert.equal(firstActions[1], '3j');
+  assert.equal(firstActions[2], 'W');
 
   const dashDeckState = createDeckState({ movement: ['dash'], ability: ['absorb'] });
   const dashValidation = validateActionSubmission(

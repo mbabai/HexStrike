@@ -393,7 +393,7 @@ export const validateActionSubmission = (
     return { ok: false, error: { code: 'no-action-list', message: 'Active card has no actions.' } };
   }
 
-  const actionList = buildCardActionList(activeCard, passiveCard, rotation);
+  const actionList = buildCardActionList(activeCard, passiveCard, rotation, { submittedAdrenaline: adrenaline });
 
   const refreshOffset = getRefreshOffset(activeCard.actions);
   if (refreshOffset === null) {

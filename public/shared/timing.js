@@ -8,6 +8,10 @@ const TIMING_PRIORITY_MAP = {
 
 const DEFAULT_TIMING = ['mid'];
 const OPEN_OR_UNTIMED_ACTIONS = new Set(['E', 'W', 'CO']);
+const ADRENALINE_UTILITY_ACTION_PATTERN = /^ADR[+-]\d+$/i;
+
+const isUntimedActionLabel = (label) =>
+  OPEN_OR_UNTIMED_ACTIONS.has(label) || ADRENALINE_UTILITY_ACTION_PATTERN.test(label);
 
 export const getTimingOrder = () => [...TIMING_ORDER];
 
@@ -35,7 +39,7 @@ export const normalizeActionTiming = (value) => {
 
 export const resolveActionTiming = (action, timing) => {
   const label = normalizeActionLabel(action).toUpperCase();
-  if (!label || OPEN_OR_UNTIMED_ACTIONS.has(label)) return null;
+  if (!label || isUntimedActionLabel(label)) return null;
   return normalizeActionTiming(timing) ?? [...DEFAULT_TIMING];
 };
 
@@ -53,4 +57,3 @@ export const getTimingPriority = (timing) => {
   if (!Array.isArray(timing) || !timing.length) return 0;
   return timing.reduce((highest, item) => Math.max(highest, TIMING_PRIORITY_MAP[item] ?? 0), 0);
 };
-

@@ -12,15 +12,21 @@ const getCardById = (catalog, id) => {
 test('card balance update applies timeline, damage, and naming changes', async () => {
   const catalog = await loadCardCatalog();
 
+  assert.deepEqual(getCardById(catalog, 'fleche').actions, ['Adr+1', 'm', 'm', 'm', 'E']);
+  assert.deepEqual(getCardById(catalog, 'leap').actions, ['Adr+1', '3j', 'W', 'W', 'E']);
+  assert.deepEqual(getCardById(catalog, 'balestra-lunge').actions, ['m', 'a', 'Adr+1', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'iron-will').actions, ['W', 'W', 'X1', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'healing-harmony').actions, ['X1', 'X1', 'X1', 'E']);
   assert.deepEqual(getCardById(catalog, 'tackle').actions, ['m', '[a]', 'W', 'W', 'E']);
-  assert.deepEqual(getCardById(catalog, 'chase').actions, ['m', 'c', 'a', 'Co', 'W', 'E']);
-  assert.deepEqual(getCardById(catalog, 'vengeance').actions, ['W', 'c', 'c', 'c', 'W', 'E']);
+  assert.deepEqual(getCardById(catalog, 'chase').actions, ['m', '[c]', '[a]', 'Co', 'W', 'E']);
+  assert.deepEqual(getCardById(catalog, 'counter-attack').actions, ['[Bm]', 'a', 'W', 'E']);
+  assert.deepEqual(getCardById(catalog, 'flying-knee').actions, ['Adr+1', '[c]', 'Co', 'W', 'E']);
+  assert.deepEqual(getCardById(catalog, 'jab').actions, ['[a]', 'Co', 'Adr+1', 'E']);
+  assert.deepEqual(getCardById(catalog, 'vengeance').actions, ['W', '[c]', '[c]', '[c]', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'haven').actions, ['W', 'X1', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'long-thrust').actions, ['W', 'a-2a', 'W', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'gigantic-staff').actions, ['W', 'W', 'a-2a-3a', 'W', 'W', 'E']);
-  assert.deepEqual(getCardById(catalog, 'push-kick').actions, ['a-Bm', 'W', 'W', 'E']);
+  assert.deepEqual(getCardById(catalog, 'push-kick').actions, ['[a-Bm]', 'W', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'parry').actions, ['W', '[b]', '[b]', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'aerial-strike').actions, ['W', '[2j]', 'a', 'W', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'hammer').actions, ['W', 'W', '[a-La-Ra]', 'W', 'W', 'E']);
@@ -28,19 +34,24 @@ test('card balance update applies timeline, damage, and naming changes', async (
   assert.deepEqual(getCardById(catalog, 'whirlwind').actions, ['W', 'c-La-Ra-BLa-BRa-Ba', 'c-La-Ra-BLa-BRa-Ba', '[c-La-Ra-BLa-BRa-Ba]', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'hip-throw').actions, ['W', '[a]', 'W', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'spike').actions, ['W', 'W', '[a]', 'W', 'E']);
+  assert.deepEqual(getCardById(catalog, 'spinning-back-kick').actions, ['[Ba-BLa-BRa]', 'Co', 'W', 'E']);
 
   assert.equal(getCardById(catalog, 'hip-throw').damage, 3);
   assert.equal(getCardById(catalog, 'tackle').damage, 2);
   assert.equal(getCardById(catalog, 'double-daggers').damage, 3);
   assert.equal(getCardById(catalog, 'balestra-lunge').damage, 5);
+  assert.equal(getCardById(catalog, 'vengeance').damage, 3);
   assert.equal(getCardById(catalog, 'push-kick').passiveText ?? '', '');
+  assert.equal(getCardById(catalog, 'sinking-shot').passiveText ?? '', 'Pre-action: Take 2 damage, {Adr+1}.');
 
   assert.equal(getCardById(catalog, 'trip').name, 'Trip');
   assert.equal(getCardById(catalog, 'sweeping-strike').name, 'Sweeping Strike');
   assert.deepEqual(getCardById(catalog, 'trip').actions, ['[a-La-Ra]', 'W', 'W', 'E']);
-  assert.deepEqual(getCardById(catalog, 'sweeping-strike').actions, ['W', '[a-La-Ra]', 'W', 'W', 'E']);
+  assert.deepEqual(getCardById(catalog, 'sweeping-strike').actions, ['W', '[a-La-Ra]', 'W', 'Adr+1', 'E']);
 
   assert.equal(existsSync('public/images/a-Bm.png'), true);
+  assert.equal(existsSync('public/images/Adr+1.png'), true);
+  assert.equal(existsSync('public/images/Adr+2.png'), true);
 });
 
 const normalizeActionLabel = (action) => {
@@ -60,7 +71,7 @@ test('card timing data is present for non-E/W beats', async () => {
     card.actions.forEach((action, index) => {
       const label = normalizeActionLabel(action).toUpperCase();
       const timing = timings[index];
-      if (label === 'E' || label === 'W' || label === 'CO') {
+      if (label === 'E' || label === 'W' || label === 'CO' || /^ADR[+-]\d+$/.test(label)) {
         assert.equal(
           timing == null || (Array.isArray(timing) && timing.length === 0),
           true,

@@ -3357,6 +3357,42 @@ img[src$='Death.png'] {
   background-repeat: no-repeat;
 }
 
+.action-card-adrenaline-value {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.01em;
+  color: #000000;
+  font-size: calc(18.5px * var(--action-card-scale) * var(--action-card-text-scale, 1));
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  transform: translateY(0.05em);
+  -webkit-text-stroke: calc(1px * var(--action-card-scale)) #ffffff;
+  paint-order: stroke fill;
+  text-shadow:
+    -1px 0 #ffffff,
+    1px 0 #ffffff,
+    0 -1px #ffffff,
+    0 1px #ffffff,
+    -1px -1px #ffffff,
+    1px -1px #ffffff,
+    -1px 1px #ffffff,
+    1px 1px #ffffff;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.action-card-adrenaline-value.is-signed {
+  font-size: calc(16.5px * var(--action-card-scale) * var(--action-card-text-scale, 1));
+}
+
+.action-card-action.is-emphasized .action-card-adrenaline-value {
+  transform: translateY(0.05em) scale(0.8);
+}
+
 .action-card-action-timing {
   position: absolute;
   inset: 0;
@@ -3563,7 +3599,35 @@ img[src$='Death.png'] {
   object-fit: contain;
 }
 
+.card-inline-action-icon {
+  position: relative;
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin: 0 1px;
+  vertical-align: -0.05em;
+}
+
+.card-inline-action-base {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.card-inline-action-timing-icon {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.8));
+  pointer-events: none;
+}
+
 .card-inline-adrenaline-icon {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3578,6 +3642,8 @@ img[src$='Death.png'] {
 }
 
 .card-inline-adrenaline-value {
+  position: absolute;
+  inset: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3600,6 +3666,12 @@ img[src$='Death.png'] {
     1px 1px #ffffff;
 }
 
+.card-inline-adrenaline-icon.is-signed .card-inline-adrenaline-value {
+  gap: 0.01em;
+  font-size: 0.86em;
+  letter-spacing: -0.02em;
+}
+
 .card-inline-adrenaline-sign {
   transform: translateX(-0.08em);
 }
@@ -3607,6 +3679,11 @@ img[src$='Death.png'] {
 .card-inline-adrenaline-amount {
   display: inline-block;
   transform: translateX(-0.03em);
+}
+
+.card-inline-adrenaline-icon.is-signed .card-inline-adrenaline-sign,
+.card-inline-adrenaline-icon.is-signed .card-inline-adrenaline-amount {
+  transform: translateX(0);
 }
 
 .card-inline-flow-icon {

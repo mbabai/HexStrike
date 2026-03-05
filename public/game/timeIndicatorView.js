@@ -13,6 +13,7 @@ const ACTION_ICON_FALLBACK = 'empty';
 const EMPHASIS_ICON_KEY = 'i';
 const COMBO_ICON_KEY = 'Co';
 const FOCUS_ICON_KEY = 'F';
+const ADRENALINE_ICON_KEY = 'Adrenaline';
 const KNOCKBACK_ICON_KEY = 'KnockBackIcon';
 const DRAW_ICON_KEY = 'DrawIcon';
 const DISCARD_ICON_KEY = 'DiscardIcon';
@@ -172,6 +173,26 @@ const parseActionToken = (raw) => {
     return { label: label || ACTION_ICON_FALLBACK, emphasized: true };
   }
   return { label: trimmed, emphasized: false };
+};
+
+const parseAdrenalineActionToken = (label) => {
+  const normalized = `${label ?? ''}`.trim();
+  if (!normalized) return null;
+  const signedMatch = normalized.match(/^adr([+-])\s*([0-9]+|x)$/i);
+  if (signedMatch) {
+    return {
+      sign: signedMatch[1],
+      amount: `${signedMatch[2]}`.trim().toUpperCase(),
+    };
+  }
+  const plainMatch = normalized.match(/^adr\s*([0-9]+|x)$/i);
+  if (plainMatch) {
+    return {
+      sign: '',
+      amount: `${plainMatch[1]}`.trim().toUpperCase(),
+    };
+  }
+  return null;
 };
 
 const getHitSummary = (entry) => {
@@ -1674,7 +1695,8 @@ export const drawTimeIndicator = (
       const discardCount = discardLookup.get(discardKey) ?? 0;
       const drawCount = drawLookup.get(discardKey) ?? 0;
       const token = parseActionToken(action);
-      const image = getActionArt(token.label);
+      const adrenalineToken = parseAdrenalineActionToken(token.label);
+      const image = getActionArt(adrenalineToken ? ADRENALINE_ICON_KEY : token.label);
       if (!image || !image.complete || image.naturalWidth === 0) return;
       const comboSkipped = entry?.comboSkipped && token.label === COMBO_ICON_KEY;
       const stunOnlyHit = Boolean(entry?.stunOnly) && token.label === 'DamageIcon';
@@ -1710,6 +1732,9 @@ export const drawTimeIndicator = (
         );
       } else {
         ctx.drawImage(image, imageX, imageY, drawSize, drawSize);
+      }
+      if (adrenalineToken) {
+        drawAdrenalineActionOverlay(ctx, xPos, rowCenterY, drawSize, adrenalineToken, theme);
       }
       if (entry?.focusCardId) {
         drawFocusBadge(ctx, imageX, imageY, drawSize);
@@ -2768,6 +2793,47 @@ const drawRotationBadge = (ctx, x, y, size, rotation, theme) => {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(rotation, centerX, centerY + radius * 0.05);
+  ctx.restore();
+};
+
+const drawAdrenalineActionOverlay = (ctx, centerX, centerY, iconSize, adrenaline, theme) => {
+  const amount = `${adrenaline?.amount ?? ''}`.trim().toUpperCase();
+  if (!amount) return;
+  const sign = adrenaline?.sign === '+' || adrenaline?.sign === '-' ? adrenaline.sign : '';
+  const isSigned = Boolean(sign);
+  const fontFamily = theme?.fontBody || 'sans-serif';
+  const fontSize = Math.max(10, iconSize * (isSigned ? 0.52 : 0.62));
+  const gap = iconSize * 0.005;
+  const textY = centerY + iconSize * 0.01;
+
+  ctx.save();
+  ctx.fillStyle = '#000000';
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = Math.max(1.4, iconSize * 0.085);
+  ctx.lineJoin = 'round';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `900 ${fontSize}px ${fontFamily}`;
+
+  const drawText = (value, x, y) => {
+    ctx.strokeText(value, x, y);
+    ctx.fillText(value, x, y);
+  };
+
+  if (!isSigned) {
+    drawText(amount, centerX, textY);
+    ctx.restore();
+    return;
+  }
+
+  const signWidth = ctx.measureText(sign).width;
+  const amountWidth = ctx.measureText(amount).width;
+  const totalWidth = signWidth + gap + amountWidth;
+  const startX = centerX - totalWidth / 2;
+  const signCenterX = startX + signWidth / 2;
+  const amountCenterX = startX + signWidth + gap + amountWidth / 2;
+  drawText(sign, signCenterX, textY);
+  drawText(amount, amountCenterX, textY);
   ctx.restore();
 };
 

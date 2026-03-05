@@ -32,6 +32,9 @@ const findEntryForCharacter = (beat, character) =>
     return key === character.username || key === character.userId;
   }) ?? null;
 
+const findFirstBracketedEntry = (actionList) =>
+  actionList.find((entry) => `${entry?.action ?? ''}`.trim().startsWith('[')) ?? null;
+
 const buildActionListWithSubmittedAdrenaline = (catalog, activeCardId, passiveCardId, rotation, adrenaline) => {
   const deckState = createDeckState({ movement: [passiveCardId], ability: [activeCardId] });
   const submission = { activeCardId, passiveCardId, rotation };
@@ -86,4 +89,40 @@ test('submitted adrenaline defaults to zero for {adrX} damage scaling', async ()
   const actionList = buildActionListWithSubmittedAdrenaline(catalog, 'smash-attack', 'step', '0', 0);
   const targetDamageOnHit = runSingleHitSimulation(actionList);
   assert.equal(targetDamageOnHit, 5);
+});
+
+test('double-daggers {adrX} adds submitted adrenaline to the bracketed damage', async () => {
+  const catalog = await loadCardCatalog();
+  const actionList = buildActionListWithSubmittedAdrenaline(catalog, 'double-daggers', 'step', '0', 4);
+  const bracketedEntry = findFirstBracketedEntry(actionList);
+
+  assert.ok(bracketedEntry);
+  assert.equal(bracketedEntry.damage, 7);
+});
+
+test('hip-throw {adrX} caps its damage bonus at 4', async () => {
+  const catalog = await loadCardCatalog();
+  const actionList = buildActionListWithSubmittedAdrenaline(catalog, 'hip-throw', 'step', '0', 6);
+  const bracketedEntry = findFirstBracketedEntry(actionList);
+
+  assert.ok(bracketedEntry);
+  assert.equal(bracketedEntry.damage, 7);
+});
+
+test('tackle {adrX} caps its damage bonus at 4', async () => {
+  const catalog = await loadCardCatalog();
+  const actionList = buildActionListWithSubmittedAdrenaline(catalog, 'tackle', 'step', '0', 6);
+  const bracketedEntry = findFirstBracketedEntry(actionList);
+
+  assert.ok(bracketedEntry);
+  assert.equal(bracketedEntry.damage, 6);
+});
+
+test('push-kick {adrX} caps its damage bonus at 5', async () => {
+  const catalog = await loadCardCatalog();
+  const actionList = buildActionListWithSubmittedAdrenaline(catalog, 'push-kick', 'step', '0', 6);
+  const bracketedEntry = findFirstBracketedEntry(actionList);
+
+  assert.ok(bracketedEntry);
+  assert.equal(bracketedEntry.damage, 5);
 });

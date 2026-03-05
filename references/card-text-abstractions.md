@@ -4,6 +4,8 @@
 - `{i}`: bracketed action token(s) in the action list (e.g., `[m]`, `[2a]`). Effects that reference `{i}` should target the bracketed action index.
 - `{adr+X}` / `{adr-X}`: adrenaline pool modifiers. `+` adds to the actor's current adrenaline pool, `-` subtracts from that pool (clamped to 0..10).
 - `{adrX}`: submitted-adrenaline scalar. In damage text (`Damage + {adrX}`), add the action set's submitted adrenaline value to that `{i}` action's damage.
+- `{adrN}`: submitted-adrenaline threshold check. Treat `N` as the locked submitted adrenaline value for that action set (for example `{Adr6}` means "if the submitted adrenaline is at least 6").
+- `Adr+N` action labels: untimed utility beats that add adrenaline during beat execution; they are not attack/move/block actions.
 - Adrenaline submitted with the action set is a separate locked value used for tie-breaking within the same action class; pool changes do not retroactively change that submitted value.
 - In code: `getSymbolActionIndices` in `src/game/cardText/activeMovement.ts` and `public/game/cardText/activeMovement.js`.
 
@@ -20,6 +22,10 @@
   - `selected`: player-selected rotation (start of action set).
   - `forced`: card-text rotation applied at a symbol anchor (for example, `{i}`).
 - Consumers that need the start of an action set (timeline tooltips) should prefer `rotationSource === 'selected'`, falling back to non-empty `rotation` when missing (legacy data).
+
+## Pre-action phase
+- `pre-action` is the resolution phase that happens with the selected rotation and submitted-adrenaline spend, before the first beat action resolves.
+- Use it for action-set start effects that are not tied to a beat token (for example Sinking Shot passive self-damage plus adrenaline gain).
 
 ## Conditional throw + charge
 - `cardStartTerrain` is stamped on beat entries during execution to capture the terrain at the start of the action set.

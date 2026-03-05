@@ -63,6 +63,7 @@ export const applyActiveMovementCardText = (
   actionList: ActionListItem[],
   card: CardDefinition,
   rotationLabel: string,
+  _submittedAdrenaline = 0,
 ): ActionListItem[] => {
   if (!card || card.type !== 'movement') return actionList;
   const handler = ACTIVE_MOVEMENT_EFFECTS.get(card.id);

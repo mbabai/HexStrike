@@ -45,7 +45,7 @@ const applyNinjaRollActiveText = (actionList, card, rotationLabel) => {
 
 const ACTIVE_MOVEMENT_EFFECTS = new Map([['ninja-roll', applyNinjaRollActiveText]]);
 
-export const applyActiveMovementCardText = (actionList, card, rotationLabel) => {
+export const applyActiveMovementCardText = (actionList, card, rotationLabel, _submittedAdrenaline = 0) => {
   if (!card || card.type !== 'movement') return actionList;
   const handler = ACTIVE_MOVEMENT_EFFECTS.get(card.id);
   if (!handler) return actionList;

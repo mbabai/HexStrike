@@ -35,19 +35,22 @@ const ARROW_LAND_DISTANCE_LIMIT = 5;
 const ARROW_PRIORITY = 95;
 const MIN_ADRENALINE = 0;
 const MAX_ADRENALINE = 10;
-const SUBMITTED_ADRENALINE_DAMAGE_PATTERN = /damage\s*\+\s*\{?\s*adrx\s*\}?/i;
 const HAVEN_PLATFORM_INTERACTION_TYPE = 'haven-platform';
 const REWIND_FOCUS_INTERACTION_TYPE = 'rewind-focus';
 const REWIND_RETURN_INTERACTION_TYPE = 'rewind-return';
 const BOW_SHOT_CARD_ID = 'bow-shot';
 const BURNING_STRIKE_CARD_ID = 'burning-strike';
 const HAVEN_CARD_ID = 'haven';
+const SINKING_SHOT_CARD_ID = 'sinking-shot';
+const VENGEANCE_CARD_ID = 'vengeance';
 const IRON_WILL_CARD_ID = 'iron-will';
+const CHASE_CARD_ID = 'chase';
 const ABSORB_CARD_ID = 'absorb';
 const GIGANTIC_STAFF_CARD_ID = 'gigantic-staff';
 const HAMMER_CARD_ID = 'hammer';
 const HEALING_HARMONY_CARD_ID = 'healing-harmony';
 const PARRY_CARD_ID = 'parry';
+const SPINNING_BACK_KICK_CARD_ID = 'spinning-back-kick';
 const STAB_CARD_ID = 'stab';
 const CROSS_SLASH_CARD_ID = 'cross-slash';
 const SMOKE_BOMB_CARD_ID = 'smoke-bomb';
@@ -56,7 +59,6 @@ const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
 const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
 const GRAPPLING_HOOK_CARD_ID = 'grappling-hook';
 let cardLookupById = new Map();
-const submittedAdrenalineDamageByCardId = new Map();
 
 const getEntryPriority = (entry) => {
   const actionLabel = normalizeActionLabel(entry?.action ?? '').toUpperCase();
@@ -490,6 +492,7 @@ const isWaitAction = (action) => {
   if (!trimmed) return true;
   if (
     trimmed === WAIT_ACTION ||
+    /^ADR[+-]\d+$/.test(trimmed) ||
     trimmed === DAMAGE_ICON_ACTION.toUpperCase() ||
     trimmed === COMBO_ACTION ||
     END_MARKER_ACTIONS.has(trimmed)
@@ -604,24 +607,6 @@ const getEntrySubmittedAdrenaline = (entry) => {
   const rounded = Math.round(parsed);
   if (rounded < MIN_ADRENALINE || rounded > MAX_ADRENALINE) return MIN_ADRENALINE;
   return rounded;
-};
-
-const cardUsesSubmittedAdrenalineDamage = (cardId) => {
-  const id = `${cardId ?? ''}`.trim();
-  if (!id) return false;
-  if (submittedAdrenalineDamageByCardId.has(id)) {
-    return submittedAdrenalineDamageByCardId.get(id) ?? false;
-  }
-  const activeText = `${cardLookupById.get(id)?.activeText ?? ''}`;
-  const usesBonus = activeText.includes('{i}') && SUBMITTED_ADRENALINE_DAMAGE_PATTERN.test(activeText);
-  submittedAdrenalineDamageByCardId.set(id, usesBonus);
-  return usesBonus;
-};
-
-const getEntrySubmittedAdrenalineDamageBonus = (entry) => {
-  if (!entry || !isBracketedTokenAction(entry.action ?? '')) return 0;
-  if (!cardUsesSubmittedAdrenalineDamage(entry.cardId)) return 0;
-  return getEntrySubmittedAdrenaline(entry);
 };
 
 const compareBeatEntriesForExecutionBase = (left, right) => {
@@ -754,6 +739,21 @@ const applyRotationPhase = (entries, state, userLookup) => {
     if (!actorId) return;
     const actorState = state.get(actorId);
     if (!actorState) return;
+    const isActionStart = isActionSetStart(entry);
+    const rotationSource = `${entry?.rotationSource ?? ''}`.trim();
+    if (rotationSource === 'selected') {
+      const submittedAdrenaline = getEntrySubmittedAdrenaline(entry);
+      if (submittedAdrenaline > 0) {
+        const currentAdrenaline = Number.isFinite(actorState.adrenaline) ? Math.round(actorState.adrenaline) : MIN_ADRENALINE;
+        actorState.adrenaline = Math.max(MIN_ADRENALINE, Math.min(MAX_ADRENALINE, currentAdrenaline - submittedAdrenaline));
+      }
+    }
+    if (isActionStart && entry?.passiveCardId === SINKING_SHOT_CARD_ID) {
+      const currentDamage = Number.isFinite(actorState.damage) ? Math.max(0, Math.floor(actorState.damage)) : 0;
+      actorState.damage = currentDamage + 2;
+      const currentAdrenaline = Number.isFinite(actorState.adrenaline) ? Math.round(actorState.adrenaline) : MIN_ADRENALINE;
+      actorState.adrenaline = Math.max(MIN_ADRENALINE, Math.min(MAX_ADRENALINE, currentAdrenaline + 1));
+    }
     const rotationDelta = parseRotationDegrees(entry.rotation ?? '');
     if (!rotationDelta) return;
     actorState.facing = normalizeDegrees(actorState.facing + rotationDelta);
@@ -1287,6 +1287,19 @@ const buildActionSteps = (
     return adjusted;
   };
 
+  const applyAdrenalineDeltaToState = (userId, delta) => {
+    if (!Number.isFinite(delta) || !delta) return;
+    const targetState = state.get(userId);
+    if (!targetState) return;
+    const currentAdrenaline = Number.isFinite(targetState.adrenaline)
+      ? Math.max(MIN_ADRENALINE, Math.min(MAX_ADRENALINE, Math.round(targetState.adrenaline)))
+      : MIN_ADRENALINE;
+    targetState.adrenaline = Math.max(
+      MIN_ADRENALINE,
+      Math.min(MAX_ADRENALINE, currentAdrenaline + Math.round(delta)),
+    );
+  };
+
   const blockMap = new Map();
   const disabledActors = new Set();
   const deferredDisabledActors = new Set();
@@ -1415,6 +1428,9 @@ const buildActionSteps = (
       const directionIndex = Number.isFinite(interaction.directionIndex) ? Math.round(interaction.directionIndex) : null;
       const damageReduction = getHealingHarmonyReduction(targetEntry);
       const adjustedDamage = applyDamageToUser(attackerId, Math.max(0, baseDamage + attackDamageBonus - damageReduction));
+      if (targetEntry?.passiveCardId === VENGEANCE_CARD_ID && isActionActive(targetEntry.action)) {
+        applyAdrenalineDeltaToState(attackerId, 2);
+      }
       const passiveKbfReduction = getPassiveKbfReduction(targetEntry);
       const effectiveKbf = Math.max(0, baseKbf - passiveKbfReduction);
       const baseKnockbackDistance = getKnockbackDistance(targetState.damage ?? 0, effectiveKbf);
@@ -1516,6 +1532,9 @@ const buildActionSteps = (
       entry?.passiveCardId === GIGANTIC_STAFF_CARD_ID && !isCoordOnLand(actorState.position, landTiles);
     const action = hasGiganticStaffPassive ? applyGiganticStaffAction(entry.action ?? '') : entry.action ?? '';
     const actionLabel = normalizeActionLabel(action);
+    const grantsHitAdrenaline =
+      isBracketedAction(entry.action ?? '') && (entry.cardId === CHASE_CARD_ID || entry.cardId === VENGEANCE_CARD_ID);
+    const rotatesTargetOnHit = entry.cardId === SPINNING_BACK_KICK_CARD_ID && actionLabel.toUpperCase() === 'BC';
 
     const effects = [];
     const damageChanges = [];
@@ -1621,14 +1640,16 @@ const buildActionSteps = (
           if (targetState) {
             const fromPosition = { q: targetState.position.q, r: targetState.position.r };
             if (isThrow) {
+              if (targetEntry?.passiveCardId === VENGEANCE_CARD_ID && isActionActive(targetEntry.action)) {
+                applyAdrenalineDeltaToState(targetId, 2);
+              }
               const interactionId = buildInteractionId(beatIndex, actorId, targetId);
               const interaction = interactionById.get(interactionId);
               const resolvedDirection = getResolvedDirectionIndex(interaction);
               const knockbackPath = [{ q: targetState.position.q, r: targetState.position.r }];
-              const submittedAdrenalineDamageBonus = getEntrySubmittedAdrenalineDamageBonus(entry);
               if (interaction?.status === 'resolved' && resolvedDirection != null) {
                 const damageReduction = getHealingHarmonyReduction(targetEntry);
-                const throwDamage = entryDamage + attackDamageBonus + submittedAdrenalineDamageBonus;
+                const throwDamage = entryDamage + attackDamageBonus;
                 const adjustedDamage = applyDamageToUser(targetId, Math.max(0, throwDamage - damageReduction));
                 damageChanges.push({ targetId, delta: adjustedDamage });
                 const knockbackDirection = AXIAL_DIRECTIONS[resolvedDirection];
@@ -1696,12 +1717,17 @@ const buildActionSteps = (
               isBracketedAction(entry.action ?? '') &&
               isBehindTarget(origin, targetState);
             const stabBonus = isStabHit ? 3 : 0;
-            const submittedAdrenalineDamageBonus = getEntrySubmittedAdrenalineDamageBonus(entry);
-            const rawDamage = entryDamage + stabBonus + attackDamageBonus + submittedAdrenalineDamageBonus;
+            const rawDamage = entryDamage + stabBonus + attackDamageBonus;
             const rawKbf = entryKbf + stabBonus;
             const damageReduction = getHealingHarmonyReduction(targetEntry);
             const adjustedDamage = applyDamageToUser(targetId, Math.max(0, rawDamage - damageReduction));
             damageChanges.push({ targetId, delta: adjustedDamage });
+            if (grantsHitAdrenaline) {
+              applyAdrenalineDeltaToState(actorId, 1);
+            }
+            if (targetEntry?.passiveCardId === VENGEANCE_CARD_ID && isActionActive(targetEntry.action)) {
+              applyAdrenalineDeltaToState(targetId, 2);
+            }
             const usesGrapplingHookPassive =
               hasGrapplingHookPassive && isExactGrapplingHookPassiveAttack(token, tokens.length);
             const attackDirection = getKnockbackDirection(origin, destination, lastStep);
@@ -1747,6 +1773,9 @@ const buildActionSteps = (
               occupancy.delete(coordKey(targetState.position));
               targetState.position = { q: finalPosition.q, r: finalPosition.r };
               occupancy.set(coordKey(targetState.position), targetId);
+            }
+            if (rotatesTargetOnHit) {
+              targetState.facing = normalizeDegrees(targetState.facing + 180);
             }
             if (!sameCoord(targetState.position, fromPosition)) {
               positionChanges.push({
@@ -2537,8 +2566,11 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
       const effectiveKbf = getHandTriggerUse(ironWillInteraction) ? 0 : baseKbf;
       const damageReduction = getHealingHarmonyReduction(targetEntry);
       const ownerCharacter = token.ownerUserId ? characterById.get(token.ownerUserId) : null;
-      const arrowDamage = ARROW_DAMAGE + getAttackDamageBonusForCharacter(ownerCharacter, characterPowersById);
+      const arrowDamage = ARROW_DAMAGE;
       const adjustedDamage = applyEndStateDamage(targetId, Math.max(0, arrowDamage - damageReduction));
+      if (targetEntry?.passiveCardId === VENGEANCE_CARD_ID && isActionActive(targetEntry.action)) {
+        applyAdrenalineDeltaToState(targetId, 2);
+      }
       const updatedDamage = endStateById.get(targetId)?.damage ?? targetState.damage ?? 0;
       const baseKnockbackDistance = getKnockbackDistance(updatedDamage, effectiveKbf);
       const knockbackBonus = getKnockbackBonusForCharacter(
@@ -3457,7 +3489,6 @@ export const createTimelinePlayback = () => {
     },
     setCardLookup(nextMap) {
       cardLookupById = nextMap instanceof Map ? nextMap : new Map();
-      submittedAdrenalineDamageByCardId.clear();
       lastGameStamp = null;
       lastBeatIndex = null;
       lastBuildTriggerHash = null;
