@@ -17,10 +17,10 @@
       "timings": [
         null,
         [
-          "early"
+          "late"
         ],
         [
-          "early"
+          "late"
         ],
         null
       ]
@@ -1023,7 +1023,7 @@
       "activeText": "{i}: If {Adr4}, change to [Bc], and the attack causes the target to rotate 3.",
       "timings": [
         [
-          "early"
+          "late"
         ],
         null,
         null,
@@ -1035,10 +1035,10 @@
       "name": "Stab",
       "type": "ability",
       "actions": [
-        "Adr+1",
+        "W",
         "[a]",
         "Co",
-        "W",
+        "Adr+1",
         "E"
       ],
       "rotations": "*",

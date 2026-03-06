@@ -1,5 +1,22 @@
 {
-    "generatedAt": "2026-02-10",
+    "generatedAt": "2026-03-06",
+    "implementationModel": {
+        "exactRulesReference": "rules.md",
+        "sharedCoreRoot": "src/shared/game",
+        "browserSharedOutput": "public/generated/shared/game",
+        "registryModules": [
+            "src/shared/game/throwSpecs.ts",
+            "src/shared/game/preActionSpecs.ts",
+            "src/shared/game/handTriggers.ts",
+            "src/shared/game/cardText/passiveModifierSpecs.ts",
+            "src/shared/game/cardText/discardSpecs.ts"
+        ],
+        "notes": [
+            "triggerText is display copy only",
+            "similar wording should map to a shared registry or helper before adding execute/timeline special cases",
+            "Grappling Hook remains a conditional throw inside the throw spec family"
+        ]
+    },
     "movement": {
         "advance": {
             "active": true,

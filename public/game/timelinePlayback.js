@@ -10,6 +10,7 @@ import {
 import { getInterpolatedFacing, getStepProgressByChannel } from './playbackSpeed.mjs';
 import { getDebugBeatFilter, isDebugLoggingEnabled } from './debugFlags.mjs';
 import { getTimingOrder, getTimingPriority, hasTimingPhase, resolveActionTiming } from '../shared/timing.js';
+import { getThrowSpec } from '../generated/shared/game/throwSpecs.js';
 
 const DEFAULT_ACTION = 'E';
 const FOCUS_ACTION = 'F';
@@ -54,9 +55,6 @@ const SPINNING_BACK_KICK_CARD_ID = 'spinning-back-kick';
 const STAB_CARD_ID = 'stab';
 const CROSS_SLASH_CARD_ID = 'cross-slash';
 const SMOKE_BOMB_CARD_ID = 'smoke-bomb';
-// Keep in sync with server-side throw detection.
-const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
-const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
 const GRAPPLING_HOOK_CARD_ID = 'grappling-hook';
 let cardLookupById = new Map();
 
@@ -405,8 +403,9 @@ const isBracketedAction = (action) => {
   return Boolean(trimmed) && trimmed.startsWith('[') && trimmed.endsWith(']');
 };
 
-const isGrapplingHookThrow = (entry, options = {}) => {
-  if (!entry || entry.cardId !== GRAPPLING_HOOK_CARD_ID) return false;
+const isConditionalThrow = (entry, options = {}) => {
+  const spec = getThrowSpec(entry?.cardId, 'active');
+  if (!spec || spec.conditionId !== 'grappling-hook-land-start-adjacent-target') return false;
   if (entry.cardStartTerrain !== 'land') return false;
   if (`${options.tokenType ?? ''}`.toLowerCase() !== 'c') return false;
   if (!options.actorPosition || !options.targetPosition) return false;
@@ -416,9 +415,9 @@ const isGrapplingHookThrow = (entry, options = {}) => {
 const isEntryThrow = (entry, options = {}) => {
   if (!entry) return false;
   if (entry.interaction?.type === 'throw') return true;
-  if (isGrapplingHookThrow(entry, options)) return true;
-  if (entry.cardId && ACTIVE_THROW_CARD_IDS.has(entry.cardId)) return true;
-  if (entry.passiveCardId && PASSIVE_THROW_CARD_IDS.has(entry.passiveCardId)) return true;
+  if (isConditionalThrow(entry, options)) return true;
+  if (getThrowSpec(entry.cardId, 'active')?.actionListInteraction === 'always') return true;
+  if (getThrowSpec(entry.passiveCardId, 'passive')?.actionListInteraction === 'always') return true;
   return false;
 };
 
@@ -576,8 +575,8 @@ const getEntryActionClass = (entry) => {
   if (
     hasAttack &&
     (entry?.interaction?.type === 'throw' ||
-      (entry?.cardId ? ACTIVE_THROW_CARD_IDS.has(entry.cardId) : false) ||
-      (entry?.passiveCardId ? PASSIVE_THROW_CARD_IDS.has(entry.passiveCardId) : false))
+      getThrowSpec(entry?.cardId, 'active')?.actionListInteraction === 'always' ||
+      getThrowSpec(entry?.passiveCardId, 'passive')?.actionListInteraction === 'always')
   ) {
     return 'throw';
   }

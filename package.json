@@ -4,13 +4,15 @@
   "description": "Basic lobby and game skeleton server",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build:server": "tsc -p tsconfig.json",
+    "build:browser-shared": "tsc -p tsconfig.browser.json && node scripts/fix-browser-esm-imports.cjs public/generated",
+    "build": "npm run build:server && npm run build:browser-shared",
     "start": "node dist/index.js",
     "test": "node --test",
     "test:history-store": "npm run build && node scripts/check-history-store.cjs",
     "dev": "npm run build && npm run test && node scripts/run-dev-server.cjs",
     "dev:watch": "npm run build && npm run test && node --watch scripts/run-dev-server.cjs",
-    "prepare": "tsc"
+    "prepare": "npm run build"
   },
   "keywords": [],
   "author": "",

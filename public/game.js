@@ -1798,6 +1798,8 @@ export const initGame = () => {
     passiveSlot,
     submitButton,
     rotationWheel,
+    adrenalineMeterTrack,
+    adrenalineMeterKnob,
     comboAccept,
     throwModal,
     localUserId,

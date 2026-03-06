@@ -130,7 +130,7 @@
 
   <section id="overview" class="panel">
     <h2>1. Overview</h2>
-    <p>HexStrike is a simultaneous, deterministic combat game played on a hex grid. Players simultaneously commit an action set by submitting two cards&mdash;one active and one passive&mdash;plus a legal rotation and an <span class="term-adrenaline">adrenaline</span> amount (0-10). That commitment locks in a sequence of actions that will resolve in order across upcoming "beats", units of game tempo. Your objective is to eliminate opponents by forcing them off the island: either knock them deep into the abyss or pressure them into a state where they cannot safely return to land.</p>
+    <p>HexStrike is a simultaneous combat game played on a hex grid. When you are up to act, you commit one active card, one passive card, a legal rotation, and an optional <span class="term-adrenaline">adrenaline</span> spend. That locks in a short timeline of actions that will resolve beat by beat alongside everyone else. The core goal is simple: force opponents off the island or leave them stranded in the abyss with no safe return.</p>
   </section>
 
   <section id="setup" class="panel">
@@ -154,13 +154,13 @@
 
   <section id="game-flow" class="panel">
     <h2>3. Game Flow</h2>
-    <p>The game proceeds in repeating beats. Each beat follows this sequence:</p>
+    <p>The game advances on a shared timeline of beats. In practice, each cycle follows this rhythm:</p>
     <ol>
-      <li>Refresh Phase</li>
-      <li>Simultaneous Play Phase</li>
-      <li>Beat Resolution</li>
-      <li>End of Beat</li>
-      <li>Advance to Next Beat</li>
+      <li>Check the earliest open beat for each player.</li>
+      <li>Any player who is up to act refreshes if they are safely on land.</li>
+      <li>All players tied for that earliest open beat commit at the same time.</li>
+      <li>The server resolves the beat in timing order.</li>
+      <li>The timeline advances until the next open decision point or prompt.</li>
     </ol>
   </section>
 
@@ -168,40 +168,40 @@
     <h2>4. Beat Phase - Detailed Explanation</h2>
 
     <h3>4.1 Refresh Phase</h3>
-    <p>At the start of each beat, a player refreshes their hand if their active card is current on the <img class="inline-symbol" src="/public/images/E.png" alt="E symbol" /> beat, or has no active card.</p>
-    <p>To refresh:</p>
+    <p>A refresh happens when your earliest open beat is an <img class="inline-symbol" src="/public/images/E.png" alt="E symbol" /> on land. It is the clean reset point between committed plays.</p>
+    <p>A normal refresh does three things:</p>
     <ul>
-      <li>Discard any active and passive cards.</li>
-      <li>If the player is on land, draw until holding 4 ability cards.</li>
-      <li>Sync movement cards according to the hand economy rules.</li>
+      <li>Clear exhausted movement cards.</li>
+      <li>Draw ability cards back up to your current hand limit.</li>
+      <li>Sync your movement hand to match your current ability count, up to four.</li>
     </ul>
-    <p>Players in the abyss adjacent to land who have no cards in hand may perform a "ledge grab": draw 1 movement and 1 ability card.</p>
+    <p>Some special states change that routine. Focus can reduce the refresh cap, and Ethereal Platforms let you refresh over abyss as though you were on land. If you are in the abyss with no legal play, ledge-grab and no-cards loss checks decide whether you escape or lose.</p>
 
     <h3>4.2 Simultaneous Play Phase</h3>
-    <p>All players without cards in play simultaneously select:</p>
+    <p>Every player tied for the earliest open beat chooses at the same time:</p>
     <ul>
       <li>1 active card</li>
       <li>1 passive card of the opposite type (movement card vs. ability card)</li>
       <li>1 legal rotation</li>
       <li>1 <span class="term-adrenaline">adrenaline</span> submission from 0 to your current <span class="term-adrenaline">adrenaline</span> (max 10).</li>
     </ul>
-    <p>The submitted <span class="term-adrenaline">adrenaline</span> is locked when you submit, is the first tie-breaker for actions within the same class, and is spent when the committed play applies its chosen rotation. If you do not change it, the default submission is 0.</p>
-    <p>If a player has no cards to play and is over the abyss during this phase, they lose immediately.</p>
+    <p>Your submitted <span class="term-adrenaline">adrenaline</span> is locked when you confirm the play. It helps break ties inside the same action class and is spent when the action set begins with its chosen rotation. If you leave it alone, the default submission is 0.</p>
+    <p>If multiple players are due at once, their plays stay hidden until all required submissions arrive.</p>
 
     <h3>4.3 Beat Resolution</h3>
     <ul>
-      <li>Resolve chosen rotations immediately.</li>
+      <li>Resolve chosen rotations and other start-of-action effects first.</li>
       <li>
         Resolve actions by timing: <img class="inline-symbol" src="/public/images/earlyRules.png" alt="Early timing" />
         first, then <img class="inline-symbol" src="/public/images/midRules.png" alt="Mid timing" />, then
         <img class="inline-symbol" src="/public/images/lateRules.png" alt="Late timing" />.
       </li>
-      <li>When actions share the same timing on the same beat, use the tie-break rules in Section 13.</li>
-      <li>If a character is knocked back before their action resolves, their action is canceled and their cards are discarded.</li>
+      <li>When actions share the same timing, throws, blocks, attacks, movement, and other effects follow the tie-break rules in Section 13.</li>
+      <li>If a character is interrupted before their action resolves, that beat may collapse into a hit or stun window instead of the planned action.</li>
     </ul>
 
     <h3>4.4 End of Beat</h3>
-    <p>Advance all in-play cards to the next beat on their timeline.</p>
+    <p>Advance surviving action sets, apply any pending interaction results, and stop as soon as the game reaches the next decision point.</p>
   </section>
   <section id="card-anatomy" class="panel">
     <h2>5. Anatomy of a Card</h2>
@@ -258,7 +258,7 @@
     <h3>Hit Resolution</h3>
     <ul>
       <li>If the defender blocks correctly, the attack has no effect.</li>
-      <li>If the attack is a throw, it cannot be blocked and moves the defender exactly 2 hexes in any direction chosen by the attacker.</li>
+      <li>If the attack is a throw, normal knockback is replaced by throw handling and the attacker chooses the throw direction.</li>
       <li>Otherwise, apply damage and knockback.</li>
     </ul>
 
@@ -270,32 +270,33 @@
     <ul>
       <li><code>KBF = 0</code>: 0 hexes.</li>
       <li><code>KBF = 1</code>: 1 hex.</li>
-      <li><code>KBF &gt; 1</code>: <code>floor((Damage * KBF) / 10)</code>, minimum 1.</li>
+      <li><code>KBF &gt; 1</code>: scale from the target's accumulated damage, minimum 1.</li>
     </ul>
     <p>Knockback moves the defender directly away from the attacker. Obstacles stop movement early.</p>
-    <p>The defender is stunned for the same number of beats as the knockback distance + 1.</p>
+    <p>Knockback can also create interruption windows that delay or cancel the target's planned action sequence.</p>
     <p>If a character ends 5 or more hexes from the island edge, they lose.</p>
   </section>
 
   <section id="hand-economy" class="panel">
     <h2>8. Cards in Hand Economy</h2>
-    <p>"Cards in hand" always refers to ability cards only.</p>
-    <p>Movement cards must always mirror the number of ability cards in hand.</p>
+    <p>HexStrike tracks two linked hands: your ability hand and your movement hand.</p>
+    <p>Your ability hand is the main limit. Your movement hand then mirrors that count up to four cards.</p>
     <ul>
-      <li>If you discard ability cards, discard movement cards to match.</li>
-      <li>If you draw ability cards while at 3 or fewer, recover movement cards from discard to match.</li>
-      <li>If an active card expires while holding 4 or more ability cards, recover all movement cards.</li>
-      <li>Both active and passive cards are always discarded together.</li>
+      <li>Ability cards cycle under the deck when used. They do not exhaust.</li>
+      <li>Movement cards exhaust on use and usually come back through refresh.</li>
+      <li>If an effect changes your ability hand size, your movement hand resyncs to match the new count.</li>
+      <li>Discard prompts and hand-trigger costs can pull from both hands when required.</li>
     </ul>
   </section>
 
   <section id="trigger-text" class="panel">
     <h2>9. Trigger Text</h2>
-    <p>Trigger text overrides standard resolution order when its condition is met.</p>
+    <p>Some cards can fire while still in your hand. When that condition happens, the game pauses and offers you a reveal prompt before asking for any discard cost.</p>
     <div class="text-panel">
       <p><strong>Example - Burning Strike:</strong></p>
       <p>"If Burning Strike is in your hand when you land an attack, you may reveal it and discard it along with a movement card to place a fire hex on all attacked hexes."</p>
     </div>
+    <p>In short: trigger text tells you when the offer appears. The reveal, discard, and effect all happen through that prompt flow.</p>
   </section>
 
   <section id="tokens" class="panel">
@@ -332,7 +333,7 @@
       </div>
     </div>
     <p>
-      Arrow tokens charge (<img class="inline-symbol" src="/public/images/c.png" alt="c symbol" />) forward in the direction it faces on every beat, dealing 4 damage with a KBF of 1. If it hits a target or is blocked, it leaves the board.
+      Arrow tokens travel forward one hex per beat in the direction they face. They deal 4 damage with a KBF of 1, stop on a valid block, and disappear after a hit.
     </p>
 
     <h3>Fire Token</h3>
@@ -344,7 +345,7 @@
       </div>
     </div>
     <p>
-      Fire tokens sit on land hexes and deal 1 damage per beat to the occupant.
+      Fire tokens sit on a hex and deal 1 damage each beat to anyone standing there.
     </p>
 
     <h3>Ethereal Platform</h3>
@@ -356,7 +357,7 @@
       </div>
     </div>
     <p>
-      Ethereal Platforms can be placed on abyss hexes. If a character stands on it during a <img class="inline-symbol" src="/public/images/E.png" alt="E symbol" />, they can refresh as though on land. Once they do, it vanishes.
+      Ethereal Platforms sit over abyss. If you reach one on an <img class="inline-symbol" src="/public/images/E.png" alt="E symbol" />, it acts like temporary land for refresh, then disappears.
     </p>
   </section>
 
@@ -365,7 +366,7 @@
     <p>In 1v1 play, the game ends immediately when one player loses.</p>
     <ul>
       <li>A character is 5 or more hexes from the island edge.</li>
-      <li>A player is on the abyss at the earliest open beat with no cards to play and no ledge grab available.</li>
+      <li>A player reaches an open beat in the abyss with no legal play and no escape route such as ledge grab.</li>
     </ul>
     <p>In Free-For-All games, eliminated players respawn after 10 beats in the 
       center hex of the island with 0 damage and a full hand.
@@ -583,23 +584,19 @@
     <h3>Same Beat &amp; Same Timing</h3>
     <p>Sometimes, actions on the same beat will also have the same &quot;timing&quot; symbol (<img class="inline-symbol" src="/public/images/earlyRules.png" alt="Early timing" /> <img class="inline-symbol" src="/public/images/midRules.png" alt="Mid timing" /> <img class="inline-symbol" src="/public/images/lateRules.png" alt="Late timing" />), or no timing symbol at all. If this is the case, use this order of operations to resolve any ties.</p>
     <ol>
-      <li><img class="inline-symbol" src="/public/images/Co.png" alt="Co symbol" /> resolves first, then <img class="inline-symbol" src="/public/images/E.png" alt="E symbol" />.</li>
+      <li><img class="inline-symbol" src="/public/images/Co.png" alt="Co symbol" /> windows resolve first.</li>
       <li>Throws resolve before blocks.</li>
-      <li>Blocks resolve before other non-throw actions.</li>
-      <li>Attacks resolve next.</li>
-      <li>Moves resolve next.</li>
-      <li><img class="inline-symbol" src="/public/images/F.png" alt="F symbol" /> resolves before <img class="inline-symbol" src="/public/images/X1.png" alt="X1 symbol" /> / <img class="inline-symbol" src="/public/images/X2.png" alt="X2 symbol" />.</li>
-      <li><img class="inline-symbol" src="/public/images/X1.png" alt="X1 symbol" /> / <img class="inline-symbol" src="/public/images/X2.png" alt="X2 symbol" /> are lowest.</li>
+      <li>Blocks resolve before attacks.</li>
+      <li>Attacks resolve before movement.</li>
+      <li>Movement resolves before focus and other special effect beats.</li>
     </ol>
 
     <h3>Within the Same Class</h3>
     <ol>
       <li>Higher submitted <span class="term-adrenaline">adrenaline</span> resolves first.</li>
-      <li>If tied actions are from different points in each action set, the later step resolves first (for example, step 3 beats step 2).</li>
-      <li>If two attacks still tie, higher KBF resolves first.</li>
-      <li>If two attacks still tie on KBF, both hit. If they are striking a third target, apply damage from both hits first, then apply only one knockback chosen by the target from the available hit directions.</li>
-      <li>If two moves still tie and both try to enter the same hex, both moves fail (treated as blocked movement).</li>
-      <li>If two <img class="inline-symbol" src="/public/images/X1.png" alt="X1 symbol" /> / <img class="inline-symbol" src="/public/images/X2.png" alt="X2 symbol" /> choices still tie, those choices are made simultaneously.</li>
+      <li>If tied actions come from different steps of their action sets, the later step resolves first.</li>
+      <li>If two attacks still tie, the stronger hit resolves first.</li>
+      <li>If two tied moves try to enter the same hex, they jam and fail.</li>
     </ol>
   </section>
 
@@ -609,11 +606,11 @@
       <div class="text-panel">
         <h3>Beat Order</h3>
         <ol>
-          <li>Refresh</li>
-          <li>Simultaneous Play</li>
-          <li>Beat Resolution</li>
-          <li>End of Beat</li>
-          <li>Proceed to next beat</li>
+          <li>Find the earliest open beat.</li>
+          <li>Refresh if you are safely on land.</li>
+          <li>Commit simultaneous plays.</li>
+          <li>Resolve timings and prompts.</li>
+          <li>Advance to the next decision point.</li>
         </ol>
       </div>
       <div class="text-panel">
@@ -622,7 +619,7 @@
           <li>Apply damage first.</li>
           <li><code>KBF = 0</code>: 0 knockback.</li>
           <li><code>KBF = 1</code>: 1 hex knockback.</li>
-          <li><code>KBF &gt; 1</code>: <code>max(1, floor((accumulatedDamage * KBF) / 10))</code>.</li>
+          <li><code>KBF &gt; 1</code>: scale from total damage taken, minimum 1.</li>
           <li>Throw rules replace normal knockback formula.</li>
         </ul>
       </div>

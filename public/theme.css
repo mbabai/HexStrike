@@ -1487,6 +1487,8 @@ body.menu-body .deck-builder-overlay {
 .game-area.tutorial-gating .action-hud .action-slot-drop,
 .game-area.tutorial-gating .action-hud .rotation-wedge,
 .game-area.tutorial-gating .action-hud .action-submit,
+.game-area.tutorial-gating .action-hud .adrenaline-meter-track,
+.game-area.tutorial-gating .action-hud .adrenaline-meter-knob,
 .game-area.tutorial-gating #interactionOverlay .throw-arrow,
 .game-area.tutorial-gating #interactionOverlay .combo-modal .btn {
   pointer-events: none !important;
@@ -1496,6 +1498,8 @@ body.menu-body .deck-builder-overlay {
 .game-area.tutorial-gating .action-hud .action-slot-drop.tutorial-allowed,
 .game-area.tutorial-gating .action-hud .rotation-wedge.tutorial-allowed,
 .game-area.tutorial-gating .action-hud .action-submit.tutorial-allowed,
+.game-area.tutorial-gating .action-hud .adrenaline-meter-track.tutorial-allowed,
+.game-area.tutorial-gating .action-hud .adrenaline-meter-knob.tutorial-allowed,
 .game-area.tutorial-gating #interactionOverlay .throw-arrow.tutorial-allowed,
 .game-area.tutorial-gating #interactionOverlay .combo-modal .btn.tutorial-allowed {
   pointer-events: auto !important;

@@ -7,6 +7,9 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
 - Single Node process started by `src/index.ts`, hosting HTTP, SSE, WebSocket, and static asset routes.
 - Memory-only persistence (`MemoryDb`); all users, matches, and games reset on restart.
 - In-memory deck state per game, separate from stored game docs, to keep private hands server-side.
+- Shared browser/server rule helpers live in `src/shared/game` and are emitted twice by the build:
+  - server CommonJS usage via normal TypeScript compilation to `dist/`
+  - browser-safe ESM modules to `public/generated/shared/game/`
 
 ## High-level flow
 1. Players join a lobby queue and optionally submit a deck definition.
@@ -50,7 +53,7 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
 ### Card data and deck state
 - Card data lives in `public/cards/cards.json` and is loaded by `src/game/cardCatalog.ts`.
 - Card schema supports optional `triggerText` for "If this card is in your hand..." reveal copy on card/UI surfaces.
-- Hand-trigger gameplay logic remains sourced from `src/game/handTriggers.ts` + `src/game/execute.ts` interaction handling (not parsed from `triggerText`).
+- Hand-trigger gameplay logic remains sourced from the shared registry in `src/shared/game/handTriggers.ts` and execution handling in `src/game/execute.ts` (not parsed from `triggerText`).
 - Character powers live in `public/characters/characters.json`; server reads them through `src/game/characterPowers.ts`, client reads them through `public/shared/characterCatalog.js`.
 - Deck definitions require 4 movement cards and 12 ability cards; duplicates are rejected.
 - `src/game/cardRules.ts` manages deck state:
@@ -78,6 +81,13 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
 - `src/game/hexGrid.ts`: land tiles and terrain detection.
 - `src/game/state.ts`: starting positions, facing, and initial beats.
 - `src/game/timelineEngine.ts`: generic timeline helpers (currently unused by runtime).
+- `src/shared/game/*`: shared pure rule helpers used by both server execution and browser playback.
+- Shared rule-family registries currently include:
+  - `src/shared/game/throwSpecs.ts`
+  - `src/shared/game/preActionSpecs.ts`
+  - `src/shared/game/handTriggers.ts`
+  - `src/shared/game/cardText/passiveModifierSpecs.ts`
+  - `src/shared/game/cardText/discardSpecs.ts`
 
 ### Realtime messaging
 - SSE endpoint: `GET /events?userId=...`
@@ -105,7 +115,7 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
 ### Game view modules
 - `public/game.js` orchestrates the game canvas, action HUD, timeline playback, and HTTP submissions.
 - `public/game/renderer.js` draws the board and characters.
-- `public/game/timelinePlayback.js` mirrors the server resolution logic to animate each beat; slider speed scales beat step duration while per-step movement/rotation/attack progress stays channel-aligned.
+- `public/game/timelinePlayback.js` consumes generated shared rule helpers for parity and layers playback state/animation on top; slider speed scales beat step duration while per-step movement/rotation/attack progress stays channel-aligned.
 - `public/game/actionHud.js` + `public/game/rotationWheel.js` manage card selection and rotation.
 - `public/game/timeIndicatorView.js` provides the timeline stepper and play/pause control; `public/game.js` owns turtle/rabbit speed slider state + beat auto-advance cadence.
 - `public/game/interactionState.mjs` selects pending interactions (throw/discard/draw/combo/guard/rewind/hand-trigger/haven) for the UI overlay.
@@ -119,6 +129,8 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
 - Icons and portraits live in `public/images`.
 
 ## Build and test
-- TypeScript compiles to `dist/`.
+- `npm run build` emits:
+  - server TypeScript to `dist/`
+  - browser shared ESM modules to `public/generated/shared/game/`
 - Tests live under `test/` and run against `dist` via Node's test runner.
 - `npm run dev` builds, runs tests, and starts the server on success.

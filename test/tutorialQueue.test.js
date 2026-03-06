@@ -228,13 +228,14 @@ test('tutorial queue uses scripted flow, forced loadout, and strict tutorial cho
     assert.equal(wrongOpen.response.status, 409);
     assert.equal(wrongOpen.payload?.code, 'tutorial-step-mismatch');
 
-    const submitAction = async ({ activeCardId, passiveCardId, rotation }) => {
+    const submitAction = async ({ activeCardId, passiveCardId, rotation, adrenaline = 0 }) => {
       const { response, payload } = await client.post('/api/v1/game/action-set', {
         userId: playerUserId,
         gameId,
         activeCardId,
         passiveCardId,
         rotation,
+        adrenaline,
       });
       assert.equal(response.status, 200, payload?.error ?? 'expected tutorial action to succeed');
     };
@@ -268,7 +269,7 @@ test('tutorial queue uses scripted flow, forced loadout, and strict tutorial cho
       (snapshot) => isUserAtBat(snapshot, playerUserId) && !getPendingInteractionForUser(snapshot, playerUserId),
       { timeoutMs: 12000 },
     );
-    await submitAction({ activeCardId: 'jab', passiveCardId: 'fleche', rotation: '0' });
+    await submitAction({ activeCardId: 'jab', passiveCardId: 'advance', rotation: '0' });
 
     const comboSnapshot = await waitFor(
       getSnapshot,
@@ -294,7 +295,7 @@ test('tutorial queue uses scripted flow, forced loadout, and strict tutorial cho
       (snapshot) => isUserAtBat(snapshot, playerUserId) && !getPendingInteractionForUser(snapshot, playerUserId),
       { timeoutMs: 12000 },
     );
-    await submitAction({ activeCardId: 'cross-slash', passiveCardId: 'step', rotation: '0' });
+    await submitAction({ activeCardId: 'cross-slash', passiveCardId: 'advance', rotation: '0' });
 
     await waitFor(
       getSnapshot,
@@ -353,7 +354,7 @@ test('tutorial queue uses scripted flow, forced loadout, and strict tutorial cho
       { timeoutMs: 12000 },
     );
     void preScoutSnapshot;
-    await submitAction({ activeCardId: 'feint', passiveCardId: 'step', rotation: '0' });
+    await submitAction({ activeCardId: 'feint', passiveCardId: 'advance', rotation: '0' });
 
     await waitFor(
       getSnapshot,
@@ -372,7 +373,7 @@ test('tutorial queue uses scripted flow, forced loadout, and strict tutorial cho
       { timeoutMs: 12000 },
     );
     void preFinishSnapshot;
-    await submitAction({ activeCardId: 'smash-attack', passiveCardId: 'fleche', rotation: '3' });
+    await submitAction({ activeCardId: 'smash-attack', passiveCardId: 'advance', rotation: '3', adrenaline: 4 });
 
     const postFinishSnapshot = await getSnapshot();
     assert.ok(postFinishSnapshot?.state?.public, 'expected game state after tutorial finish submission');

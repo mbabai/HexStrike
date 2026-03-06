@@ -311,6 +311,7 @@ type TutorialActionStep = {
   activeCardId: string;
   passiveCardIds: string[];
   rotation: string;
+  adrenaline?: number;
   minPlayerActionIndex?: number;
   minInteractionIndex?: number;
 };
@@ -333,12 +334,12 @@ interface TutorialSession {
 
 const TUTORIAL_PLAYER_ACTION_SEQUENCE: TutorialActionStep[] = [
   { activeCardId: 'step', passiveCardIds: ['fumikomi'], rotation: '0' },
-  { activeCardId: 'jab', passiveCardIds: ['fleche'], rotation: '0' },
-  { activeCardId: 'cross-slash', passiveCardIds: ['step'], rotation: '0' },
+  { activeCardId: 'jab', passiveCardIds: ['advance'], rotation: '0' },
+  { activeCardId: 'cross-slash', passiveCardIds: ['advance'], rotation: '0' },
   { activeCardId: 'backflip', passiveCardIds: ['guard'], rotation: 'L1' },
   { activeCardId: 'hip-throw', passiveCardIds: ['advance'], rotation: 'L1' },
-  { activeCardId: 'feint', passiveCardIds: ['step'], rotation: '0' },
-  { activeCardId: 'smash-attack', passiveCardIds: ['step', 'advance', 'fleche', 'backflip'], rotation: '3' },
+  { activeCardId: 'feint', passiveCardIds: ['advance'], rotation: '0' },
+  { activeCardId: 'smash-attack', passiveCardIds: ['advance'], rotation: '3', adrenaline: 4 },
 ];
 
 const TUTORIAL_BOT_ACTION_SEQUENCE: TutorialActionStep[] = [
@@ -1176,10 +1177,12 @@ const maybeSkipTutorialThrowInteractionStep = (
     activeCardId: string,
     passiveCardId: string,
     rotation: string,
+    adrenaline: number,
   ): boolean => {
     if (activeCardId !== normalizeCardId(step.activeCardId)) return false;
     if (!step.passiveCardIds.map((id) => normalizeCardId(id)).includes(passiveCardId)) return false;
     if (rotation !== normalizeRotationLabel(step.rotation)) return false;
+    if (Number.isFinite(step.adrenaline) && adrenaline !== step.adrenaline) return false;
     return true;
   };
 
@@ -1188,7 +1191,7 @@ const maybeSkipTutorialThrowInteractionStep = (
     passiveCardId: string,
     rotation: string,
   ): boolean =>
-    activeCardId === 'feint' && passiveCardId === 'step' && rotation === '0';
+    activeCardId === 'feint' && passiveCardId === 'advance' && rotation === '0';
 
   const canRunTutorialBotStep = (session: TutorialSession, step: TutorialActionStep): boolean => {
     if (Number.isFinite(step.minPlayerActionIndex) && session.playerActionIndex < Number(step.minPlayerActionIndex)) {
@@ -1215,12 +1218,14 @@ const maybeSkipTutorialThrowInteractionStep = (
     activeCardId,
     passiveCardId,
     rotation,
+    adrenaline,
   }: {
     gameId: string;
     userId: string;
     activeCardId: unknown;
     passiveCardId: unknown;
     rotation: unknown;
+    adrenaline: unknown;
   }): TutorialActionValidationResult => {
     const session = getTutorialSession(gameId);
     if (!session) {
@@ -1233,6 +1238,7 @@ const maybeSkipTutorialThrowInteractionStep = (
     const normalizedActive = normalizeCardId(activeCardId);
     const normalizedPassive = normalizeCardId(passiveCardId);
     const normalizedRotation = normalizeRotationLabel(rotation);
+    const normalizedAdrenaline = toAdrenalineValue(adrenaline) ?? 0;
 
     if (role === 'player') {
       const expectedStep = TUTORIAL_PLAYER_ACTION_SEQUENCE[session.playerActionIndex] ?? null;
@@ -1244,7 +1250,7 @@ const maybeSkipTutorialThrowInteractionStep = (
       const feintIndex = TUTORIAL_PLAYER_ACTION_SEQUENCE.findIndex(
         (step) =>
           normalizeCardId(step.activeCardId) === 'feint' &&
-          step.passiveCardIds.map((id) => normalizeCardId(id)).includes('step') &&
+          step.passiveCardIds.map((id) => normalizeCardId(id)).includes('advance') &&
           normalizeRotationLabel(step.rotation) === '0',
       );
       const smashIndex = TUTORIAL_PLAYER_ACTION_SEQUENCE.findIndex(
@@ -1269,6 +1275,9 @@ const maybeSkipTutorialThrowInteractionStep = (
       if (normalizedRotation !== normalizeRotationLabel(expectedStep.rotation)) {
         return { ok: false, error: 'Tutorial action rejected: incorrect rotation for this step.' };
       }
+      if (Number.isFinite(expectedStep.adrenaline) && normalizedAdrenaline !== expectedStep.adrenaline) {
+        return { ok: false, error: 'Tutorial action rejected: incorrect adrenaline for this step.' };
+      }
       return {
         ok: true,
         session,
@@ -1281,7 +1290,7 @@ const maybeSkipTutorialThrowInteractionStep = (
     const allowFallback =
       session.playerActionIndex > 0 && session.botActionIndex >= TUTORIAL_BOT_ACTION_SEQUENCE.length;
     if (expectedStep && canRunTutorialBotStep(session, expectedStep)) {
-      if (isTutorialActionMatch(expectedStep, normalizedActive, normalizedPassive, normalizedRotation)) {
+      if (isTutorialActionMatch(expectedStep, normalizedActive, normalizedPassive, normalizedRotation, normalizedAdrenaline)) {
         return {
           ok: true,
           session,
@@ -3336,6 +3345,7 @@ const maybeSkipTutorialThrowInteractionStep = (
       activeCardId,
       passiveCardId,
       rotation,
+      adrenaline,
     });
     if ('error' in tutorialActionValidation) {
       console.log(`${LOG_PREFIX} action:set rejected`, { userId, gameId, reason: 'tutorial-step-mismatch' });

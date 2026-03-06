@@ -8,7 +8,6 @@ const POSITION_CLASS_BY_ID = {
   rotation: 'is-rotation',
 };
 
-const MOVEMENT_PASSIVE_IDS = ['step', 'advance', 'fleche', 'backflip'];
 const TUTORIAL_TEXT_URL = '/public/game/tutorialText.json';
 
 let tutorialTextCatalog = null;
@@ -40,12 +39,12 @@ const loadTutorialTextCatalog = async () => {
 
 const TUTORIAL_ACTIONS = {
   open: { activeCardId: 'step', passiveCardIds: ['fumikomi'], rotation: '0' },
-  jab: { activeCardId: 'jab', passiveCardIds: ['fleche'], rotation: '0' },
-  crossSlash: { activeCardId: 'cross-slash', passiveCardIds: ['step'], rotation: '0' },
+  jab: { activeCardId: 'jab', passiveCardIds: ['advance'], rotation: '0' },
+  crossSlash: { activeCardId: 'cross-slash', passiveCardIds: ['advance'], rotation: '0' },
   dodge: { activeCardId: 'backflip', passiveCardIds: ['guard'], rotation: 'L1' },
   hipThrow: { activeCardId: 'hip-throw', passiveCardIds: ['advance'], rotation: 'L1' },
-  feintScout: { activeCardId: 'feint', passiveCardIds: ['step'], rotation: '0' },
-  finish: { activeCardId: 'smash-attack', passiveCardIds: MOVEMENT_PASSIVE_IDS, rotation: '3' },
+  feintScout: { activeCardId: 'feint', passiveCardIds: ['advance'], rotation: '0' },
+  finish: { activeCardId: 'smash-attack', passiveCardIds: ['advance'], rotation: '3', adrenaline: 4 },
 };
 
 const normalizeCardId = (value) => `${value ?? ''}`.trim();
@@ -123,6 +122,8 @@ export const createTutorialGuide = ({
   passiveSlot,
   submitButton,
   rotationWheel,
+  adrenalineMeterTrack,
+  adrenalineMeterKnob,
   comboAccept,
   throwModal,
   localUserId,
@@ -196,6 +197,8 @@ export const createTutorialGuide = ({
     rotationWheel.querySelector(`.rotation-wedge[data-rotation="${rotation}"]`);
 
   const getSubmitButton = () => submitButton;
+  const getAdrenalineTrack = () => adrenalineMeterTrack;
+  const getAdrenalineKnob = () => adrenalineMeterKnob;
   const getSlotDrop = (slot) => slot?.querySelector?.('.action-slot-drop') ?? slot;
 
   const isCardInSlot = (slot, cardId) => Boolean(slot.querySelector(`.action-card[data-card-id="${cardId}"]`));
@@ -382,9 +385,11 @@ export const createTutorialGuide = ({
     const activeCardId = normalizeCardId(payload?.activeCardId);
     const passiveCardId = normalizeCardId(payload?.passiveCardId);
     const rotation = normalizeRotation(payload?.rotation);
+    const adrenaline = Number.isFinite(Number(payload?.adrenaline)) ? Math.round(Number(payload.adrenaline)) : 0;
     if (activeCardId !== normalizeCardId(expected.activeCardId)) return false;
     if (!Array.isArray(expected.passiveCardIds) || !expected.passiveCardIds.includes(passiveCardId)) return false;
     if (rotation !== normalizeRotation(expected.rotation)) return false;
+    if (Number.isFinite(expected.adrenaline) && adrenaline !== expected.adrenaline) return false;
     return true;
   };
 
@@ -649,16 +654,16 @@ export const createTutorialGuide = ({
       kind: 'condition',
       position: 'hand',
       textKey: 'selectFlechePassive',
-      allow: () => [getHandCardById('fleche'), passiveSlot],
-      highlightElements: () => [getHandCardById('fleche'), passiveSlot],
-      when: () => isCardInSlot(passiveSlot, 'fleche'),
+      allow: () => [getHandCardById('advance'), passiveSlot],
+      highlightElements: () => [getHandCardById('advance'), passiveSlot],
+      when: () => isCardInSlot(passiveSlot, 'advance'),
     },
     {
       kind: 'await-action',
       position: 'rotation',
       textKey: 'selectRotationJab',
       expectedAction: TUTORIAL_ACTIONS.jab,
-      allow: () => [getRotationWedge('0'), getSubmitButton(), getHandCardById('jab'), getHandCardById('fleche'), activeSlot, passiveSlot],
+      allow: () => [getRotationWedge('0'), getSubmitButton(), getHandCardById('jab'), getHandCardById('advance'), activeSlot, passiveSlot],
       highlightElements: () => [getRotationWedge('0')],
     },
     {
@@ -687,16 +692,16 @@ export const createTutorialGuide = ({
       kind: 'condition',
       position: 'hand',
       textKey: 'selectStepPassive',
-      allow: () => [getHandCardById('step'), passiveSlot],
-      highlightElements: () => [getHandCardById('step'), passiveSlot],
-      when: () => isCardInSlot(passiveSlot, 'step'),
+      allow: () => [getHandCardById('advance'), passiveSlot],
+      highlightElements: () => [getHandCardById('advance'), passiveSlot],
+      when: () => isCardInSlot(passiveSlot, 'advance'),
     },
     {
       kind: 'await-action',
       position: 'rotation',
       textKey: 'selectRotationCrossSlash',
       expectedAction: TUTORIAL_ACTIONS.crossSlash,
-      allow: () => [getRotationWedge('0'), getSubmitButton(), getHandCardById('cross-slash'), getHandCardById('step'), activeSlot, passiveSlot],
+      allow: () => [getRotationWedge('0'), getSubmitButton(), getHandCardById('cross-slash'), getHandCardById('advance'), activeSlot, passiveSlot],
       highlightElements: () => [getRotationWedge('0')],
     },
     {
@@ -792,16 +797,16 @@ export const createTutorialGuide = ({
       kind: 'condition',
       position: 'hand',
       textKey: 'selectStepPassiveScout',
-      allow: () => [getHandCardById('step'), passiveSlot],
-      highlightElements: () => [getHandCardById('step')],
-      when: () => isCardInSlot(passiveSlot, 'step'),
+      allow: () => [getHandCardById('advance'), passiveSlot],
+      highlightElements: () => [getHandCardById('advance')],
+      when: () => isCardInSlot(passiveSlot, 'advance'),
     },
     {
       kind: 'await-action',
       position: 'rotation',
       textKey: 'selectRotationScoutFeint',
       expectedAction: TUTORIAL_ACTIONS.feintScout,
-      allow: () => [getRotationWedge('0'), getSubmitButton(), getHandCardById('feint'), getHandCardById('step'), activeSlot, passiveSlot],
+      allow: () => [getRotationWedge('0'), getSubmitButton(), getHandCardById('feint'), getHandCardById('advance'), activeSlot, passiveSlot],
       highlightElements: () => [getRotationWedge('0')],
     },
     {
@@ -822,9 +827,9 @@ export const createTutorialGuide = ({
       kind: 'condition',
       position: 'hand',
       textKey: 'selectAnyMovementPassive',
-      allow: () => MOVEMENT_PASSIVE_IDS.map((id) => getHandCardById(id)).concat([passiveSlot]),
-      highlightElements: () => MOVEMENT_PASSIVE_IDS.map((id) => getHandCardById(id)),
-      when: () => MOVEMENT_PASSIVE_IDS.some((id) => isCardInSlot(passiveSlot, id)),
+      allow: () => [getHandCardById('advance'), passiveSlot],
+      highlightElements: () => [getHandCardById('advance'), passiveSlot],
+      when: () => isCardInSlot(passiveSlot, 'advance'),
     },
     {
       kind: 'await-action',
@@ -832,10 +837,17 @@ export const createTutorialGuide = ({
       textKey: 'selectRotationFinish',
       expectedAction: TUTORIAL_ACTIONS.finish,
       allow: () =>
-        [getRotationWedge('3'), getSubmitButton(), getHandCardById('smash-attack'), activeSlot, passiveSlot].concat(
-          MOVEMENT_PASSIVE_IDS.map((id) => getHandCardById(id)),
-        ),
-      highlightElements: () => [getRotationWedge('3')],
+        [
+          getRotationWedge('3'),
+          getSubmitButton(),
+          getHandCardById('smash-attack'),
+          getHandCardById('advance'),
+          activeSlot,
+          passiveSlot,
+          getAdrenalineTrack(),
+          getAdrenalineKnob(),
+        ],
+      highlightElements: () => [getRotationWedge('3'), getAdrenalineKnob()],
     },
     {
       kind: 'wait',

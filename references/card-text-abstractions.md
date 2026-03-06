@@ -1,120 +1,171 @@
 # Card Text Abstractions
 
-## Action-symbol anchors
-- `{i}`: bracketed action token(s) in the action list (e.g., `[m]`, `[2a]`). Effects that reference `{i}` should target the bracketed action index.
-- `{adr+X}` / `{adr-X}`: adrenaline pool modifiers. `+` adds to the actor's current adrenaline pool, `-` subtracts from that pool (clamped to 0..10).
-- `{adrX}`: submitted-adrenaline scalar. In damage text (`Damage + {adrX}`), add the action set's submitted adrenaline value to that `{i}` action's damage.
-- `{adrN}`: submitted-adrenaline threshold check. Treat `N` as the locked submitted adrenaline value for that action set (for example `{Adr6}` means "if the submitted adrenaline is at least 6").
-- `Adr+N` action labels: untimed utility beats that add adrenaline during beat execution; they are not attack/move/block actions.
-- Adrenaline submitted with the action set is a separate locked value used for tie-breaking within the same action class; pool changes do not retroactively change that submitted value.
-- In code: `getSymbolActionIndices` in `src/game/cardText/activeMovement.ts` and `public/game/cardText/activeMovement.js`.
+This file tracks how recurring card wording maps to shared rule machinery. `rules.md` is the exact mechanics reference; this file is the implementation map for contributors.
 
-## Symbol matching rule
-- Card-text placeholders like `{a}`, `{m}`, and `{W}` should match exact action symbols by default.
-- Use type-wide matching only when text explicitly names a general category (for example "attacks", "movement", or "jumps").
-- Movement indications are split into two forms:
-  - Symbol form (for example `{m}`, `{2j}`, `{c}`) targets that exact token/effect anchor.
-  - Word form (`move`/`movement`) is category-wide and includes all movement-style relocation tokens (movement, jump, and charge variants).
-- Timed symbol shorthand: use `{<action>}[early|mid|late]` (for example `{m}[late]`) when text needs a specific timing tied to an action symbol.
+## Shared-Core Ownership
 
-## Rotation injections
-- `rotationSource` marks where a rotation comes from:
-  - `selected`: player-selected rotation (start of action set).
-  - `forced`: card-text rotation applied at a symbol anchor (for example, `{i}`).
-- Consumers that need the start of an action set (timeline tooltips) should prefer `rotationSource === 'selected'`, falling back to non-empty `rotation` when missing (legacy data).
+Pure rule logic that both server and browser need should live in `src/shared/game` and build into `public/generated/shared/game`.
 
-## Pre-action phase
-- `pre-action` is the resolution phase that happens with the selected rotation and submitted-adrenaline spend, before the first beat action resolves.
-- Use it for action-set start effects that are not tied to a beat token (for example Sinking Shot passive self-damage plus adrenaline gain).
+Use these shared registries first when new wording matches an existing family:
+- `src/shared/game/throwSpecs.ts`
+- `src/shared/game/preActionSpecs.ts`
+- `src/shared/game/handTriggers.ts`
+- `src/shared/game/cardText/passiveModifierSpecs.ts`
+- `src/shared/game/cardText/discardSpecs.ts`
+- `src/shared/game/cardText/actionListTransforms.ts`
+- `src/shared/game/cardText/actionListBuilder.ts`
 
-## Conditional throw + charge
-- `cardStartTerrain` is stamped on beat entries during execution to capture the terrain at the start of the action set.
-- Grappling Hook: the `{i}` (bracketed) charge step stops at the first land tile or target in front, and its throw interaction only applies when `cardStartTerrain === 'land'` and the hit target is adjacent on the `{c}` beat.
+Server wrappers in `src/game/*` and browser wrappers in `public/game/*` should stay thin.
 
-## Targeting keywords
-- `touching` means the actor's current hex or any of the six adjacent hexes.
-- Haven active opens a pending `customInteractions` entry of type `haven-platform`, with `touchingHexes` used for client highlight + selection.
-- Haven pointer/hover resolution (self-click + adjacent hex pick) is centralized in `public/game/havenInteraction.mjs`.
+## Action-Symbol Anchors
 
-## Passive movement effects
-- Fleche passive: find the first exact `{a}` in the active ability action list; if there is a `{W}` before it, replace the closest preceding `{W}` with `m` timed `late`.
-- Ninja Roll passive: only `{a}` (or `[a]`) becomes `{a-La-Ra}`; other attack tokens are unchanged. Halve damage/KBF (rounded down) on the affected step.
-- Grappling Hook passive: when an exact `{a}` lands, flip the target to the opposite side of the attacker and knock them further in that direction (execution + playback).
-- `{m}` symbol passives: Burning Strike fire and Gigantic Staff abyss conversion only trigger on exact `m`.
-- Bow Shot passive arrow spawns trigger on any successful movement token (`m` type, including `m`/`2m`/`Bm`) and spawn on the mover's pre-move hex.
-- In code: Fleche/Ninja Roll are in `applyPassiveMovementCardText` (`src/game/cardText/passiveMovement.ts` and `public/game/cardText/passiveMovement.js`); Grappling Hook passive is handled in `src/game/execute.ts` + `public/game/timelinePlayback.js`.
+- `{i}`: the bracketed action token(s) in the action list. Effects that reference `{i}` should target the bracketed action index, not a later split token by accident.
+- `{adr+X}` / `{adr-X}`: current adrenaline pool modifiers.
+- `{adrX}`: submitted-adrenaline scalar. In damage text, add the locked submitted adrenaline value for that action set.
+- `{adrN}`: submitted-adrenaline threshold check.
+- `Adr+N` action labels: untimed utility labels that modify adrenaline during beat execution; they are not attack/move/block actions.
 
-## Combat modifiers
-- Hip Throw/Tackle passives grant throw immunity while the action set is active (non-`E`), blocking throw hits entirely.
-- Iron Will passive reduces incoming KBF by 1 (min 0) while the action set is active; hand-trigger use still sets KBF to 0.
-- Interruption frames (`DamageIcon`) are not active action-set beats for passive/ongoing checks; effects should stop immediately once knockback/stun interruption starts.
-- In code: `src/game/cardText/combatModifiers.ts` + `public/game/cardText/combatModifiers.js`; consumed in `execute.ts` and `timelinePlayback.js`.
+## Symbol Matching Rule
 
-## Parry counters
-- Parry active creates a resolved `customInteractions` entry of type `parry` when a bracketed block stops a melee attack.
-- The counter applies on the following beat: reflect damage/KBF back to the attacker, end the parry user's action set (`E`), and disable the attacker for that beat.
-- In code: `src/game/execute.ts` + `public/game/timelinePlayback.js`.
+- Match exact symbols by default.
+- Broaden to category-wide matching only when the text explicitly says a category such as "attacks", "movement", or "jumps".
+- Word-form movement references are broader than symbol-form references:
+  - symbol form like `{m}` or `{c}` means that exact anchor
+  - word form like `move` or `movement` means movement-style relocation generally
+- Timed shorthand uses `{token}[early|mid|late]`.
 
-## Guard continue interaction
-- Guard active opens a pending `customInteractions` entry of type `guard-continue` on Guard bracket frames (`[b-Lb-Rb]`).
-- Resolving `continue: true` repeats the Guard segment from the bracket start through the first trailing `E` (including implicit/missing `E` beats), replaces that `E`, and schedules a forced self-discard at the repeat-start beat.
-- Guard prompts may re-open on repeated Guard start beats at the current resolved frame, but only when the actor still has cards in hand (movement + ability > 0).
-- In code: `src/game/execute.ts` (loop + prompt creation), `src/server.ts` (hand-availability gating), UI prompt in `public/game.js`.
+## Throw Family
 
-## Focus (`{F}`) / Rewind concentration
-- `F` is an open beat for turn gating and action-set insertion (same gating class as `E`, but no refresh by itself).
-- Rewind active creates a resolved `customInteractions` entry of type `rewind-focus` at `{F}` with `anchorHex` and trailing return actions.
-- While Rewind focus is active:
-  - timeline beat entries include `focusCardId` so UI can draw the `F` icon under actions and show focus text in tooltips,
-  - land refresh is disabled for that player,
-  - max hand size is reduced by focused-card count (`MAX_HAND_SIZE - focusedAbilityCardIds.size`) and movement hand size is synced to that reduced cap.
-- Rewind return choices are `customInteractions` of type `rewind-return` on focused `E` beats; `returnToAnchor: true` teleports to anchor, ends focus, and replays Rewind's post-`{F}` action list from that beat.
-- If a focused player has no playable action pair (ability + movement), the server force-resolves return to anchor.
-- Focus ends on knockback or stun and the focused card is cleared from `focusedAbilityCardIds` and returned under deck unless it ended by explicit return.
+Throw behavior is driven by `src/shared/game/throwSpecs.ts`.
 
-## Action list transforms
-- Card text that modifies the action list (add/remove/replace) should use the shared helpers in
-  `src/game/cardText/actionListTransforms.ts` and `public/game/cardText/actionListTransforms.js` to keep behavior precise and mirrored.
+Current shared specs:
+- `hip-throw` active: unconditional throw interaction
+- `tackle` active: unconditional throw interaction
+- `leap` passive: unconditional throw interaction
+- `grappling-hook` active: conditional throw with explicit condition id `grappling-hook-land-start-adjacent-target`
 
-## Active/passive swap
-- `swap active with passive` means: at the trigger beat, rebuild the action set using the old passive as the new active card and the old active as the new passive card.
-- The swapped action list starts at that same beat (no delay), and carries only that trigger beat's `rotation`/`rotationSource` (if any); do not reapply the original action-set selected rotation on later beats.
-- Smoke Bomb `{X1}` uses this swap directly in shared list building (`src/game/cardText/actionListBuilder.ts` + `public/game/cardText/actionListBuilder.js`).
-- Reflex Dodge passive uses the same swap behavior at execution-time when hit during `W` (`src/game/execute.ts`).
+Implementation notes:
+- Action-class tagging for tie-break order comes from the same throw spec family.
+- `grappling-hook` is intentionally part of the throw family but not an unconditional throw card.
+- Runtime-only Grappling Hook behavior that is not generic throw classification, such as the passive flip/follow-through handling, still lives in `src/game/execute.ts` and `public/game/timelinePlayback.js`.
 
-## Stun-only hit window
-- Smoke Bomb active hit stun uses the same timeline rewrite shape as knockback (`DamageIcon ... E`) but does not move the target.
-- `BeatEntry.stunOnly` marks those hit frames so timeline badges can render them as stun-only (greyed) instead of normal knockback damage windows.
-- Server applies this via `applyHitTimeline(..., { stunOnly: true })` in `src/game/execute.ts`; timeline rendering reads the flag in `public/game/timeIndicatorView.js`.
-- Smoke Bomb stun is keyed to hit confirmation (target in attacked hex), not damage/KBF values, and should still apply even when the attack token is marked as `throw`.
+## Hand-Trigger Family
 
-## Action icon assets
-- Any new action token label (ex: `2c`, `B2m`, `B3j`) must have a matching PNG in `public/images/{token}.png` or the HUD/icon renderer will show the empty fallback.
-- Generate missing icons with `scripts/hex_diagrams_creator.py` (default output is `public/images`).
+All `If X is in your hand...` gameplay is driven by `src/shared/game/handTriggers.ts`.
 
-## Discard interactions
-- Discard effects queue a `customInteractions` entry of type `discard` with `discardCount`; the UI pauses on that beat and prompts the affected player to discard.
-- Discard selection follows hand-size rules: discard X ability cards, then discard movement cards to match the post-discard target size (see `getDiscardRequirements` in `src/game/handRules.ts`).
-- Spike passive grants discard immunity to opponent-driven discard effects while the action set is active.
-- Sweeping Strike passive converts knockback distance into discard count (no knockback movement) but still uses the pre-conversion distance for stun checks.
-- Server mapping: `src/game/cardText/discardEffects.ts`; client mirror: `public/game/cardText/discardEffects.js`.
+Current trigger cards:
+- `burning-strike`
+- `sinking-shot`
+- `vengeance`
+- `iron-will`
 
-## Known Follow-Ups
-- Healing Harmony active currently heals only the acting character in live rules because team relationships are not implemented yet. When teams are introduced, update this effect to include allies.
+Shared behavior:
+- the card must still be in hand when the trigger happens
+- confirm/reveal prompt happens before discard selection
+- discard requirements are capped to current hand sizes
+- only the lowest `handTriggerOrder` pending interaction is interactable
+- `triggerText` is display copy only
 
-## Hand-trigger interactions (in-hand reveals)
-- Cards with "If X is in your hand..." create a `customInteractions` entry of type `hand-trigger` when the trigger fires and the card is still in hand.
-- Card data stores that reveal copy in `triggerText`; keep gameplay behavior sourced from hand-trigger definitions/execution (`src/game/handTriggers.ts`, `src/game/execute.ts`) instead of parsing `triggerText`.
-- Interaction fields: `cardId`, `cardType`, `effect`, optional `sourceUserId`, and payloads like `attackHexes` (Burning Strike) or `drawCount` (Vengeance).
-- Resolution: `/api/v1/game/interaction` with `{ use, movementCardIds, abilityCardIds }`; discard requirements follow `getDiscardRequirements` in `src/game/handRules.ts`.
-- UI prompt: `public/index.html` + `public/game/handTriggerPrompt.mjs` (green reveal glow on the trigger card, red discard glow on required extra cards).
-- Timeline: mini card marker is drawn between beats in `public/game/timeIndicatorView.js`; tooltip uses `public/game/timelineTooltip.js` + `public/game/handTriggerText.mjs`.
+Execution/UI anchors:
+- server resolution: `src/game/execute.ts`
+- client prompt flow: `public/game/handTriggerPrompt.mjs`
+- tooltip/timeline copy: `public/game/timelineTooltip.js`, `public/game/handTriggerText.mjs`
 
-## Board tokens
-- `boardTokens` live in `public.boardTokens` with types `fire-hex`, `ethereal-platform`, `arrow`, and `focus-anchor`.
-- Fire hex: persistent; deals 1 damage per beat to any character standing on the hex.
-- Ethereal platform: only persists on abyss; it enables land-style refresh on `E` and is consumed after that refresh resolves.
-- Arrow: advances 1 hex per beat (charge), deals 4 damage with KBF 1 on hit, and is removed on hit or when its distance to land is >= 5.
-- Focus anchor: marks the Rewind return anchor hex with `F.png` while focus is active.
-- Rendering: tokens are drawn like character portraits (circle + facing triangle) with a black border in `public/game/renderer.js`.
+## Pre-Action Family
 
+Start-of-action effects that resolve with the selected rotation live in `src/shared/game/preActionSpecs.ts`.
+
+Current shared specs:
+- `advance` passive: gain 1 adrenaline
+- `dash` passive: gain 1 adrenaline
+- `jump` passive: gain 1 adrenaline
+- `backflip` passive: lose 1 adrenaline
+- `step` passive: lose 1 adrenaline
+- `sinking-shot` passive: take 2 self-damage and gain 1 adrenaline
+
+Use this family for card-start effects that are not tied to a specific beat token.
+
+## Passive Modifier Family
+
+Ongoing passive combat modifiers live in `src/shared/game/cardText/passiveModifierSpecs.ts`.
+
+Current shared specs:
+- `hip-throw` passive: throw immunity while active, excluding `DamageIcon`
+- `tackle` passive: throw immunity while active, excluding `DamageIcon`
+- `iron-will` passive: KBF reduction 1 while active, including `DamageIcon`
+
+Do not generalize `DamageIcon` handling. The live rule is family-specific:
+- Iron Will, Spike, Sweeping Strike, Vengeance, and Hammer-style hit-reactive checks still count the interruption frame as active.
+- Hip Throw and Tackle throw immunity do not.
+
+## Discard Family
+
+Discard-related behavior lives in `src/shared/game/cardText/discardSpecs.ts`.
+
+Current shared specs:
+- `down-slash` active hit: discard 1
+- `spike` active hit: discard 3
+- `sweeping-strike` active hit: discard 2
+- `trip` active hit: discard 1 on center-line hit only
+- `trip` passive: if an opponent blocks your move, they discard 1
+- `spike` passive: discard immunity while active, including `DamageIcon`
+- `sweeping-strike` passive: convert KBF `X` into `Discard X` while active, including `DamageIcon`
+
+Prompt/UI flow remains shared through the normal discard interaction pipeline.
+
+## Action-List Transforms
+
+When card text adds, removes, replaces, or retimes action entries, use `src/shared/game/cardText/actionListTransforms.ts`.
+
+This is the shared anchor for:
+- exact symbol replacement
+- bracket-aware token splitting/parsing
+- timing injection on inserted entries
+- preserving action-list precision across server execution and browser preview
+
+## Action-List Building
+
+Card-driven action-list mutations should flow through `src/shared/game/cardText/actionListBuilder.ts` and its sibling shared card-text modules.
+
+Current shared card-text modules:
+- `src/shared/game/cardText/activeAbility.ts`
+- `src/shared/game/cardText/activeMovement.ts`
+- `src/shared/game/cardText/passiveAbility.ts`
+- `src/shared/game/cardText/passiveMovement.ts`
+- `src/shared/game/cardText/combatModifiers.ts`
+- `src/shared/game/cardText/discardEffects.ts`
+
+If a new card family can be expressed as shared list-building or modifier logic, add it there before extending `execute.ts`.
+
+## Swap Family
+
+`swap active with passive` means:
+- rebuild the action list immediately at the trigger beat
+- use the old passive as the new active and the old active as the new passive
+- carry only the trigger beat's `rotation` and `rotationSource`
+
+Current users:
+- Smoke Bomb `{X1}` through shared action-list building
+- Reflex Dodge at execution time on hit during `W`
+
+## Other Interaction Families
+
+- Guard continue: `customInteractions` type `guard-continue`, repeated from Guard start through first trailing open beat
+- Combo: `Co` opens a card-specific continuation window and is blocked by throw-tagged hits
+- Focus/Rewind: `rewind-focus` and `rewind-return` interactions manage anchor state and focused-card hand limits
+- Haven: `haven-platform` interaction chooses a touching abyss hex for the ethereal platform
+
+These are still primarily execution-driven rather than registry-driven, but they should reuse shared action-list and timing helpers where possible.
+
+## Board Tokens and Triggered Side Effects
+
+- Burning Strike passive fire from movement only triggers on exact `m` and queues to the next beat after the move succeeds.
+- Bow Shot passive arrow spawns on successful movement-style relocation and uses the mover's pre-move hex.
+- Arrow damage is fixed at 4 with KBF 1 and does not inherit character attack bonuses.
+- Historical re-execution must rebuild tokens from timeline state, not from future `public.boardTokens`.
+
+## Known Intentional Exceptions
+
+- `grappling-hook` shares the throw-family abstraction but remains conditional.
+- `triggerText` is display-only even when the prose looks mechanically complete.
+- `healing-harmony` active currently heals only the acting character because team/ally support is not implemented.

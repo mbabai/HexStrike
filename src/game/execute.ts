@@ -39,6 +39,8 @@ import {
   normalizeCardTimings,
   resolveActionTiming,
 } from './timing';
+import { getPassiveStartAdrenalineDelta, getPassiveStartSelfDamage } from '../shared/game/preActionSpecs';
+import { getThrowSpec } from '../shared/game/throwSpecs';
 
 declare const require: (id: string) => any;
 
@@ -86,9 +88,6 @@ const CROSS_SLASH_CARD_ID = 'cross-slash';
 const REFLEX_DODGE_CARD_ID = 'reflex-dodge';
 const SMOKE_BOMB_CARD_ID = 'smoke-bomb';
 const REWIND_CARD_ID = 'rewind';
-// Keep in sync with cardRules/pendingActionPreview throw detection.
-const ACTIVE_THROW_CARD_IDS = new Set(['hip-throw', 'tackle']);
-const PASSIVE_THROW_CARD_IDS = new Set(['leap']);
 const GRAPPLING_HOOK_CARD_ID = 'grappling-hook';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const CARD_DATA = require('../../public/cards/cards.json') as { movement?: unknown[]; ability?: unknown[] };
@@ -410,8 +409,8 @@ const getEntryActionClass = (entry: BeatEntry | null | undefined): ActionClass =
   if (
     hasAttack &&
     (entry.interaction?.type === 'throw' ||
-      (entry.cardId ? ACTIVE_THROW_CARD_IDS.has(entry.cardId) : false) ||
-      (entry.passiveCardId ? PASSIVE_THROW_CARD_IDS.has(entry.passiveCardId) : false))
+      getThrowSpec(entry.cardId, 'active')?.actionListInteraction === 'always' ||
+      getThrowSpec(entry.passiveCardId, 'passive')?.actionListInteraction === 'always')
   ) {
     return 'throw';
   }
@@ -737,9 +736,8 @@ const getRuntimeCardLookup = (): Map<string, CardDefinition> => {
 
 
 const ADRENALINE_TOKEN_PATTERN = /\{?adr([+-])\s*([0-9]+)\}?/gi;
-const passiveStartAdrenalineByCardId = new Map<string, number>();
 
-const parseAdrenalineDeltaFromText = (value: unknown): number => {
+const parseActionAdrenalineDelta = (value: unknown): number => {
   const text = `${value ?? ''}`;
   if (!text) return 0;
   let delta = 0;
@@ -755,21 +753,8 @@ const parseAdrenalineDeltaFromText = (value: unknown): number => {
   return delta;
 };
 
-const getPassiveStartAdrenalineDelta = (passiveCardId: string | null | undefined): number => {
-  const id = `${passiveCardId ?? ''}`.trim();
-  if (!id) return 0;
-  if (passiveStartAdrenalineByCardId.has(id)) {
-    return passiveStartAdrenalineByCardId.get(id) ?? 0;
-  }
-  const passiveText = `${getRuntimeCardLookup().get(id)?.passiveText ?? ''}`;
-  const appliesAtStart = passiveText.toLowerCase().includes('at the start of this action');
-  const delta = appliesAtStart ? parseAdrenalineDeltaFromText(passiveText) : 0;
-  passiveStartAdrenalineByCardId.set(id, delta);
-  return delta;
-};
-
 const getActionAdrenalineDelta = (action: string | undefined): number =>
-  parseAdrenalineDeltaFromText(action ?? '');
+  parseActionAdrenalineDelta(action ?? '');
 
 const getRewindReturnActionList = (): ActionListItem[] => {
   const rewindCard = getRuntimeCardLookup().get(REWIND_CARD_ID);
@@ -808,7 +793,7 @@ const buildSwappedActionList = (
   return buildCardActionList(nextActive, nextPassive, rotationLabel);
 };
 
-const isGrapplingHookThrow = (
+const isConditionalThrow = (
   entry: BeatEntry | null | undefined,
   options: {
     tokenType?: string;
@@ -816,7 +801,8 @@ const isGrapplingHookThrow = (
     targetPosition?: { q: number; r: number } | null;
   } = {},
 ) => {
-  if (!entry || entry.cardId !== GRAPPLING_HOOK_CARD_ID) return false;
+  const spec = getThrowSpec(entry?.cardId, 'active');
+  if (!spec || spec.conditionId !== 'grappling-hook-land-start-adjacent-target') return false;
   if (entry.cardStartTerrain !== 'land') return false;
   if (`${options.tokenType ?? ''}`.toLowerCase() !== 'c') return false;
   if (!options.actorPosition || !options.targetPosition) return false;
@@ -833,9 +819,9 @@ const isEntryThrow = (
 ) => {
   if (!entry) return false;
   if (entry.interaction?.type === 'throw') return true;
-  if (isGrapplingHookThrow(entry, options)) return true;
-  if (entry.cardId && ACTIVE_THROW_CARD_IDS.has(entry.cardId)) return true;
-  if (entry.passiveCardId && PASSIVE_THROW_CARD_IDS.has(entry.passiveCardId)) return true;
+  if (isConditionalThrow(entry, options)) return true;
+  if (getThrowSpec(entry.cardId, 'active')?.actionListInteraction === 'always') return true;
+  if (getThrowSpec(entry.passiveCardId, 'passive')?.actionListInteraction === 'always') return true;
   return false;
 };
 
@@ -2620,10 +2606,14 @@ export const executeBeatsWithInteractions = (
           );
         }
       }
-      if (isActionStart && entry.passiveCardId === SINKING_SHOT_CARD_ID) {
+      const passiveStartSelfDamage = getPassiveStartSelfDamage(entry.passiveCardId);
+      const passiveStartAdrenalineDelta = getPassiveStartAdrenalineDelta(entry.passiveCardId);
+      if (isActionStart && passiveStartSelfDamage) {
         const currentDamage = Number.isFinite(actorState.damage) ? Math.max(0, Math.floor(actorState.damage as number)) : 0;
-        actorState.damage = currentDamage + 2;
-        applyAdrenalineDeltaToState(actorState, 1);
+        actorState.damage = currentDamage + passiveStartSelfDamage;
+      }
+      if (isActionStart && passiveStartAdrenalineDelta) {
+        applyAdrenalineDeltaToState(actorState, passiveStartAdrenalineDelta);
       }
       const rotationDelta = parseRotationDegrees(entry.rotation ?? '');
       if (!rotationDelta) return;
@@ -4422,11 +4412,6 @@ export const executeBeatsWithInteractions = (
       const startDiscard = getPassiveStartDiscardCount(entry.passiveCardId);
       if (startDiscard && !isOpenBeatAction(entry.action) && isActionSetStart(entry)) {
         queueDiscard(actorId, startDiscard, 'self');
-      }
-
-      const passiveStartAdrenalineDelta = getPassiveStartAdrenalineDelta(entry.passiveCardId);
-      if (passiveStartAdrenalineDelta && !isOpenBeatAction(entry.action) && isActionSetStart(entry)) {
-        applyAdrenalineDelta(passiveStartAdrenalineDelta);
       }
 
       const actionAdrenalineDelta = getActionAdrenalineDelta(entry.action);

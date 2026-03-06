@@ -1,6 +1,14 @@
-# HexStrike Lobby Server
+# HexStrike
 
-HexStrike is a dependency-light Node.js lobby and matchmaking prototype with a browser UI, HTTP API, and Server-Sent Events (SSE) stream.
+HexStrike is a server-authoritative living card game prototype with a browser client, HTTP API, SSE stream, and replay-style timeline rendering. The server owns hidden hand/deck state and exact rules resolution; the browser consumes generated shared rule helpers for parity and focuses on playback, prompts, and rendering.
+
+## Documentation map
+- `README.md`: setup, build, run, and operational entry point.
+- `architecture.md`: runtime topology, shared-core layout, and data flow.
+- `rules.md`: exact implementation-facing rules reference.
+- `public/rulebook.html`: clarity-first player rulebook.
+- `references/card-text-abstractions.md`: card wording families, registries, and implementation anchors.
+- `docs/documentation-authority.md`: document ownership and sync contract.
 
 ## Requirements
 - Node.js `24.x` (LTS) and npm
@@ -10,10 +18,13 @@ HexStrike is a dependency-light Node.js lobby and matchmaking prototype with a b
    ```bash
    npm install
    ```
-2. Build the server:
+2. Build the project:
    ```bash
    npm run build
    ```
+   This emits:
+   - server CommonJS output to `dist/`
+   - browser-safe shared ESM helpers to `public/generated/shared/game/`
 3. Start the server:
    ```bash
    npm start
@@ -89,6 +100,12 @@ This prints JSON diagnostics (`mode`, `dbName`, `collectionName`, URI source/rou
 - Deck creation shows each character's power text in the character picker.
 - In-game board token hover tooltips show the selected character's power text.
 - Server resolution reads effects via `src/game/characterPowers.ts`; client playback mirrors power effects in `public/game/timelinePlayback.js`.
+
+## Shared rules core
+- Put browser/server-neutral rule logic in `src/shared/game`.
+- `src/game/*` and `public/game/*` should import or re-export shared helpers instead of maintaining parallel rule forks.
+- Current shared families include timing helpers, beat/timeline utilities, action-list transforms, action-list building, throw specs, hand-trigger specs, passive modifier specs, discard specs, and pre-action specs.
+- `triggerText` in `public/cards/cards.json` is display copy only; hand-trigger gameplay comes from the shared trigger registry.
 
 ## API quick reference
 - `GET /events?userId=...` - SSE stream (server will assign an ID if omitted).

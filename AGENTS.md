@@ -1,269 +1,34 @@
 # HexStrike Agent Guide
 
-## Vision (long-term)
-HexStrike is a Node.js, server-driven living card game played over a hex-grid. Players submit actions built from selected cards; the server validates, resolves outcomes on the hex board, and advances the authoritative game timeline. Clients are expected to connect via WebSockets and receive partial game states (their own hand and public board info; no opponent hand/deck visibility). The experience should feel like collaboratively making a movie that can be rewound and replayed.
+## Read This First
 
-## Current scope (lobby prototype)
-- Server: dependency-light Node.js + TypeScript HTTP server in `src/server.ts` with REST endpoints and SSE (`GET /events`).
-- State: lobby queues (`quickplayQueue`, `rankedQueue`, `botHardQueue`, `botMediumQueue`, `botEasyQueue`, plus legacy `botQueue`) and in-memory match/game records via `src/state/lobby.ts` and `src/persistence/memoryDb.ts`; games now include starting characters assigned on queue join.
-- Server: action-set validation uses `src/game/cardCatalog.ts` + `src/game/cardRules.ts` to enforce deck/hand exhaustion, rotation limits, and refresh timing.
-- Server: hand management + draw/discard syncing lives in `src/game/handRules.ts` (movement hand derived from ability count).
-- UI: static assets in `public/` with ES module scripts (`public/menu.js`, `public/queue.js`, `public/storage.js`) and styling in `public/theme.css`.
-- UI: lobby deck library + deck builder stores player-created decks in cookies (base decks still come from `public/cards/cards.json`) via `public/decks.js` + `public/deckStore.js`; selected deck is saved in cookies and gates matchmaking.
-- UI: deck edit uses the same builder overlay as create; edit state is prefilled and saves back to the existing deck id.
-- UI: `/cards` is a standalone deck-builder page (same builder UI as lobby) via `public/cards.js` + `public/cards.css`; it auto-opens Create a Deck and the builder close `X` returns to the lobby.
-- Character powers are data-driven in `public/characters/characters.json`; server helpers live in `src/game/characterPowers.ts` and client loaders in `public/shared/characterCatalog.js`.
-- UI: deck-character selection shows character power text and in-game character-token hover tooltips show power text.
-- UI action HUD uses movement/ability cards from `public/cards/cards.json`, random/selected deck hand selection in `public/game/cards.js`, and drag/drop wiring in `public/game/actionHud.js`.
-- Action HUD hands are always rendered in a stacked spread, with turn-only slots/rotation and icon-driven card badges.
-- UI match-end rule checks are centralized in `public/game/matchEndRules.js` to keep game-over logic separate from controller wiring.
-- Server match outcomes are evaluated in `src/game/matchEndRules.ts` and stored on `state.public.matchOutcome`.
-- Front-end animation: `public/game/timelinePlayback.js` builds beat-by-beat scenes (characters + effects) consumed by `public/game/renderer.js`.
-- UI portrait badges (name capsules) are drawn with `public/game/portraitBadges.js`; local player accents use `--color-player-accent`.
-- Board tokens show an ability-hand counter icon (`CardInHand.png`) just left of each player name; placement uses name-text bounds from `drawNameCapsule` metadata so it stays anchored for variable name lengths.
-- Timeline controls: play/pause is rendered in the center time slot; a turtle->rabbit speed slider sits above the timeline, and auto-advance only steps after the current beat animation completes.
-- UI timeline shows a local-only pending action preview (faded + pulsing) when you've submitted and are waiting on other players.
-- Matchmaking: Quickplay and bot-queue joins are wired from the UI; selecting a bot queue starts an immediate 1v1 versus the selected profile (`Strike-bot`, `Hex-bot`, or `Bot-bot`).
+HexStrike is a server-authoritative living card game prototype on a shared beat timeline. The server resolves rules, the browser renders and animates them, and pure rule logic is now expected to live in the shared TypeScript core under `src/shared/game`.
 
-# Documentation map (start here)
-- [README.md](README.md): project overview, setup, and API summary; read first when onboarding or running the server.
-- [PLANS.md](PLANS.md): ExecPlan format and rules; use whenever drafting or executing a large feature/refactor plan.
-- [front-end-ui.md](front-end-ui.md): UI palette, components, and interaction rules; use for any browser-facing UI changes.
-- [architecture.md](architecture.md): system overview of server/client/data flow; use when onboarding, tracing state sync issues, or planning cross-cutting changes.
-- [rules.md](rules.md): player-facing rules; use to align gameplay changes, answer rules questions, or sanity-check rule coverage.
-- [docs/hex-grid.md](docs/hex-grid.md): hex coordinate system and land/abyss definitions; use when touching board math or terrain.
-- [docs/character-powers.md](docs/character-powers.md): character-power data schema/effects and server-client integration points.
-- [references/card-text-abstractions.md](references/card-text-abstractions.md): inventory of card-text symbols/effects and their implementation anchors.
-- [references/card-text-implementation.json](references/card-text-implementation.json): active/passive card-text implementation tracker.
-- [plans/basic-lobby.md](plans/basic-lobby.md): historical lobby plan snapshot; reference for context on the initial lobby scope.
-- [plans/queue-matchmaking-game-area.md](plans/queue-matchmaking-game-area.md): historical plan for queue/matchmaking/game surface; reference when revisiting those areas.
+## Authority Map
 
-# ExecPlans
+- `README.md`: setup and run commands.
+- `architecture.md`: runtime structure and shared-core layout.
+- `rules.md`: exact implementation coverage.
+- `public/rulebook.html`: clarity-first player rulebook.
+- `references/card-text-abstractions.md`: wording families, registries, and exception points.
+- `docs/documentation-authority.md`: which document owns which kind of truth.
 
-When writing complex features or significant refactors, use an ExecPlan (as described in `PLANS.md`) from design to implementation.
-- For larger tasks (features, refactors, or multi-file changes), if the request or discovered context is inconsistent or ambiguous, always ask clarifying question(s) before implementing.
+## Shared-Core Rules
 
-## Architectural principles (current)
-- Front-end UI: For any browser-facing UI styling or layout, follow `front-end-ui.md` as the single source of truth for palette, components, and interactions. Extend that document when adding reusable primitives.
-- Platform: Node.js with TypeScript preferred for type safety; keep server code framework-light (dependency-light HTTP + SSE).
-- Bounded contexts (implemented): `matchmaking` (lobby, seat assignment, game bootstrap) and `persistence` (in-memory data).
-- State model: Lobby snapshots and match/game records are kept in memory; no frame ledger exists yet. Game public state includes `characterName` on characters, `customInteractions`, and beats reference players by `username`.
+- Put browser/server-neutral game logic in `src/shared/game`.
+- `src/game/*` and `public/game/*` should import or re-export that shared logic instead of maintaining parallel implementations.
+- Browser shared output is generated into `public/generated/shared/game` by `cmd /c npm run build`.
 
-## Realtime and client interactions (current)
-- SSE message envelope: `{ type, payload, recipient }`.
-- Message types currently emitted: `connected`, `queueChanged`, `match:created`, `game:update`, `spectator:update`, `match:ended`, `bot:error`.
-- REST endpoints live under `/api/v1/lobby`, `/api/v1/match`, `/api/v1/history`, and `/api/v1/game/interaction` (plus `/api/v1/match/:id/exit` for per-player leave).
-- `game:update` payloads may include `pendingActions` in public state when concurrent players are submitting action sets.
-- `game:update` payloads may include `customInteractions` (pending/resolved) that pause the timeline until resolved.
-- `game:update` payloads may include `matchOutcome` once the server declares a winner/loser.
+## Global Conventions
 
-## Persistence and operations (current)
-- `MemoryDb` in `src/persistence/memoryDb.ts` is the only persistence layer and resets on restart.
-- Quickplay joins are logged to the server console for visibility.
-- Bot-queue joins and bot-decision steps/errors are logged and written to `temp-logs/events.jsonl` under `easy-bot` events.
+- Card data source of truth: `public/cards/cards.json`.
+- `triggerText` is display copy only. Hand-trigger gameplay comes from the shared registry.
+- Do not show raw symbol codes in player-facing UI/docs when an icon exists.
+- Update tests, `rules.md`, and `references/card-text-abstractions.md` in the same change when live mechanics change.
+- Use `cmd /c npm run build` and `cmd /c npm test` for validation on this machine.
 
-## Testing and validation (current)
-- Use the Node.js built-in test runner (`npm run test`).
-- `npm run dev` builds, runs tests, and only starts the server when tests pass.
-- `npm run dev` writes verbose diagnostics to `temp-logs/` (`server.log` + `events.jsonl`); for timeline/token regressions, inspect those logs first before patching.
-- Any new or edited card in `public/cards/cards.json` must include simulation tests that validate both roles (card as `activeCardId` and as `passiveCardId`) by executing timelines and asserting beat entries; action-list-only coverage is not sufficient.
+## Subsystem Guides
 
-## Planned gameplay architecture (future)
-- Bounded contexts: `rules`, `engine`, `realtime`, and a durable `persistence` layer for frame replays.
-- State model: Treat each frame as an immutable record containing inputs (actions), deterministic resolution output, and derived public/secret views. Store frames sequentially to enable rewind/fast-forward.
-- Data flow: client action -> validation -> deterministic frame resolution -> persistence append -> realtime broadcast.
-- Idempotency and ordering: actions include frame indices and player IDs; server enforces monotonic progression and rejects duplicates.
-- Concurrency: support simultaneous turns by collecting all required player actions before resolution; implement timeouts/fallbacks for missing actions.
-- Determinism: randomness seeded per match and recorded in the frame.
-- Board and rules: represent the hex grid with axial or cube coordinates; card definitions are data-driven and versioned; rule resolution should be pure functions.
-
-## Style and conventions
-- Use TypeScript; the Node build targets ES2020 and CommonJS output today. Add eslint/prettier defaults if introduced; no try/catch around imports.
-- Keep pure logic (rules/engine) free of I/O; isolate side effects in adapters.
-- Small, focused modules; avoid monolithic files.
-- Prefer functional, deterministic code paths for the engine; inject randomness sources.
-- In browser UI copy/tooltips/docs, NEVER render raw action-symbol letters/tokens when a symbol image exists; always use token icons (`/public/images/{token}.png`, for example `E.png`, `W.png`).
-- CRITICAL: NEVER show raw symbol "code" in player-facing UI/docs/rulebook/tutorials/tooltips (examples: `{adr+X}`, `{adr-X}`, `{AdrX}`, `{X1}`, `{i}`). Always render icon/symbol visuals and plain-language descriptions instead.
-- When providing terminal commands to the user, always format each command as a single-line command (no line-continuation characters like `\`).
-
-## Repository conventions
-- Add new AGENTS.md files in subdirectories when specialized instructions are needed; nested instructions override this file.
-- Document new protocols (message schemas, frame structure) in `docs/` with examples.
-- Update this guide if architectural decisions change.
-
-## Gotchas (current)
-- Beat entries include `damage`, `location`, and `priority` fields; tests should assert full beat payloads, not just `username`/`action`.
-- Beat entries include `terrain` (`land`/`abyss`) derived from `location` + `public.land`; refresh/abyss logic should prefer this flag.
-- Action-set insertion is per player: replace that player's first open slot (missing entry or `E`), fill empty beats in place, and avoid shifting other players' beats.
-- Action-set rotations use the player-selected rotation only on the first action entry; later rotations are reserved for card-text injections and should set `rotationSource: 'forced'`.
-- Submitted adrenaline is consumed at the same commit point as the selected rotation (`rotationSource: 'selected'`), before later stun/hit rewrites; do not tie the spend to whether the first action still resolves.
-- Action-set submissions must include `activeCardId`, `passiveCardId`, and `rotation`; the server rebuilds the action list from the card catalog and rejects unavailable or exhausted cards.
-- Card-text symbol placeholders (`{a}`, `{m}`, `{W}`, etc.) should match exact action symbols by default; only broaden to type-wide matching when the text explicitly says general categories like "attacks", "movement", or "jumps."
-- Fleche passive skips the final `W` only when a prior token contains an exact `a` symbol (for example `a` or `2a-a`, but not `2a` alone); keep `src/game/cardText/passiveMovement.ts` and `public/game/cardText/passiveMovement.js` in sync.
-- Ninja Roll passive only transforms exact `{a}` or `[a]` tokens; do not broaden other attack strings (ex: `a-2a`, `a-La-Ra`).
-- Card-text timeline edits (add/remove/replace actions) should use `actionListTransforms` helpers on both server/client to keep precision and parity.
-- When card text describes action timing inline (for example `{m}[late]` or `{a-La-Ra-BLa-BRa-Ba}[early]`), render timing over the action icon (timeline style) in `appendInlineText`; and when that effect adds/replaces an entry whose source timing is missing, explicitly set both `timing` and `priority` on the new beat entry (server + client mirrors).
-- Bracketed multi-token actions (ex: `[a-La-Ra]`, `[b-Lb-Rb]`) must normalize the whole action before splitting by `-`; otherwise trailing tokens parse as `Ra]`/`Rb]` and silently drop right-side attacks/blocks. Keep `splitActionTokens`/`parseActionTokens` in `src/game/cardText/actionListTransforms.ts`, `src/game/execute.ts`, and `public/game/timelinePlayback.js` mirrored with `public/game/cardText/actionListTransforms.js`.
-- Multi-token attacks can apply multiple hits to the same target in one beat when later tokens still connect after the first hit/knockback; do not dedupe per-target hit resolution within the beat.
-- Card additions/edits must update simulation coverage in `test/cardTimelineSimulations.test.js` (or equivalent) so every card has active + passive timeline assertions through `validateActionSubmission` -> `applyActionSetToBeats` -> `executeBeats`.
-- If you swap card names/art labels between IDs (for example `trip` and `sweeping-strike`), keep each ID's timeline/effect data unchanged unless explicitly requested; UI art is keyed by card `name`, but rules/text behavior is keyed by card `id`.
-- Timing data (`timings` on cards / `timing` on beats) is authoritative for beat execution order; treat numeric `priority` as compatibility metadata (legacy logs/UI sort), not the primary combat-order source.
-- If card text introduces new action tokens (ex: `2c`, `B2m`, `B3j`), the HUD needs `/public/images/{token}.png`; generate via `scripts/hex_diagrams_creator.py` (or the `action-diagram-creator` skill, which outputs to `public/images`).
-- Ability cards are never exhausted; on use they leave the hand immediately and are placed under the ability deck (client and server).
-- Movement hand size is derived from ability count (<=4 matches ability count, >4 caps at 4); use `syncMovementHand`/`getMovementHandIds` in `src/game/handRules.ts` instead of hand-counting on the client.
-- Movement exhaustion clears on any land `E` at the earliest timeline index; the refresh is keyed to the earliest `E`, not the client view index.
-- On land `E`, draw from the ability deck until reaching max hand size (`MAX_HAND_SIZE`, default 4).
-- Ability draw/discard helpers (`drawAbilityCards`, `discardAbilityCards`) always sync movement hand; avoid mutating `exhaustedMovementIds` directly when resolving card text.
-- Action HUD only shows when the timeline selector is on the earliest `E` across all players and the local player is at-bat; the HUD locks after submit until resolution.
-- Action HUD hands are always visible in the game view; only the slots and rotation wheel toggle with the `.is-turn` state.
-- Discard interactions reuse the existing hand UI: `public/game/discardPrompt.mjs` applies `.is-discard-pending` (pulsing) and `.is-discard-selected` (grey) on in-hand `.action-card` elements instead of rendering a separate discard hand; keep the `.action-hud.is-locked` override in `public/theme.css` so greyscale remains visible while the HUD is locked.
-- Discard requirements are capped to current hand sizes; if required >= cards in hand for a type, the client auto-selects all and auto-submits the discard.
-- Hand-trigger prompts are staged: confirm "Use X?" first, then show the discard selection; `public/game/handTriggerPrompt.mjs` owns the reveal glow on the trigger card and discard glow on extra cards.
-- `triggerText` in `public/cards/cards.json` is UI/display copy for in-hand reveal text; hand-trigger gameplay logic remains sourced from `src/game/handTriggers.ts` + `src/game/execute.ts` (do not infer behavior from card text copy).
-- Pending hand-trigger interactions are globally ordered by `handTriggerOrder`; only the lowest order is interactive (`public/game/handTriggerOrder.mjs` + `src/server.ts`).
-- Action HUD hover targeting is based on the hand column + header band (not card transforms); keep `--action-card-hover-shift` synced with the hover rail in `public/game/actionHud.js`.
-- Action HUD hand bands overlap each other in screen space; keep `.action-hand` at `pointer-events: none` and let `.action-card` own pointer events, or the top hand container can block clicks for cards underneath. Re-enable hand pointer events only during drag with `.action-hud.is-card-dragging .action-hand`.
-- When a hand card is enlarged/hovered, hit-testing must treat the hovered card as full-card bounds (not a partial right/top slice) so clickability matches the visible card footprint.
-- Action HUD and deck-builder card text both use `public/shared/cardRenderer.js`; keep trigger/active/passive row visuals unified there and call `fitAllCardText` after renders so those text rows fit their boxes.
-- Inline/tutorial text rendered through `appendInlineText` supports style tags (`<key>`, `<move>`, `<attack>`, `<guard>`, `<u>`, `<b>/<bold>`) plus `{token}` icons; keep parser tags and `public/theme.css` emphasis classes synchronized when adding new emphasis types.
-- App-facing symbol references (rulebook, tooltips, HUD copy, tutorials) must use rendered symbol images, not raw token text (`E`, `W`, `a`, `m`, etc.); if an image is missing, add/generate it in `public/images` instead of falling back to plain letters.
-- Action HUD click selection: empty slots -> active; active filled + same type -> replace active; active filled + different type -> fill passive; both filled -> replace matching type slot; clicking a slotted card returns it to hand.
-- Active/passive slots must be filled with cards from different sides (movement vs ability); only the active card drives the action list and rotation restrictions.
-- Slot assignment overwrites same-type cards in the opposite slot by returning them to the hand.
-- Action card UI always appends an `E` symbol and uses `/public/images/rot*.png`, `priority.png`, `DamageIcon.png`, and `KnockBackIcon.png`.
-- Action card stat badges are anchored bottom-left with overlapping icons (damage left, knockback right), and the surface panel uses a taller art row plus shorter active/passive rows (with optional trigger row above active) with square corners in `public/theme.css`.
-- Action card layout uses fixed pixel positions via CSS variables in `public/theme.css`; scale with `--action-card-scale` (cards page sets `1.5` in `public/cards.css`) instead of resizing individual elements to keep proportions locked.
-- Deck selection cards use `--action-card-scale` and `--deck-selection-hover-lift` in `public/theme.css`; keep the hover lift padding in sync so elevated cards are not clipped.
-- Action icon column placement is controlled by `--action-card-actions-top` in `public/theme.css`; adjust that single value to keep the top icon aligned without colliding with the border.
-- Deck-builder sort keys must stay aligned between `public/index.html`, `public/cards.html`, and `public/decks.js` (`name`, `priority`, `rotations`, `wait-beats`, `wind-up-beats`, `recovery-beats`, `beats`, `damage`, `kbf`).
-- Standalone `/cards` reuses `initDecks`; close-button navigation is injected via `initDecks({ onBuilderCloseButton })` in `public/cards.js` instead of hardcoding route logic in `public/decks.js`.
-- Keep beat arrays ordered by character roster when mutating to prevent UI rows from swapping entries.
-- Do not synthesize missing beat entries just to fill the timeline; missing entries count as `E` and prevent trailing-E spam.
-- Earliest-`E` lookups used for action submission/HUD gating must ignore calculated history (`calculated: true`) and start at the first unresolved beat (`resolvedIndex + 1`), or cards can be consumed into past beats (not inserted) after parry/damage rewrites.
-- If a rerun mutates the current beat into an `E` (ex: Reflex Dodge `{X1} -> {E}`), re-check beat readiness before finalizing the frame and halt it unresolved; otherwise the `E` can be marked calculated and the next submission skips to a later beat.
-- Parry cleanup must not wipe newly submitted future action-set starts: when forcing the defender to `E` on the counter beat, only clear stale continuation entries and preserve future entries tagged with `rotationSource: 'selected'`/`comboStarter`.
-- Timeline scrolling must clamp to the earliest `E` across all players, not just the local user.
-- Timeline gold highlight uses the earliest `E` beat across all players, not the currently viewed beat.
-- Timeline play/pause replaces the center beat label; hit detection is a circular button in `public/game/timeIndicatorView.js` and auto-advance pacing is driven by the speed slider interval in `public/game.js`.
-- Timeline now includes double-arrow controls flanking the single-step arrows (`jump-left`/`jump-right`) that snap to beat 0 and the current max beat; keep `getTimeIndicatorHit` targets and `controls.js` handling aligned.
-- Timeline playback should advance beat-by-beat to the stop index; do not auto-jump the time indicator to the latest stop index on `game:update` or intermediate animations will be skipped.
-- Timeline tooltips use `cardId`/`passiveCardId` on beat entries for active/passive names; symbol instructions still come from `{X1}/{X2}/{i}` fragments in `activeText`.
-- Hand-trigger timeline/prompt copy should prefer `card.triggerText` and only fall back to parsing `activeText` for legacy cards.
-- Timeline tooltip action-set start prefers `rotationSource: 'selected'` and falls back to non-empty `rotation` when the source flag is missing (legacy data).
-- Timeline mini-card markers (movement pickup, hand-trigger, rewind-return) must share one geometry path for draw + hover (`buildMiniCardStackLayout` + `getMiniCardStackItemGeometry` in `public/game/timeIndicatorView.js`) or hit targets drift and flicker.
-- Timeline tooltip target switches must clear supplemental sections (including `cardPreview` and `.has-card-preview`) before rendering the next kind, or movement-pickup previews can leak into passive/action tooltips.
-- Hit rewrites clear `cardId`/`passiveCardId` on `DamageIcon`/forced `E` entries, except the first `DamageIcon` keeps the active/passive ids (including reruns that start on an existing `DamageIcon`) so the tooltip can show the interrupted action set.
-- Focused timeline tooltips should show character base power before focus-card text; if `{F}` text parsing is missing, fall back to the focused card `activeText` instead of hiding focus details.
-- Swap effects that say "swap active with passive" should rebuild the action list with the old passive as new active and apply it immediately on the trigger beat; carry only the trigger beat's rotation/rotationSource (if present) and do not reapply the action-set's original selected rotation.
-- Smoke Bomb stun uses hit timeline frames without movement; mark those `DamageIcon` entries with `stunOnly` so timeline rendering can grey them differently from knockback hits.
-- Smoke Bomb stun should trigger on hit even with `attackDamage=0` and `attackKbf=0`, and it should resolve before throw handling (including throw-tagged attack entries).
-- Rotation restrictions like `0-2` are interpreted as rotation magnitude (both left/right labels plus `0`/`3` where applicable), not directional ranges.
-- Rotations resolve in a pre-action phase; apply them even if the actor's action is skipped/disabled, and keep `src/game/execute.ts` + `public/game/timelinePlayback.js` in sync.
-- When multiple players share the earliest `E`, the server batches action sets in `pendingActions` and reveals them simultaneously once all required players submit; timeline rings blink red for players still needed.
-- Pending action previews on the timeline are client-side only: build the local player's preview from the submitted active card action list, render it as a faded pulsing overlay only on that player's `E` slots while waiting, and clear it once `pendingActions` no longer includes a local submission.
-- Live spectator mode is replay-style rendering fed by realtime `spectator:update` events; spectator clients should call `/api/v1/history/live-games/watch` before opening and `/api/v1/history/live-games/unwatch` on close so stale subscriptions do not accumulate server-side.
-- Direction indexing for blocks/attacks must ignore reverse vectors (only forward, positive steps); otherwise block walls flip away from facing.
-- Keep `getDirectionIndex` logic in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized so visuals match server resolution.
-- Blocks and projectile blocks require both direction match and timing overlap (shared timing phase); same-beat `early` blocks must not stop `mid`/`late` hits.
-- Stab active rear bonus applies when the attacker is on any rear arc (`B`, `LB`, or `RB` of target), not only exact `B`; keep `isBehindTarget` in `public/game/timelinePlayback.js` and `src/game/execute.ts` synchronized.
-- Rotation parsing treats `R` as +60 degrees per step and `L` as -60; keep that sign consistent in `public/game/timelinePlayback.js` and `src/game/execute.ts`.
-- Arrow/projectile hits must respect block walls; client token playback derives block lookups from block effects to stop arrows on blocks.
-- Existing arrows resolve/move after entries with effective timing priority `> 95` (normally `early`) and before `<= 95` (normally `mid`/`late`); numeric `priority` fallback is legacy-only when timing is missing. Keep this phase split synchronized between `src/game/execute.ts` and `public/game/timelinePlayback.js` so block/movement-through-arrow outcomes match.
-- Arrow token damage is always ARROW_DAMAGE (4) and must not include character attack bonuses (for example Strylan); keep blocked-arrow side effects (like Absorb draw) tied to the same fixed arrow damage value.
-- Movement/charge should check arrow collisions step-by-step on traversed hexes, while jumps only check the landing hex; keep both server and client token playback behavior in sync.
-- Board tokens live in `public.boardTokens`; `executeBeatsWithInteractions` rebuilds fire/arrow tokens from beats, moves only pre-existing arrows each beat, and applies fire damage after arrow resolution.
-- Server re-execution must seed token playback from timeline state (empty replay seed today), not from the latest `public.boardTokens`, or historical beats will be contaminated by future fire/arrow tokens.
-- Haven active uses a `customInteractions` entry of type `haven-platform`; client targeting/hover math is centralized in `public/game/havenInteraction.mjs` and renderer should stay draw-only via `interactionHighlightState`.
-- Ethereal platforms only persist on abyss, grant land-style refresh when a player has `E` on them, and are consumed during `resolveLandRefreshes` once refresh resolves.
-- Client board-token playback is derived from beats/interactions in `public/game/timelinePlayback.js` (`buildTokenPlayback`); keep token spawn logic in sync with server-side rules so timeline scrubbing matches resolution.
-- Fire hex tokens render as full-hex overlays (no facing arrow); keep `public/game/renderer.js` token drawing in sync with any token art changes.
-- Burning Strike passive fire from movement must be queued to the next beat after a successful move; do not spawn it in the same beat or the mover gets incorrectly hit before/while moving away.
-- Burning Strike optional ignites via a `customInteractions` entry of type `burning-strike` (discardCount `1`, `attackHexes`); avoid re-triggering if an interaction already exists for that beat.
-- Guard active uses `customInteractions` of type `guard-continue`; choosing continue repeats from the bracketed Guard start through the first trailing `E` (explicit or implicit/missing entry), replaces that `E`, and schedules a forced discard on the repeat-start beat.
-- Guard continue prompts can re-open on repeated Guard start frames even when that frame is the current `resolvedIndex`; only create the prompt when the actor still has at least one card in hand (movement + ability) so the forced discard is possible.
-- Focus (`F`) beats are open beats for earliest-open/action-set insertion, but Rewind return choices (`rewind-return`) should only prompt on focused `E`/implicit-open beats, not on the `{F}` beat itself.
-- Rewind focus is tracked through `customInteractions` type `rewind-focus`; while active, timeline entries carry `focusCardId`, board tokens include `focus-anchor`, and tooltips should show `{F}` text from the focused card.
-- If a focused player has no playable pair (movement + ability), the server must force-resolve return-to-anchor so focus cannot deadlock at an open beat.
-- Rewind return interactions are keyed by `rewind-return:{beatIndex}:{actorId}:{actorId}`; when that id already exists as a resolved choice for an older focus cycle, reset it to `pending` for the current `focusInteractionId` so the modal re-opens after a prior "No".
-- "Swallowed" submission (debug term): an action set is accepted and `actionSets apply` logs a non-open start action at the expected beat (ex: `startIndex=13`, `actions[0]=B2m`), but `execute` halts on that same beat with readiness still `E` for the actor and the resulting beat entry stays `E` (often keeping `rotationSource:'selected'`/`play` metadata). Repeated submissions can consume cards while never surfacing a non-`E` action on timeline.
-- Root swallow cause pattern: replay mutators (combo/rewind/hit timeline) can run on historical reruns and must never overwrite committed future starts (`rotationSource:'selected'`/`comboStarter` or committed `rewind-return` starts); clamp rewrite/prune windows before those beats and do not rewrite `DamageIcon` beats for combo replay.
-- Timeline-break guardrail: `src/game/timelineIntegrity.ts` enforces "no open/missing beat before the earliest protected start" for each player (scan starts at `resolvedIndex + 1`). `executeBeatsWithInteractions` now snapshots the pre-mutation timeline and restores prior non-open entries when a replay mutation re-opens those beats; keep this guard wired whenever adding new timeline mutators.
-- Action-set pruning guardrail: `applyActionSetToBeats` must stop trailing-entry cleanup when it reaches a later committed start (`rotationSource:'selected'` or `comboStarter`) so stale cleanup cannot erase future committed starts.
-- Combo prompts pause on the `Co` beat before any action/E resolution, and choosing to continue skips land refresh/draw for that player at that beat.
-- Combo continuation is tied to a specific active card (`cardId` on action list/beat entry); only hits from that card can open the combo prompt.
-- Throw interactions are tagged from card text (`throw` keyword in the active card's active/passive text and the passive card's passive text only); combo prompts only open on non-throw hits.
-- Hip Throw/Tackle passives grant throw immunity while their action set is active (non-`E`), blocking throws from any direction; keep `cardText/combatModifiers` mirrored server/client.
-- Iron Will passive reduces KBF by 1 (min 0) on hits, including projectiles, while the action set is active; hand-trigger use still sets KBF to 0.
-- Same-beat `DamageIcon` interruption frames still count as active for hit-reactive passive effects (for example Hammer reflection, Vengeance on-hit adrenaline, passive KBF reduction, and KBF-to-discard/discard-immunity checks), but throw immunity from Hip Throw/Tackle must remain inactive on `DamageIcon`; keep this split mirrored in `src/public` `cardText/combatModifiers` + `discardEffects` and execute/timeline playback checks.
-- Jab active `{i}` draws 1 by emitting a `draw` interaction on the bracketed attack step.
-- Hit-driven discard effects (ex: Trip active hit discard, Sweeping Strike passive KBF->discard) must still enqueue discard interactions when that beat later replays as resolved history after a hand-trigger pause; do not drop them solely because `beatIndex <= resolvedIndex`.
-- Iron Will/Jab draw interactions may need to be reconstructed on resolved-history replays when missing (for example after hand-trigger pauses), so draws are not silently lost.
-- Active ability card text is handled in `src/game/cardText/activeAbility.ts` + `public/game/cardText/activeAbility.js`; Counter Attack shifts the selected rotation to after `{i}` by clearing the start rotation and applying a forced rotation on the next entry.
-- The combo modal is filtered to the actor's beat entry by userId/username; keep interaction actor resolution aligned with roster identifiers.
-- Cards can opt out of throw keyword detection by id (e.g., `grappling-hook`).
-- Grappling Hook uses `cardStartTerrain` plus adjacency to gate its conditional throw (throw only if the action set started on land and the hit target is directly adjacent on the `{c}` beat), and its `{i}` bracketed charge stops at the first land tile or target in front.
-- `{m}` symbol effects: Burning Strike passive fire and Gigantic Staff abyss conversion only trigger on exact `m` tokens; do not trigger from `2m`/`Bm`.
-- Bow Shot passive arrows trigger on any successful movement token (`m` type, including `m`/`2m`/`Bm`) and spawn on the mover's pre-move hex.
-- Grappling Hook passive flips landed exact `{a}` hits to the opposite side of the attacker before knockback; keep the inversion logic in sync between `src/game/execute.ts` and `public/game/timelinePlayback.js`.
-- Pending throw interactions must surface the throw modal even if the beat is already resolved; don't filter throws by resolved index in the UI selector.
-- Skipped combos keep the `Co` symbol on the timeline and are marked with `comboSkipped` for UI greying; do not replace with `W`.
-- Server-side deck state is tracked per game (in memory); refreshes resolve only when the earliest `E` is on land (gated by `lastRefreshIndex`), clearing movement exhaustion and drawing up to max hand size.
-- Focused cards reduce max hand size (`MAX_HAND_SIZE - focusedAbilityCardIds.size`, floored at 0) for `{E}` refresh calculations and UI max-hand display.
-- Non-refresh hand sync (draw/discard card text, hand triggers, and movement exhaustion thresholds on card use) must use the base max hand size, not the focus-reduced cap.
-- Rewind focus blocks land refresh entirely until focus ends (return/knockback/stun), even if the earliest `E` is on land.
-- Land refresh checks should use the last known beat location at/ before the earliest `E`; avoid `public.characters` positions or you will refresh on abyss.
-- Land refresh should be keyed only by `lastRefreshIndex` + earliest `E` beat; skip refresh entirely while `pendingActions.beatIndex` matches the earliest `E`.
-- If a hit or custom interaction rewrites a player timeline forward, clamp that player's pending refresh beat to their current first `E` or it will block subsequent action submissions.
-- Knockback distance uses accumulated damage after the hit plus card KBF: `KBF=0 -> 0`, `KBF=1 -> 1`, `KBF>1 -> max(1, floor((damage * KBF) / 10))`; hits record `BeatEntry.consequences` with damage delta + actual knocked steps and only rewrite the timeline starting on the next beat if the target already acted.
-- Damage/knockback overlays on the timeline come from `BeatEntry.consequences`, not accumulated `damage`.
-- Healing overlays on the timeline also come from `BeatEntry.consequences`; Healing Harmony `{X1}` must write a negative `damageDelta` (`< 0`) or the green heal capsule will not render.
-- Timeline hit badge placement is tuned via `KNOCKBACK_BADGE_OUTSET`, `DAMAGE_BADGE_OUTSET`, and `BADGE_NUDGE_X` in `public/game/timeIndicatorView.js`.
-- Attack damage/KBF are taken from the active card and stored on beat entries (`attackDamage`, `attackKbf`); both server and client resolution read from those fields.
-- Match outcomes live in `public.matchOutcome`: distance loss uses the earliest beat where a character is more than 4 hexes from land, and no-cards abyss loss only triggers at the earliest `E` for that player.
-- End-of-match markers are synchronized on one beat via `applyMatchOutcomeToBeats` (`src/game/matchEndRules.ts`): losses place `Death` for loser + `Victory` for winner, draw agreements place `Handshake` for both, and all later beats are trimmed for both players.
-- In-game menu match actions use `POST /api/v1/game/forfeit` and `POST /api/v1/game/draw-offer`; draw offers are rate-limited by a 30-second per-offerer server cooldown. Human opponents receive a pending `draw-offer` interaction, while bots auto-resolve immediately (`easy`: always accept, `medium`: accept when `botDamage >= playerDamage - 10`, `hard`: accept when `botDamage >= playerDamage + 10`).
-- The Game Over Continue button calls `/api/v1/match/:id/exit` and only removes the local player from the match; the other player stays in-game until they exit or the match is completed.
-- When knockback has already been applied, re-execution must not erase actions placed after the trailing `E`; only the damage-icon window is authoritative.
-- `executeBeats` seeds from `public.characters` (start-of-timeline); do not seed from beat 0 entries because beats store end-of-beat locations and will drift on re-exec.
-- Node test runner reads from `dist`; run `npm run build` (or `tsc`) before `node --test test` when working on TS source.
-- Timeline row separators must render before portrait rings so the local player highlight is visually on top.
-- Board damage capsules are offset outside the ring and drawn without clipping so they sit over the border.
-- Name capsule sizing is centralized in `public/game/portraitBadges.js`; pass config overrides for board vs timeline to keep consistency.
-- `drawNameCapsule` returns geometry metadata (`textLeft`/`textRight`); anchor adjacent token badges (like ability-hand count) to the text bounds, not full capsule width, so icon spacing remains stable across different usernames.
-- Timeline playback timing is tuned in `public/game/timelinePlayback.js` via `ACTION_DURATION_MS`, `MIN_STEP_DURATION_MS`, and swipe/hit/knockback windows; slider speed scales per-step duration (all channels share the same normalized step progress).
-- Abyss grid borders are rendered via `drawAbyssGrid` in `public/game/abyssRendering.mjs`; keep `minLineWidth = max(baseLineWidth * 0.2, 1 / (dpr * scale))` to avoid vanishing outlines at high zoom.
-- Trails are drawn as tapered polygons (sharp edges) in `public/game/renderer.js` instead of stroked lines; keep this in mind if changing trail caps or widths.
-- Board portraits render in greyscale when the beat action is `DamageIcon`/`knockbackIcon`; keep the renderer's action tag matching server output.
-- Timeline playback base state should come from the beat immediately before the selected beat (`beatIndex - 1`); never seed from the selected uncalculated beat or `public.characters`, or playback can jump to end-of-beat state and then rewind.
-- Per-step `finalActorPosition`/`finalActorDamage` must come from the simulated actor state at the end of that step, not from the beat entry's final resolved values, or early-priority actions can rubber-band.
-- Timeline auto-advance while playing must require `status.isCalculated && status.isComplete`; unresolved/open beats are stop points and should never be auto-skipped.
-- Client debug logs are opt-in only; enable with `localStorage.setItem('hexstrike:diag','1')` and optional beat filter `localStorage.setItem('hexstrike:diag:beat','<beatIndex>')`.
-- Damage previews during hit shakes are drawn via `displayDamage` using pre-step damage to avoid double-counting when the step completes.
-- Map panning/zooming is bound to the game area and must ignore UI elements like action cards, slots, or rotation controls; update `PAN_BLOCK_SELECTORS` in `public/game/controls.js` when adding new HUD controls.
-- Find Game is disabled until a deck is selected; the selected deck ID is stored in cookies and its `characterId` plus movement/ability lists are sent with `/api/v1/lobby/join`.
-- Main menu hamburger/side-menu assets are intentionally kept in place but disabled (`MENU_ENABLED = false`) in `public/menu.js` and hidden in `public/index.html`; to restore, set `MENU_ENABLED = true` and remove `hidden`/`aria-hidden` from `#menuToggle` if needed.
-- Lobby queue selector includes `botHardQueue` (`Strike-bot (Hard)`), `botMediumQueue` (`Hex-bot (Medium)`), and `botEasyQueue` (`Bot-bot (Easy)`); `public/queue.js` joins/leaves the selected queue instead of hardcoding quickplay.
-- Bot queues create a per-match bot user (`Strike-bot`/`Hex-bot`/`Bot-bot`) with one random base deck (first three catalog decks), and bot choices are simulated server-side using cloned state; missing opponent actions during bot simulation are assumed to be `W`.
-- Bot choice selection is weighted-random by score with difficulty-specific filtering: hard weights top 5, medium weights all candidates, easy removes top 10 then weights remaining candidates; if all considered scores are non-positive, selection falls back to uniform probabilities across the considered candidates.
-- Bot failure path emits `bot:error` to human players and writes verbose `easy-bot` events to `temp-logs/events.jsonl`; keep this wired when changing bot orchestration.
-- Tutorial queue bot steps are strict card submissions; when changing `TUTORIAL_BOT_ACTION_SEQUENCE`, keep the same card ids available in `TUTORIAL_BOT_DECK` opening hands (top movement/ability draw order) or scripted submissions can fail with `card-unavailable`.
-- Tutorial flow intentionally disables Guard continue prompts and suppresses extra combo prompts after the scripted combo step; keep `applyTutorialGuardContinueAvailability` and `applyTutorialComboAvailability` wired anywhere execution availability maps are rebuilt.
-- Tutorial matches auto-complete after scripted player actions plus scripted interactions are consumed by applying an explicit outcome via `maybeCompleteTutorialMatch`; preserve this call after action-set and interaction resolution paths to avoid tutorial deadlocks.
-- `/api/v1/lobby/join` rejects decks unless they contain exactly 4 movement cards and exactly 12 ability cards; keep `public/cards/cards.json` base decks and deck-builder output aligned with this.
-- Server deck parsing (`parseDeckDefinition`) also enforces `Step` as mandatory and allows at most one signature movement card (`grappling-hook`/`fleche`/`leap`); keep these constraints aligned with `public/decks.js` (`REQUIRED_MOVEMENT_CARD_ID` and `UNIQUE_MOVEMENT_CARD_IDS`).
-- Base deck definitions from `public/cards/cards.json` are merged with cookie-stored player-created decks on load in `public/deckStore.js`; keep the merge logic when adding new base decks.
-- Character powers are defined in `public/characters/characters.json`; when adding/changing effects, keep `src/game/characterPowers.ts`, `src/game/execute.ts`, and `public/game/timelinePlayback.js` behavior in sync.
-- Accumulated-damage character effects (ex: `knockbackBonusPerTenDamage`) use the attacker's current damage, seeded from `public.characters[*].damage` at `executeBeats` start; test fixtures must set baseline `character.damage` explicitly.
-
-## PR expectations
-- Summarize rule/engine changes clearly; include replay determinism notes when relevant.
-- Include tests for new behaviors and note coverage in the PR description.
-
-# Wrap up
-When the user says "let's wrap this up" or something along those lines, execute the following steps:
-- Refactor the most recently written code as necessary to make sure these methods are properly abstracted, encapsulated, built in extensible ways, and use the proper separations of controls/views/states on the front end UI. 
-- Add/remove/update the gotchas into the AGENTS.md file graph so that we don't run into similar errors in the future. 
-- Update the AGENTS.md file with any other relevant information to better understand the codebase. 
-- Add any required tests (if needed).
-- Update the Documentation map files as needed. 
-
+- `src/game/AGENTS.md`: server rules, timeline integrity, shared registries, and execution gotchas.
+- `public/game/AGENTS.md`: playback/UI boundaries, prompt flow, and rendering-specific gotchas.
+- `docs/AGENTS.md`: documentation authority and sync rules.

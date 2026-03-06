@@ -1,0 +1,37 @@
+import type { ActionListItem, CardDefinition } from '../../../types';
+import { applyActiveAbilityCardText } from './activeAbility';
+import { applyActiveMovementCardText } from './activeMovement';
+import { applyPassiveAbilityCardText } from './passiveAbility';
+import { applyPassiveMovementCardText } from './passiveMovement';
+
+export const applyActiveCardTextEffects = (
+  actionList: ActionListItem[],
+  activeCard: CardDefinition | undefined,
+  rotationLabel: string,
+  submittedAdrenaline = 0,
+): ActionListItem[] => {
+  if (!activeCard) return actionList;
+  if (activeCard.type === 'movement') {
+    return applyActiveMovementCardText(actionList, activeCard, rotationLabel, submittedAdrenaline);
+  }
+  if (activeCard.type === 'ability') {
+    return applyActiveAbilityCardText(actionList, activeCard, rotationLabel, submittedAdrenaline);
+  }
+  return actionList;
+};
+
+export const applyPassiveCardTextEffects = (
+  actionList: ActionListItem[],
+  activeCard: CardDefinition | undefined,
+  passiveCard: CardDefinition | undefined,
+  rotationLabel: string,
+): ActionListItem[] => {
+  if (!passiveCard) return actionList;
+  if (passiveCard.type === 'movement') {
+    return applyPassiveMovementCardText(actionList, activeCard, passiveCard, rotationLabel);
+  }
+  if (passiveCard.type === 'ability') {
+    return applyPassiveAbilityCardText(actionList, activeCard, passiveCard, rotationLabel);
+  }
+  return actionList;
+};
