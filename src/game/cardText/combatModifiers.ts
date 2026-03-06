@@ -16,7 +16,13 @@ const normalizeActionLabel = (action: string | null | undefined): string => {
   return trimmed;
 };
 
-const isActionActive = (action: string | null | undefined): boolean => {
+const isActionActiveForPassiveModifiers = (action: string | null | undefined): boolean => {
+  const label = normalizeActionLabel(action).toUpperCase();
+  if (!label) return false;
+  return label !== 'E';
+};
+
+const isActionActiveForThrowImmunity = (action: string | null | undefined): boolean => {
   const label = normalizeActionLabel(action).toUpperCase();
   if (!label) return false;
   return label !== 'E' && label !== DAMAGE_ICON_ACTION;
@@ -25,12 +31,12 @@ const isActionActive = (action: string | null | undefined): boolean => {
 export const isThrowImmune = (entry: PassiveCardEntry | null | undefined): boolean => {
   const passiveCardId = entry?.passiveCardId ?? '';
   if (!passiveCardId || !THROW_IMMUNE_PASSIVE_CARD_IDS.has(passiveCardId)) return false;
-  return isActionActive(entry?.action);
+  return isActionActiveForThrowImmunity(entry?.action);
 };
 
 export const getPassiveKbfReduction = (entry: PassiveCardEntry | null | undefined): number => {
   const passiveCardId = entry?.passiveCardId ?? '';
   if (!passiveCardId) return 0;
   const reduction = PASSIVE_KBF_REDUCTION.get(passiveCardId) ?? 0;
-  return reduction && isActionActive(entry?.action) ? reduction : 0;
+  return reduction && isActionActiveForPassiveModifiers(entry?.action) ? reduction : 0;
 };

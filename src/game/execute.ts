@@ -305,6 +305,20 @@ const isActionActive = (action: string | null | undefined) => {
   if (!label) return false;
   return label !== DEFAULT_ACTION && label !== DAMAGE_ICON_ACTION.toUpperCase();
 };
+const isPassiveActiveForSameBeatHit = (
+  entry: BeatEntry | null | undefined,
+  passiveCardId: string,
+) => {
+  if (!entry || entry.passiveCardId !== passiveCardId) return false;
+  if (isActionActive(entry.action)) return true;
+  const actionLabel = normalizeActionLabel(entry.action ?? '').toUpperCase();
+  return actionLabel === DAMAGE_ICON_ACTION.toUpperCase();
+};
+const isHammerPassiveActive = (entry: BeatEntry | null | undefined) => {
+  return isPassiveActiveForSameBeatHit(entry, HAMMER_CARD_ID);
+};
+const isVengeancePassiveActive = (entry: BeatEntry | null | undefined) =>
+  isPassiveActiveForSameBeatHit(entry, VENGEANCE_CARD_ID);
 const isOpenBeatAction = (action: string | null | undefined) => {
   const label = normalizeActionLabel(action ?? '').toUpperCase();
   return label === DEFAULT_ACTION || label === FOCUS_ACTION;
@@ -3511,8 +3525,7 @@ export const executeBeatsWithInteractions = (
           }
         }
       }
-      const hasHammerPassive =
-        targetEntry?.passiveCardId === HAMMER_CARD_ID && isActionActive(targetEntry.action);
+      const hasHammerPassive = isHammerPassiveActive(targetEntry);
       const blockDirection = getDirectionIndex({ q: -forward.q, r: -forward.r });
       if (blockDirection != null) {
         const targetKey = coordKey(targetState.position);
@@ -3613,7 +3626,7 @@ export const executeBeatsWithInteractions = (
       const damageReduction = getHealingHarmonyReduction(targetEntry);
       const arrowDamage = ARROW_DAMAGE;
       const adjustedDamage = applyCharacterDamage(targetId, Math.max(0, arrowDamage - damageReduction));
-      if (targetEntry?.passiveCardId === VENGEANCE_CARD_ID && isActionActive(targetEntry.action)) {
+      if (isVengeancePassiveActive(targetEntry)) {
         applyAdrenalineDeltaToState(targetState, 2);
       }
       const passiveKbfReduction = getPassiveKbfReduction(targetEntry);
@@ -3777,12 +3790,11 @@ export const executeBeatsWithInteractions = (
         const targetCharacter = characterById.get(counter.attackerId);
         const targetEntry = targetCharacter ? findEntryForCharacter(beat, targetCharacter) : null;
         const attackerState = state.get(counter.defenderId);
-        const hasHammerPassive =
-          targetEntry?.passiveCardId === HAMMER_CARD_ID && isActionActive(targetEntry.action);
+        const hasHammerPassive = isHammerPassiveActive(targetEntry);
         const damageReduction = getHealingHarmonyReduction(targetEntry);
         const counterDamage = Math.max(0, counter.damage + getAttackDamageBonusByUser(counter.defenderId));
         const adjustedDamage = applyCharacterDamage(counter.attackerId, Math.max(0, counterDamage - damageReduction));
-        if (targetEntry?.passiveCardId === VENGEANCE_CARD_ID && isActionActive(targetEntry.action)) {
+        if (isVengeancePassiveActive(targetEntry)) {
           applyAdrenalineDeltaToState(targetState, 2);
         }
         const passiveKbfReduction = getPassiveKbfReduction(targetEntry);
@@ -4641,8 +4653,7 @@ export const executeBeatsWithInteractions = (
               if (targetState) {
                 const preserveAction =
                   executedActors.has(targetId) && (resolvedTargetEntry?.action ?? DEFAULT_ACTION) !== DAMAGE_ICON_ACTION;
-                const hasHammerPassive =
-                  resolvedTargetEntry?.passiveCardId === HAMMER_CARD_ID && isActionActive(resolvedTargetEntry?.action);
+                const hasHammerPassive = isHammerPassiveActive(resolvedTargetEntry);
                 const isSmokeBombStunHit =
                   entry.cardId === SMOKE_BOMB_CARD_ID &&
                   isBracketedAction(entry.action ?? '') &&
@@ -4689,10 +4700,7 @@ export const executeBeatsWithInteractions = (
                 if (grantsHitAdrenaline) {
                   applyAdrenalineDelta(1);
                 }
-                if (
-                  resolvedTargetEntry?.passiveCardId === VENGEANCE_CARD_ID &&
-                  isActionActive(resolvedTargetEntry.action)
-                ) {
+                if (isVengeancePassiveActive(resolvedTargetEntry)) {
                   applyAdrenalineDeltaToState(targetState, 2);
                 }
                 if (isThrow) {

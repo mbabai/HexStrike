@@ -37,6 +37,32 @@ test('executeBeats does not inject placeholder entries for missing characters', 
   assert.equal(beat0.some((entry) => entry.username === 'beta'), false);
 });
 
+test('executeBeats applies hammer passive reflection when the target entry is same-beat DamageIcon', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [
+    [
+      buildEntry('alpha', 'a', 20, characters[0].position, characters[0].facing, '', 3, 0),
+      buildEntry('beta', 'DamageIcon', 0, characters[1].position, characters[1].facing),
+    ],
+  ];
+  beats[0][1].cardId = 'step';
+  beats[0][1].passiveCardId = 'hammer';
+
+  const result = executeBeats(beats, characters);
+  const beat0 = result.beats[0] || [];
+  const alphaEntry = beat0.find((entry) => entry.username === 'alpha');
+  const betaEntry = beat0.find((entry) => entry.username === 'beta');
+
+  assert.ok(alphaEntry);
+  assert.ok(betaEntry);
+  assert.equal(alphaEntry.damage, 2);
+  assert.equal(betaEntry.damage, 3);
+});
+
 test('executeBeats applies rotations before action resolution even when disabled', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
@@ -3626,6 +3652,28 @@ test('executeBeats grants vengeance passive adrenaline when hit by a melee attac
   beats[0][1].cardId = 'step';
   beats[0][1].passiveCardId = 'vengeance';
   beats[0][1].rotationSource = 'selected';
+
+  const result = executeBeats(beats, characters);
+  const betaEntry = (result.beats[0] || []).find((entry) => entry.username === 'beta');
+
+  assert.ok(betaEntry);
+  assert.equal(betaEntry.adrenaline, 3);
+});
+
+test('executeBeats grants vengeance passive adrenaline when same-beat entry is DamageIcon', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, adrenaline: 1, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [[
+    buildEntry('alpha', 'a', 90, characters[0].position, characters[0].facing, '', 2, 0),
+    buildEntry('beta', 'DamageIcon', 0, characters[1].position, characters[1].facing),
+  ]];
+  beats[0][0].cardId = 'jab';
+  beats[0][0].passiveCardId = 'step';
+  beats[0][1].cardId = 'step';
+  beats[0][1].passiveCardId = 'vengeance';
 
   const result = executeBeats(beats, characters);
   const betaEntry = (result.beats[0] || []).find((entry) => entry.username === 'beta');
