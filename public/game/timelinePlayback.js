@@ -530,7 +530,9 @@ const isActionSetStart = (entry) =>
 
 const getHealingHarmonyReduction = (entry) => {
   if (!entry || entry.passiveCardId !== HEALING_HARMONY_CARD_ID) return 0;
-  return isActionActive(entry.action) ? 2 : 0;
+  const actionLabel = normalizeActionLabel(entry.action ?? '').toUpperCase();
+  if (!actionLabel || actionLabel === DEFAULT_ACTION) return 0;
+  return 2;
 };
 
 const parseActionTokens = (action) => {

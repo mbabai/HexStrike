@@ -160,7 +160,6 @@ export const drawAbyssGrid = ({
     for (let q = qMin; q <= qMax; q += 1) {
       const { x, y } = axialToPixel(q, r, size);
       drawHexPath(ctx, x, y, size);
-      ctx.fill();
       if (!land.length) {
         ctx.lineWidth = baseLineWidth;
         ctx.stroke();

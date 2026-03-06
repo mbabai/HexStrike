@@ -1720,7 +1720,7 @@ test('executeBeats does not apply throw immunity during DamageIcon interruption 
   assert.equal(throwInteraction.status, 'pending');
 });
 
-test('executeBeats does not apply healing harmony passive damage reduction during DamageIcon interruption frames', () => {
+test('executeBeats applies healing harmony passive damage reduction on DamageIcon interruption frames', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
     { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
@@ -1739,8 +1739,8 @@ test('executeBeats does not apply healing harmony passive damage reduction durin
   const hit = (betaEntry?.consequences ?? []).find((effect) => effect?.type === 'hit');
 
   assert.ok(betaEntry);
-  assert.equal(betaEntry.damage, 3);
-  assert.deepEqual(hit, { type: 'hit', damageDelta: 3, knockbackDistance: 0, sourceUserId: 'alpha' });
+  assert.equal(betaEntry.damage, 1);
+  assert.deepEqual(hit, { type: 'hit', damageDelta: 1, knockbackDistance: 0, sourceUserId: 'alpha' });
 });
 
 test('executeBeats still creates tackle throw interaction when thrower is hit with KBF 0', () => {

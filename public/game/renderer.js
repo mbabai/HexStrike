@@ -50,6 +50,15 @@ const TOKEN_IMAGE_SOURCES = {
   'card-in-hand': '/public/images/CardInHand.png',
   adrenaline: '/public/images/Adrenaline.png',
 };
+const BACKGROUND_IMAGE_SOURCES = {
+  stars: '/public/images/stars.jpg',
+  clouds: '/public/images/Clouds.png',
+};
+const CLOUD_PARALLAX_FACTOR = 0.45;
+const CLOUD_PARALLAX_SCALE = 4;
+const CLOUD_TILE_OVERLAP_RATIO = 0.25;
+const CLOUD_TILE_ANCHOR_X = 0.5;
+const CLOUD_TILE_ANCHOR_Y = 0.5;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const coordKey = (coord) => `${coord?.q},${coord?.r}`;
@@ -130,6 +139,35 @@ const withAlpha = (color, alpha) => {
   if (!rgb) return color;
   const safe = clamp(alpha, 0, 1);
   return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${safe})`;
+};
+
+const hasLoadedImage = (image) => Boolean(image?.complete && image?.naturalWidth > 0);
+
+const drawImageFullscreen = (ctx, image, width, height) => {
+  if (!hasLoadedImage(image) || width <= 0 || height <= 0) return false;
+  ctx.drawImage(image, 0, 0, width, height);
+  return true;
+};
+
+const drawImageParallaxTiled = (ctx, image, width, height, offsetX, offsetY) => {
+  if (!hasLoadedImage(image) || width <= 0 || height <= 0) return false;
+  const tileWidth = Math.max(1, Math.floor(width * CLOUD_PARALLAX_SCALE));
+  const tileHeight = Math.max(1, Math.floor(height * CLOUD_PARALLAX_SCALE));
+  const overlap = clamp(CLOUD_TILE_OVERLAP_RATIO, 0, 0.95);
+  const stepX = Math.max(1, Math.floor(tileWidth * (1 - overlap)));
+  const stepY = Math.max(1, Math.floor(tileHeight * (1 - overlap)));
+  const anchorShiftX = tileWidth * CLOUD_TILE_ANCHOR_X;
+  const anchorShiftY = tileHeight * CLOUD_TILE_ANCHOR_Y;
+  const normalizedX = (((offsetX + anchorShiftX) % stepX) + stepX) % stepX;
+  const normalizedY = (((offsetY + anchorShiftY) % stepY) + stepY) % stepY;
+  const startX = normalizedX - tileWidth;
+  const startY = normalizedY - tileHeight;
+  for (let y = startY; y < height + tileHeight; y += stepY) {
+    for (let x = startX; x < width + tileWidth; x += stepX) {
+      ctx.drawImage(image, x, y, tileWidth, tileHeight);
+    }
+  }
+  return true;
 };
 
 const normalizeDegrees = (value) => {
@@ -1009,6 +1047,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
   const viewport = { width: 0, height: 0, dpr: window.devicePixelRatio || 1 };
   const characterArt = new Map();
   const tokenArt = new Map();
+  const backgroundArt = new Map();
   const boardHandTriggerCardArt = new Map();
   const boardHandTriggerRevealByKey = new Map();
   const boardHandTriggerCardBackImage = new Image();
@@ -1036,6 +1075,17 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     return image;
   };
 
+  const getBackgroundArt = (layer) => {
+    if (!layer) return null;
+    if (backgroundArt.has(layer)) return backgroundArt.get(layer);
+    const src = BACKGROUND_IMAGE_SOURCES[layer];
+    if (!src) return null;
+    const image = new Image();
+    image.src = src;
+    backgroundArt.set(layer, image);
+    return image;
+  };
+
   const getBoardHandTriggerCardArt = (cardName) => {
     const key = `${cardName ?? ''}`.trim();
     if (!key) return null;
@@ -1054,12 +1104,29 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     canvas.height = Math.max(1, Math.floor(viewport.height * viewport.dpr));
   };
 
-  const clear = () => {
+  const clear = (viewState) => {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (theme.background) {
+    let drewBaseLayer = false;
+    const stars = getBackgroundArt('stars');
+    if (stars) {
+      drewBaseLayer = drawImageFullscreen(ctx, stars, canvas.width, canvas.height);
+    }
+    if (!drewBaseLayer && theme.background) {
       ctx.fillStyle = theme.background;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    const clouds = getBackgroundArt('clouds');
+    if (clouds) {
+      const parallaxOffsetX =
+        (Number.isFinite(viewState?.offset?.x) ? viewState.offset.x : 0) *
+        viewport.dpr *
+        CLOUD_PARALLAX_FACTOR;
+      const parallaxOffsetY =
+        (Number.isFinite(viewState?.offset?.y) ? viewState.offset.y : 0) *
+        viewport.dpr *
+        CLOUD_PARALLAX_FACTOR;
+      drawImageParallaxTiled(ctx, clouds, canvas.width, canvas.height, parallaxOffsetX, parallaxOffsetY);
     }
   };
 
@@ -1082,7 +1149,7 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
     const land = gameState?.state?.public?.land?.length ? gameState.state.public.land : LAND_HEXES;
     const landInfoCache = new Map();
 
-    clear();
+    clear(viewState);
 
     ctx.setTransform(
       viewport.dpr * viewState.scale,
