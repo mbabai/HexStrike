@@ -166,6 +166,7 @@ export const createActionHud = ({
       setPlayModalBeatPointer: () => {},
       setPlayedPreviewCards: () => {},
       setPlayedPreviewRotation: () => {},
+      setPlayedPreviewSubmittedAdrenaline: () => {},
       setAdrenalinePool: () => {},
     };
   }
@@ -196,6 +197,7 @@ export const createActionHud = ({
     suppressClickCardId: null,
     adrenalinePool: MIN_ADRENALINE,
     submittedAdrenaline: MIN_ADRENALINE,
+    playedPreviewSubmittedAdrenaline: null,
   };
   const activeSlotContainer = activeSlot?.closest?.('.action-slot-active') ?? null;
   const passiveSlotContainer = passiveSlot?.closest?.('.action-slot-passive') ?? null;
@@ -475,6 +477,12 @@ export const createActionHud = ({
     const rounded = Math.round(parsed);
     return Math.max(MIN_ADRENALINE, Math.min(MAX_ADRENALINE, rounded));
   };
+  const parsePreviewSubmittedAdrenaline = (value) => {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return null;
+    return clampAdrenaline(parsed);
+  };
   const getMaxSubmittedAdrenaline = () => clampAdrenaline(state.adrenalinePool);
   const clampSubmittedAdrenaline = (value) =>
     Math.max(MIN_ADRENALINE, Math.min(getMaxSubmittedAdrenaline(), clampAdrenaline(value)));
@@ -494,6 +502,10 @@ export const createActionHud = ({
     if (resolvedAdrenalineValue) {
       resolvedAdrenalineValue.textContent = `${state.submittedAdrenaline}`;
     }
+    const dialAdrenaline = state.turnActive
+      ? clampSubmittedAdrenaline(state.submittedAdrenaline)
+      : parsePreviewSubmittedAdrenaline(state.playedPreviewSubmittedAdrenaline);
+    wheel.setCenterAdrenaline?.(dialAdrenaline);
   };
   const setSubmittedAdrenaline = (value) => {
     state.submittedAdrenaline = clampSubmittedAdrenaline(value);
@@ -502,6 +514,12 @@ export const createActionHud = ({
   const setAdrenalinePool = (value) => {
     state.adrenalinePool = clampAdrenaline(value);
     state.submittedAdrenaline = clampSubmittedAdrenaline(state.submittedAdrenaline);
+    updateAdrenalineUi();
+  };
+  const setPlayedPreviewSubmittedAdrenaline = (value) => {
+    const nextValue = parsePreviewSubmittedAdrenaline(value);
+    if (state.playedPreviewSubmittedAdrenaline === nextValue) return;
+    state.playedPreviewSubmittedAdrenaline = nextValue;
     updateAdrenalineUi();
   };
   const getAdrenalineFromClientY = (clientY) => {
@@ -2040,6 +2058,7 @@ export const createActionHud = ({
     setPlayModalBeatPointer,
     setPlayedPreviewCards,
     setPlayedPreviewRotation,
+    setPlayedPreviewSubmittedAdrenaline,
     setAdrenalinePool,
   };
 };

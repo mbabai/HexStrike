@@ -7,8 +7,26 @@ const ROTATION_LAYOUT = {
   L2: { x: 79.0, y: 62.9, angle: 240 },
   L1: { x: 79.0, y: 34.8, angle: 300 },
 };
+const ROTATION_CENTER = (() => {
+  const points = Object.values(ROTATION_LAYOUT);
+  if (!points.length) return { x: 105.0, y: 48.85 };
+  const totals = points.reduce(
+    (sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }),
+    { x: 0, y: 0 },
+  );
+  return { x: totals.x / points.length, y: totals.y / points.length };
+})();
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const WEDGE_FRAME_POINTS = '0,0 100,0 64.5,100 35.5,100';
+const MIN_ADRENALINE = 0;
+const MAX_ADRENALINE = 10;
+
+const normalizeAdrenalineValue = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  const rounded = Math.round(parsed);
+  return Math.max(MIN_ADRENALINE, Math.min(MAX_ADRENALINE, rounded));
+};
 
 const createWedgeFrame = () => {
   const frame = document.createElementNS(SVG_NS, 'svg');
@@ -29,7 +47,23 @@ export const buildRotationWheel = (container, onSelect) => {
   container.innerHTML = '';
   container.setAttribute('role', 'radiogroup');
   container.setAttribute('aria-label', 'Rotation selector');
+  container.style.setProperty('--rotation-center-x', `${ROTATION_CENTER.x / 210}`);
+  container.style.setProperty('--rotation-center-y', `${ROTATION_CENTER.y / 297}`);
   const wedges = [];
+
+  const centerAdrenaline = document.createElement('div');
+  centerAdrenaline.className = 'rotation-wheel-center-adrenaline';
+  centerAdrenaline.setAttribute('aria-hidden', 'true');
+  centerAdrenaline.hidden = true;
+  const centerAdrenalineIcon = document.createElement('img');
+  centerAdrenalineIcon.src = '/public/images/Adrenaline.png';
+  centerAdrenalineIcon.alt = '';
+  const centerAdrenalineValue = document.createElement('span');
+  centerAdrenalineValue.className = 'rotation-wheel-center-adrenaline-value';
+  centerAdrenalineValue.textContent = '0';
+  centerAdrenaline.appendChild(centerAdrenalineIcon);
+  centerAdrenaline.appendChild(centerAdrenalineValue);
+  container.appendChild(centerAdrenaline);
 
   ROTATION_LABELS.forEach((label, index) => {
     const wedge = document.createElement('button');
@@ -133,10 +167,23 @@ export const buildRotationWheel = (container, onSelect) => {
 
   updateAvailability();
 
+  const setCenterAdrenaline = (value) => {
+    const normalized = normalizeAdrenalineValue(value);
+    if (normalized === null) {
+      centerAdrenaline.hidden = true;
+      centerAdrenaline.classList.remove('is-visible');
+      return;
+    }
+    centerAdrenalineValue.textContent = `${normalized}`;
+    centerAdrenaline.hidden = false;
+    centerAdrenaline.classList.add('is-visible');
+  };
+
   return {
     getValue: () => (selectedIndex === null ? null : ROTATION_LABELS[selectedIndex]),
     setValue,
     clear: () => updateSelection(null),
     setAllowedRotations,
+    setCenterAdrenaline,
   };
 };

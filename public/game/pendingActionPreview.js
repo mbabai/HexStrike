@@ -2,7 +2,12 @@ import { buildCardActionList } from './cardText/actionListBuilder.js';
 
 const buildPendingActionList = (activeCard, passiveCard, rotation, adrenaline = 0) => {
   const rotationLabel = `${rotation ?? ''}`.trim();
-  return buildCardActionList(activeCard, passiveCard, rotationLabel, { submittedAdrenaline: adrenaline });
+  const safeAdrenaline = Number.isFinite(Number(adrenaline)) ? Math.max(0, Math.min(10, Math.round(Number(adrenaline)))) : 0;
+  const actionList = buildCardActionList(activeCard, passiveCard, rotationLabel, { submittedAdrenaline: safeAdrenaline });
+  return actionList.map((entry) => ({
+    ...entry,
+    submittedAdrenaline: safeAdrenaline,
+  }));
 };
 
 const isUserSubmitted = (pending, userId) => {

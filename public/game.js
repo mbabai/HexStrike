@@ -8,6 +8,7 @@ import {
   getPlayBeatSlotForCharacter,
   getPlayedCardPairForCharacterAtBeat,
   getPlayedRotationForCharacterAtBeat,
+  getPlayedSubmittedAdrenalineForCharacterAtBeat,
   getTimeIndicatorLayout,
   setTimeIndicatorPlayerCount,
 } from './game/timeIndicatorView.js';
@@ -888,6 +889,7 @@ export const initGame = () => {
       actionHud.setPlayModalBeatPointer?.(null);
       actionHud.setPlayedPreviewCards?.(null, null);
       actionHud.setPlayedPreviewRotation?.(null);
+      actionHud.setPlayedPreviewSubmittedAdrenaline?.(null);
       actionHud.setAdrenalinePool?.(0);
       return;
     }
@@ -899,6 +901,7 @@ export const initGame = () => {
       actionHud.setPlayModalBeatPointer?.(null);
       actionHud.setPlayedPreviewCards?.(null, null);
       actionHud.setPlayedPreviewRotation?.(null);
+      actionHud.setPlayedPreviewSubmittedAdrenaline?.(null);
       actionHud.setAdrenalinePool?.(0);
       return;
     }
@@ -916,6 +919,7 @@ export const initGame = () => {
       actionHud.setPlayModalBeatPointer?.(null);
       actionHud.setPlayedPreviewCards?.(null, null);
       actionHud.setPlayedPreviewRotation?.(null);
+      actionHud.setPlayedPreviewSubmittedAdrenaline?.(null);
       actionHud.setAdrenalinePool?.(0);
       return;
     }
@@ -935,6 +939,7 @@ export const initGame = () => {
       actionHud.setPlayModalBeatPointer?.(null);
       actionHud.setPlayedPreviewCards?.(null, null);
       actionHud.setPlayedPreviewRotation?.(null);
+      actionHud.setPlayedPreviewSubmittedAdrenaline?.(null);
       actionHud.setAdrenalinePool?.(0);
       return;
     }
@@ -1018,6 +1023,10 @@ export const initGame = () => {
         localCharacter && beats.length
           ? getPlayedRotationForCharacterAtBeat(beats, localCharacter, timeIndicatorViewModel.value)
           : '';
+      const localPreviewSubmittedAdrenaline =
+        localCharacter && beats.length
+          ? getPlayedSubmittedAdrenalineForCharacterAtBeat(beats, localCharacter, timeIndicatorViewModel.value)
+          : null;
       const localFirstE = localCharacter ? getCharacterFirstEIndex(beats, localCharacter) : null;
       const comboInteraction =
         localFirstE !== null
@@ -1048,6 +1057,7 @@ export const initGame = () => {
     actionHud.setPlayModalBeatPointer?.(localPlayBeatSlot);
     actionHud.setPlayedPreviewCards?.(localPreviewActiveCard, localPreviewPassiveCard);
     actionHud.setPlayedPreviewRotation?.(localPreviewRotation);
+    actionHud.setPlayedPreviewSubmittedAdrenaline?.(localPreviewSubmittedAdrenaline);
     const comboKey = comboRequired ? `on:${Array.from(comboEligibleIds).join(',')}` : 'off';
     if (comboKey !== lastComboKey) {
       if (comboRequired && !lastComboRequired) {
@@ -1075,6 +1085,7 @@ export const initGame = () => {
       actionHud.setPlayModalBeatPointer?.(localPlayBeatSlot);
       actionHud.setPlayedPreviewCards?.(localPreviewActiveCard, localPreviewPassiveCard);
       actionHud.setPlayedPreviewRotation?.(localPreviewRotation);
+      actionHud.setPlayedPreviewSubmittedAdrenaline?.(localPreviewSubmittedAdrenaline);
     }
     lastTurnActive = isTurn;
   };

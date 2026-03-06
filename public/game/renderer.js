@@ -48,10 +48,13 @@ const TOKEN_IMAGE_SOURCES = {
   'ethereal-platform': '/public/images/EtherealPlatform.png',
   'focus-anchor': '/public/images/F.png',
   'card-in-hand': '/public/images/CardInHand.png',
+  adrenaline: '/public/images/Adrenaline.png',
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const coordKey = (coord) => `${coord?.q},${coord?.r}`;
+const MIN_ADRENALINE = 0;
+const MAX_ADRENALINE = 10;
 const WAITING_PULSE_MS = 1700;
 const BOARD_HAND_TRIGGER_FACE_DOWN_MS = 180;
 const BOARD_HAND_TRIGGER_FLIP_MS = 260;
@@ -67,9 +70,30 @@ const normalizeActionTag = (action) =>
 
 const getBeatEntryForCharacter = (beat, character) => {
   if (!Array.isArray(beat) || !character) return null;
+  const keys = new Set([character.username, character.userId].filter(Boolean));
   return (
-    beat.find((item) => item?.username === character.username || item?.username === character.userId) ?? null
+    beat.find((item) => {
+      if (!item) return false;
+      const key = item.username ?? item.userId ?? item.userID;
+      return keys.has(key);
+    }) ?? null
   );
+};
+
+const getLastBeatEntryForCharacter = (beats, character, upToIndex) => {
+  if (!Array.isArray(beats) || !beats.length || !character || !Number.isFinite(upToIndex)) return null;
+  const safeIndex = Math.max(0, Math.min(beats.length - 1, Math.round(upToIndex)));
+  for (let index = safeIndex; index >= 0; index -= 1) {
+    const entry = getBeatEntryForCharacter(beats[index], character);
+    if (entry) return entry;
+  }
+  return null;
+};
+
+const toAdrenalineCount = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(MIN_ADRENALINE, Math.min(MAX_ADRENALINE, Math.round(parsed)));
 };
 
 const toRgb = (value) => {
@@ -430,6 +454,42 @@ const drawBoardHandTriggerCardBack = (ctx, x, y, width, height, theme, cardBackI
   ctx.lineWidth = Math.max(1, height * 0.07);
   drawRoundedRect(ctx, x, y, width, height, radius);
   ctx.stroke();
+  ctx.restore();
+};
+
+const drawAdrenalineCounter = (ctx, x, y, radius, adrenaline, theme, icon, nameCapsuleRect) => {
+  if (!Number.isFinite(adrenaline)) return;
+  const safeCount = Math.max(MIN_ADRENALINE, Math.min(MAX_ADRENALINE, Math.round(adrenaline)));
+  const iconSize = Math.max(12, radius * 0.58);
+  const gap = Math.max(1, radius * 0.03);
+  const anchorY = nameCapsuleRect ? nameCapsuleRect.y + nameCapsuleRect.height / 2 : y + radius * 0.65;
+  const nameRight =
+    nameCapsuleRect && Number.isFinite(nameCapsuleRect.textRight)
+      ? nameCapsuleRect.textRight
+      : Number.isFinite(nameCapsuleRect?.x) && Number.isFinite(nameCapsuleRect?.width)
+        ? nameCapsuleRect.x + nameCapsuleRect.width
+        : null;
+  const iconX = Number.isFinite(nameRight) ? nameRight + gap : x + radius * 0.65;
+  const iconY = anchorY - iconSize / 2;
+  const label = `${safeCount}`;
+  const labelSize = Math.max(10, iconSize * 0.52);
+
+  ctx.save();
+  if (icon && icon.complete && icon.naturalWidth > 0) {
+    ctx.drawImage(icon, iconX, iconY, iconSize, iconSize);
+  } else {
+    ctx.fillStyle = theme.panelStrong || '#20303a';
+    drawRoundedRect(ctx, iconX, iconY, iconSize, iconSize, iconSize * 0.2);
+    ctx.fill();
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `700 ${labelSize}px ${theme.fontBody}`;
+  ctx.lineWidth = Math.max(1.2, iconSize * 0.12);
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.72)';
+  ctx.strokeText(label, iconX + iconSize / 2, iconY + iconSize / 2 + labelSize * 0.03);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(label, iconX + iconSize / 2, iconY + iconSize / 2 + labelSize * 0.03);
   ctx.restore();
 };
 
@@ -1208,7 +1268,14 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
             : typeof character.abilityHandCount === 'number'
               ? character.abilityHandCount
               : beatEntry?.abilityHandCount;
+        const timelineAdrenalineEntry =
+          beatIndex >= 0 ? getLastBeatEntryForCharacter(beats, character, beatIndex) : null;
+        const adrenalineCount =
+          toAdrenalineCount(timelineAdrenalineEntry?.adrenaline) ??
+          toAdrenalineCount(character.adrenaline) ??
+          MIN_ADRENALINE;
         const handIcon = getTokenArt('card-in-hand');
+        const adrenalineIcon = getTokenArt('adrenaline');
         drawDamageCapsule(ctx, drawX, drawY, metrics.radius, damage, theme);
         const nameCapsuleRect = drawNameCapsule(
           ctx,
@@ -1234,6 +1301,16 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
           abilityHandCount,
           theme,
           handIcon,
+          nameCapsuleRect,
+        );
+        drawAdrenalineCounter(
+          ctx,
+          drawX,
+          drawY,
+          metrics.radius,
+          adrenalineCount,
+          theme,
+          adrenalineIcon,
           nameCapsuleRect,
         );
       });

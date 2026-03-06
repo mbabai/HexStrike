@@ -14,6 +14,8 @@ const EMPHASIS_ICON_KEY = 'i';
 const COMBO_ICON_KEY = 'Co';
 const FOCUS_ICON_KEY = 'F';
 const ADRENALINE_ICON_KEY = 'Adrenaline';
+const MIN_ADRENALINE = 0;
+const MAX_ADRENALINE = 10;
 const KNOCKBACK_ICON_KEY = 'KnockBackIcon';
 const DRAW_ICON_KEY = 'DrawIcon';
 const DISCARD_ICON_KEY = 'DiscardIcon';
@@ -193,6 +195,12 @@ const parseAdrenalineActionToken = (label) => {
     };
   }
   return null;
+};
+
+const normalizeSubmittedAdrenaline = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(MIN_ADRENALINE, Math.min(MAX_ADRENALINE, Math.round(parsed)));
 };
 
 const getHitSummary = (entry) => {
@@ -957,6 +965,24 @@ const resolveSelectedRotationForPair = (beatLookup, lookupKey, playedPair, beatI
   return '';
 };
 
+const resolveSubmittedAdrenalineForPair = (beatLookup, lookupKey, playedPair, beatIndex) => {
+  if (!Array.isArray(beatLookup) || !lookupKey || !playedPair) return null;
+  const startIndex = Number.isFinite(playedPair.startIndex) ? Math.max(0, Math.round(playedPair.startIndex)) : null;
+  if (startIndex == null) return null;
+  const maxIndex = Number.isFinite(beatIndex) ? Math.max(startIndex, Math.round(beatIndex)) : startIndex;
+  for (let index = startIndex; index <= maxIndex; index += 1) {
+    const entry = getBeatLookupEntry(beatLookup, index, lookupKey);
+    if (!entry) continue;
+    const action = `${entry.action ?? ''}`.trim();
+    if (action === DEFAULT_ACTION && index > startIndex) break;
+    const submittedAdrenaline = normalizeSubmittedAdrenaline(entry.submittedAdrenaline);
+    if (submittedAdrenaline !== null) {
+      return submittedAdrenaline;
+    }
+  }
+  return null;
+};
+
 const resolvePlayBeatSlotForValue = (playedPair, value) => {
   if (!playedPair || !Number.isFinite(value)) return null;
   const startIndex = Number.isFinite(playedPair.startIndex) ? playedPair.startIndex : null;
@@ -993,6 +1019,17 @@ export const getPlayedRotationForCharacterAtBeat = (beats, character, beatIndex)
   const playedPair = resolvePlayModalStateForBeat(beatLookup, lookupKey, safeBeat);
   if (playedPair?.kind === 'stun') return '';
   return resolveSelectedRotationForPair(beatLookup, lookupKey, playedPair, safeBeat);
+};
+
+export const getPlayedSubmittedAdrenalineForCharacterAtBeat = (beats, character, beatIndex) => {
+  if (!Array.isArray(beats) || !beats.length || !character || !Number.isFinite(beatIndex)) return null;
+  const lookupKey = character.username ?? character.userId;
+  if (!lookupKey) return null;
+  const safeBeat = Math.max(0, Math.min(beats.length - 1, Math.round(beatIndex)));
+  const beatLookup = buildBeatLookup(beats);
+  const playedPair = resolvePlayModalStateForBeat(beatLookup, lookupKey, safeBeat);
+  if (playedPair?.kind === 'stun') return null;
+  return resolveSubmittedAdrenalineForPair(beatLookup, lookupKey, playedPair, safeBeat);
 };
 
 export const getTimeIndicatorLayout = (viewport, options = {}) => {
@@ -1775,7 +1812,15 @@ export const drawTimeIndicator = (
       }
       const rotation = entry?.rotation;
       if (rotation !== undefined && rotation !== null && rotation !== '') {
-        drawRotationBadge(ctx, imageX, imageY, drawSize, `${rotation}`, theme);
+        drawRotationBadge(
+          ctx,
+          imageX,
+          imageY,
+          drawSize,
+          `${rotation}`,
+          theme,
+          normalizeSubmittedAdrenaline(entry?.submittedAdrenaline),
+        );
       }
       if (restoreAfter) {
         ctx.restore();
@@ -2368,6 +2413,8 @@ const buildOpponentPlayHudItems = ({
     const playedPair = shouldHideForSelection ? null : resolvedPair;
     const rotation =
       playedPair?.kind === 'stun' ? '' : resolveSelectedRotationForPair(beatLookup, lookupKey, playedPair, value);
+    const submittedAdrenaline =
+      playedPair?.kind === 'stun' ? null : resolveSubmittedAdrenalineForPair(beatLookup, lookupKey, playedPair, value);
     const beatSlot = resolvePlayBeatSlotForValue(playedPair, value);
     return {
       ...item,
@@ -2375,6 +2422,7 @@ const buildOpponentPlayHudItems = ({
       playedPair,
       hasPassiveCard: playedPair?.kind !== 'stun',
       rotation,
+      submittedAdrenaline,
       beatSlot,
       isSelecting,
       shouldHideForSelection,
@@ -2445,6 +2493,7 @@ const createCornerPlayHudNode = () => {
     beatPointer,
     rotationController,
     currentRotation: null,
+    currentSubmittedAdrenaline: null,
     activeCardId: null,
     passiveCardId: null,
     activeCardElement: null,
@@ -2587,6 +2636,11 @@ const syncCornerPlayHudDomItem = ({ root, actorKey, item, phase, flipScale, hove
       }
       node.currentRotation = nextRotation;
     }
+    const nextSubmittedAdrenaline = isStunned ? null : normalizeSubmittedAdrenaline(item.submittedAdrenaline);
+    if (nextSubmittedAdrenaline !== node.currentSubmittedAdrenaline) {
+      node.rotationController?.setCenterAdrenaline?.(nextSubmittedAdrenaline);
+      node.currentSubmittedAdrenaline = nextSubmittedAdrenaline;
+    }
     return;
   }
 
@@ -2596,7 +2650,9 @@ const syncCornerPlayHudDomItem = ({ root, actorKey, item, phase, flipScale, hove
   node.activeSlot.classList.remove('is-stunned');
   node.beatPointer.hidden = true;
   node.rotationController?.clear?.();
+  node.rotationController?.setCenterAdrenaline?.(null);
   node.currentRotation = null;
+  node.currentSubmittedAdrenaline = null;
 };
 
 export const clearCornerPlayHudDom = () => {
@@ -2769,7 +2825,42 @@ const drawOpponentPlayHud = ({
   pruneCornerPlayHudNodes(activeDomKeys);
 };
 
-const drawRotationBadge = (ctx, x, y, size, rotation, theme) => {
+const drawTimelineSubmittedAdrenalineBadge = (ctx, centerX, centerY, radius, submittedAdrenaline, theme) => {
+  if (!Number.isFinite(submittedAdrenaline)) return;
+  const icon = getActionArt(ADRENALINE_ICON_KEY);
+  const badgeRadius = Math.max(4.95, radius * 0.99);
+  const badgeOffset = radius + badgeRadius + Math.max(2, radius * 0.35);
+  const badgeCenterX = centerX - badgeOffset;
+  const badgeCenterY = centerY;
+  const fontSize = Math.max(9.1, badgeRadius * 0.975);
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(10, 18, 22, 0.92)';
+  ctx.strokeStyle = 'rgba(245, 209, 131, 0.92)';
+  ctx.lineWidth = Math.max(1, badgeRadius * 0.16);
+  ctx.beginPath();
+  ctx.arc(badgeCenterX, badgeCenterY, badgeRadius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  if (icon && icon.complete && icon.naturalWidth > 0) {
+    const iconSize = badgeRadius * 2;
+    ctx.drawImage(icon, badgeCenterX - badgeRadius, badgeCenterY - badgeRadius, iconSize, iconSize);
+  }
+
+  ctx.fillStyle = '#000000';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+  ctx.lineWidth = Math.max(1.6, badgeRadius * 0.26);
+  ctx.font = `800 ${fontSize}px ${theme.fontBody}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const label = `${Math.max(MIN_ADRENALINE, Math.min(MAX_ADRENALINE, Math.round(submittedAdrenaline)))}`;
+  ctx.strokeText(label, badgeCenterX, badgeCenterY + badgeRadius * 0.04);
+  ctx.fillText(label, badgeCenterX, badgeCenterY + badgeRadius * 0.04);
+  ctx.restore();
+};
+
+const drawRotationBadge = (ctx, x, y, size, rotation, theme, submittedAdrenaline = null) => {
   const radius = Math.max(6, size * 0.22);
   const padding = Math.max(2, size * 0.05);
   const badgeOffset = Math.max(4, size * 0.25);
@@ -2793,6 +2884,7 @@ const drawRotationBadge = (ctx, x, y, size, rotation, theme) => {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(rotation, centerX, centerY + radius * 0.05);
+  drawTimelineSubmittedAdrenalineBadge(ctx, centerX, centerY, radius, submittedAdrenaline, theme);
   ctx.restore();
 };
 

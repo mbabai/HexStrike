@@ -4088,6 +4088,55 @@ img[src$='Death.png'] {
   inset: 0;
   z-index: 5;
   pointer-events: none;
+  --rotation-center-x: 0.5;
+  --rotation-center-y: 0.1645;
+}
+
+.rotation-wheel .rotation-wheel-center-adrenaline {
+  position: absolute;
+  left: calc(var(--rotation-center-x, 0.5) * 100%);
+  top: calc(var(--rotation-center-y, 0.1645) * 100%);
+  width: calc(var(--play-modal-width) * 0.14);
+  height: calc(var(--play-modal-width) * 0.14);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px solid rgba(245, 209, 131, 0.78);
+  background: radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.16), rgba(9, 16, 20, 0.92));
+  box-shadow: 0 0 0 1px rgba(10, 14, 18, 0.82), 0 0 10px rgba(0, 0, 0, 0.44);
+  pointer-events: none;
+  z-index: 30;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.rotation-wheel .rotation-wheel-center-adrenaline.is-visible {
+  display: inline-flex;
+}
+
+.rotation-wheel .rotation-wheel-center-adrenaline img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0.94;
+}
+
+.rotation-wheel .rotation-wheel-center-adrenaline-value {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-body);
+  font-size: calc(var(--play-modal-width) * 0.1);
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  color: #000000;
+  -webkit-text-stroke: calc(var(--play-modal-width) * 0.0065) #ffffff;
+  paint-order: stroke fill;
+  text-shadow:
+    0 0 1px rgba(255, 255, 255, 0.95),
+    0 0 2px rgba(255, 255, 255, 0.75);
 }
 
 .rotation-wheel .rotation-wedge {
