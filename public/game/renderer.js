@@ -89,11 +89,15 @@ const getBeatEntryForCharacter = (beat, character) => {
   );
 };
 
-const getLastBeatEntryForCharacter = (beats, character, upToIndex) => {
+const getLastBeatEntryForCharacter = (beats, character, upToIndex, options = {}) => {
   if (!Array.isArray(beats) || !beats.length || !character || !Number.isFinite(upToIndex)) return null;
+  const requireCalculated = options?.requireCalculated === true;
   const safeIndex = Math.max(0, Math.min(beats.length - 1, Math.round(upToIndex)));
   for (let index = safeIndex; index >= 0; index -= 1) {
     const entry = getBeatEntryForCharacter(beats[index], character);
+    if (requireCalculated && entry && entry.calculated !== true) {
+      continue;
+    }
     if (entry) return entry;
   }
   return null;
@@ -1336,7 +1340,9 @@ export const createRenderer = (canvas, config = GAME_CONFIG) => {
               ? character.abilityHandCount
               : beatEntry?.abilityHandCount;
         const timelineAdrenalineEntry =
-          beatIndex >= 0 ? getLastBeatEntryForCharacter(beats, character, beatIndex) : null;
+          beatIndex >= 0
+            ? getLastBeatEntryForCharacter(beats, character, beatIndex, { requireCalculated: true })
+            : null;
         const adrenalineCount =
           toAdrenalineCount(timelineAdrenalineEntry?.adrenaline) ??
           toAdrenalineCount(character.adrenaline) ??

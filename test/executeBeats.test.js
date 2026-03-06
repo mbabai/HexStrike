@@ -3547,6 +3547,30 @@ test('executeBeats applies sinking-shot pre-action damage and adrenaline after s
   assert.equal(alphaEntry.facing, 240);
 });
 
+test('executeBeats does not re-apply passive start adrenaline when replaying calculated beats', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, adrenaline: 0, characterId: 'murelious', characterName: 'Alpha' },
+  ];
+
+  const beats = [[
+    buildEntry('alpha', 'W', 0, characters[0].position, characters[0].facing, '0'),
+  ]];
+  beats[0][0].cardId = 'iron-will';
+  beats[0][0].passiveCardId = 'advance';
+  beats[0][0].rotationSource = 'selected';
+
+  const first = executeBeats(beats, characters);
+  const second = executeBeats(first.beats, characters);
+
+  const firstEntry = (first.beats[0] || []).find((entry) => entry.username === 'alpha');
+  const secondEntry = (second.beats[0] || []).find((entry) => entry.username === 'alpha');
+
+  assert.ok(firstEntry);
+  assert.ok(secondEntry);
+  assert.equal(firstEntry.adrenaline, 1);
+  assert.equal(secondEntry.adrenaline, 1);
+});
+
 test('executeBeats grants chase active adrenaline on a successful bracketed hit', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, adrenaline: 0, characterId: 'murelious', characterName: 'Alpha' },

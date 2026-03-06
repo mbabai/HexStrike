@@ -2714,10 +2714,9 @@ export const executeBeatsWithInteractions = (
       if (Number.isFinite(markedCount)) {
         actorState.abilityHandCount = markedCount;
       }
-      const markedAdrenaline = toAdrenaline(entry?.adrenaline);
-      if (Number.isFinite(markedAdrenaline)) {
-        actorState.adrenaline = markedAdrenaline;
-      }
+      // Do not seed runtime adrenaline from the entry snapshot here.
+      // Re-execution already projects state from the previous calculated beat; reading the
+      // current beat snapshot creates a feedback loop where Adr+ effects can stack on reruns.
     });
     updatedInteractions.forEach((interaction) => {
       if (interaction.type !== REWIND_RETURN_INTERACTION_TYPE) return;
