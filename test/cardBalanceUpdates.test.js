@@ -27,7 +27,7 @@ test('card balance update applies timeline, damage, and naming changes', async (
   assert.deepEqual(getCardById(catalog, 'long-thrust').actions, ['W', 'a-2a', 'W', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'gigantic-staff').actions, ['W', 'W', 'a-2a-3a', 'W', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'push-kick').actions, ['[a-Bm]', 'W', 'W', 'E']);
-  assert.deepEqual(getCardById(catalog, 'parry').actions, ['W', '[b]', '[b]', 'W', 'E']);
+  assert.deepEqual(getCardById(catalog, 'parry').actions, ['[b]', '[b]', 'W', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'aerial-strike').actions, ['W', '[2j]', 'a', 'W', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'hammer').actions, ['W', 'W', '[a-La-Ra]', 'W', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'smash-attack').actions, ['W', 'W', '[a]', 'W', 'W', 'E']);
@@ -89,5 +89,6 @@ test('card timing data is present for non-E/W beats', async () => {
   assert.deepEqual(getCardById(catalog, 'long-thrust').timings, [null, ['early'], null, null, null]);
   assert.deepEqual(getCardById(catalog, 'guard').timings, [null, ['early', 'mid', 'late'], ['early', 'mid', 'late'], null]);
   assert.deepEqual(getCardById(catalog, 'absorb').timings, [null, ['mid', 'late'], ['early', 'mid'], null, null]);
+  assert.deepEqual(getCardById(catalog, 'parry').timings, [['late'], ['early', 'mid'], null, null, null]);
   assert.deepEqual(getCardById(catalog, 'aerial-strike').timings, [null, ['mid'], ['early'], null, null, null]);
 });

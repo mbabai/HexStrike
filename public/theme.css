@@ -2504,7 +2504,7 @@ img[src$='Death.png'] {
   height: var(--action-card-height);
   z-index: var(--deck-stack-z, 1);
   pointer-events: none;
-  transition: transform 140ms ease;
+  transition: transform 140ms ease, z-index 140ms ease;
 }
 
 .deck-stack-item:hover,
@@ -2520,6 +2520,12 @@ img[src$='Death.png'] {
 .deck-stack-card {
   pointer-events: none;
   cursor: default;
+  transition: filter 140ms ease, box-shadow 140ms ease;
+}
+
+.deck-stack-item:hover .deck-stack-card,
+.deck-stack-item:focus-within .deck-stack-card {
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.28));
 }
 
 .deck-stack-hitbox {
@@ -2560,6 +2566,11 @@ img[src$='Death.png'] {
   color: var(--color-subtle);
   text-align: center;
   font-size: 0.88rem;
+}
+
+html:not(.is-mobile) .deck-builder {
+  --deck-stack-peek: calc(var(--action-card-header-height) + calc(4px * var(--action-card-scale)));
+  --deck-stack-hit-height: calc(var(--action-card-header-height) + calc(4px * var(--action-card-scale)));
 }
 
 .deck-character-modal {

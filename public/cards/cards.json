@@ -803,9 +803,9 @@
       "name": "Parry",
       "type": "ability",
       "actions": [
+        "[b]",
+        "[b]",
         "W",
-        "[b]",
-        "[b]",
         "W",
         "E"
       ],
@@ -814,14 +814,14 @@
       "kbf": 0,
       "activeText": "{i}: If Parry successfully blocks a melee attack, on the following beat do 2x damage and +1 KBF back onto the attacker, and {E}.",
       "timings": [
-        null,
         [
-          "mid",
           "late"
         ],
         [
-          "early"
+          "early",
+          "mid"
         ],
+        null,
         null,
         null
       ]
