@@ -26,9 +26,16 @@ import {
 const REQUIRED_MOVEMENT = 4;
 const REQUIRED_ABILITY = 12;
 const REQUIRED_MOVEMENT_CARD_ID = 'step';
-const UNIQUE_MOVEMENT_CARD_IDS = new Set(['grappling-hook', 'fleche', 'leap']);
-const UNIQUE_MOVEMENT_LIMIT_MESSAGE_HTML =
-  'Only one <span class="deck-builder-gold-title">GOLD TITLE</span> card per deck.';
+const BUILDER_SUBTITLE_DEFAULT_HTML =
+  'All decks must contain <span class="deck-builder-rule" data-deck-rule="step">STEP</span>, at most one ' +
+  '<span class="deck-builder-rule" data-deck-rule="signature-movement">signature movement card <span class="deck-builder-gold-title">(Gold Title)</span></span>, ' +
+  'and at most <span class="deck-builder-rule" data-deck-rule="signature-ability">2 signature ability cards <span class="deck-builder-gold-title">(Gold Title)</span></span>.';
+const SIGNATURE_MOVEMENT_LIMIT_MESSAGE_HTML =
+  'Only one <span class="deck-builder-gold-title">Signature Move</span> per deck.';
+const SIGNATURE_ABILITY_LIMIT_MESSAGE_HTML =
+  'Only two <span class="deck-builder-gold-title">Signature Abilities</span> per deck.';
+const DECK_LIBRARY_INITIAL_CHUNK_SIZE = 8;
+const DECK_LIBRARY_CHUNK_SIZE = 8;
 
 const CHARACTER_OPTIONS_FALLBACK = [
   { id: 'murelious', name: 'Murelious', image: '/public/images/Murelious.png', powerText: '' },
@@ -139,29 +146,29 @@ const cardMatchesDeckTypeFilter = (card, filter) => {
   return true;
 };
 
-const isUniqueMovementCard = (cardId) => UNIQUE_MOVEMENT_CARD_IDS.has(`${cardId ?? ''}`.trim());
+const getCardSignatureGroup = (cardMap, cardId) => cardMap.get(`${cardId ?? ''}`.trim())?.signatureGroup ?? null;
 
-const normalizeMovementSelection = (movementIds) => {
+const normalizeMovementSelection = (movementIds, cardMap) => {
   const normalized = [];
-  let hasUniqueMovement = false;
+  let hasSignatureMovement = false;
   const source = Array.isArray(movementIds) ? movementIds : [];
   source.forEach((rawCardId) => {
     const cardId = `${rawCardId ?? ''}`.trim();
     if (!cardId || cardId === REQUIRED_MOVEMENT_CARD_ID) return;
     if (normalized.includes(cardId)) return;
-    if (isUniqueMovementCard(cardId)) {
-      if (hasUniqueMovement) return;
-      hasUniqueMovement = true;
+    if (getCardSignatureGroup(cardMap, cardId) === 'movement') {
+      if (hasSignatureMovement) return;
+      hasSignatureMovement = true;
     }
     normalized.push(cardId);
   });
   return [REQUIRED_MOVEMENT_CARD_ID, ...normalized].slice(0, REQUIRED_MOVEMENT);
 };
 
-const hasUniqueMovementConflict = (movementIds, nextCardId) => {
-  if (!isUniqueMovementCard(nextCardId)) return false;
+const hasUniqueMovementConflict = (movementIds, nextCardId, cardMap) => {
+  if (getCardSignatureGroup(cardMap, nextCardId) !== 'movement') return false;
   const selected = Array.isArray(movementIds) ? movementIds : [];
-  return selected.some((cardId) => isUniqueMovementCard(cardId));
+  return selected.some((cardId) => getCardSignatureGroup(cardMap, cardId) === 'movement');
 };
 
 export const initDecks = async (options = {}) => {
@@ -285,7 +292,7 @@ export const initDecks = async (options = {}) => {
 
   const builderState = {
     characterId: null,
-    movement: normalizeMovementSelection([]),
+    movement: normalizeMovementSelection([], cardMap),
     ability: [],
     typeFilter: deckTypeFilter.value,
     sort: deckSort.value,
@@ -298,14 +305,17 @@ export const initDecks = async (options = {}) => {
 
   let builderTextFitRaf = null;
   let builderSubtitleResetTimeout = null;
+  let builderLibraryRenderToken = 0;
+  let builderLibraryRenderRaf = null;
+  let builderOpenRaf = null;
+  let characterPickerDirty = true;
   let playerName = getStoredUsername() || 'anonymous';
   let pendingDeleteDeckId = null;
   let mobileDeckPanelOpen = false;
   const mobileSwipeState = { tracking: false, startX: 0, startY: 0 };
   const MOBILE_PANEL_SWIPE_THRESHOLD = 56;
-  const builderSubtitleDefaultText =
-    `${deckBuilderSubtitle.textContent ?? ''}`.trim() ||
-    'Pick a character, 4 movement cards, and 12 ordered ability cards.';
+  const builderSubtitleDefaultHtml = `${deckBuilderSubtitle.innerHTML ?? ''}`.trim() || BUILDER_SUBTITLE_DEFAULT_HTML;
+  const libraryCardElements = new Map();
 
   const isMobileLayout = () => document.documentElement.classList.contains('is-mobile');
 
@@ -394,12 +404,28 @@ export const initDecks = async (options = {}) => {
     });
   };
 
+  const cancelPendingBuilderLibraryRender = () => {
+    builderLibraryRenderToken += 1;
+    if (builderLibraryRenderRaf !== null) {
+      cancelAnimationFrame(builderLibraryRenderRaf);
+      builderLibraryRenderRaf = null;
+    }
+    libraryRoot.removeAttribute('aria-busy');
+  };
+
+  const cancelPendingBuilderOpen = () => {
+    if (builderOpenRaf !== null) {
+      cancelAnimationFrame(builderOpenRaf);
+      builderOpenRaf = null;
+    }
+  };
+
   const resetBuilderSubtitle = () => {
     if (builderSubtitleResetTimeout !== null) {
       clearTimeout(builderSubtitleResetTimeout);
       builderSubtitleResetTimeout = null;
     }
-    deckBuilderSubtitle.textContent = builderSubtitleDefaultText;
+    deckBuilderSubtitle.innerHTML = builderSubtitleDefaultHtml;
   };
 
   const showBuilderSubtitleMessage = (html, durationMs = 2000) => {
@@ -411,25 +437,32 @@ export const initDecks = async (options = {}) => {
     if (!Number.isFinite(durationMs) || durationMs <= 0) return;
     builderSubtitleResetTimeout = setTimeout(() => {
       builderSubtitleResetTimeout = null;
-      deckBuilderSubtitle.textContent = builderSubtitleDefaultText;
+      deckBuilderSubtitle.innerHTML = builderSubtitleDefaultHtml;
     }, durationMs);
   };
 
-  const pulseBuilderSubtitle = () => {
-    deckBuilderSubtitle.classList.remove('is-capacity-pulse');
-    void deckBuilderSubtitle.offsetWidth;
-    deckBuilderSubtitle.classList.add('is-capacity-pulse');
+  const pulseBuilderSubtitle = (ruleKey = null) => {
+    const target =
+      typeof ruleKey === 'string' && ruleKey
+        ? deckBuilderSubtitle.querySelector(`[data-deck-rule="${ruleKey}"]`)
+        : deckBuilderSubtitle;
+    if (!target) return;
+    target.classList.remove('is-capacity-pulse');
+    void target.offsetWidth;
+    target.classList.add('is-capacity-pulse');
     setTimeout(() => {
-      deckBuilderSubtitle.classList.remove('is-capacity-pulse');
+      target.classList.remove('is-capacity-pulse');
     }, 420);
   };
 
   const playCapacityShake = (element, options = {}) => {
-    const { subtitleHtml = '', subtitleDurationMs = 0 } = options;
-    if (subtitleHtml) {
+    const { subtitleHtml = '', subtitleDurationMs = 0, subtitleRuleKey = null } = options;
+    if (subtitleRuleKey) {
+      resetBuilderSubtitle();
+    } else if (subtitleHtml) {
       showBuilderSubtitleMessage(subtitleHtml, subtitleDurationMs);
     }
-    pulseBuilderSubtitle();
+    pulseBuilderSubtitle(subtitleRuleKey);
     if (!element) return;
     element.classList.remove('is-shaking');
     // Force reflow so repeated rejects restart the animation.
@@ -516,7 +549,8 @@ export const initDecks = async (options = {}) => {
   const isDeckComplete = () =>
     Boolean(builderState.characterId) &&
     builderState.movement.includes(REQUIRED_MOVEMENT_CARD_ID) &&
-    builderState.movement.filter((cardId) => isUniqueMovementCard(cardId)).length <= 1 &&
+    builderState.movement.filter((cardId) => getCardSignatureGroup(cardMap, cardId) === 'movement').length <= 1 &&
+    builderState.ability.filter((cardId) => getCardSignatureGroup(cardMap, cardId) === 'ability').length <= 2 &&
     builderState.movement.length === REQUIRED_MOVEMENT &&
     builderState.ability.length === REQUIRED_ABILITY;
 
@@ -575,6 +609,57 @@ export const initDecks = async (options = {}) => {
       clearSelectedDeckId();
     }
     refreshDeckViews();
+  };
+
+  const isCardSelectedInBuilder = (cardId) =>
+    builderState.movement.includes(cardId) || builderState.ability.includes(cardId);
+
+  const setLibraryCardSelectedState = (cardElement, cardId) => {
+    const isSelected = isCardSelectedInBuilder(cardId);
+    cardElement.classList.toggle('is-selected', isSelected);
+    cardElement.disabled = isSelected;
+  };
+
+  const syncLibrarySelectionState = () => {
+    libraryCardElements.forEach((cardElement, cardId) => {
+      setLibraryCardSelectedState(cardElement, cardId);
+    });
+  };
+
+  // Keep the first visible library rows feeling stable by only appending cards after art is ready.
+  const waitForLibraryCardArt = async (cardElement, fetchPriority = 'auto') => {
+    const art = cardElement.querySelector('.action-card-art');
+    if (!(art instanceof HTMLImageElement)) return;
+    art.loading = 'eager';
+    if ('fetchPriority' in art) {
+      art.fetchPriority = fetchPriority;
+    }
+    const deferredSrc = art.dataset.cardArtSrc;
+    if (deferredSrc) {
+      art.src = deferredSrc;
+      art.removeAttribute('data-card-art-src');
+    }
+    if (!art.currentSrc && !art.src) return;
+    if (art.complete) return;
+    if (typeof art.decode === 'function') {
+      try {
+        await art.decode();
+        return;
+      } catch {
+        if (art.complete) return;
+      }
+    }
+    await new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      art.addEventListener('load', finish, { once: true });
+      art.addEventListener('error', finish, { once: true });
+      setTimeout(finish, 1800);
+    });
   };
 
   const renderDeckGrid = () => {
@@ -657,6 +742,9 @@ export const initDecks = async (options = {}) => {
   };
 
   const openCharacterOverlay = () => {
+    if (characterPickerDirty) {
+      renderCharacterPicker();
+    }
     characterButton.setAttribute('aria-expanded', 'true');
     characterOverlay.hidden = false;
   };
@@ -688,23 +776,25 @@ export const initDecks = async (options = {}) => {
 
   const resetBuilder = () => {
     builderState.characterId = null;
-    builderState.movement = normalizeMovementSelection([]);
+    builderState.movement = normalizeMovementSelection([], cardMap);
     builderState.ability = [];
     builderState.draggingAbilityId = null;
     builderState.suppressClick = false;
     builderState.editingDeckId = null;
     builderState.editingDeckIsBase = false;
     deckNameInput.value = 'Untitled Deck';
+    characterPickerDirty = true;
     setBuilderFilters();
   };
 
   const loadBuilderFromDeck = (deck) => {
     builderState.characterId = deck.characterId || null;
-    builderState.movement = normalizeMovementSelection(deck.movement);
+    builderState.movement = normalizeMovementSelection(deck.movement, cardMap);
     builderState.ability = [...deck.ability];
     builderState.editingDeckId = deck.id;
     builderState.editingDeckIsBase = Boolean(deck.isBase);
     deckNameInput.value = deck.name || '';
+    characterPickerDirty = true;
   };
 
   const renderCharacterSummary = () => {
@@ -752,71 +842,137 @@ export const initDecks = async (options = {}) => {
       button.appendChild(power);
       button.addEventListener('click', () => {
         builderState.characterId = option.id;
+        characterPickerDirty = false;
         renderCharacterPicker();
         renderCharacterSummary();
-        renderSelection();
         closeCharacterOverlay();
       });
       characterPicker.appendChild(button);
     });
+    characterPickerDirty = false;
+  };
+
+  const buildLibraryCardElement = (card, options = {}) => {
+    const { deferArtLoad = true } = options;
+    const cardElement = buildCardElement(card, { asButton: true, deferArtLoad });
+    cardElement.classList.add('deck-library-card');
+    setLibraryCardSelectedState(cardElement, card.id);
+    cardElement.addEventListener('click', () => {
+      if (isCardSelectedInBuilder(card.id)) return;
+      if (card.type === 'movement') {
+        if (hasUniqueMovementConflict(builderState.movement, card.id, cardMap)) {
+          playCapacityShake(cardElement, {
+            subtitleHtml: SIGNATURE_MOVEMENT_LIMIT_MESSAGE_HTML,
+            subtitleDurationMs: 2000,
+            subtitleRuleKey: 'signature-movement',
+          });
+          return;
+        }
+        if (builderState.movement.length >= REQUIRED_MOVEMENT) {
+          playCapacityShake(cardElement);
+          return;
+        }
+        builderState.movement = normalizeMovementSelection([...builderState.movement, card.id], cardMap);
+      } else if (card.type === 'ability') {
+        const signatureAbilityCount = builderState.ability.filter(
+          (cardId) => getCardSignatureGroup(cardMap, cardId) === 'ability',
+        ).length;
+        if (getCardSignatureGroup(cardMap, card.id) === 'ability' && signatureAbilityCount >= 2) {
+          playCapacityShake(cardElement, {
+            subtitleHtml: SIGNATURE_ABILITY_LIMIT_MESSAGE_HTML,
+            subtitleDurationMs: 2000,
+            subtitleRuleKey: 'signature-ability',
+          });
+          return;
+        }
+        if (builderState.ability.length >= REQUIRED_ABILITY) {
+          playCapacityShake(cardElement);
+          return;
+        }
+        builderState.ability = [...builderState.ability, card.id];
+      }
+      syncLibrarySelectionState();
+      renderSelection();
+    });
+    libraryCardElements.set(card.id, cardElement);
+    return cardElement;
   };
 
   const renderLibrary = () => {
+    cancelPendingBuilderLibraryRender();
     const allCards = [...catalog.movement, ...catalog.ability];
-    const selected = new Set([...builderState.movement, ...builderState.ability]);
     const filtered = allCards.filter((card) => cardMatchesDeckTypeFilter(card, builderState.typeFilter));
     const sorted = sortCards(filtered, builderState.sort, builderState.sortDirection);
+    const renderToken = builderLibraryRenderToken;
 
+    libraryCardElements.clear();
     libraryRoot.innerHTML = '';
-    sorted.forEach((card) => {
-      const cardElement = buildCardElement(card, { asButton: true });
-      cardElement.classList.add('deck-library-card');
-      const isSelected = selected.has(card.id);
-      cardElement.classList.toggle('is-selected', isSelected);
-      cardElement.disabled = isSelected;
-      cardElement.addEventListener('click', () => {
-        if (isSelected) return;
-        if (card.type === 'movement') {
-          if (hasUniqueMovementConflict(builderState.movement, card.id)) {
-            playCapacityShake(cardElement, {
-              subtitleHtml: UNIQUE_MOVEMENT_LIMIT_MESSAGE_HTML,
-              subtitleDurationMs: 2000,
-            });
-            return;
-          }
-          if (builderState.movement.length >= REQUIRED_MOVEMENT) {
-            playCapacityShake(cardElement);
-            return;
-          }
-          builderState.movement = normalizeMovementSelection([...builderState.movement, card.id]);
-        } else if (card.type === 'ability') {
-          if (builderState.ability.length >= REQUIRED_ABILITY) {
-            playCapacityShake(cardElement);
-            return;
-          }
-          builderState.ability = [...builderState.ability, card.id];
-        }
-        renderLibrary();
-        renderSelection();
-      });
-      libraryRoot.appendChild(cardElement);
+    if (!sorted.length) {
+      const empty = document.createElement('p');
+      empty.className = 'deck-empty';
+      empty.textContent = 'No cards match the current filters.';
+      libraryRoot.appendChild(empty);
+      scheduleBuilderCardTextFit();
+      return;
+    }
+
+    libraryRoot.setAttribute('aria-busy', 'true');
+    const loading = document.createElement('p');
+    loading.className = 'deck-empty';
+    loading.textContent = 'Loading cards...';
+    libraryRoot.appendChild(loading);
+
+    let index = 0;
+    const renderChunk = async () => {
+      if (renderToken !== builderLibraryRenderToken) return;
+      const chunkSize = index === 0 ? DECK_LIBRARY_INITIAL_CHUNK_SIZE : DECK_LIBRARY_CHUNK_SIZE;
+      const nextIndex = Math.min(index + chunkSize, sorted.length);
+      const isInitialChunk = index === 0;
+      const cardsInChunk = sorted.slice(index, nextIndex);
+      index = nextIndex;
+      const cardElements = cardsInChunk.map((card) => buildLibraryCardElement(card, { deferArtLoad: false }));
+      await Promise.all(
+        cardElements.map((cardElement) => waitForLibraryCardArt(cardElement, isInitialChunk ? 'high' : 'auto')),
+      );
+      if (renderToken !== builderLibraryRenderToken) return;
+      const fragment = document.createDocumentFragment();
+      cardElements.forEach((cardElement) => fragment.appendChild(cardElement));
+      if (loading.isConnected) {
+        loading.remove();
+      }
+      libraryRoot.appendChild(fragment);
+      if (index < sorted.length) {
+        builderLibraryRenderRaf = requestAnimationFrame(() => {
+          builderLibraryRenderRaf = null;
+          void renderChunk();
+        });
+        return;
+      }
+      builderLibraryRenderRaf = null;
+      libraryRoot.removeAttribute('aria-busy');
+      scheduleBuilderCardTextFit();
+    };
+
+    builderLibraryRenderRaf = requestAnimationFrame(() => {
+      builderLibraryRenderRaf = null;
+      void renderChunk();
     });
-    fitBuilderCardText();
   };
 
   const removeSelectedCard = (cardId, type, feedbackElement = null) => {
     if (type === 'movement') {
       if (cardId === REQUIRED_MOVEMENT_CARD_ID) {
-        playCapacityShake(feedbackElement);
+        playCapacityShake(feedbackElement, { subtitleRuleKey: 'step' });
         return;
       }
       builderState.movement = normalizeMovementSelection(
         builderState.movement.filter((id) => id !== cardId),
+        cardMap,
       );
     } else if (type === 'ability') {
       builderState.ability = builderState.ability.filter((id) => id !== cardId);
     }
-    renderLibrary();
+    syncLibrarySelectionState();
     renderSelection();
   };
 
@@ -926,10 +1082,12 @@ export const initDecks = async (options = {}) => {
       });
     }
 
-    fitBuilderCardText();
+    scheduleBuilderCardTextFit();
   };
 
   const openBuilder = (deck = null) => {
+    cancelPendingBuilderOpen();
+    cancelPendingBuilderLibraryRender();
     resetBuilder();
     resetBuilderSubtitle();
     resetMobileDeckPanel();
@@ -941,14 +1099,17 @@ export const initDecks = async (options = {}) => {
     }
     builderOverlay.hidden = false;
     renderCharacterSummary();
-    renderCharacterPicker();
-    renderLibrary();
     renderSelection();
-    scheduleBuilderCardTextFit();
-    deckNameInput.focus();
+    builderOpenRaf = requestAnimationFrame(() => {
+      builderOpenRaf = null;
+      renderLibrary();
+      deckNameInput.focus();
+    });
   };
 
   const closeBuilder = () => {
+    cancelPendingBuilderOpen();
+    cancelPendingBuilderLibraryRender();
     closeCharacterOverlay();
     resetBuilderSubtitle();
     resetMobileDeckPanel();
@@ -963,7 +1124,7 @@ export const initDecks = async (options = {}) => {
     const payload = {
       name,
       characterId: builderState.characterId,
-      movement: normalizeMovementSelection(builderState.movement),
+      movement: normalizeMovementSelection(builderState.movement, cardMap),
       ability: [...builderState.ability],
     };
 
@@ -1055,9 +1216,8 @@ export const initDecks = async (options = {}) => {
   characterClose.addEventListener('click', closeCharacterOverlay);
   characterClear.addEventListener('click', () => {
     builderState.characterId = null;
+    characterPickerDirty = true;
     renderCharacterSummary();
-    renderCharacterPicker();
-    renderSelection();
     closeCharacterOverlay();
   });
   characterOverlay.addEventListener('click', (event) => {

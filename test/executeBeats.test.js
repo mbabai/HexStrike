@@ -1051,6 +1051,66 @@ test('executeBeats stops multi-step charges before occupied hexes', () => {
   assert.equal(alphaEntry.location.r, 0);
 });
 
+test('executeBeats allows same-timing moves into a hex another mover vacates', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [[
+    buildEntry('alpha', 'm', 20, characters[0].position, characters[0].facing),
+    buildEntry('beta', 'm', 20, characters[1].position, characters[1].facing),
+  ]];
+  beats[0][0].cardId = 'step';
+  beats[0][0].passiveCardId = 'jab';
+  beats[0][0].rotationSource = 'selected';
+  beats[0][1].cardId = 'step';
+  beats[0][1].passiveCardId = 'jab';
+  beats[0][1].rotationSource = 'selected';
+
+  const result = executeBeats(beats, characters);
+  const beat0 = result.beats[0] || [];
+  const alphaEntry = beat0.find((entry) => entry.username === 'alpha');
+  const betaEntry = beat0.find((entry) => entry.username === 'beta');
+
+  assert.ok(alphaEntry);
+  assert.ok(betaEntry);
+  assert.deepEqual(alphaEntry.location, { q: 1, r: 0 });
+  assert.deepEqual(betaEntry.location, { q: 2, r: 0 });
+});
+
+test('executeBeats keeps a tied mover origin occupied when that mover cannot vacate', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: 1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+    { userId: 'gamma', username: 'gamma', position: { q: 2, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Gamma' },
+  ];
+
+  const beats = [[
+    buildEntry('alpha', 'm', 20, characters[0].position, characters[0].facing),
+    buildEntry('beta', 'm', 20, characters[1].position, characters[1].facing),
+    buildEntry('gamma', 'W', 0, characters[2].position, characters[2].facing),
+  ]];
+  beats[0][0].cardId = 'step';
+  beats[0][0].passiveCardId = 'jab';
+  beats[0][0].rotationSource = 'selected';
+  beats[0][1].cardId = 'step';
+  beats[0][1].passiveCardId = 'jab';
+  beats[0][1].rotationSource = 'selected';
+  beats[0][2].cardId = 'jab';
+  beats[0][2].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters);
+  const beat0 = result.beats[0] || [];
+  const alphaEntry = beat0.find((entry) => entry.username === 'alpha');
+  const betaEntry = beat0.find((entry) => entry.username === 'beta');
+
+  assert.ok(alphaEntry);
+  assert.ok(betaEntry);
+  assert.deepEqual(alphaEntry.location, { q: 0, r: 0 });
+  assert.deepEqual(betaEntry.location, { q: 1, r: 0 });
+});
+
 test('executeBeats spawns a bow shot arrow on X1', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },

@@ -75,10 +75,12 @@ test('shared passive modifier registry keeps iron will active on DamageIcon but 
   assert.equal(getPassiveKbfReduction({ passiveCardId: 'iron-will', action: 'DamageIcon' }), 1);
   assert.equal(isThrowImmune({ passiveCardId: 'hip-throw', action: 'DamageIcon' }), false);
   assert.equal(isThrowImmune({ passiveCardId: 'hip-throw', action: '[a]' }), true);
+  assert.equal(isThrowImmune({ passiveCardId: 'hip-throw', action: 'SigE' }), false);
 });
 
 test('shared discard specs keep discard immunity and kbf conversion active on DamageIcon frames', () => {
   assert.deepEqual(getActiveHitDiscardRule('trip'), { count: 1, centerOnly: true });
   assert.equal(isDiscardImmune({ passiveCardId: 'spike', action: 'DamageIcon' }), true);
   assert.equal(shouldConvertKbfToDiscard({ passiveCardId: 'sweeping-strike', action: 'DamageIcon' }), true);
+  assert.equal(isDiscardImmune({ passiveCardId: 'spike', action: 'SigE' }), false);
 });

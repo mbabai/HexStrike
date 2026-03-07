@@ -68,13 +68,15 @@ const createParseCatalog = () => ({
     ['dash', { id: 'dash', type: 'movement' }],
     ['jump', { id: 'jump', type: 'movement' }],
     ['advance', { id: 'advance', type: 'movement' }],
-    ['fleche', { id: 'fleche', type: 'movement' }],
-    ['grappling-hook', { id: 'grappling-hook', type: 'movement' }],
-    ['leap', { id: 'leap', type: 'movement' }],
+    ['fleche', { id: 'fleche', type: 'movement', signatureGroup: 'movement' }],
+    ['grappling-hook', { id: 'grappling-hook', type: 'movement', signatureGroup: 'movement' }],
+    ['leap', { id: 'leap', type: 'movement', signatureGroup: 'movement' }],
     ['jab', { id: 'jab', type: 'ability' }],
     ['guard', { id: 'guard', type: 'ability' }],
-    ['parry', { id: 'parry', type: 'ability' }],
+    ['parry', { id: 'parry', type: 'ability', signatureGroup: 'ability' }],
     ['trip', { id: 'trip', type: 'ability' }],
+    ['bow-shot', { id: 'bow-shot', type: 'ability', signatureGroup: 'ability' }],
+    ['vengeance', { id: 'vengeance', type: 'ability', signatureGroup: 'ability' }],
   ]),
 });
 
@@ -118,6 +120,37 @@ test('parseDeckDefinition allows decks with Step and one signature movement card
     {
       movement: ['step', 'fleche', 'dash', 'jump'],
       ability: ['jab', 'guard', 'parry', 'trip'],
+    },
+    catalog,
+  );
+
+  assert.ok(parsed.deck);
+  assert.equal(parsed.errors.length, 0);
+});
+
+test('parseDeckDefinition limits decks to two signature abilities', () => {
+  const catalog = createParseCatalog();
+  const parsed = parseDeckDefinition(
+    {
+      movement: ['step', 'dash', 'jump', 'advance'],
+      ability: ['parry', 'bow-shot', 'vengeance', 'trip'],
+    },
+    catalog,
+  );
+
+  assert.ok(parsed.deck);
+  assert.equal(
+    parsed.errors.some((error) => error.code === 'too-many-signature-abilities'),
+    true,
+  );
+});
+
+test('parseDeckDefinition allows decks with up to two signature abilities', () => {
+  const catalog = createParseCatalog();
+  const parsed = parseDeckDefinition(
+    {
+      movement: ['step', 'dash', 'jump', 'advance'],
+      ability: ['parry', 'bow-shot', 'guard', 'trip'],
     },
     catalog,
   );

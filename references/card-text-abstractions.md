@@ -17,13 +17,29 @@ Use these shared registries first when new wording matches an existing family:
 
 Server wrappers in `src/game/*` and browser wrappers in `public/game/*` should stay thin.
 
+## Deckbuilding Metadata
+
+- Signature deckbuilding limits are sourced from `public/cards/cards.json` card metadata, not hard-coded UI-only lists.
+- `signatureGroup: "movement"` marks a gold-title Signature Move and is limited to one per deck.
+- `signatureGroup: "ability"` marks a gold-title Signature Ability and is limited to two per deck.
+- Current signature abilities: `bow-shot`, `vengeance`, `spinning-back-kick`, `burning-strike`, `parry`, `smoke-bomb`.
+
 ## Action-Symbol Anchors
 
 - `{i}`: the bracketed action token(s) in the action list. Effects that reference `{i}` should target the bracketed action index, not a later split token by accident.
+- `{SigE}`: signature refresh action. It is still an open/refresh beat, but if that refresh resolves the active card returns to the top of the ability deck instead of the bottom.
 - `{adr+X}` / `{adr-X}`: current adrenaline pool modifiers.
 - `{adrX}`: submitted-adrenaline scalar. In damage text, add the locked submitted adrenaline value for that action set.
 - `{adrN}`: submitted-adrenaline threshold check.
 - `Adr+N` action labels: untimed utility labels that modify adrenaline during beat execution; they are not attack/move/block actions.
+
+## Symbol Tooltip Registry
+
+- Player-facing card symbol tooltip copy is owned by `src/shared/game/symbolTooltips.ts`.
+- Browser hover rendering lives in `public/shared/cardSymbolTooltips.js`.
+- Card DOM symbol markers are attached in `public/shared/cardRenderer.js`.
+- WARNING: this registry must use icon-friendly wording. Do not write raw token strings like `2m`, `Bm`, `a-La-Ra`, `SigE`, `X1`, or timing code names in player-facing copy when those symbols can be shown inline.
+- When a card introduces a new visible symbol, shorthand icon, or stat-style marker, update all three so the hover tooltip text stays identical to the rulebook wording.
 
 ## Symbol Matching Rule
 
@@ -79,7 +95,6 @@ Current shared specs:
 - `advance` passive: gain 1 adrenaline
 - `dash` passive: gain 1 adrenaline
 - `jump` passive: gain 1 adrenaline
-- `backflip` passive: lose 1 adrenaline
 - `step` passive: lose 1 adrenaline
 - `sinking-shot` passive: take 2 self-damage and gain 1 adrenaline
 

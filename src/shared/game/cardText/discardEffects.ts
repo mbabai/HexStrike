@@ -1,19 +1,11 @@
 import type { BeatEntry } from '../../../types';
 import { getDiscardSpec, type HitDiscardRule } from './discardSpecs';
-
-const normalizeActionLabel = (action: string | undefined): string => {
-  const trimmed = `${action ?? ''}`.trim();
-  if (!trimmed) return '';
-  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-    return trimmed.slice(1, -1).trim();
-  }
-  return trimmed;
-};
+import { isRefreshActionLabel, normalizeActionLabel } from '../actionSymbols';
 
 const isActionActive = (action: string | undefined): boolean => {
   const label = normalizeActionLabel(action).toUpperCase();
   if (!label) return false;
-  return label !== 'E';
+  return !isRefreshActionLabel(label);
 };
 
 export const getActiveHitDiscardRule = (cardId: string | undefined | null): HitDiscardRule | null =>
@@ -33,7 +25,7 @@ export const isDiscardImmune = (entry: BeatEntry | null | undefined): boolean =>
     return isActionActive(action);
   }
   const label = normalizeActionLabel(action).toUpperCase();
-  return Boolean(label && label !== 'E' && label !== 'DAMAGEICON');
+  return Boolean(label && !isRefreshActionLabel(label) && label !== 'DAMAGEICON');
 };
 
 export const shouldConvertKbfToDiscard = (entry: BeatEntry | null | undefined): boolean => {
@@ -44,7 +36,7 @@ export const shouldConvertKbfToDiscard = (entry: BeatEntry | null | undefined): 
     return isActionActive(action);
   }
   const label = normalizeActionLabel(action).toUpperCase();
-  return Boolean(label && label !== 'E' && label !== 'DAMAGEICON');
+  return Boolean(label && !isRefreshActionLabel(label) && label !== 'DAMAGEICON');
 };
 
 export const isCenterAttackPath = (path: string): boolean => !/[LRB]/i.test(path ?? '');

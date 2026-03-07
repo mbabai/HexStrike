@@ -93,7 +93,7 @@ This prints JSON diagnostics (`mode`, `dbName`, `collectionName`, URI source/rou
 - Clicking **Find Game** again cancels the search and leaves the queue.
 - Bot queues start an immediate 1v1 match against the selected bot difficulty, each using a random base deck.
 - Tutorial queue starts a scripted tutorial 1v1 with forced loadouts and guided interaction choices.
-- Sidebar links are stubs and show "Coming soon".
+- The sidebar includes the rulebook link, feedback link, and a persistent **Tooltip Mode** toggle for card icon explanations; the Account button is still a stub.
 
 ## Character powers
 - Character powers are defined in `public/characters/characters.json`.

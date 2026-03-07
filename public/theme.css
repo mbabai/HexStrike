@@ -803,13 +803,13 @@ body.menu-body.is-in-game .menu-sidebar {
 }
 
 body.menu-body.is-in-game .menu-backdrop {
-  z-index: 119;
+  z-index: 399;
 }
 
 .menu-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 18;
+  z-index: 399;
   border: none;
   background: rgba(5, 12, 10, 0.5);
   opacity: 0;
@@ -838,7 +838,7 @@ body.menu-body.is-in-game .menu-backdrop {
   bottom: 28px;
   width: 240px;
   transition: transform 180ms ease, opacity 160ms ease;
-  z-index: 1;
+  z-index: 401;
 }
 
 .menu-brand {
@@ -874,7 +874,7 @@ body.menu-body.is-in-game .menu-backdrop {
   position: absolute;
   top: 28px;
   left: 10px;
-  z-index: 21;
+  z-index: 402;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
@@ -946,6 +946,57 @@ body.menu-body.is-in-game .menu-backdrop {
   border-color: var(--color-accent);
   box-shadow: var(--shadow-strong);
   color: var(--color-accent-strong);
+}
+
+.menu-link-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.menu-link-toggle-label {
+  pointer-events: none;
+}
+
+.menu-link-toggle-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(140deg, rgba(11, 23, 29, 0.92), rgba(22, 40, 46, 0.82));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.menu-link-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, rgba(230, 238, 242, 0.92), rgba(161, 180, 188, 0.92));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  transition: transform 140ms ease, background 140ms ease;
+}
+
+.menu-link-toggle.is-enabled {
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-soft);
+}
+
+.menu-link-toggle.is-enabled .menu-link-toggle-switch {
+  border-color: rgba(227, 181, 99, 0.7);
+  background: linear-gradient(140deg, rgba(125, 207, 255, 0.26), rgba(213, 163, 74, 0.28));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 14px rgba(213, 163, 74, 0.16);
+}
+
+.menu-link-toggle.is-enabled .menu-link-toggle-knob {
+  transform: translateX(20px);
+  background: linear-gradient(145deg, rgba(247, 227, 177, 0.98), rgba(213, 163, 74, 0.92));
 }
 
 .menu-footer-link {
@@ -2193,13 +2244,18 @@ img[src$='Death.png'] {
   transition: color 120ms ease, text-shadow 120ms ease;
 }
 
+.deck-builder-rule {
+  transition: color 120ms ease, text-shadow 120ms ease;
+}
+
 .deck-builder-gold-title {
   color: var(--color-gold-title);
   font-weight: 700;
   letter-spacing: 0.04em;
 }
 
-.deck-builder-subtitle.is-capacity-pulse {
+.deck-builder-subtitle.is-capacity-pulse,
+.deck-builder-rule.is-capacity-pulse {
   animation: deckBuilderCapacityPulse 380ms ease 1;
 }
 
@@ -3287,7 +3343,7 @@ html:not(.is-mobile) .deck-builder {
   pointer-events: none;
 }
 
-.action-card-title.is-unique-movement {
+.action-card-title.is-signature-card {
   color: var(--color-gold-title);
   text-shadow: 0 0 10px rgba(213, 163, 74, 0.45);
 }
@@ -4481,6 +4537,204 @@ html:not(.is-mobile) .deck-builder {
 
 .timeline-tooltip-card-preview .action-card {
   pointer-events: none;
+}
+
+.card-symbol-tooltip-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 520;
+  pointer-events: none;
+}
+
+.card-symbol-tooltip-layer[hidden] {
+  display: none;
+}
+
+.card-symbol-tooltip-stack {
+  position: fixed;
+  display: grid;
+  gap: 0;
+  max-width: min(360px, calc(100vw - 20px));
+  max-height: calc(100vh - 20px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.card-symbol-tooltip-item {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 5px 10px;
+  border-radius: 0;
+  border: 1px solid var(--color-panel-border);
+  background: linear-gradient(150deg, rgba(9, 21, 27, 0.97), rgba(17, 37, 44, 0.94));
+  box-shadow: var(--shadow-soft);
+}
+
+.card-symbol-tooltip-item + .card-symbol-tooltip-item {
+  margin-top: -1px;
+}
+
+.card-symbol-tooltip-item:first-child {
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+}
+
+.card-symbol-tooltip-item:last-child {
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 12px;
+}
+
+.card-symbol-tooltip-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+}
+
+.card-symbol-tooltip-body {
+  color: var(--color-text);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.card-symbol-preview {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.card-symbol-preview.is-inline {
+  vertical-align: text-bottom;
+  margin: 0 2px;
+}
+
+.card-symbol-preview-image img,
+.card-symbol-preview-fallback {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+}
+
+.card-symbol-preview-image img.is-muted {
+  opacity: 0.56;
+}
+
+.card-symbol-preview-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -2px;
+  min-width: 16px;
+  padding: 1px 4px;
+  border-radius: 999px;
+  background: rgba(8, 15, 19, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--color-accent-strong);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.card-symbol-preview-action {
+  width: 39px;
+  height: 35px;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+}
+
+.card-symbol-preview-timing {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.card-symbol-preview-timing-icon {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+}
+
+.card-symbol-preview-stat {
+  width: 34px;
+  height: 34px;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+}
+
+.card-symbol-preview-stat.is-muted {
+  opacity: 0.6;
+}
+
+.card-symbol-preview-stat-value {
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1;
+  color: #000000;
+  -webkit-text-stroke: 1px #ffffff;
+  paint-order: stroke fill;
+}
+
+.card-symbol-preview-flow,
+.card-symbol-preview-adrenaline {
+  width: 34px;
+  height: 34px;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+}
+
+.card-symbol-preview-flow-value,
+.card-symbol-preview-adrenaline-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+  color: #000000;
+  -webkit-text-stroke: 1px rgba(255, 255, 255, 0.95);
+  paint-order: stroke fill;
+}
+
+.card-symbol-tooltip-body .card-symbol-preview-image.is-inline img,
+.card-symbol-tooltip-body .card-symbol-preview-flow.is-inline,
+.card-symbol-tooltip-body .card-symbol-preview-adrenaline.is-inline,
+.card-symbol-tooltip-body .card-symbol-preview-stat.is-inline,
+.card-symbol-tooltip-body .card-symbol-preview-fallback.is-inline {
+  width: 16px;
+  height: 16px;
+}
+
+.card-symbol-tooltip-body .card-symbol-preview-action.is-inline {
+  width: 18px;
+  height: 16px;
+}
+
+.card-symbol-tooltip-body .card-symbol-preview-timing.is-inline .card-symbol-preview-timing-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.card-symbol-tooltip-body .card-symbol-preview-flow.is-inline .card-symbol-preview-flow-value,
+.card-symbol-tooltip-body .card-symbol-preview-adrenaline.is-inline .card-symbol-preview-adrenaline-value,
+.card-symbol-tooltip-body .card-symbol-preview-stat.is-inline .card-symbol-preview-stat-value {
+  font-size: 9px;
+  -webkit-text-stroke: 0.6px rgba(255, 255, 255, 0.95);
+}
+
+.card-symbol-tooltip-body .card-symbol-preview-image.is-inline .card-symbol-preview-badge {
+  right: -4px;
+  bottom: -4px;
+  min-width: 12px;
+  padding: 0 2px;
+  font-size: 8px;
 }
 
 .app-toast {

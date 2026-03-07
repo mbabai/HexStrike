@@ -30,6 +30,19 @@
           <button class="menu-link" type="button">Account</button>
           <a class="menu-link" href="/public/rulebook.html">Rulebook</a>
           <a class="menu-link" href="https://forms.gle/BDBdvMivxgVtARm3A" target="_blank" rel="noreferrer">Feedback</a>
+          <button
+            id="tooltipModeToggle"
+            class="menu-link menu-link-toggle"
+            type="button"
+            role="switch"
+            aria-checked="false"
+            title="If turned on, cards will show tooltips for icons. Hold ALT to turn on temporarily."
+          >
+            <span class="menu-link-toggle-label">Tooltip Mode</span>
+            <span class="menu-link-toggle-switch" aria-hidden="true">
+              <span class="menu-link-toggle-knob"></span>
+            </span>
+          </button>
         </nav>
         <a class="menu-footer-link" href="https://bymarcell.com" target="_blank" rel="noreferrer">
           <img class="menu-footer-image" src="/public/images/byMarcell.webp" alt="By Marcell" loading="lazy" />
@@ -107,7 +120,10 @@
           <div class="deck-builder-title-block">
             <h2 id="deckBuilderTitle">Create a Deck</h2>
             <p id="deckBuilderSubtitle" class="deck-builder-subtitle">
-              Pick a character, 4 movement cards, and 12 ordered ability cards.
+              All decks must contain <span class="deck-builder-rule" data-deck-rule="step">STEP</span>, at most one
+              <span class="deck-builder-rule" data-deck-rule="signature-movement">signature movement card <span class="deck-builder-gold-title">(Gold Title)</span></span>,
+              and at most
+              <span class="deck-builder-rule" data-deck-rule="signature-ability">2 signature ability cards <span class="deck-builder-gold-title">(Gold Title)</span></span>.
             </p>
             <a class="deck-builder-stats-link" href="/stats">Open Card Stats</a>
           </div>

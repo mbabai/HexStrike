@@ -1,4 +1,5 @@
 import { getPassiveModifierSpec } from './passiveModifierSpecs';
+import { isRefreshActionLabel, normalizeActionLabel } from '../actionSymbols';
 
 type PassiveCardEntry = {
   passiveCardId?: string | null;
@@ -7,25 +8,16 @@ type PassiveCardEntry = {
 
 const DAMAGE_ICON_ACTION = 'DAMAGEICON';
 
-const normalizeActionLabel = (action: string | null | undefined): string => {
-  const trimmed = `${action ?? ''}`.trim();
-  if (!trimmed) return '';
-  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-    return trimmed.slice(1, -1).trim();
-  }
-  return trimmed;
-};
-
 const isActionActiveForPassiveModifiers = (action: string | null | undefined): boolean => {
   const label = normalizeActionLabel(action).toUpperCase();
   if (!label) return false;
-  return label !== 'E';
+  return !isRefreshActionLabel(label);
 };
 
 const isActionActiveForThrowImmunity = (action: string | null | undefined): boolean => {
   const label = normalizeActionLabel(action).toUpperCase();
   if (!label) return false;
-  return label !== 'E' && label !== DAMAGE_ICON_ACTION;
+  return !isRefreshActionLabel(label) && label !== DAMAGE_ICON_ACTION;
 };
 
 export const isThrowImmune = (entry: PassiveCardEntry | null | undefined): boolean => {

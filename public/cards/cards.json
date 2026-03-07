@@ -17,10 +17,10 @@
       "timings": [
         null,
         [
-          "late"
+          "mid"
         ],
         [
-          "late"
+          "early"
         ],
         null
       ]
@@ -37,7 +37,7 @@
       "rotations": "0-2",
       "damage": 0,
       "kbf": 0,
-      "passiveText": "At the start of this action {adr-1}",
+      "passiveText": "",
       "timings": [
         [
           "late"
@@ -73,6 +73,7 @@
       "id": "fleche",
       "name": "Fleche",
       "type": "movement",
+      "signatureGroup": "movement",
       "actions": [
         "Adr+1",
         "m",
@@ -102,6 +103,7 @@
       "id": "grappling-hook",
       "name": "Grappling Hook",
       "type": "movement",
+      "signatureGroup": "movement",
       "actions": [
         "W",
         "W",
@@ -151,6 +153,7 @@
       "id": "leap",
       "name": "Leap",
       "type": "movement",
+      "signatureGroup": "movement",
       "actions": [
         "Adr+1",
         "3j",
@@ -214,7 +217,7 @@
       "timings": [
         null,
         [
-          "late"
+          "mid"
         ],
         null
       ]
@@ -311,10 +314,12 @@
       "id": "bow-shot",
       "name": "Bow Shot",
       "type": "ability",
+      "signatureGroup": "ability",
       "actions": [
         "W",
+        "W",
         "X1",
-        "E"
+        "SigE"
       ],
       "rotations": "*",
       "damage": 0,
@@ -323,8 +328,9 @@
       "passiveText": "If you rotated by 1 or 2, place an arrow facing your original direction after each successful move, on the hex you were just on.",
       "timings": [
         null,
+        null,
         [
-          "late"
+          "early"
         ],
         null
       ]
@@ -333,12 +339,13 @@
       "id": "burning-strike",
       "name": "Burning Strike",
       "type": "ability",
+      "signatureGroup": "ability",
       "actions": [
         "W",
         "[a]",
         "Co",
         "W",
-        "E"
+        "SigE"
       ],
       "rotations": "*",
       "damage": 4,
@@ -802,12 +809,13 @@
       "id": "parry",
       "name": "Parry",
       "type": "ability",
+      "signatureGroup": "ability",
       "actions": [
         "[b]",
         "[b]",
         "W",
         "W",
-        "E"
+        "SigE"
       ],
       "rotations": "*",
       "damage": 0,
@@ -959,6 +967,7 @@
       "id": "smoke-bomb",
       "name": "Smoke Bomb",
       "type": "ability",
+      "signatureGroup": "ability",
       "actions": [
         "W",
         "[a-La-Ra]",
@@ -1011,6 +1020,7 @@
       "id": "spinning-back-kick",
       "name": "Spinning Back Kick",
       "type": "ability",
+      "signatureGroup": "ability",
       "actions": [
         "[Ba-BLa-BRa]",
         "Co",
@@ -1137,6 +1147,7 @@
       "id": "vengeance",
       "name": "Vengeance",
       "type": "ability",
+      "signatureGroup": "ability",
       "actions": [
         "W",
         "[c]",

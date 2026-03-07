@@ -1,4 +1,11 @@
 import type { ActionTiming } from '../../types';
+import {
+  COMBO_ACTION,
+  DEFAULT_OPEN_ACTION,
+  SIGNATURE_REFRESH_ACTION,
+  WAIT_ACTION,
+  normalizeActionLabel as normalizeSharedActionLabel,
+} from './actionSymbols';
 
 const TIMING_ORDER: ActionTiming[] = ['early', 'mid', 'late'];
 
@@ -9,22 +16,20 @@ const TIMING_PRIORITY_MAP: Record<ActionTiming, number> = {
 };
 
 const DEFAULT_TIMING: ActionTiming[] = ['mid'];
-const OPEN_OR_UNTIMED_ACTIONS = new Set(['E', 'W', 'CO']);
+const OPEN_OR_UNTIMED_ACTIONS = new Set([
+  DEFAULT_OPEN_ACTION,
+  SIGNATURE_REFRESH_ACTION.toUpperCase(),
+  WAIT_ACTION,
+  COMBO_ACTION.toUpperCase(),
+]);
 const ADRENALINE_UTILITY_ACTION_PATTERN = /^ADR[+-]\d+$/i;
 
 const isUntimedActionLabel = (label: string): boolean =>
   OPEN_OR_UNTIMED_ACTIONS.has(label) || ADRENALINE_UTILITY_ACTION_PATTERN.test(label);
 
-export const getTimingOrder = (): ActionTiming[] => TIMING_ORDER.slice();
+export const normalizeActionLabel = normalizeSharedActionLabel;
 
-export const normalizeActionLabel = (action: unknown): string => {
-  const trimmed = `${action ?? ''}`.trim();
-  if (!trimmed) return '';
-  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-    return trimmed.slice(1, -1).trim();
-  }
-  return trimmed;
-};
+export const getTimingOrder = (): ActionTiming[] => TIMING_ORDER.slice();
 
 export const normalizeActionTiming = (value: unknown): ActionTiming[] | null => {
   if (!Array.isArray(value) || !value.length) return null;

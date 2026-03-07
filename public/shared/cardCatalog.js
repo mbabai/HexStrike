@@ -8,6 +8,8 @@ const normalizeCard = (card, type, index) => {
   }
   const id = typeof card.id === 'string' && card.id.trim() ? card.id.trim() : `${type}-${index}`;
   const name = typeof card.name === 'string' && card.name.trim() ? card.name.trim() : id;
+  const signatureGroup =
+    card.signatureGroup === 'movement' || card.signatureGroup === 'ability' ? card.signatureGroup : undefined;
   const actions = Array.isArray(card.actions) ? card.actions.map((action) => `${action}`.trim()).filter(Boolean) : [];
   const timings = normalizeCardTimings(actions, card.timings);
   const rotations = typeof card.rotations === 'string' && card.rotations.trim() ? card.rotations.trim() : '*';
@@ -20,6 +22,7 @@ const normalizeCard = (card, type, index) => {
     id,
     name,
     type,
+    signatureGroup,
     actions,
     timings,
     rotations,

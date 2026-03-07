@@ -35,6 +35,8 @@ const normalizeCard = (card: unknown, type: CardType, index: number): CardDefini
   const raw = card as Record<string, unknown>;
   const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim() : `${type}-${index}`;
   const name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : id;
+  const signatureGroup =
+    raw.signatureGroup === 'movement' || raw.signatureGroup === 'ability' ? raw.signatureGroup : undefined;
   const actions = Array.isArray(raw.actions)
     ? raw.actions.map((action) => `${action ?? ''}`.trim()).filter(Boolean)
     : [];
@@ -49,6 +51,7 @@ const normalizeCard = (card: unknown, type: CardType, index: number): CardDefini
     id,
     name,
     type,
+    signatureGroup,
     actions,
     timings,
     rotations,

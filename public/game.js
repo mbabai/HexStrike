@@ -26,6 +26,7 @@ import {
   getTimelineResolvedIndex,
   getTimelineStopIndex,
 } from './game/beatTimeline.js';
+import { isRefreshActionLabel } from './game/actionSymbols.js';
 import { loadCardCatalog } from './shared/cardCatalog.js';
 import { loadCharacterCatalog } from './shared/characterCatalog.js';
 import { createDiscardPrompt } from './game/discardPrompt.mjs';
@@ -140,7 +141,7 @@ const buildTimelineSummary = (gameState) => {
         const key = beatEntry?.username ?? beatEntry?.userId ?? beatEntry?.userID;
         return key === character.userId || key === character.username;
       });
-      if (entry && entry.action !== 'E') {
+      if (entry && !isRefreshActionLabel(entry.action)) {
         lastNonE = i;
         break;
       }
@@ -161,7 +162,7 @@ const buildTimelineSummary = (gameState) => {
         return key === character.userId || key === character.username;
       });
       if (!entry) return true;
-      return entry.action === 'E';
+      return isRefreshActionLabel(entry.action);
     });
     if (!isAllE) break;
     trailingAllE += 1;
@@ -2173,6 +2174,31 @@ export const initGame = () => {
     updateTimelineSpeedControlPosition();
     applyThrowLayout(getPendingThrowInteraction());
   });
+
+  const resolvePlayModalTooltipRoot = (target) => {
+    if (!(target instanceof Element)) return null;
+    const shell = target.closest('.play-modal-shell');
+    if (!shell) return null;
+    if (shell.closest('#actionHud') || shell.closest('#cornerPlayHud')) {
+      return shell;
+    }
+    return null;
+  };
+
+  const syncPlayModalTooltip = (event) => {
+    if (!resolvePlayModalTooltipRoot(event.target)) return;
+    tooltip.update(event);
+  };
+
+  const hidePlayModalTooltip = (event) => {
+    if (!resolvePlayModalTooltipRoot(event.target)) return;
+    if (resolvePlayModalTooltipRoot(event.relatedTarget)) return;
+    tooltip.hide();
+  };
+
+  document.addEventListener('pointerover', syncPlayModalTooltip, true);
+  document.addEventListener('pointermove', syncPlayModalTooltip, true);
+  document.addEventListener('pointerout', hidePlayModalTooltip, true);
 
   window.addEventListener('hexstrike:match', () => {
     if (isReplayMode()) {

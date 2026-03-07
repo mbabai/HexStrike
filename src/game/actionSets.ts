@@ -1,15 +1,8 @@
 import { ActionListItem, BeatEntry, PublicCharacter } from '../types';
 import { getTimelineResolvedIndex } from './beatTimeline';
 import { getTimingPriority, resolveActionTiming } from './timing';
-
-const DEFAULT_ACTION = 'E';
-const FOCUS_ACTION = 'F';
+import { DEFAULT_OPEN_ACTION, isOpenBeatActionLabel } from './actionSymbols';
 const LOG_PREFIX = '[actionSets]';
-
-const isOpenBeatAction = (action: string | undefined) => {
-  const normalized = `${action ?? ''}`.trim().toUpperCase();
-  return normalized === DEFAULT_ACTION || normalized === FOCUS_ACTION;
-};
 
 const cloneLocation = (location?: { q: number; r: number }) =>
   location ? { q: location.q, r: location.r } : { q: 0, r: 0 };
@@ -143,7 +136,7 @@ export const applyActionSetToBeats = (
       startIndex = i;
       break;
     }
-    if (isOpenBeatAction(entry.action)) {
+    if (isOpenBeatActionLabel(entry.action)) {
       startIndex = i;
       break;
     }
@@ -164,7 +157,7 @@ export const applyActionSetToBeats = (
       ? findEntryForUser(updated[startIndex], target)
       : undefined;
   const seedSource =
-    openStartEntry && isOpenBeatAction(openStartEntry.action) ? openStartEntry : lastTargetEntry;
+    openStartEntry && isOpenBeatActionLabel(openStartEntry.action) ? openStartEntry : lastTargetEntry;
 
   const seed = {
     damage: typeof seedSource?.damage === 'number' ? seedSource.damage : 0,

@@ -1,4 +1,7 @@
 import { resolveActionTiming } from './timing.js';
+import { resolveRulebookSymbolTooltipId } from './symbolTooltips.js';
+import { ensureCardSymbolTooltipController } from './cardSymbolTooltips.js';
+import { isRefreshActionLabel } from './actionSymbols.js';
 
 const ACTION_ICON_FALLBACK = 'empty';
 const ROTATION_ICON_FALLBACK = 'rotStar';
@@ -15,8 +18,8 @@ const DRAW_ICON_URL = '/public/images/DrawIcon.png';
 const DISCARD_ICON_URL = '/public/images/DiscardIcon.png';
 const ADRENALINE_ICON_URL = '/public/images/Adrenaline.png';
 const CARD_ART_BASE_URL = '/public/images/cardart';
-const UNIQUE_MOVEMENT_CARD_IDS = new Set(['grappling-hook', 'fleche', 'leap']);
 const MANDATORY_MOVEMENT_CARD_IDS = new Set(['step']);
+const CARD_ART_PRELOAD_MARGIN = '320px 0px';
 const INLINE_STYLE_CLASS_BY_TAG = {
   bold: 'card-inline-emphasis card-inline-emphasis-bold',
   u: 'card-inline-emphasis-purple',
@@ -29,6 +32,16 @@ const INLINE_STYLE_TOKEN_PATTERN = /(\{[^}]+\}|\[[^\]]+\]|<\/?(?:bold|b|u|key|mo
 const MIN_SURFACE_TEXT_PX = 7;
 const HARD_MIN_SURFACE_TEXT_PX = 6;
 const MAX_ROW_TEXT_GROWTH = 3;
+
+ensureCardSymbolTooltipController();
+
+let cardArtIntersectionObserver = null;
+
+const resolveSymbolImageName = (token) => {
+  const normalized = `${token ?? ''}`.trim();
+  if (normalized.toUpperCase() === 'SIGE') return 'SignatureE';
+  return normalized || ACTION_ICON_FALLBACK;
+};
 
 const stripActionBrackets = (value) => {
   const trimmed = `${value ?? ''}`.trim();
@@ -70,7 +83,7 @@ const parseAdrenalineToken = (raw) => {
 
 const buildActionIconUrl = (action) => {
   const key = `${action ?? ''}`.trim();
-  const name = key ? key : ACTION_ICON_FALLBACK;
+  const name = resolveSymbolImageName(key);
   return `/public/images/${name}.png`;
 };
 
@@ -85,11 +98,66 @@ const buildCardArtUrl = (cardName) => {
   return `${CARD_ART_BASE_URL}/${encodeURIComponent(name)}.jpg`;
 };
 
+const ensureCardArtIntersectionObserver = () => {
+  if (cardArtIntersectionObserver || typeof IntersectionObserver !== 'function') {
+    return cardArtIntersectionObserver;
+  }
+  cardArtIntersectionObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const image = entry.target;
+        if (!(image instanceof HTMLImageElement)) return;
+        const deferredSrc = image.dataset.cardArtSrc;
+        if (deferredSrc && image.src !== deferredSrc) {
+          image.src = deferredSrc;
+        }
+        image.removeAttribute('data-card-art-src');
+        cardArtIntersectionObserver?.unobserve(image);
+      });
+    },
+    { rootMargin: CARD_ART_PRELOAD_MARGIN },
+  );
+  return cardArtIntersectionObserver;
+};
+
+const deferCardArtLoad = (image) => {
+  if (!(image instanceof HTMLImageElement)) return;
+  const deferredSrc = image.dataset.cardArtSrc;
+  if (!deferredSrc) return;
+  const observer = ensureCardArtIntersectionObserver();
+  if (!observer) {
+    image.src = deferredSrc;
+    image.removeAttribute('data-card-art-src');
+    return;
+  }
+  observer.observe(image);
+};
+
+const buildRotationPreviewToken = (rotation) => {
+  const key = `${rotation ?? ''}`.trim();
+  return !key || key === '*' ? 'rotStar' : `rot${key}`;
+};
+
+const setSymbolTooltips = (element, descriptors) => {
+  if (!element || !Array.isArray(descriptors) || !descriptors.length) return;
+  const normalized = descriptors
+    .map((descriptor) => {
+      if (!descriptor || typeof descriptor !== 'object') return null;
+      const key = `${descriptor.key ?? ''}`.trim() || resolveRulebookSymbolTooltipId(descriptor.previewToken);
+      if (!key) return null;
+      return { ...descriptor, key };
+    })
+    .filter(Boolean);
+  if (!normalized.length) return;
+  element.setAttribute('data-symbol-tooltips', JSON.stringify(normalized));
+};
+
 const ensureActionList = (actions) => {
   const list = Array.isArray(actions) ? [...actions] : [];
   if (!list.length) return ['E'];
   const last = stripActionBrackets(list[list.length - 1]);
-  if (last.toUpperCase() !== 'E') {
+  if (!isRefreshActionLabel(last)) {
     list.push('E');
   }
   return list;
@@ -128,6 +196,15 @@ const buildStatBadge = (type, value, iconUrl) => {
   text.className = 'action-card-stat-value';
   text.textContent = textValue;
   stat.appendChild(text);
+  setSymbolTooltips(stat, [
+    {
+      key: type === 'kbf' && textValue === 'T' ? 'throw-kbf' : type === 'damage' ? 'damage-badge' : 'kbf-badge',
+      previewKind: 'stat',
+      previewToken: type === 'damage' ? 'DamageIcon' : 'KnockBackIcon',
+      value: textValue,
+      muted: type === 'kbf' && textValue === 'T',
+    },
+  ]);
   return stat;
 };
 
@@ -175,6 +252,12 @@ const buildActionIcon = (action, timing) => {
       timingIcon.alt = `${phase} timing`;
       timingIcon.loading = 'eager';
       timingIcon.decoding = 'async';
+      setSymbolTooltips(timingIcon, [
+        {
+          key: 'timing-marker',
+          previewKind: 'timing',
+        },
+      ]);
       timingWrap.appendChild(timingIcon);
     });
     if (timingWrap.childElementCount) {
@@ -182,6 +265,30 @@ const buildActionIcon = (action, timing) => {
     }
   }
   icon.setAttribute('aria-label', label);
+  const actionDescriptors = adrenaline
+    ? [
+        {
+          key: adrenaline.sign ? 'adrenaline-modifier' : 'submitted-adrenaline',
+          previewKind: 'adrenaline',
+          sign: adrenaline.sign,
+          amount: adrenaline.amount,
+        },
+      ]
+    : [
+        {
+          key: resolveRulebookSymbolTooltipId(label),
+          previewKind: 'action',
+          previewToken: label,
+        },
+      ];
+  if (emphasized) {
+    actionDescriptors.push({
+      key: 'bracketed-trigger',
+      previewKind: 'image',
+      previewToken: 'i',
+    });
+  }
+  setSymbolTooltips(icon, actionDescriptors);
   return icon;
 };
 
@@ -206,6 +313,14 @@ const buildInlineCardFlowIcon = ({ type, amountLabel, token }) => {
   value.className = 'card-inline-flow-value';
   value.textContent = `${isDraw ? '+' : '-'}${normalizedAmount}`;
   icon.appendChild(value);
+  setSymbolTooltips(icon, [
+    {
+      key: isDraw ? 'draw-x' : 'discard-x',
+      previewKind: 'flow',
+      flowType: isDraw ? 'draw' : 'discard',
+      amount: normalizedAmount,
+    },
+  ]);
   return icon;
 };
 
@@ -241,6 +356,14 @@ const buildInlineAdrenalineIcon = ({ sign = '', amountLabel, token }) => {
   icon.setAttribute('role', 'img');
   icon.setAttribute('aria-label', token);
   icon.appendChild(buildAdrenalineValueContent({ sign: normalizedSign, amount: normalizedAmount }));
+  setSymbolTooltips(icon, [
+    {
+      key: normalizedSign ? 'adrenaline-modifier' : 'submitted-adrenaline',
+      previewKind: 'adrenaline',
+      sign: normalizedSign,
+      amount: normalizedAmount,
+    },
+  ]);
   return icon;
 };
 
@@ -257,12 +380,17 @@ const queueCardTextRefit = (parent) => {
 const appendInlineImage = (parent, imageName, alt) => {
   const image = document.createElement('img');
   image.className = 'card-inline-icon';
-  image.src = `/public/images/${imageName}.png`;
+  image.src = `/public/images/${resolveSymbolImageName(imageName)}.png`;
   image.alt = alt;
   image.loading = 'eager';
   image.decoding = 'async';
   image.addEventListener('load', () => queueCardTextRefit(parent));
   parent.appendChild(image);
+  const key = resolveRulebookSymbolTooltipId(imageName);
+  if (key) {
+    setSymbolTooltips(image, [{ key, previewKind: 'image', previewToken: imageName }]);
+  }
+  return image;
 };
 
 const parseInlineIconToken = (part) => {
@@ -289,7 +417,7 @@ const isInlineActionToken = (token) => {
     const label = `${part ?? ''}`.trim();
     if (!label) return false;
     const upper = label.toUpperCase();
-    if (upper === 'W' || upper === 'E') return true;
+    if (upper === 'W' || isRefreshActionLabel(upper)) return true;
     const type = label[label.length - 1]?.toLowerCase();
     return type === 'a' || type === 'm' || type === 'j' || type === 'c' || type === 'b';
   });
@@ -308,7 +436,7 @@ const appendInlineActionWithTimingIcon = (parent, actionToken, timingPhase) => {
 
   const base = document.createElement('img');
   base.className = 'card-inline-action-base';
-  base.src = `/public/images/${actionToken}.png`;
+  base.src = `/public/images/${resolveSymbolImageName(actionToken)}.png`;
   base.alt = actionToken;
   base.loading = 'eager';
   base.decoding = 'async';
@@ -324,6 +452,19 @@ const appendInlineActionWithTimingIcon = (parent, actionToken, timingPhase) => {
 
   icon.append(base, timing);
   parent.appendChild(icon);
+  setSymbolTooltips(icon, [
+    {
+      key: resolveRulebookSymbolTooltipId(actionToken),
+      previewKind: 'image',
+      previewToken: actionToken,
+    },
+  ]);
+  setSymbolTooltips(timing, [
+    {
+      key: 'timing-marker',
+      previewKind: 'timing',
+    },
+  ]);
 };
 
 const appendInlineIconToken = (parent, part) => {
@@ -384,6 +525,14 @@ const appendInlineIconToken = (parent, part) => {
     capsule.textContent = '12';
     capsule.setAttribute('aria-label', token);
     parent.appendChild(capsule);
+    setSymbolTooltips(capsule, [
+      {
+        key: 'damage-badge',
+        previewKind: 'stat',
+        previewToken: 'DamageIcon',
+        value: '12',
+      },
+    ]);
     return;
   }
   if (normalizedToken === 'throw kbf icon') {
@@ -396,6 +545,15 @@ const appendInlineIconToken = (parent, part) => {
     throwText.textContent = 'T';
     throwKbf.appendChild(throwText);
     parent.appendChild(throwKbf);
+    setSymbolTooltips(throwKbf, [
+      {
+        key: 'throw-kbf',
+        previewKind: 'stat',
+        previewToken: 'KnockBackIcon',
+        value: 'T',
+        muted: true,
+      },
+    ]);
     return;
   }
   appendInlineImage(parent, token, token);
@@ -404,7 +562,17 @@ const appendInlineIconToken = (parent, part) => {
 const appendInlineActionIconToken = (parent, part) => {
   const token = part.slice(1, -1).trim();
   if (!token) return;
-  appendInlineImage(parent, token, token);
+  const image = appendInlineImage(parent, token, token);
+  if (!image) return;
+  const key = resolveRulebookSymbolTooltipId(token);
+  if (!key) return;
+  setSymbolTooltips(image, [
+    {
+      key,
+      previewKind: 'image',
+      previewToken: token,
+    },
+  ]);
 };
 
 export const appendInlineText = (container, text) => {
@@ -594,7 +762,7 @@ const shouldRenderStatBadges = (card) => {
 };
 
 export const buildCardElement = (card, options = {}) => {
-  const { asButton = false, className = '' } = options;
+  const { asButton = false, className = '', deferArtLoad = false } = options;
   const element = document.createElement(asButton ? 'button' : 'div');
   if (asButton) {
     element.type = 'button';
@@ -620,8 +788,8 @@ export const buildCardElement = (card, options = {}) => {
   if (MANDATORY_MOVEMENT_CARD_IDS.has(card.id)) {
     title.classList.add('is-mandatory-movement');
   }
-  if (card.type === 'movement' && UNIQUE_MOVEMENT_CARD_IDS.has(card.id)) {
-    title.classList.add('is-unique-movement');
+  if (card.signatureGroup === 'movement' || card.signatureGroup === 'ability') {
+    title.classList.add('is-signature-card');
   }
   title.textContent = card.name;
   title.title = card.name;
@@ -634,6 +802,13 @@ export const buildCardElement = (card, options = {}) => {
   rotationBadge.className = 'action-card-badge action-card-rotation';
   rotationBadge.style.backgroundImage = `url('${buildRotationIconUrl(card.rotations)}')`;
   rotationBadge.setAttribute('aria-label', `Rotation ${card.rotations ?? '*'}`);
+  setSymbolTooltips(rotationBadge, [
+    {
+      key: 'rotation-badge',
+      previewKind: 'image',
+      previewToken: buildRotationPreviewToken(card.rotations),
+    },
+  ]);
   badgeRow.appendChild(rotationBadge);
 
   header.appendChild(badgeRow);
@@ -657,7 +832,12 @@ export const buildCardElement = (card, options = {}) => {
   emptyRow.className = 'action-card-surface-row is-empty';
   const art = document.createElement('img');
   art.className = 'action-card-art';
-  art.src = buildCardArtUrl(card.name);
+  const artUrl = buildCardArtUrl(card.name);
+  if (deferArtLoad) {
+    art.dataset.cardArtSrc = artUrl;
+  } else {
+    art.src = artUrl;
+  }
   art.alt = `${card.name} art`;
   art.loading = 'lazy';
   art.decoding = 'async';
@@ -670,6 +850,9 @@ export const buildCardElement = (card, options = {}) => {
     { once: true },
   );
   emptyRow.appendChild(art);
+  if (deferArtLoad) {
+    deferCardArtLoad(art);
+  }
 
   let triggerRow = null;
   if (triggerTextValue) {

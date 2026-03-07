@@ -1,7 +1,10 @@
+import { getTooltipModeEnabled, setTooltipModeEnabled } from './storage.js';
+
 export function initMenu() {
   const menuShell = document.getElementById('menuShell');
   const menuToggle = document.getElementById('menuToggle');
   const menuSidebar = document.getElementById('menuSidebar');
+  const tooltipModeToggle = document.getElementById('tooltipModeToggle');
   const menuBackdrop = document.createElement('button');
   const MENU_ENABLED = true;
 
@@ -93,9 +96,23 @@ export function initMenu() {
   });
 
   document.querySelectorAll('button.menu-link').forEach((button) => {
+    if (button === tooltipModeToggle) return;
     button.addEventListener('click', (event) => {
       event.preventDefault();
       window.alert('Coming soon');
     });
   });
+
+  if (tooltipModeToggle instanceof HTMLButtonElement) {
+    const applyTooltipModeState = (enabled) => {
+      tooltipModeToggle.setAttribute('aria-checked', enabled ? 'true' : 'false');
+      tooltipModeToggle.classList.toggle('is-enabled', enabled);
+    };
+    applyTooltipModeState(Boolean(getTooltipModeEnabled()));
+    tooltipModeToggle.addEventListener('click', () => {
+      const enabled = setTooltipModeEnabled(!getTooltipModeEnabled());
+      applyTooltipModeState(enabled);
+      window.dispatchEvent(new CustomEvent('hexstrike:tooltip-mode-changed', { detail: { enabled } }));
+    });
+  }
 }

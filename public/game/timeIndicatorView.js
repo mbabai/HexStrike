@@ -6,9 +6,10 @@ import { resolveActionTiming } from '../shared/timing.js';
 import { buildCardElement, fitAllCardText } from '../shared/cardRenderer.js';
 import { buildRotationWheel } from './rotationWheel.js';
 import { getActionPhaseUserIds, getWaitingForInputUserIds, isCharacterInUserSet } from './inputWaiting.js';
+import { DEFAULT_OPEN_ACTION, isRefreshActionLabel } from './actionSymbols.js';
 
 const DEFAULT_BORDER_SIZE = { width: 640, height: 64 };
-const DEFAULT_ACTION = 'E';
+const DEFAULT_ACTION = DEFAULT_OPEN_ACTION;
 const ACTION_ICON_FALLBACK = 'empty';
 const EMPHASIS_ICON_KEY = 'i';
 const COMBO_ICON_KEY = 'Co';
@@ -70,6 +71,7 @@ const PLAYED_CARD_HOVER_SCALE = 1;
 const PLAYED_CARD_FACE_DOWN_MS = 180;
 const PLAYED_CARD_FLIP_MS = 260;
 const SHOW_TIMELINE_MINI_CARDS = true;
+const SHOW_TIMELINE_PLAYED_CARD_PAIRS = false;
 const PLAY_MODAL_WIDTH = 210;
 const PLAY_MODAL_HEIGHT = 297;
 const PLAY_MODAL_ASPECT = PLAY_MODAL_WIDTH / PLAY_MODAL_HEIGHT;
@@ -540,7 +542,7 @@ const findPlayedCardSetStartIndex = (beatLookup, lookupKey, beatIndex, activeCar
     const entry = getBeatLookupEntry(beatLookup, index, lookupKey);
     if (!entry) continue;
     const action = `${entry.action ?? ''}`.trim();
-    if (index !== beatIndex && action === DEFAULT_ACTION) break;
+    if (index !== beatIndex && isRefreshActionLabel(action)) break;
     const entryActive = readCardId(entry.cardId);
     const entryPassive = readCardId(entry.passiveCardId);
     if ((entryActive && entryActive !== activeCardId) || (entryPassive && entryPassive !== passiveCardId)) {
@@ -561,7 +563,7 @@ const resolvePlayedCardPairForBeat = (beatLookup, lookupKey, beatIndex) => {
   if (!currentEntry) return null;
   const currentAction = `${currentEntry.action ?? ''}`.trim();
   if (!currentAction || currentAction === ACTION_ICON_FALLBACK) return null;
-  if (currentAction === DEFAULT_ACTION) {
+  if (isRefreshActionLabel(currentAction)) {
     const currentCardId = readCardId(currentEntry.cardId);
     const currentPassiveCardId = readCardId(currentEntry.passiveCardId);
     if (!currentCardId && !currentPassiveCardId) {
@@ -576,7 +578,7 @@ const resolvePlayedCardPairForBeat = (beatLookup, lookupKey, beatIndex) => {
       const previousEntry = getBeatLookupEntry(beatLookup, index, lookupKey);
       if (!previousEntry) continue;
       const previousAction = `${previousEntry.action ?? ''}`.trim();
-      if (previousAction === DEFAULT_ACTION) break;
+      if (isRefreshActionLabel(previousAction)) break;
       if (!activeCardId) activeCardId = readCardId(previousEntry.cardId);
       if (!passiveCardId) passiveCardId = readCardId(previousEntry.passiveCardId);
       if (activeCardId && passiveCardId) break;
@@ -956,7 +958,7 @@ const resolveSelectedRotationForPair = (beatLookup, lookupKey, playedPair, beatI
     const entry = getBeatLookupEntry(beatLookup, index, lookupKey);
     if (!entry) continue;
     const action = `${entry.action ?? ''}`.trim();
-    if (action === DEFAULT_ACTION && index > startIndex) break;
+    if (isRefreshActionLabel(action) && index > startIndex) break;
     const rotation = `${entry.rotation ?? ''}`.trim();
     const rotationSource = `${entry.rotationSource ?? ''}`.trim();
     if (rotationSource === 'selected') return rotation;
@@ -974,7 +976,7 @@ const resolveSubmittedAdrenalineForPair = (beatLookup, lookupKey, playedPair, be
     const entry = getBeatLookupEntry(beatLookup, index, lookupKey);
     if (!entry) continue;
     const action = `${entry.action ?? ''}`.trim();
-    if (action === DEFAULT_ACTION && index > startIndex) break;
+    if (isRefreshActionLabel(action) && index > startIndex) break;
     const submittedAdrenaline = normalizeSubmittedAdrenaline(entry.submittedAdrenaline);
     if (submittedAdrenaline !== null) {
       return submittedAdrenaline;
@@ -1324,7 +1326,7 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y,
     const portraitX = layout.x - portraitRadius + layout.portraitOverlap;
     const playedPair = resolvePlayedCardPairForBeat(beatLookup, lookupKey, value);
     const playedPairLayout =
-      playedPair && lookupKey
+      SHOW_TIMELINE_PLAYED_CARD_PAIRS && playedPair && lookupKey
         ? buildPlayedCardPairLayout({
             rowCenterY,
             rowHeight: row.numberArea.height,
@@ -1360,7 +1362,7 @@ export const getTimeIndicatorActionTarget = (layout, viewModel, gameState, x, y,
       const outcomeAction = getOutcomeMarkerAction(matchOutcome, character, beatIndex);
       const implicitOpenBeat = !baseEntry && beatIndex === highlightIndex;
       const action =
-        outcomeAction && (!baseEntry || baseAction === DEFAULT_ACTION)
+        outcomeAction && (!baseEntry || isRefreshActionLabel(baseAction))
           ? outcomeAction
           : baseEntry?.action ?? (implicitOpenBeat ? DEFAULT_ACTION : ACTION_ICON_FALLBACK);
       const entry = baseEntry
@@ -1668,7 +1670,7 @@ export const drawTimeIndicator = (
     const portraitY = row.y + layout.actionHeight / 2;
     const playedPair = resolvePlayedCardPairForBeat(beatLookup, lookupKey, value);
     const playedPairLayout =
-      playedPair && lookupKey
+      SHOW_TIMELINE_PLAYED_CARD_PAIRS && playedPair && lookupKey
         ? buildPlayedCardPairLayout({
             rowCenterY,
             rowHeight: row.numberArea.height,
@@ -1687,11 +1689,11 @@ export const drawTimeIndicator = (
       const previewEntry = getPendingPreviewEntry(pendingPreview, character, beatIndex);
       const outcomeMarkerAction = getOutcomeMarkerAction(matchOutcome, character, beatIndex);
       const usePreview =
-        !outcomeMarkerAction && previewEntry && (!baseEntry || baseAction === DEFAULT_ACTION);
+        !outcomeMarkerAction && previewEntry && (!baseEntry || isRefreshActionLabel(baseAction));
       const entry = usePreview ? previewEntry : baseEntry;
       const implicitOpenBeat = !entry && beatIndex === highlightIndex;
       const action =
-        outcomeMarkerAction && (!baseEntry || baseAction === DEFAULT_ACTION)
+        outcomeMarkerAction && (!baseEntry || isRefreshActionLabel(baseAction))
           ? outcomeMarkerAction
           : entry?.action ?? (implicitOpenBeat ? DEFAULT_ACTION : ACTION_ICON_FALLBACK);
       const xPos = rowCenterX + offset * rowSpacing;
@@ -1803,7 +1805,7 @@ export const drawTimeIndicator = (
       const actionLabel = token.label;
       if (
         actionLabel &&
-        actionLabel !== 'E' &&
+        !isRefreshActionLabel(actionLabel) &&
         !END_MARKER_ACTIONS.has(actionLabel) &&
         actionLabel !== ACTION_ICON_FALLBACK &&
         actionLabel !== 'DamageIcon'
@@ -1827,7 +1829,7 @@ export const drawTimeIndicator = (
       }
     });
 
-    if (playedPair && playedPairLayout && lookupKey) {
+    if (SHOW_TIMELINE_PLAYED_CARD_PAIRS && playedPair && playedPairLayout && lookupKey) {
       drawPlayedCardPair(
         ctx,
         playedPairLayout,
@@ -2335,17 +2337,19 @@ const getRectInCanvasSpace = (element, canvasRect) => {
 
 const getLocalPlayedPreviewHoverTarget = ({ x, y, beatIndex, canvasRect, character, playedPair }) => {
   if (typeof document === 'undefined') return null;
-  if (!character || !playedPair) return null;
+  if (!character) return null;
   const actionHud = document.getElementById('actionHud');
   if (!(actionHud instanceof HTMLElement)) return null;
-  if (actionHud.hidden || actionHud.classList.contains('is-turn')) return null;
+  if (actionHud.hidden) return null;
 
   const activeSlot = document.getElementById('activeSlot');
   const passiveSlot = document.getElementById('passiveSlot');
   if (!(activeSlot instanceof HTMLElement) || !(passiveSlot instanceof HTMLElement)) return null;
-  const activePreview = activeSlot.querySelector('.action-card.is-played-preview');
+  const activePreview =
+    activeSlot.querySelector('.action-card.is-played-preview') ?? activeSlot.querySelector('.action-card');
   if (!(activePreview instanceof HTMLElement)) return null;
-  const passivePreview = passiveSlot.querySelector('.action-card.is-played-preview');
+  const passivePreview =
+    passiveSlot.querySelector('.action-card.is-played-preview') ?? passiveSlot.querySelector('.action-card');
 
   const activeBounds = getRectInCanvasSpace(activeSlot, canvasRect);
   const passiveBounds =
@@ -2366,10 +2370,10 @@ const getLocalPlayedPreviewHoverTarget = ({ x, y, beatIndex, canvasRect, charact
   }
   if (!cardRole) return null;
 
-  const activeCardId = readCardId(playedPair.activeCardId) || readCardId(activePreview.dataset.cardId);
+  const activeCardId = readCardId(activePreview.dataset.cardId) || readCardId(playedPair?.activeCardId);
   const passiveCardId =
-    readCardId(playedPair.passiveCardId) ||
-    (passivePreview instanceof HTMLElement ? readCardId(passivePreview.dataset.cardId) : '');
+    readCardId(passivePreview instanceof HTMLElement ? passivePreview.dataset.cardId : '') ||
+    readCardId(playedPair?.passiveCardId);
   const cardId = cardRole === 'passive' ? passiveCardId : activeCardId;
   if (!cardId) return null;
   const bounds = cardRole === 'passive' && passiveBounds ? passiveBounds : activeBounds;

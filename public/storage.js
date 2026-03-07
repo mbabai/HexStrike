@@ -6,6 +6,7 @@ const ACCOUNT_DECKS_KEY = 'hexstrikeAccountDecks';
 const TIMELINE_SPEED_KEY = 'hexstrikeTimelineSpeed';
 const TIMELINE_AUTOPLAY_KEY = 'hexstrikeTimelineAutoplay';
 const QUEUE_PREFERENCE_KEY = 'hexstrikeQueuePreference';
+const TOOLTIP_MODE_KEY = 'hexstrikeTooltipMode';
 const USERNAME_MAX_LENGTH = 24;
 const ANONYMOUS_NAME_PATTERN = /^anonymous\d+$/i;
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
@@ -167,5 +168,24 @@ export const setQueuePreference = (queueName) => {
   const normalized = `${queueName ?? ''}`.trim();
   if (!normalized) return null;
   writeCookie(QUEUE_PREFERENCE_KEY, normalized);
+  return normalized;
+};
+
+const normalizeBooleanPreference = (value) => {
+  const normalized = `${value ?? ''}`.trim().toLowerCase();
+  if (normalized === '1' || normalized === 'true') return true;
+  if (normalized === '0' || normalized === 'false') return false;
+  return null;
+};
+
+export const getTooltipModeEnabled = () => {
+  const stored = readCookie(TOOLTIP_MODE_KEY);
+  return normalizeBooleanPreference(stored) ?? false;
+};
+
+export const setTooltipModeEnabled = (enabled) => {
+  const normalized = normalizeBooleanPreference(enabled ? '1' : '0');
+  if (normalized === null) return false;
+  writeCookie(TOOLTIP_MODE_KEY, normalized ? '1' : '0');
   return normalized;
 };

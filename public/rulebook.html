@@ -141,7 +141,8 @@
       <li>Each deck contains: 1 character, 4 movement cards, and 12 ability cards.</li>
       <li>No duplicate cards are allowed.</li>
       <li><strong>Step</strong> is mandatory and cannot be removed.</li>
-      <li>Each deck may include up to only <strong>one</strong> Signature Move (gold title).</li>
+      <li>Each deck may include up to <strong>one</strong> Signature Move and up to <strong>two</strong> Signature Abilities. Both use gold titles.</li>
+      <li>Current Signature Abilities: Bow Shot, Vengeance, Spinning Back Kick, Burning Strike, Parry, and Smoke Bomb.</li>
       <li>Ability card order is fixed. There is no shuffling.</li>
     </ul>
 
@@ -168,7 +169,7 @@
     <h2>4. Beat Phase - Detailed Explanation</h2>
 
     <h3>4.1 Refresh Phase</h3>
-    <p>A refresh happens when your earliest open beat is an <img class="inline-symbol" src="/public/images/E.png" alt="E symbol" /> on land. It is the clean reset point between committed plays.</p>
+    <p>A refresh happens when your earliest open beat is an <img class="inline-symbol" src="/public/images/E.png" alt="E symbol" /> or <img class="inline-symbol" src="/public/images/SignatureE.png" alt="Signature refresh symbol" /> on land. It is the clean reset point between committed plays.</p>
     <p>A normal refresh does three things:</p>
     <ul>
       <li>Clear exhausted movement cards.</li>
@@ -176,6 +177,7 @@
       <li>Sync your movement hand to match your current ability count, up to four.</li>
     </ul>
     <p>Some special states change that routine. Focus can reduce the refresh cap, and Ethereal Platforms let you refresh over abyss as though you were on land. If you are in the abyss with no legal play, ledge-grab and no-cards loss checks decide whether you escape or lose.</p>
+    <p>A <img class="inline-symbol" src="/public/images/SignatureE.png" alt="Signature refresh symbol" /> is a Signature Refresh. It still functions as a normal refresh beat, but if the refresh happens the active card goes to the top of your deck instead of the bottom. Some cards can still mention a normal <img class="inline-symbol" src="/public/images/E.png" alt="E symbol" /> in their text for separate effects.</p>
 
     <h3>4.2 Simultaneous Play Phase</h3>
     <p>Every player tied for the earliest open beat chooses at the same time:</p>
@@ -393,6 +395,10 @@
           <td>Refresh beat with no committed action.</td>
         </tr>
         <tr>
+          <td><img class="symbol-ref-icon" src="/public/images/SignatureE.png" alt="Signature refresh symbol" /></td>
+          <td>Signature Refresh beat. Refreshes like <img class="inline-symbol" src="/public/images/E.png" alt="E symbol" />, but the active card goes to the top of your deck if that refresh happens.</td>
+        </tr>
+        <tr>
           <td><img class="symbol-ref-icon" src="/public/images/W.png" alt="W symbol" /></td>
           <td>Wait action. Characters do nothing here.</td>
         </tr>
@@ -560,6 +566,10 @@
         <dd>Gold-title movement card; maximum one per deck.</dd>
       </div>
       <div class="glossary-item">
+        <dt>Signature Ability</dt>
+        <dd>Gold-title ability card; maximum two per deck. Current Signature Abilities are Bow Shot, Vengeance, Spinning Back Kick, Burning Strike, Parry, and Smoke Bomb.</dd>
+      </div>
+      <div class="glossary-item">
         <dt>Refresh</dt>
         <dd>Clearing out old cards, and redrawing a hand (if on land).</dd>
       </div>
@@ -597,6 +607,7 @@
       <li>If tied actions come from different steps of their action sets, the later step resolves first.</li>
       <li>If two attacks still tie, the stronger hit resolves first.</li>
       <li>If two tied moves try to enter the same hex, they jam and fail.</li>
+      <li>If tied moves head to different hexes, they resolve together. A move can enter a hex another tied mover is successfully leaving.</li>
     </ol>
   </section>
 
@@ -629,7 +640,7 @@
           <li>1 character, 16 cards total (4 movement, 12 ability).</li>
           <li>No duplicates.</li>
           <li><strong>Step</strong> is required.</li>
-          <li>Max 1 Signature Move.</li>
+          <li>Max 1 Signature Move and max 2 Signature Abilities.</li>
         </ul>
       </div>
       <div class="text-panel">

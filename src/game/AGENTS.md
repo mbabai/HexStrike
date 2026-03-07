@@ -30,10 +30,14 @@ Use these as the first stop for recurring card families:
 - `triggerText` never drives gameplay.
 - Ability cards never exhaust. Movement cards do.
 - Refresh must key off the earliest open beat on land plus `lastRefreshIndex`, not the client-visible beat.
+- Shared open-beat semantics live in `src/shared/game/actionSymbols.ts`; do not fork local `E`/`SigE`/`F` checks across server files.
 - Board token replay must be reconstructed from timeline state, not future `public.boardTokens`.
+- Same-timing movement buckets are simultaneous for movers with different destinations. A mover that successfully vacates its hex must not block another mover in that bucket from entering it; only destination jams or failed vacates should keep the hex occupied.
 
 ## Required Updates When Mechanics Change
 
 - Update tests first or alongside the change.
 - Update `rules.md` for exact behavior changes.
 - Update `references/card-text-abstractions.md` when a wording family or registry changes.
+- If a change adds a new card-visible symbol or shorthand icon, also update `src/shared/game/symbolTooltips.ts` so hover tooltips and the rulebook stay aligned.
+- Do not approve player-facing symbol copy that uses raw token code text when an icon representation exists.

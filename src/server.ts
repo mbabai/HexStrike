@@ -31,6 +31,7 @@ import {
   getTimelineResolvedIndex,
   isCharacterAtEarliestE,
 } from './game/beatTimeline';
+import { isRefreshActionLabel } from './game/actionSymbols';
 import { loadCardCatalog } from './game/cardCatalog';
 import {
   applyCardUse,
@@ -1015,7 +1016,7 @@ const buildTimelineSummary = (beats: BeatEntry[][], characters: PublicCharacter[
     let lastNonE = -1;
     for (let i = beats.length - 1; i >= 0; i -= 1) {
       const entry = getEntryForCharacter(beats[i], character);
-      if (entry && entry.action !== 'E') {
+      if (entry && !isRefreshActionLabel(entry.action)) {
         lastNonE = i;
         break;
       }
@@ -1033,7 +1034,7 @@ const buildTimelineSummary = (beats: BeatEntry[][], characters: PublicCharacter[
     const isAllE = characters.every((character) => {
       const entry = getEntryForCharacter(beats[i], character);
       if (!entry) return true;
-      return entry.action === 'E';
+      return isRefreshActionLabel(entry.action);
     });
     if (!isAllE) break;
     trailingAllE += 1;
@@ -1193,6 +1194,13 @@ const maybeSkipTutorialThrowInteractionStep = (
   ): boolean =>
     activeCardId === 'feint' && passiveCardId === 'advance' && rotation === '0';
 
+  const isTutorialPlayerFinishAction = (
+    activeCardId: string,
+    passiveCardId: string,
+    rotation: string,
+  ): boolean =>
+    activeCardId === 'smash-attack' && passiveCardId === 'advance' && rotation === '3';
+
   const canRunTutorialBotStep = (session: TutorialSession, step: TutorialActionStep): boolean => {
     if (Number.isFinite(step.minPlayerActionIndex) && session.playerActionIndex < Number(step.minPlayerActionIndex)) {
       return false;
@@ -1275,7 +1283,11 @@ const maybeSkipTutorialThrowInteractionStep = (
       if (normalizedRotation !== normalizeRotationLabel(expectedStep.rotation)) {
         return { ok: false, error: 'Tutorial action rejected: incorrect rotation for this step.' };
       }
-      if (Number.isFinite(expectedStep.adrenaline) && normalizedAdrenaline !== expectedStep.adrenaline) {
+      if (
+        Number.isFinite(expectedStep.adrenaline) &&
+        normalizedAdrenaline !== expectedStep.adrenaline &&
+        !isTutorialPlayerFinishAction(normalizedActive, normalizedPassive, normalizedRotation)
+      ) {
         return { ok: false, error: 'Tutorial action rejected: incorrect adrenaline for this step.' };
       }
       return {

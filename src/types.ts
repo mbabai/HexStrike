@@ -117,6 +117,7 @@ export interface CardDefinition {
   id: string;
   name: string;
   type: CardType;
+  signatureGroup?: 'movement' | 'ability';
   actions: string[];
   timings?: Array<ActionTiming[] | null>;
   priority?: number;

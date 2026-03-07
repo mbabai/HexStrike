@@ -26,6 +26,7 @@ import {
   syncMovementHand,
 } from './handRules';
 import { buildCardActionList } from './cardText/actionListBuilder';
+import { isRefreshActionLabel, isSignatureRefreshActionLabel } from './actionSymbols';
 
 const ROTATION_LABELS = ['0', 'R1', 'R2', '3', 'L2', 'L1'];
 export const MIN_ADRENALINE = 0;
@@ -34,7 +35,6 @@ const REWIND_CARD_ID = 'rewind';
 const REWIND_FOCUS_INTERACTION_TYPE = 'rewind-focus';
 const DRAW_SELECTION_MAX_MOVEMENT = 3;
 const REQUIRED_MOVEMENT_CARD_ID = 'step';
-const SIGNATURE_MOVEMENT_CARD_IDS = new Set(['grappling-hook', 'fleche', 'leap']);
 
 export const isActionValidationFailure = (result: ActionValidationResult): result is { ok: false; error: CardValidationError } =>
   !result.ok;
@@ -280,14 +280,24 @@ export const parseDeckDefinition = (
       message: 'Deck must include Step as a movement card.',
     });
   }
-  const signatureMovementCount = movement.reduce(
-    (count, cardId) => count + (SIGNATURE_MOVEMENT_CARD_IDS.has(cardId) ? 1 : 0),
-    0,
-  );
+  const signatureMovementCount = movement.reduce((count, cardId) => {
+    const card = catalog.cardsById.get(cardId);
+    return count + (card?.signatureGroup === 'movement' ? 1 : 0);
+  }, 0);
   if (signatureMovementCount > 1) {
     errors.push({
       code: 'too-many-signature-moves',
       message: 'Deck can include at most one signature movement card.',
+    });
+  }
+  const signatureAbilityCount = ability.reduce((count, cardId) => {
+    const card = catalog.cardsById.get(cardId);
+    return count + (card?.signatureGroup === 'ability' ? 1 : 0);
+  }, 0);
+  if (signatureAbilityCount > 2) {
+    errors.push({
+      code: 'too-many-signature-abilities',
+      message: 'Deck can include at most two signature ability cards.',
     });
   }
   return { deck: { movement, ability }, errors };
@@ -333,7 +343,7 @@ export const getRefreshOffset = (actions: string[]): number | null => {
   if (!Array.isArray(actions) || !actions.length) return null;
   for (let i = actions.length - 1; i >= 0; i -= 1) {
     const label = `${actions[i] ?? ''}`.trim();
-    if (label === 'E') return i;
+    if (isRefreshActionLabel(label)) return i;
   }
   return Math.max(0, actions.length - 1);
 };
@@ -425,6 +435,15 @@ const ensureAbilityCardInDeckBottom = (deckState: DeckState, cardId: string) => 
   if (deckState.abilityHand.includes(cardId)) return;
   if (deckState.abilityDeck.includes(cardId)) return;
   deckState.abilityDeck.push(cardId);
+};
+
+const moveAbilityCardToDeckTop = (deckState: DeckState, cardId: string) => {
+  const index = deckState.abilityDeck.indexOf(cardId);
+  if (index === -1) return;
+  const [card] = deckState.abilityDeck.splice(index, 1);
+  if (card) {
+    deckState.abilityDeck.unshift(card);
+  }
 };
 
 export const setFocusedAbilityCard = (
@@ -556,7 +575,7 @@ export const resolveLandRefreshes = (
     if (deckState.lastRefreshIndex === firstEIndex) return;
     const beat = beats[firstEIndex];
     const entry = beat ? getEntryForCharacter(beat, character) : null;
-    if (entry && entry.action !== 'E') return;
+    if (entry && !isRefreshActionLabel(entry.action)) return;
     const location = getCharacterLocationAtIndex(beats, character, firstEIndex);
     if (!location) return;
     const locationKey = buildCoordKey(location);
@@ -572,6 +591,10 @@ export const resolveLandRefreshes = (
     const onLand = onPlatform || (terrain === 'land' ? true : terrain === 'abyss' ? false : isCoordOnLand(location, land));
     const ledgeGrab = !onLand && isAdjacentToLand(location, land) && !hasAnyCardsRemaining(deckState);
     if (!onLand && !ledgeGrab) return;
+    const usedSignatureRefresh = isSignatureRefreshActionLabel(entry?.action) ? deckState.activeCardId : null;
+    if (usedSignatureRefresh) {
+      moveAbilityCardToDeckTop(deckState, usedSignatureRefresh);
+    }
     const maxHandSize = getMaxAbilityHandSize(deckState);
     const drawCount = ledgeGrab ? 1 : Math.max(0, maxHandSize - deckState.abilityHand.length);
     if (ledgeGrab) {

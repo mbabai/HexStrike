@@ -10,6 +10,7 @@ const {
   getMovementHandIds,
   resolveLandRefreshes,
   setFocusedAbilityCard,
+  validateActionSubmission,
 } = require('../dist/game/cardRules.js');
 
 const buildDeckDefinition = () => ({
@@ -26,9 +27,9 @@ const buildCharacter = (position = { q: 0, r: 0 }) => ({
   characterName: 'Alpha',
 });
 
-const buildEBeat = (position = { q: 0, r: 0 }) => [[{
+const buildEBeat = (position = { q: 0, r: 0 }, action = 'E') => [[{
   username: 'alpha',
-  action: 'E',
+  action,
   rotation: '',
   priority: 0,
   damage: 0,
@@ -230,4 +231,56 @@ test('resolveLandRefreshes ledge grab does not trigger when abyss hex is not adj
   assert.deepEqual(getMovementHandIds(deckState), []);
   assert.equal(deckState.lastRefreshIndex, null);
   assert.equal(interactions.length, 0);
+});
+
+test('validateActionSubmission accepts cards whose trailing refresh is SigE', () => {
+  const deckState = createDeckState({ movement: ['step'], ability: ['bow-shot'] });
+  const catalog = {
+    movement: [],
+    ability: [],
+    decks: [],
+    cardsById: new Map([
+      ['step', { id: 'step', type: 'movement', actions: ['W', 'm', 'E'], rotations: '*', damage: 0, kbf: 0, timings: [null, ['mid'], null] }],
+      ['bow-shot', { id: 'bow-shot', type: 'ability', actions: ['W', 'W', 'X1', 'SigE'], rotations: '*', damage: 0, kbf: 0, timings: [null, null, ['early'], null] }],
+    ]),
+  };
+
+  const result = validateActionSubmission(
+    { activeCardId: 'bow-shot', passiveCardId: 'step', rotation: '0' },
+    deckState,
+    catalog,
+  );
+
+  assert.equal(result.ok, true, result.ok ? '' : result.error?.message);
+});
+
+test('resolveLandRefreshes top-decks the active card on SigE refresh', () => {
+  const deckState = createDeckState({
+    movement: ['move-a', 'move-b', 'move-c', 'move-d'],
+    ability: ['bow-shot', 'ability-a', 'ability-b', 'ability-c', 'ability-d'],
+  });
+
+  const useResult = applyCardUse(deckState, {
+    movementCardId: 'move-a',
+    abilityCardId: 'bow-shot',
+    activeCardId: 'bow-shot',
+    passiveCardId: 'move-a',
+  });
+  assert.equal(useResult.ok, true);
+  assert.deepEqual(deckState.abilityHand, ['ability-a', 'ability-b', 'ability-c']);
+  assert.deepEqual(deckState.abilityDeck, ['ability-d', 'bow-shot']);
+
+  resolveLandRefreshes(
+    new Map([['alpha', deckState]]),
+    buildEBeat({ q: 0, r: 0 }, 'SigE'),
+    [buildCharacter()],
+    [{ q: 0, r: 0 }],
+    [],
+    undefined,
+    [],
+  );
+
+  assert.deepEqual(deckState.abilityHand, ['ability-a', 'ability-b', 'ability-c', 'bow-shot']);
+  assert.deepEqual(deckState.abilityDeck, ['ability-d']);
+  assert.equal(deckState.lastRefreshIndex, 0);
 });

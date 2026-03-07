@@ -74,6 +74,11 @@ const SPECIAL_SYMBOLS = [
     description: 'Open beat. Primary insertion point and refresh trigger when on land; ledge grab can draw 1 over adjacent abyss.',
   },
   {
+    icon: 'SignatureE',
+    title: 'Signature Refresh Beat',
+    description: 'Signature refresh beat. Counts as a refresh/open beat, but the active card returns to the top of your deck instead of the bottom if the refresh happens.',
+  },
+  {
     icon: 'W',
     title: 'Wait Beat',
     description: 'Wait action.',

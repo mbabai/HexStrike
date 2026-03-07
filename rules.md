@@ -12,6 +12,7 @@ HexStrike currently ships as a server-authoritative Node.js prototype with a bro
 - Card IDs must be unique within the deck.
 - `Step` is mandatory in every deck.
 - Only one signature movement card is allowed per deck. The current signature movement cards are `grappling-hook`, `fleche`, and `leap`.
+- Only two signature ability cards are allowed per deck. The current signature ability cards are `bow-shot`, `vengeance`, `spinning-back-kick`, `burning-strike`, `parry`, and `smoke-bomb`.
 - Ability order is fixed. The default implementation does not shuffle ability decks.
 - Character powers come from `public/characters/characters.json` and are active immediately once the match starts.
 - In 1v1, players start on opposite starting land hexes facing each other. In FFA, setup expands to the configured roster/spawn logic.
@@ -22,7 +23,7 @@ HexStrike currently ships as a server-authoritative Node.js prototype with a bro
 - The authoritative timeline is `state.public.beats`.
 - `resolvedIndex` is the last beat where every entry is marked `calculated`.
 - The actionable frontier starts at `resolvedIndex + 1`.
-- Open beats are missing entries, `E`, or `F`. `F` is open for turn gating and action-set insertion, but it is not a refresh beat by itself.
+- Open beats are missing entries, `E`, `SigE`, or `F`. `F` is open for turn gating and action-set insertion, but it is not a refresh beat by itself.
 - The earliest open beat is computed across all active players. Submission, refresh, HUD visibility, and timeline stop points all key off that earliest open beat.
 - When multiple players share the earliest open beat, the server batches submissions in `pendingActions` and reveals them together once every required player has submitted.
 
@@ -31,13 +32,14 @@ HexStrike currently ships as a server-authoritative Node.js prototype with a bro
 ### 4.1 Refresh
 
 - Refresh is checked at the earliest open beat for each player.
-- A player refreshes only when that earliest open beat is on land. Ethereal platforms count as land for refresh.
+- A player refreshes only when that earliest open beat is `E` or `SigE` on land. Ethereal platforms count as land for refresh.
 - Refresh is blocked while required pending interactions or pending simultaneous submissions are unresolved.
 - Refresh clears exhausted movement cards.
 - Refresh draws ability cards until the player reaches max hand size.
 - Base max hand size is 4. Focused cards can reduce the effective refresh cap.
 - Movement hand size is derived from current ability count: up to 4 movement cards, capped by ability count when that count is 4 or less.
 - Ability cards are never exhausted. On use they leave the hand immediately and go under the ability deck.
+- `SigE` is a Signature Refresh beat. If that refresh resolves, the used active card goes to the top of the ability deck instead of the bottom.
 - Movement cards exhaust on use and recover through refresh or other explicit rules.
 
 ### 4.2 Ledge Grab and No-Cards Loss
@@ -73,6 +75,7 @@ Per beat, the server resolves in this order:
 - If two entries share timing, the engine breaks ties by action class and then roster order.
 - Current action class order is: combo, throw, block, attack, move, focus, special, other.
 - Throws are classed via shared throw specs, not scattered per-file allow lists.
+- Same-class movement ties with different destination hexes resolve simultaneously. Those movers do not block each other's vacated hexes unless one of the moves fails and leaves its origin occupied.
 
 ## 7. Damage, Knockback, Interruptions, and Match-End State
 
@@ -134,7 +137,6 @@ Current live pre-action specs:
 - `advance` passive: `adr +1`
 - `dash` passive: `adr +1`
 - `jump` passive: `adr +1`
-- `backflip` passive: `adr -1`
 - `step` passive: `adr -1`
 - `sinking-shot` passive: take 2 damage and gain 1 adrenaline during the pre-action phase
 
@@ -252,6 +254,7 @@ Discard interactions always use the shared discard prompt/requirements flow.
 ## 13. Symbol and State Glossary
 
 - `E`: open/refresh beat with no committed action
+- `SigE`: signature refresh beat; refreshes like `E`, but the active card returns to the top of the deck if the refresh happens
 - `F`: focused open beat
 - `W`: wait
 - `m`: move

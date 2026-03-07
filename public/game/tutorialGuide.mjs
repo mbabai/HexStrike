@@ -386,10 +386,14 @@ export const createTutorialGuide = ({
     const passiveCardId = normalizeCardId(payload?.passiveCardId);
     const rotation = normalizeRotation(payload?.rotation);
     const adrenaline = Number.isFinite(Number(payload?.adrenaline)) ? Math.round(Number(payload.adrenaline)) : 0;
+    const ignoreAdrenalineForFinish =
+      activeCardId === normalizeCardId(TUTORIAL_ACTIONS.finish.activeCardId) &&
+      passiveCardId === normalizeCardId(TUTORIAL_ACTIONS.finish.passiveCardIds[0]) &&
+      rotation === normalizeRotation(TUTORIAL_ACTIONS.finish.rotation);
     if (activeCardId !== normalizeCardId(expected.activeCardId)) return false;
     if (!Array.isArray(expected.passiveCardIds) || !expected.passiveCardIds.includes(passiveCardId)) return false;
     if (rotation !== normalizeRotation(expected.rotation)) return false;
-    if (Number.isFinite(expected.adrenaline) && adrenaline !== expected.adrenaline) return false;
+    if (Number.isFinite(expected.adrenaline) && adrenaline !== expected.adrenaline && !ignoreAdrenalineForFinish) return false;
     return true;
   };
 

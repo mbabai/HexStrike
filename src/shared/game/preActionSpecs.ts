@@ -6,7 +6,6 @@ export interface PreActionSpec {
 
 const PRE_ACTION_SPECS: PreActionSpec[] = [
   { cardId: 'advance', passiveStartAdrenalineDelta: 1 },
-  { cardId: 'backflip', passiveStartAdrenalineDelta: -1 },
   { cardId: 'dash', passiveStartAdrenalineDelta: 1 },
   { cardId: 'jump', passiveStartAdrenalineDelta: 1 },
   { cardId: 'step', passiveStartAdrenalineDelta: -1 },
@@ -28,4 +27,3 @@ export const getPassiveStartAdrenalineDelta = (cardId: string | null | undefined
 
 export const getPassiveStartSelfDamage = (cardId: string | null | undefined): number =>
   getPreActionSpec(cardId)?.passiveStartSelfDamage ?? 0;
-

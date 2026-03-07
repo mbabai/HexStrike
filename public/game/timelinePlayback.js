@@ -10,11 +10,16 @@ import {
 import { getInterpolatedFacing, getStepProgressByChannel } from './playbackSpeed.mjs';
 import { getDebugBeatFilter, isDebugLoggingEnabled } from './debugFlags.mjs';
 import { getTimingOrder, getTimingPriority, hasTimingPhase, resolveActionTiming } from '../shared/timing.js';
+import {
+  DEFAULT_OPEN_ACTION,
+  FOCUS_ACTION,
+  WAIT_ACTION,
+  isOpenBeatActionLabel,
+  isRefreshActionLabel,
+} from './actionSymbols.js';
 import { getThrowSpec } from '../generated/shared/game/throwSpecs.js';
 
-const DEFAULT_ACTION = 'E';
-const FOCUS_ACTION = 'F';
-const WAIT_ACTION = 'W';
+const DEFAULT_ACTION = DEFAULT_OPEN_ACTION;
 const COMBO_ACTION = 'CO';
 const DAMAGE_ICON_ACTION = 'DamageIcon';
 const END_MARKER_ACTIONS = new Set(['DEATH', 'VICTORY', 'HANDSHAKE']);
@@ -63,7 +68,7 @@ const getEntryPriority = (entry) => {
   if (actionLabel === COMBO_ACTION) return ARROW_PRIORITY + 10;
   const timing = resolveActionTiming(entry?.action, entry?.timing);
   if (Array.isArray(timing) && timing.length) return getTimingPriority(timing);
-  if (actionLabel === DEFAULT_ACTION || actionLabel === WAIT_ACTION) return 0;
+  if (isRefreshActionLabel(actionLabel) || actionLabel === WAIT_ACTION) return 0;
   return Number.isFinite(entry?.priority) ? Number(entry.priority) : 0;
 };
 
@@ -516,13 +521,13 @@ const normalizeActionLabel = (action) => {
 
 const isOpenBeatAction = (action) => {
   const label = normalizeActionLabel(action ?? '').toUpperCase();
-  return label === DEFAULT_ACTION || label === FOCUS_ACTION;
+  return isOpenBeatActionLabel(label);
 };
 
 const isActionActive = (action) => {
   const label = normalizeActionLabel(action ?? '').toUpperCase();
   if (!label) return false;
-  return label !== DEFAULT_ACTION && label !== FOCUS_ACTION && label !== DAMAGE_ICON_ACTION.toUpperCase();
+  return !isOpenBeatActionLabel(label) && label !== DAMAGE_ICON_ACTION.toUpperCase();
 };
 const isPassiveActiveForSameBeatHit = (entry, passiveCardId) => {
   if (!entry || entry.passiveCardId !== passiveCardId) return false;
@@ -540,7 +545,7 @@ const isActionSetStart = (entry) =>
 const getHealingHarmonyReduction = (entry) => {
   if (!entry || entry.passiveCardId !== HEALING_HARMONY_CARD_ID) return 0;
   const actionLabel = normalizeActionLabel(entry.action ?? '').toUpperCase();
-  if (!actionLabel || actionLabel === DEFAULT_ACTION) return 0;
+  if (!actionLabel || isRefreshActionLabel(actionLabel)) return 0;
   return 2;
 };
 
@@ -593,7 +598,7 @@ const getEntryTimingRank = (entry) => {
   if (!entry) return Number.MAX_SAFE_INTEGER;
   const actionLabel = normalizeActionLabel(entry.action ?? '').toUpperCase();
   if (actionLabel === COMBO_ACTION) return -2;
-  if (actionLabel === DEFAULT_ACTION) return -1;
+  if (isRefreshActionLabel(actionLabel)) return -1;
   const timing = resolveActionTiming(entry.action, entry.timing);
   if (!Array.isArray(timing) || !timing.length) return Number.MAX_SAFE_INTEGER;
   const timingOrder = getTimingOrder();
@@ -808,6 +813,28 @@ const buildGrapplingHookPath = (origin, steps, facing, land, occupancy, actorId)
     return { positions, destination: { ...origin }, lastStep };
   }
   return { positions, destination: { ...positions[positions.length - 1] }, lastStep };
+};
+
+const buildSimultaneousMovementPlan = (entry, actorId, actorState, occupancy, landTiles) => {
+  const hasGiganticStaffPassive =
+    entry?.passiveCardId === GIGANTIC_STAFF_CARD_ID && !isCoordOnLand(actorState.position, landTiles);
+  const action = hasGiganticStaffPassive ? applyGiganticStaffAction(entry.action ?? '') : entry.action ?? '';
+  const firstMoveToken = parseActionTokens(action).find(
+    (token) => token.type === 'm' || token.type === 'j' || token.type === 'c',
+  );
+  if (!firstMoveToken) return null;
+  const origin = { q: actorState.position.q, r: actorState.position.r };
+  const isGrapplingHookCharge =
+    entry.cardId === GRAPPLING_HOOK_CARD_ID && firstMoveToken.type === 'c' && isBracketedAction(action);
+  const path = isGrapplingHookCharge
+    ? buildGrapplingHookPath(origin, firstMoveToken.steps, actorState.facing, landTiles, occupancy, actorId)
+    : buildPath(origin, firstMoveToken.steps, actorState.facing);
+  return {
+    actorId,
+    tokenType: firstMoveToken.type,
+    positions: path.positions,
+    destination: path.destination,
+  };
 };
 
 const getKnockbackDistance = (damage, kbf) => {
@@ -1336,26 +1363,25 @@ const buildActionSteps = (
   });
 
   const movementTieBlockedBy = new Map();
+  const simultaneousMovementActorIdsByBucket = new Map();
   entriesByTieBucket.forEach((entriesInBucket) => {
     if (!entriesInBucket.length) return;
     if (getEntryActionClass(entriesInBucket[0]) !== 'move') return;
     if (entriesInBucket.length < 2) return;
+    const bucketKey = buildExecutionTieBucketKey(entriesInBucket[0]);
+    const bucketActorIds = new Set();
+    const movementPlans = new Map();
     const destinationToActors = new Map();
     entriesInBucket.forEach((entry) => {
       const actorId = userLookup.get(entry.username ?? entry.userId ?? entry.userID);
       if (!actorId) return;
       const actorState = state.get(actorId);
       if (!actorState) return;
-      const firstMoveToken = parseActionTokens(entry.action ?? '').find(
-        (token) => token.type === 'm' || token.type === 'j',
-      );
-      if (!firstMoveToken) return;
-      const path = buildPath(
-        { q: actorState.position.q, r: actorState.position.r },
-        firstMoveToken.steps,
-        actorState.facing,
-      );
-      const destinationKey = coordKey(path.destination);
+      const plan = buildSimultaneousMovementPlan(entry, actorId, actorState, occupancy, landTiles);
+      if (!plan) return;
+      bucketActorIds.add(actorId);
+      movementPlans.set(actorId, plan);
+      const destinationKey = coordKey(plan.destination);
       const existing = destinationToActors.get(destinationKey) ?? [];
       existing.push(actorId);
       destinationToActors.set(destinationKey, existing);
@@ -1369,6 +1395,38 @@ const buildActionSteps = (
         movementTieBlockedBy.set(actorId, blockerId);
       });
     });
+    let changed = true;
+    while (changed) {
+      changed = false;
+      movementPlans.forEach((plan, actorId) => {
+        if (movementTieBlockedBy.has(actorId)) return;
+        const findBlockingOccupant = (coord) => {
+          const occupant = occupancy.get(coordKey(coord));
+          if (!occupant || occupant === actorId) return null;
+          if (!bucketActorIds.has(occupant)) return occupant;
+          return movementTieBlockedBy.has(occupant) ? occupant : null;
+        };
+        const blockerId =
+          plan.tokenType === 'j'
+            ? findBlockingOccupant(plan.destination)
+            : plan.positions.reduce((blockedBy, stepPosition) => {
+                if (blockedBy) return blockedBy;
+                return findBlockingOccupant(stepPosition);
+              }, null);
+        if (!blockerId) return;
+        movementTieBlockedBy.set(actorId, blockerId);
+        changed = true;
+      });
+    }
+    const simultaneousActorIds = new Set();
+    movementPlans.forEach((_, actorId) => {
+      if (!movementTieBlockedBy.has(actorId)) {
+        simultaneousActorIds.add(actorId);
+      }
+    });
+    if (simultaneousActorIds.size) {
+      simultaneousMovementActorIdsByBucket.set(bucketKey, simultaneousActorIds);
+    }
   });
 
   const tieBucketActorsByKey = new Map();
@@ -1576,8 +1634,11 @@ const buildActionSteps = (
         }
       }
 
-      const entryTiming = resolveActionTiming(action, entry?.timing);
-      const tokens = parseActionTokens(action);
+    const entryTiming = resolveActionTiming(action, entry?.timing);
+    const tokens = parseActionTokens(action);
+    const simultaneousMovementActorIds = currentExecutionBucketKey
+      ? simultaneousMovementActorIdsByBucket.get(currentExecutionBucketKey)
+      : null;
     tokens.forEach((token) => {
       const isGrapplingHookCharge =
         entry.cardId === GRAPPLING_HOOK_CARD_ID && token.type === 'c' && isBracketedAction(action);
@@ -1823,7 +1884,8 @@ const buildActionSteps = (
           for (const stepPosition of positions) {
             const stepKey = coordKey(stepPosition);
             const occupant = occupancy.get(stepKey);
-            if (occupant && occupant !== actorId) {
+            const occupiedBySimultaneousMover = occupant ? simultaneousMovementActorIds?.has(occupant) : false;
+            if (occupant && occupant !== actorId && !occupiedBySimultaneousMover) {
               break;
             }
             finalPosition = stepPosition;
@@ -1840,7 +1902,8 @@ const buildActionSteps = (
       }
 
       if (token.type === 'j') {
-        if (!targetId || targetId === actorId) {
+        const occupiedBySimultaneousMover = targetId ? simultaneousMovementActorIds?.has(targetId) : false;
+        if (!targetId || targetId === actorId || occupiedBySimultaneousMover) {
           occupancy.delete(coordKey(actorState.position));
           actorState.position = { q: destination.q, r: destination.r };
           occupancy.set(coordKey(actorState.position), actorId);

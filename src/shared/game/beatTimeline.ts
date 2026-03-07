@@ -1,12 +1,5 @@
 import type { BeatEntry, CustomInteraction, PublicCharacter } from '../../types';
-
-const DEFAULT_ACTION = 'E';
-const FOCUS_ACTION = 'F';
-
-const isOpenBeatAction = (action: string | null | undefined): boolean => {
-  const normalized = `${action ?? ''}`.trim().toUpperCase();
-  return normalized === DEFAULT_ACTION || normalized === FOCUS_ACTION;
-};
+import { isOpenBeatActionLabel } from './actionSymbols';
 
 const getEntryForCharacter = (beat: BeatEntry[] | undefined, character: PublicCharacter): BeatEntry | undefined => {
   if (!Array.isArray(beat)) return undefined;
@@ -53,7 +46,7 @@ export const getCharacterFirstEIndex = (beats: BeatEntry[][], character: PublicC
   const startIndex = Math.max(0, resolvedIndex + 1);
   for (let i = startIndex; i < beats.length; i += 1) {
     const entry = getEntryForCharacter(beats[i], character);
-    if (!entry || isOpenBeatAction(entry.action)) {
+    if (!entry || isOpenBeatActionLabel(entry.action)) {
       return i;
     }
   }

@@ -373,7 +373,7 @@ test('tutorial queue uses scripted flow, forced loadout, and strict tutorial cho
       { timeoutMs: 12000 },
     );
     void preFinishSnapshot;
-    await submitAction({ activeCardId: 'smash-attack', passiveCardId: 'advance', rotation: '3', adrenaline: 4 });
+    await submitAction({ activeCardId: 'smash-attack', passiveCardId: 'advance', rotation: '3', adrenaline: 0 });
 
     const postFinishSnapshot = await getSnapshot();
     assert.ok(postFinishSnapshot?.state?.public, 'expected game state after tutorial finish submission');

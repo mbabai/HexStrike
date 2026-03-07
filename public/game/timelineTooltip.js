@@ -8,9 +8,9 @@ import { getCharacterTokenMetrics } from './characterTokens.mjs';
 import { actionHasAttackToken } from './cardText/actionListTransforms.js';
 import { isFfaPlayerInvulnerableAtBeat } from './ffaState.js';
 import { buildBoardHandTriggerEntries, getBoardHandTriggerTarget } from './boardHandTriggerView.js';
+import { isOpenBeatActionLabel } from './actionSymbols.js';
 
 const DAMAGE_ICON_ACTION = 'DamageIcon';
-const DEFAULT_ACTION = 'E';
 const END_MARKER_ACTIONS = new Set(['Death', 'Victory', 'Handshake']);
 
 const normalizeSymbolText = (text) => {
@@ -23,7 +23,7 @@ const normalizeActionLabel = (action) => `${action ?? ''}`.trim().toUpperCase();
 
 const isDamageIconAction = (action) => normalizeActionLabel(action) === DAMAGE_ICON_ACTION.toUpperCase();
 
-const isOpenBeatAction = (action) => normalizeActionLabel(action) === DEFAULT_ACTION;
+const isOpenBeatAction = (action) => isOpenBeatActionLabel(normalizeActionLabel(action));
 
 const isEndMarkerAction = (action) => END_MARKER_ACTIONS.has(`${action ?? ''}`.trim());
 
@@ -643,25 +643,16 @@ export const createTimelineTooltip = ({
       }
       const activeCardId = target.activeCardId ? `${target.activeCardId}`.trim() : '';
       const passiveCardId = target.passiveCardId ? `${target.passiveCardId}`.trim() : '';
-      const activeCard = activeCardId ? cardMetadata.byId.get(activeCardId) : null;
-      const passiveCard = passiveCardId ? cardMetadata.byId.get(passiveCardId) : null;
-      const isLocalCharacter = Boolean(
-        localUserId &&
-          (target.character?.userId === localUserId || target.character?.username === localUserId),
-      );
       const roleLabel = target.cardRole === 'passive' ? 'Passive' : 'Active';
       const titleText = `${roleLabel}: ${card.name ?? cardId}`.trim();
       const attackStatsLine = buildAttackStatsLine(card);
       const previewScale = getHandCardPreviewScale();
-      const previewCards = isLocalCharacter
-        ? [card, target.cardRole === 'passive' ? activeCard : passiveCard].filter(Boolean)
-        : [card];
+      const previewCards = [card];
       const key = [
         'played-card',
         cardId,
         activeCardId || 'none',
         passiveCardId || 'none',
-        isLocalCharacter ? 'local' : 'other',
         target.cardRole ?? '',
         target.beatIndex,
         attackStatsLine,

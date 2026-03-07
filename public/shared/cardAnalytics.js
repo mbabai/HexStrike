@@ -50,7 +50,7 @@ const getActionBeats = (card) => {
   const actions = Array.isArray(card?.actions) ? card.actions.map((action) => `${action}`.trim()).filter(Boolean) : [];
   if (!actions.length) return [];
   const last = actions[actions.length - 1];
-  if (last.toUpperCase() === 'E') {
+  if (isRefreshActionLabel(last)) {
     return actions.slice(0, -1);
   }
   return actions;
@@ -151,3 +151,4 @@ export const getCardRotationOptionCount = (card) => {
   const allowed = buildAllowedRotationSet(card?.rotations);
   return allowed ? allowed.size : ROTATION_LABELS.length;
 };
+import { isRefreshActionLabel } from './actionSymbols.js';
