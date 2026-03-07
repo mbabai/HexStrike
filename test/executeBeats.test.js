@@ -1485,6 +1485,140 @@ test('executeBeats applies fire hex damage from board tokens even when the token
   assert.equal(alphaEntry.damage, 1);
 });
 
+test('executeBeats places druidic presence flora under the actor on X1 when none exists', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+  ];
+
+  const beats = [[buildEntry('alpha', 'X1', 20, characters[0].position, characters[0].facing)]];
+  beats[0][0].cardId = 'druidic-presence';
+  beats[0][0].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters);
+  const flora = (result.boardTokens || []).find((token) => token.type === 'flora-hex');
+
+  assert.ok(flora);
+  assert.deepEqual(flora.position, { q: 0, r: 0 });
+});
+
+test('executeBeats uses druidic presence second X1 to extend flora in the selected rotation direction', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+  ];
+
+  const beats = [
+    [buildEntry('alpha', 'W', 20, characters[0].position, characters[0].facing, 'R1')],
+    [buildEntry('alpha', 'X1', 20, characters[0].position, characters[0].facing)],
+    [buildEntry('alpha', 'X1', 20, characters[0].position, characters[0].facing)],
+  ];
+  beats[0][0].rotationSource = 'selected';
+  beats.forEach((beat) => {
+    beat[0].cardId = 'druidic-presence';
+    beat[0].passiveCardId = 'step';
+  });
+
+  const result = executeBeats(beats, characters);
+  const floraPositions = (result.boardTokens || [])
+    .filter((token) => token.type === 'flora-hex')
+    .map((token) => ({ q: token.position.q, r: token.position.r }))
+    .sort((left, right) => (left.q - right.q) || (left.r - right.r));
+
+  assert.deepEqual(floraPositions, [{ q: 0, r: 0 }, { q: 0, r: 1 }]);
+});
+
+test('executeBeats does not place druidic presence flora on abyss', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 20, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+  ];
+
+  const beats = [[buildEntry('alpha', 'X1', 20, characters[0].position, characters[0].facing)]];
+  beats[0][0].cardId = 'druidic-presence';
+  beats[0][0].passiveCardId = 'step';
+
+  const result = executeBeats(beats, characters);
+  const floraTokens = (result.boardTokens || []).filter((token) => token.type === 'flora-hex');
+
+  assert.equal(floraTokens.length, 0);
+});
+
+test('executeBeats lets flora replace an existing fire token', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+  ];
+
+  const beats = [[buildEntry('alpha', 'X1', 20, characters[0].position, characters[0].facing)]];
+  beats[0][0].cardId = 'druidic-presence';
+  beats[0][0].passiveCardId = 'step';
+
+  const result = executeBeats(
+    beats,
+    characters,
+    undefined,
+    [{ id: 'fire:0', type: 'fire-hex', position: { q: 0, r: 0 }, facing: 0 }],
+  );
+  const flora = (result.boardTokens || []).find(
+    (token) => token.type === 'flora-hex' && token.position.q === 0 && token.position.r === 0,
+  );
+  const fire = (result.boardTokens || []).find(
+    (token) => token.type === 'fire-hex' && token.position.q === 0 && token.position.r === 0,
+  );
+
+  assert.ok(flora);
+  assert.equal(fire, undefined);
+});
+
+test('executeBeats lets fire replace an existing flora token', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+  ];
+
+  const beats = [[buildEntry('alpha', '[a]', 20, characters[0].position, characters[0].facing, '', 0, 0)]];
+  beats[0][0].cardId = 'burning-strike';
+  beats[0][0].passiveCardId = 'step';
+
+  const result = executeBeats(
+    beats,
+    characters,
+    undefined,
+    [{ id: 'flora:0', type: 'flora-hex', position: { q: 1, r: 0 }, facing: 0 }],
+  );
+  const fire = (result.boardTokens || []).find(
+    (token) => token.type === 'fire-hex' && token.position.q === 1 && token.position.r === 0,
+  );
+  const flora = (result.boardTokens || []).find(
+    (token) => token.type === 'flora-hex' && token.position.q === 1 && token.position.r === 0,
+  );
+
+  assert.ok(fire);
+  assert.equal(flora, undefined);
+});
+
+test('executeBeats keeps fire when fire and flora are created in the same timing window', () => {
+  const characters = [
+    { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },
+    { userId: 'beta', username: 'beta', position: { q: -1, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Beta' },
+  ];
+
+  const beats = [[
+    buildEntry('alpha', 'X1', 20, characters[0].position, characters[0].facing),
+    buildEntry('beta', '[a]', 20, characters[1].position, characters[1].facing, '', 0, 0),
+  ]];
+  beats[0][0].cardId = 'druidic-presence';
+  beats[0][0].passiveCardId = 'step';
+  beats[0][0].timing = ['mid'];
+  beats[0][1].cardId = 'burning-strike';
+  beats[0][1].passiveCardId = 'step';
+  beats[0][1].timing = ['mid'];
+
+  const result = executeBeats(beats, characters);
+  const hexTokens = (result.boardTokens || []).filter(
+    (token) => token.position.q === 0 && token.position.r === 0,
+  );
+
+  assert.equal(hexTokens.length, 1);
+  assert.equal(hexTokens[0].type, 'fire-hex');
+});
+
 test('executeBeats places burning strike fire hexes on bracketed attacks', () => {
   const characters = [
     { userId: 'alpha', username: 'alpha', position: { q: 0, r: 0 }, facing: 180, characterId: 'murelious', characterName: 'Alpha' },

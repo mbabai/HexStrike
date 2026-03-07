@@ -29,6 +29,7 @@ test('card balance update applies timeline, damage, and naming changes', async (
   assert.deepEqual(getCardById(catalog, 'push-kick').actions, ['[a-Bm]', 'W', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'bow-shot').actions, ['W', 'W', 'X1', 'SigE']);
   assert.deepEqual(getCardById(catalog, 'burning-strike').actions, ['W', '[a]', 'Co', 'W', 'SigE']);
+  assert.deepEqual(getCardById(catalog, 'druidic-presence').actions, ['W', 'X1', 'X1', 'W', 'SigE']);
   assert.deepEqual(getCardById(catalog, 'parry').actions, ['[b]', '[b]', 'W', 'W', 'SigE']);
   assert.deepEqual(getCardById(catalog, 'aerial-strike').actions, ['W', '[2j]', 'a', 'W', 'W', 'E']);
   assert.deepEqual(getCardById(catalog, 'hammer').actions, ['W', 'W', '[a-La-Ra]', 'W', 'W', 'E']);

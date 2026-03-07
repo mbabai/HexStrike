@@ -12,7 +12,7 @@ HexStrike currently ships as a server-authoritative Node.js prototype with a bro
 - Card IDs must be unique within the deck.
 - `Step` is mandatory in every deck.
 - Only one signature movement card is allowed per deck. The current signature movement cards are `grappling-hook`, `fleche`, and `leap`.
-- Only two signature ability cards are allowed per deck. The current signature ability cards are `bow-shot`, `vengeance`, `spinning-back-kick`, `burning-strike`, `parry`, and `smoke-bomb`.
+- Only two signature ability cards are allowed per deck. The current signature ability cards are `bow-shot`, `vengeance`, `spinning-back-kick`, `burning-strike`, `druidic-presence`, `parry`, and `smoke-bomb`.
 - Ability order is fixed. The default implementation does not shuffle ability decks.
 - Character powers come from `public/characters/characters.json` and are active immediately once the match starts.
 - In 1v1, players start on opposite starting land hexes facing each other. In FFA, setup expands to the configured roster/spawn logic.
@@ -213,12 +213,21 @@ Discard interactions always use the shared discard prompt/requirements flow.
 - Smoke Bomb `{X1}` uses this shared swap behavior.
 - Reflex Dodge uses the same swap concept at execution time when hit during `W`.
 
+### 9.5 Druidic Presence
+
+- `druidic-presence` is a signature ability with action list `W, X1, X1, W, SigE`.
+- On active `X1`, if the actor is not standing on flora, place a flora hex on the actor's current land hex.
+- If the actor is already standing on flora, place flora on the adjacent land hex indicated by the committed rotation direction relative to the action-set's starting facing (`0` forward, `R1` right, `R2` back-right, `3` back, `L2` back-left, `L1` left).
+- If that destination is abyss, the flora placement fails and nothing is added.
+- The second `X1` can use flora created by the first `X1` on an earlier beat of the same action set.
+
 ## 10. Terrain and Board Tokens
 
 - Terrain is derived from beat entry location plus land layout and stored on entries as `terrain`.
 - Board tokens are reconstructed from timeline state during execution/playback. Historical re-execution must not seed from future `public.boardTokens`.
 - Current board token types:
   - `fire-hex`: persistent damage zone, 1 damage per beat on occupied hex
+  - `flora-hex`: persistent land-only hex state with no direct damage; if flora is placed onto fire, fire is removed and flora stays; if fire is placed onto flora, flora is removed and fire stays; if both are created in the same timing window on one hex, fire stays
   - `arrow`: moves 1 hex per beat, deals 4 damage and KBF 1, blocked by matching block walls, removed on hit/block/too-far-from-land
   - `ethereal-platform`: abyss-only refresh platform, consumed after a land-style refresh
   - `focus-anchor`: Rewind anchor marker

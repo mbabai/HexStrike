@@ -7,6 +7,7 @@ import { buildCardElement, fitAllCardText } from '../shared/cardRenderer.js';
 import { buildRotationWheel } from './rotationWheel.js';
 import { getActionPhaseUserIds, getWaitingForInputUserIds, isCharacterInUserSet } from './inputWaiting.js';
 import { DEFAULT_OPEN_ACTION, isRefreshActionLabel } from './actionSymbols.js';
+import { DEFAULT_PLAY_MODAL_BEAT_SLOT_COUNT, resolvePlayModalBeatSlotIndex } from './playModal.js';
 
 const DEFAULT_BORDER_SIZE = { width: 640, height: 64 };
 const DEFAULT_ACTION = DEFAULT_OPEN_ACTION;
@@ -107,7 +108,7 @@ const ACTION_CARD_ACTIONS_TOP = 7;
 const ACTION_CARD_ACTION_HEIGHT = 39.501;
 const PLAY_BEAT_POINTER_ICON_CENTER_Y = 0.65;
 const PLAY_CARD_SCALE_MULTIPLIER = 1.1;
-const PLAY_BEAT_SLOT_COUNT = 6;
+const PLAY_BEAT_SLOT_COUNT = DEFAULT_PLAY_MODAL_BEAT_SLOT_COUNT;
 const DAMAGE_ICON_ACTION = 'DamageIcon';
 const STUN_CARD_BASE_ID = '__stun-damage-card__';
 const STUN_CARD_PREVIEW_CLASS = 'is-stun-card';
@@ -985,12 +986,14 @@ const resolveSubmittedAdrenalineForPair = (beatLookup, lookupKey, playedPair, be
   return null;
 };
 
-const resolvePlayBeatSlotForValue = (playedPair, value) => {
+const resolvePlayBeatSlotForValue = (beatLookup, lookupKey, playedPair, value) => {
   if (!playedPair || !Number.isFinite(value)) return null;
   const startIndex = Number.isFinite(playedPair.startIndex) ? playedPair.startIndex : null;
-  if (startIndex == null) return null;
-  const offset = Math.max(0, Math.round(value) - Math.round(startIndex));
-  return Math.max(0, Math.min(PLAY_BEAT_SLOT_COUNT - 1, offset));
+  const currentEntry =
+    Array.isArray(beatLookup) && lookupKey ? getBeatLookupEntry(beatLookup, Math.round(value), lookupKey) : null;
+  const actionSetStep =
+    playedPair?.kind === 'stun' || !Number.isFinite(currentEntry?.actionSetStep) ? null : currentEntry.actionSetStep;
+  return resolvePlayModalBeatSlotIndex(value, startIndex, actionSetStep, PLAY_BEAT_SLOT_COUNT);
 };
 
 export const getPlayBeatSlotForCharacter = (beats, character, beatIndex) => {
@@ -1000,7 +1003,7 @@ export const getPlayBeatSlotForCharacter = (beats, character, beatIndex) => {
   const safeBeat = Math.max(0, Math.min(beats.length - 1, Math.round(beatIndex)));
   const beatLookup = buildBeatLookup(beats);
   const playedPair = resolvePlayModalStateForBeat(beatLookup, lookupKey, safeBeat);
-  return resolvePlayBeatSlotForValue(playedPair, safeBeat);
+  return resolvePlayBeatSlotForValue(beatLookup, lookupKey, playedPair, safeBeat);
 };
 
 export const getPlayedCardPairForCharacterAtBeat = (beats, character, beatIndex) => {
@@ -2419,7 +2422,7 @@ const buildOpponentPlayHudItems = ({
       playedPair?.kind === 'stun' ? '' : resolveSelectedRotationForPair(beatLookup, lookupKey, playedPair, value);
     const submittedAdrenaline =
       playedPair?.kind === 'stun' ? null : resolveSubmittedAdrenalineForPair(beatLookup, lookupKey, playedPair, value);
-    const beatSlot = resolvePlayBeatSlotForValue(playedPair, value);
+    const beatSlot = resolvePlayBeatSlotForValue(beatLookup, lookupKey, playedPair, value);
     return {
       ...item,
       lookupKey,

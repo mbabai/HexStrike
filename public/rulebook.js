@@ -153,14 +153,20 @@ const SPECIAL_SYMBOLS = [
     description: 'Board token that damages characters standing on it each beat.',
   },
   {
-    icon: 'ArrowToken',
-    title: 'Arrow Token',
-    description: 'Board token that advances each beat and resolves as a charge-style hit using damage and knockback stats.',
+    icon: 'Flora',
+    title: 'Flora Hex',
+    description:
+      'Land-only persistent hex state. Fire and Flora replace each other, except simultaneous placements leave fire behind.',
   },
   {
     icon: 'EtherealPlatform',
     title: 'Ethereal Platform Token',
     description: 'Board token that can temporarily allow land-style refresh over abyss.',
+  },
+  {
+    icon: 'ArrowToken',
+    title: 'Arrow Token',
+    description: 'Board token that advances each beat and resolves as a charge-style hit using damage and knockback stats.',
   },
   {
     icon: 'F',

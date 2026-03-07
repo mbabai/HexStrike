@@ -29,3 +29,5 @@
 - Board tokens shown during playback are derived from beats/interactions, not from whatever happens to be in current public state.
 - Throw, discard, and passive-modifier parity should come from shared registries, not local allow lists.
 - Same-timing movement playback must mirror server-simultaneous vacates. Do not let ordered occupancy updates make a mover bounce off a hex that another successful tied mover leaves that same bucket.
+- Flora/fire placement priority and Druidic Presence committed-rotation targeting should come from shared board-token helpers, not copied playback-local switches.
+- Play-modal beat pointers must follow `actionSetStep` from the resolved beat entry, not raw `beatIndex - startIndex`, because Guard loops, rewind-style returns, and other timeline rewrites can revisit earlier card steps without changing gameplay.

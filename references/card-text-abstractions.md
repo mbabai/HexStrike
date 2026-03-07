@@ -22,7 +22,7 @@ Server wrappers in `src/game/*` and browser wrappers in `public/game/*` should s
 - Signature deckbuilding limits are sourced from `public/cards/cards.json` card metadata, not hard-coded UI-only lists.
 - `signatureGroup: "movement"` marks a gold-title Signature Move and is limited to one per deck.
 - `signatureGroup: "ability"` marks a gold-title Signature Ability and is limited to two per deck.
-- Current signature abilities: `bow-shot`, `vengeance`, `spinning-back-kick`, `burning-strike`, `parry`, `smoke-bomb`.
+- Current signature abilities: `bow-shot`, `vengeance`, `spinning-back-kick`, `burning-strike`, `druidic-presence`, `parry`, `smoke-bomb`.
 
 ## Action-Symbol Anchors
 
@@ -176,6 +176,8 @@ These are still primarily execution-driven rather than registry-driven, but they
 
 - Burning Strike passive fire from movement only triggers on exact `m` and queues to the next beat after the move succeeds.
 - Bow Shot passive arrow spawns on successful movement-style relocation and uses the mover's pre-move hex.
+- Druidic Presence active `X1` is runtime token placement, not a shared action-list transform. It places land-only flora under the user, then on later `X1` beats extends one hex in the committed rotation direction if the user is already on flora.
+- Flora and fire are mutually exclusive on one hex. The later placement normally replaces the earlier one, except when both are created in the same timing window, where fire wins.
 - Arrow damage is fixed at 4 with KBF 1 and does not inherit character attack bonuses.
 - Historical re-execution must rebuild tokens from timeline state, not from future `public.boardTokens`.
 

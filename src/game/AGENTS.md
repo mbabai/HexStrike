@@ -33,6 +33,7 @@ Use these as the first stop for recurring card families:
 - Shared open-beat semantics live in `src/shared/game/actionSymbols.ts`; do not fork local `E`/`SigE`/`F` checks across server files.
 - Board token replay must be reconstructed from timeline state, not future `public.boardTokens`.
 - Same-timing movement buckets are simultaneous for movers with different destinations. A mover that successfully vacates its hex must not block another mover in that bucket from entering it; only destination jams or failed vacates should keep the hex occupied.
+- Flora/fire placement priority and Druidic Presence committed-rotation targeting must stay in shared board-token helpers, not duplicated server-only switches, or playback parity will drift.
 
 ## Required Updates When Mechanics Change
 

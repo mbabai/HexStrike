@@ -31,7 +31,6 @@ import { buildCardActionList } from './cardText/actionListBuilder';
 import { DEFAULT_LAND_HEXES } from './hexGrid';
 import { getHandTriggerDefinition } from './handTriggers';
 import {
-  getPrimaryTimingPhase,
   getTimingOrder,
   getTimingPriority,
   hasTimingPhase,
@@ -44,6 +43,14 @@ import {
   isOpenBeatActionLabel,
   isRefreshActionLabel,
 } from './actionSymbols';
+import {
+  createFirePriorityPlacementTracker,
+  DRUIDIC_PRESENCE_CARD_ID,
+  FIRE_HEX_TOKEN_TYPE,
+  FLORA_HEX_TOKEN_TYPE,
+  getCommittedRotationDirectionKey,
+  getTokenPlacementWindowKey,
+} from './boardTokens';
 import { getPassiveStartAdrenalineDelta, getPassiveStartSelfDamage } from '../shared/game/preActionSpecs';
 import { getThrowSpec } from '../shared/game/throwSpecs';
 
@@ -58,7 +65,6 @@ const DAMAGE_ICON_ACTION = 'DamageIcon';
 const END_MARKER_ACTIONS = new Set(['DEATH', 'VICTORY', 'HANDSHAKE']);
 const KNOCKBACK_DIVISOR = 10;
 const THROW_DISTANCE = 2;
-const FIRE_HEX_TOKEN_TYPE = 'fire-hex';
 const ETHEREAL_PLATFORM_TOKEN_TYPE = 'ethereal-platform';
 const ARROW_TOKEN_TYPE = 'arrow';
 const FOCUS_ANCHOR_TOKEN_TYPE = 'focus-anchor';
@@ -199,6 +205,10 @@ const getRotationMagnitude = (rotationLabel: string): number | null => {
     return Number.isFinite(steps) ? steps : null;
   }
   return null;
+};
+
+const getRotationDirectionVector = (rotationLabel: string, facing: number) => {
+  return applyFacingToVector(LOCAL_DIRECTIONS[getCommittedRotationDirectionKey(rotationLabel)], facing);
 };
 
 const rotateAxialCW = (coord: { q: number; r: number }) => ({ q: -coord.r, r: coord.q + coord.r });
@@ -1031,13 +1041,29 @@ export const executeBeatsWithInteractions = (
       boardTokens.splice(i, 1);
       continue;
     }
+    if (token.type === FLORA_HEX_TOKEN_TYPE && resolveTerrain(token.position) !== 'land') {
+      boardTokens.splice(i, 1);
+      continue;
+    }
     if (token.type === ETHEREAL_PLATFORM_TOKEN_TYPE && resolveTerrain(token.position) !== 'abyss') {
       boardTokens.splice(i, 1);
     }
   }
+  const initialFireTokenKeys = new Set<string>();
+  boardTokens.forEach((token) => {
+    if (token.type !== FIRE_HEX_TOKEN_TYPE) return;
+    initialFireTokenKeys.add(coordKey(token.position));
+  });
+  for (let i = boardTokens.length - 1; i >= 0; i -= 1) {
+    const token = boardTokens[i];
+    if (token.type !== FLORA_HEX_TOKEN_TYPE) continue;
+    if (!initialFireTokenKeys.has(coordKey(token.position))) continue;
+    boardTokens.splice(i, 1);
+  }
   let tokenCounter = boardTokens.length;
   const fireTokenKeys = new Set<string>();
   const fireTokenOwnerByKey = new Map<string, string>();
+  const floraTokenKeys = new Set<string>();
   const platformTokenKeys = new Set<string>();
   const focusTokenByOwner = new Map<string, string>();
   let ephemeralFireKeys = new Set<string>();
@@ -1049,6 +1075,10 @@ export const executeBeatsWithInteractions = (
       if (ownerId) {
         fireTokenOwnerByKey.set(key, ownerId);
       }
+      return;
+    }
+    if (token.type === FLORA_HEX_TOKEN_TYPE) {
+      floraTokenKeys.add(coordKey(token.position));
       return;
     }
     if (token.type === ETHEREAL_PLATFORM_TOKEN_TYPE) {
@@ -1327,16 +1357,57 @@ export const executeBeatsWithInteractions = (
   const appliedRewindReturnsById = new Set<string>();
 
   const nextTokenId = (type: string) => `${type}:${tokenCounter++}`;
+  const firePriorityPlacementTracker = createFirePriorityPlacementTracker();
+
+  const removeFireHexToken = (coord: { q: number; r: number }): boolean => {
+    const key = coordKey(coord);
+    let removed = false;
+    if (fireTokenKeys.has(key)) {
+      fireTokenKeys.delete(key);
+      fireTokenOwnerByKey.delete(key);
+      for (let i = boardTokens.length - 1; i >= 0; i -= 1) {
+        const token = boardTokens[i];
+        if (token.type !== FIRE_HEX_TOKEN_TYPE) continue;
+        if (coordKey(token.position) !== key) continue;
+        boardTokens.splice(i, 1);
+        removed = true;
+        break;
+      }
+    }
+    if (ephemeralFireKeys.has(key)) {
+      ephemeralFireKeys.delete(key);
+      removed = true;
+    }
+    return removed;
+  };
+
+  const removeFloraHexToken = (coord: { q: number; r: number }): boolean => {
+    const key = coordKey(coord);
+    if (!floraTokenKeys.has(key)) return false;
+    floraTokenKeys.delete(key);
+    for (let i = boardTokens.length - 1; i >= 0; i -= 1) {
+      const token = boardTokens[i];
+      if (token.type !== FLORA_HEX_TOKEN_TYPE) continue;
+      if (coordKey(token.position) !== key) continue;
+      boardTokens.splice(i, 1);
+      break;
+    }
+    return true;
+  };
 
   const addFireHexToken = (coord: { q: number; r: number }, ownerId?: string): boolean => {
     const key = coordKey(coord);
     const normalizedOwnerId = `${ownerId ?? ''}`.trim();
     const onLand = resolveTerrain(coord) === 'land';
     if (onLand) {
+      if (floraTokenKeys.has(key)) {
+        removeFloraHexToken(coord);
+      }
       if (fireTokenKeys.has(key)) {
         if (normalizedOwnerId) {
           fireTokenOwnerByKey.set(key, normalizedOwnerId);
         }
+        firePriorityPlacementTracker.noteFirePlacement(key);
         return false;
       }
       fireTokenKeys.add(key);
@@ -1350,10 +1421,30 @@ export const executeBeatsWithInteractions = (
         facing: 0,
         ownerUserId: normalizedOwnerId || undefined,
       });
+      firePriorityPlacementTracker.noteFirePlacement(key);
       return true;
     }
     if (ephemeralFireKeys.has(key)) return false;
     ephemeralFireKeys.add(key);
+    firePriorityPlacementTracker.noteFirePlacement(key);
+    return true;
+  };
+
+  const addFloraHexToken = (coord: { q: number; r: number }): boolean => {
+    if (resolveTerrain(coord) !== 'land') return false;
+    const key = coordKey(coord);
+    if (firePriorityPlacementTracker.fireWinsAt(key)) return false;
+    if (floraTokenKeys.has(key)) return false;
+    if (fireTokenKeys.has(key)) {
+      removeFireHexToken(coord);
+    }
+    floraTokenKeys.add(key);
+    boardTokens.push({
+      id: nextTokenId(FLORA_HEX_TOKEN_TYPE),
+      type: FLORA_HEX_TOKEN_TYPE,
+      position: { q: coord.q, r: coord.r },
+      facing: 0,
+    });
     return true;
   };
 
@@ -2691,6 +2782,7 @@ export const executeBeatsWithInteractions = (
       parryEndersByBeat.delete(index);
     }
     ephemeralFireKeys = new Set<string>();
+    firePriorityPlacementTracker.setWindow(`pre-beat:${index}`);
     applyDelayedPassiveFireHexes(index);
     const existingArrowIds = new Set(
       boardTokens.filter((token) => token.type === ARROW_TOKEN_TYPE).map((token) => token.id),
@@ -3066,6 +3158,7 @@ export const executeBeatsWithInteractions = (
       tokenCounter: number;
       fireTokenKeys: Set<string>;
       fireTokenOwnerByKey: Map<string, string>;
+      floraTokenKeys: Set<string>;
       platformTokenKeys: Set<string>;
       ephemeralFireKeys: Set<string>;
       delayedPassiveFireSpawnsByBeat: Map<number, DelayedPassiveFireSpawn[]>;
@@ -3136,6 +3229,7 @@ export const executeBeatsWithInteractions = (
       tokenCounter,
       fireTokenKeys: new Set(fireTokenKeys),
       fireTokenOwnerByKey: new Map(fireTokenOwnerByKey),
+      floraTokenKeys: new Set(floraTokenKeys),
       platformTokenKeys: new Set(platformTokenKeys),
       ephemeralFireKeys: new Set(ephemeralFireKeys),
       delayedPassiveFireSpawnsByBeat: new Map(
@@ -3196,6 +3290,8 @@ export const executeBeatsWithInteractions = (
         if (!safeOwnerId) return;
         fireTokenOwnerByKey.set(key, safeOwnerId);
       });
+      floraTokenKeys.clear();
+      snapshot.floraTokenKeys.forEach((key) => floraTokenKeys.add(key));
       platformTokenKeys.clear();
       snapshot.platformTokenKeys.forEach((key) => platformTokenKeys.add(key));
       ephemeralFireKeys = new Set(snapshot.ephemeralFireKeys);
@@ -4386,6 +4482,16 @@ export const executeBeatsWithInteractions = (
           actorId,
         );
       }
+      if (entry.cardId === DRUIDIC_PRESENCE_CARD_ID && actionLabel.toUpperCase() === 'X1') {
+        const originKey = coordKey(origin);
+        if (!floraTokenKeys.has(originKey)) {
+          addFloraHexToken(origin);
+        } else {
+          const actionSetFacing = actionSetFacingByUser.get(actorId) ?? actorState.facing;
+          const direction = getRotationDirectionVector(actionSetRotation, actionSetFacing);
+          addFloraHexToken({ q: origin.q + direction.q, r: origin.r + direction.r });
+        }
+      }
       if (entry.cardId === HAVEN_CARD_ID && actionLabel.toUpperCase() === 'X1') {
         const interactionId = buildInteractionId(HAVEN_PLATFORM_INTERACTION_TYPE, index, actorId, actorId);
         const touchingHexes = buildTouchingHexes(origin);
@@ -5147,6 +5253,7 @@ export const executeBeatsWithInteractions = (
           flushDeferredDisabledActors();
         }
         currentExecutionBucketKey = bucketKey;
+        firePriorityPlacementTracker.setWindow(getTokenPlacementWindowKey(entry.action, entry.timing, bucketKey));
         processOrderedEntry(entry);
         previousBucketKey = bucketKey;
       });
@@ -5160,6 +5267,7 @@ export const executeBeatsWithInteractions = (
     resolveExistingArrows();
     processOrderedEntries(lowPriorityEntries);
 
+    firePriorityPlacementTracker.setWindow(`post-beat:${index}`);
     updatedInteractions.forEach((interaction) => {
       if (interaction.type !== 'hand-trigger') return;
       if (interaction.status !== 'resolved') return;

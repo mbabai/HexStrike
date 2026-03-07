@@ -86,6 +86,7 @@ HexStrike is a dependency-light Node.js + TypeScript server with a static browse
   - `src/shared/game/throwSpecs.ts`
   - `src/shared/game/preActionSpecs.ts`
   - `src/shared/game/handTriggers.ts`
+  - `src/shared/game/boardTokens.ts`
   - `src/shared/game/cardText/passiveModifierSpecs.ts`
   - `src/shared/game/cardText/discardSpecs.ts`
 

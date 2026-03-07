@@ -17,6 +17,14 @@ import {
   isOpenBeatActionLabel,
   isRefreshActionLabel,
 } from './actionSymbols.js';
+import {
+  createFirePriorityPlacementTracker,
+  DRUIDIC_PRESENCE_CARD_ID,
+  FIRE_HEX_TOKEN_TYPE,
+  FLORA_HEX_TOKEN_TYPE,
+  getCommittedRotationDirectionKey,
+  getTokenPlacementWindowKey,
+} from '../shared/boardTokens.js';
 import { getThrowSpec } from '../generated/shared/game/throwSpecs.js';
 
 const DEFAULT_ACTION = DEFAULT_OPEN_ACTION;
@@ -31,7 +39,6 @@ const MAX_TRAIL_VISIBLE_MS = 180;
 const MIN_STEP_DURATION_MS = 80;
 const DIAG_PREFIX = '[timelinePlayback:diag]';
 const THROW_DISTANCE = 2;
-const FIRE_HEX_TOKEN_TYPE = 'fire-hex';
 const ETHEREAL_PLATFORM_TOKEN_TYPE = 'ethereal-platform';
 const ARROW_TOKEN_TYPE = 'arrow';
 const FOCUS_ANCHOR_TOKEN_TYPE = 'focus-anchor';
@@ -335,6 +342,10 @@ const getRotationMagnitude = (rotationLabel) => {
     return Number.isFinite(steps) ? steps : null;
   }
   return null;
+};
+
+const getRotationDirectionVector = (rotationLabel, facing) => {
+  return applyFacingToVector(LOCAL_DIRECTIONS[getCommittedRotationDirectionKey(rotationLabel)], facing);
 };
 
 const rotateAxialCW = (coord) => ({ q: -coord.r, r: coord.q + coord.r });
@@ -2108,6 +2119,7 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
 
   const tokens = [];
   const fireTokenKeys = new Set();
+  const floraTokenKeys = new Set();
   const platformTokenKeys = new Set();
   const focusTokenByOwner = new Map();
   let ephemeralFireKeys = new Set();
@@ -2124,6 +2136,7 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
   let baseTokens = [];
 
   const nextTokenId = (type) => `${type}:${tokenCounter++}`;
+  const firePriorityPlacementTracker = createFirePriorityPlacementTracker();
 
   const cloneToken = (token) => ({
     ...token,
@@ -2144,16 +2157,61 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
     tokenSpawnsByActor.set(actorId, existing);
   };
 
+  const removeFireToken = (coord) => {
+    if (!coord) return false;
+    const key = coordKey(coord);
+    let removed = false;
+    if (fireTokenKeys.has(key)) {
+      fireTokenKeys.delete(key);
+      for (let i = tokens.length - 1; i >= 0; i -= 1) {
+        const token = tokens[i];
+        if (token?.type !== FIRE_HEX_TOKEN_TYPE) continue;
+        if (coordKey(token.position) !== key) continue;
+        tokens.splice(i, 1);
+        removed = true;
+        break;
+      }
+    }
+    if (ephemeralFireKeys.has(key)) {
+      ephemeralFireKeys.delete(key);
+      removed = true;
+    }
+    return removed;
+  };
+
+  const removeFloraToken = (coord) => {
+    if (!coord) return false;
+    const key = coordKey(coord);
+    if (!floraTokenKeys.has(key)) return false;
+    floraTokenKeys.delete(key);
+    for (let i = tokens.length - 1; i >= 0; i -= 1) {
+      const token = tokens[i];
+      if (token?.type !== FLORA_HEX_TOKEN_TYPE) continue;
+      if (coordKey(token.position) !== key) continue;
+      tokens.splice(i, 1);
+      break;
+    }
+    return true;
+  };
+
   const addFireToken = (coord, ownerId, isCurrentBeat, spawnAtEnd = false) => {
     if (!coord) return;
     const key = coordKey(coord);
     const onLand = isCoordOnLand(coord, land);
     if (onLand) {
-      if (fireTokenKeys.has(key)) return;
+      if (floraTokenKeys.has(key)) {
+        removeFloraToken(coord);
+      }
+      if (fireTokenKeys.has(key)) {
+        firePriorityPlacementTracker.noteFirePlacement(key);
+        return;
+      }
       fireTokenKeys.add(key);
+      firePriorityPlacementTracker.noteFirePlacement(key);
     } else {
       if (ephemeralFireKeys.has(key)) return;
       ephemeralFireKeys.add(key);
+      firePriorityPlacementTracker.noteFirePlacement(key);
       if (!isCurrentBeat) return;
     }
     const token = {
@@ -2167,6 +2225,25 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
       tokenSpawnsAtEnd.push(token);
       return;
     }
+    scheduleSpawnForActor(ownerId, token, isCurrentBeat);
+  };
+
+  const addFloraToken = (coord, ownerId, isCurrentBeat) => {
+    if (!coord || !isCoordOnLand(coord, land)) return;
+    const key = coordKey(coord);
+    if (firePriorityPlacementTracker.fireWinsAt(key)) return;
+    if (floraTokenKeys.has(key)) return;
+    if (fireTokenKeys.has(key)) {
+      removeFireToken(coord);
+    }
+    floraTokenKeys.add(key);
+    const token = {
+      id: nextTokenId(FLORA_HEX_TOKEN_TYPE),
+      type: FLORA_HEX_TOKEN_TYPE,
+      position: { q: coord.q, r: coord.r },
+      facing: 0,
+      ownerUserId: ownerId,
+    };
     scheduleSpawnForActor(ownerId, token, isCurrentBeat);
   };
 
@@ -2422,6 +2499,7 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
     const isCurrentBeat = index === beatIndex;
     ephemeralFireKeys = new Set();
     applyFocusTokenUpdates(index);
+    firePriorityPlacementTracker.setWindow(`pre-beat:${index}`);
     applyDelayedPassiveFires(index, isCurrentBeat);
     if (!isBeatCalculated(beat)) {
       baseTokens = tokens.map(cloneToken);
@@ -2833,6 +2911,16 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
           addArrowToken(spawnCoord, facing, actorId, isCurrentBeat);
         }
       }
+      if (entry.cardId === DRUIDIC_PRESENCE_CARD_ID && actionLabel.toUpperCase() === 'X1') {
+        if (!floraTokenKeys.has(coordKey(origin))) {
+          addFloraToken(origin, actorId, isCurrentBeat);
+        } else {
+          const actionSetFacing = actionSetFacingByUser.get(actorId) ?? facing;
+          const actionSetRotation = actionSetRotationByUser.get(actorId) ?? '';
+          const direction = getRotationDirectionVector(actionSetRotation, actionSetFacing);
+          addFloraToken({ q: origin.q + direction.q, r: origin.r + direction.r }, actorId, isCurrentBeat);
+        }
+      }
       if (entry.cardId === HAVEN_CARD_ID && actionLabel.toUpperCase() === 'X1') {
         const interaction = interactionById.get(buildHavenInteractionId(index, actorId));
         if (interaction?.status === 'resolved') {
@@ -2900,10 +2988,16 @@ const buildTokenPlayback = (gameState, beatIndex, characterPowersById = new Map(
 
     const { highPriorityEntries, lowPriorityEntries } = partitionEntriesByArrowPriority(ordered);
 
-    highPriorityEntries.forEach(processOrderedEntry);
-    resolveExistingArrows();
-    lowPriorityEntries.forEach(processOrderedEntry);
+    const processEntryWithPlacementWindow = (entry) => {
+      firePriorityPlacementTracker.setWindow(getTokenPlacementWindowKey(entry?.action, entry?.timing, 'current-beat'));
+      processOrderedEntry(entry);
+    };
 
+    highPriorityEntries.forEach(processEntryWithPlacementWindow);
+    resolveExistingArrows();
+    lowPriorityEntries.forEach(processEntryWithPlacementWindow);
+
+    firePriorityPlacementTracker.setWindow(`post-beat:${index}`);
     interactions.forEach((interaction) => {
       if (interaction?.type !== 'hand-trigger') return;
       if (getHandTriggerCardId(interaction) !== BURNING_STRIKE_CARD_ID) return;

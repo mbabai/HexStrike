@@ -500,6 +500,35 @@
       ]
     },
     {
+      "id": "druidic-presence",
+      "name": "Druidic Presence",
+      "type": "ability",
+      "signatureGroup": "ability",
+      "actions": [
+        "W",
+        "X1",
+        "X1",
+        "W",
+        "SigE"
+      ],
+      "rotations": "*",
+      "damage": 0,
+      "kbf": 0,
+      "activeText": "{X1}: If you are not standing on Flora, place one Flora underneath you. If you are, place one Flora in your rotation direction as far from you as possible while still being contiguous with the hex you are standing on.",
+      "passiveText": "",
+      "timings": [
+        null,
+        [
+          "mid"
+        ],
+        [
+          "mid"
+        ],
+        null,
+        null
+      ]
+    },
+    {
       "id": "feint",
       "name": "Feint",
       "type": "ability",

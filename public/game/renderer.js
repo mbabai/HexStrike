@@ -45,6 +45,7 @@ const getTheme = () => {
 const TOKEN_IMAGE_SOURCES = {
   arrow: '/public/images/ArrowToken.png',
   'fire-hex': '/public/images/FireHexToken.png',
+  'flora-hex': '/public/images/Flora.png',
   'ethereal-platform': '/public/images/EtherealPlatform.png',
   'focus-anchor': '/public/images/F.png',
   'card-in-hand': '/public/images/CardInHand.png',
@@ -383,7 +384,7 @@ const drawBoardTokens = (ctx, tokens, size, theme, getTokenArt) => {
       }
       return;
     }
-    if (token.type === 'fire-hex' || token.type === 'ethereal-platform') {
+    if (token.type === 'fire-hex' || token.type === 'flora-hex' || token.type === 'ethereal-platform') {
       ctx.save();
       drawHexPath(ctx, x, y, size);
       ctx.clip();

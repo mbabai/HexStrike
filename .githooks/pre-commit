@@ -1,0 +1,15 @@
+#!/bin/sh
+
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+card_art_dir="$repo_root/public/images/CardArt"
+converter_script="$repo_root/scripts/convert-png-to-jpg.ps1"
+
+if find "$card_art_dir" -maxdepth 1 -type f -name '*.png' | grep -q .; then
+  echo "CardArt PNG files found. Converting to JPG before commit."
+  powershell -NoProfile -ExecutionPolicy Bypass -File "$converter_script" -Path "$card_art_dir" -DeletePng
+  git -C "$repo_root" add --all -- public/images/CardArt
+else
+  echo "No CardArt PNG files found. Skipping conversion."
+fi

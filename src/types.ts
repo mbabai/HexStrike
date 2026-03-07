@@ -39,7 +39,7 @@ export interface HexCoord {
   r: number;
 }
 
-export type BoardTokenType = 'fire-hex' | 'arrow' | 'ethereal-platform' | 'focus-anchor';
+export type BoardTokenType = 'fire-hex' | 'flora-hex' | 'arrow' | 'ethereal-platform' | 'focus-anchor';
 
 export interface BoardToken {
   id: string;

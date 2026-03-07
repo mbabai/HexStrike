@@ -2,6 +2,7 @@ import { BoardToken } from '../types';
 
 const TIMELINE_DERIVED_TOKEN_TYPES = new Set([
   'fire-hex',
+  'flora-hex',
   'arrow',
   'ethereal-platform',
   'focus-anchor',
@@ -16,4 +17,3 @@ export const buildReplaySeedTokens = (tokens: BoardToken[] = []): BoardToken[] =
       position: { q: token.position.q, r: token.position.r },
     }));
 };
-
