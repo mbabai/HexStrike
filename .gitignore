@@ -6,3 +6,4 @@ dist
 .DS_Store
 temp-logs
 public/generated
+.playwright-cli/
